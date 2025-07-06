@@ -1,7 +1,9 @@
 - en: '*Chapter 11*: Incorporating New Binary Formats'
+  id: totrans-0
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: '*第 11 章*：纳入新二进制格式'
 - en: In this chapter, we will discuss how to incorporate new binary formats into
     Ghidra, enabling you to analyze exoteric binaries – for instance, ROMs of video
     games (a copy of the data from the cartridge or any other read-only memory). Throughout
@@ -9,8 +11,12 @@
     previously introduced in the *Loaders* subsection of the *The Ghidra extension
     module skeleton* section in [*Chapter 4*](B16207_04_Final_SK_ePub.xhtml#_idTextAnchor063),
     *Using Ghidra Extensions*.
+  id: totrans-1
   prefs: []
   type: TYPE_NORMAL
+  zh: 本章将讨论如何将新的二进制格式纳入 Ghidra，使您能够分析特殊的二进制文件——例如视频游戏的 ROM（来自游戏卡带或其他只读存储器的数据副本）。在本章中，您将学习如何开发
+    Ghidra 加载器扩展，这些扩展在 [*第 4 章*](B16207_04_Final_SK_ePub.xhtml#_idTextAnchor063)的
+    *使用 Ghidra 扩展* 部分的 *加载器* 子部分中已有介绍。
 - en: We will start by looking at what a binary file is. We will explore the differences
     between raw binary files and formatted binary files and how Ghidra can deal with
     them. Next, we will perform some experiments with Ghidra to understand how binaries
@@ -18,71 +24,104 @@
     DOS executable binaries** from a Ghidra developer perspective. The loader under
     analysis is responsible for enabling Ghidra to load MS-DOS executable binaries,
     so you will learn about loader development by analyzing a real-world example.
+  id: totrans-2
   prefs: []
   type: TYPE_NORMAL
+  zh: 我们将从了解什么是二进制文件开始。我们将探讨原始二进制文件和格式化二进制文件之间的区别，以及 Ghidra 如何处理它们。接下来，我们将进行一些 Ghidra
+    实验，从用户的角度理解二进制文件如何加载。最后，我们将从 Ghidra 开发者的角度分析 **旧版 DOS 可执行二进制文件** 的加载器。所分析的加载器负责使
+    Ghidra 能够加载 MS-DOS 可执行二进制文件，因此通过分析一个实际的例子，您将学习加载器开发。
 - en: 'In this chapter, we''re going to cover the following main topics:'
+  id: totrans-3
   prefs: []
   type: TYPE_NORMAL
+  zh: 本章将涵盖以下主要内容：
 - en: Understanding the difference between raw binaries and formatted binaries
+  id: totrans-4
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: 理解原始二进制文件与格式化二进制文件之间的区别
 - en: Developing a Ghidra loader
+  id: totrans-5
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: 开发 Ghidra 加载器
 - en: Understanding filesystem loaders
+  id: totrans-6
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: 理解文件系统加载器
 - en: Technical requirements
+  id: totrans-7
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 技术要求
 - en: 'The requirements for this chapter are as follows:'
+  id: totrans-8
   prefs: []
   type: TYPE_NORMAL
+  zh: 本章的要求如下：
 - en: '**Flat assembler** (**fasm**), which is an assembly language compiler that
     can produce binaries of different formats (plain binary, MZ, PE, COFF, or ELF):
     [https://flatassembler.net/download.php](https://flatassembler.net/download.php)'
+  id: totrans-9
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: '**Flat assembler**（**fasm**），这是一款汇编语言编译器，可以生成多种格式的二进制文件（纯二进制、MZ、PE、COFF 或 ELF）：[https://flatassembler.net/download.php](https://flatassembler.net/download.php)'
 - en: 'HexIt v.1.57, which is a hex editor allowing you to parse old MS-DOS executable
     files (MZ): [https://mklasson.com/hexit.php](https://mklasson.com/hexit.php)'
+  id: totrans-10
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: HexIt v.1.57，这是一款十六进制编辑器，允许您解析旧版 MS-DOS 可执行文件（MZ）：[https://mklasson.com/hexit.php](https://mklasson.com/hexit.php)
 - en: The GitHub repository containing all the necessary code for this chapter can
     be found at [https://github.com/PacktPublishing/Ghidra-Software-Reverse-Engineering-for-Beginners/tree/master/Chapter11](https://github.com/PacktPublishing/Ghidra-Software-Reverse-Engineering-for-Beginners/tree/master/Chapter11).
+  id: totrans-11
   prefs: []
   type: TYPE_NORMAL
+  zh: 包含本章所有必要代码的 GitHub 仓库可以在以下链接找到：[https://github.com/PacktPublishing/Ghidra-Software-Reverse-Engineering-for-Beginners/tree/master/Chapter11](https://github.com/PacktPublishing/Ghidra-Software-Reverse-Engineering-for-Beginners/tree/master/Chapter11)。
 - en: 'Check out the following link to see the Code in Action video: [https://bit.ly/3mQraZo](https://bit.ly/3mQraZo)'
+  id: totrans-12
   prefs: []
   type: TYPE_NORMAL
+  zh: 查看以下链接，观看《代码实战》视频：[https://bit.ly/3mQraZo](https://bit.ly/3mQraZo)
 - en: Understanding the difference between raw binaries and formatted binaries
+  id: totrans-13
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 理解原始二进制文件与格式化二进制文件之间的区别
 - en: In this section, you will learn the difference between raw and formatted binaries.The
     concept of a binary file can be easily defined by negation; that is, a **binary
     file** is a file that is not a text file.
+  id: totrans-14
   prefs: []
   type: TYPE_NORMAL
+  zh: 在本节中，您将了解原始二进制文件与格式化二进制文件之间的区别。二进制文件的概念可以通过否定的方式简单定义；也就是说，**二进制文件**是一个不是文本文件的文件。
 - en: 'We can classify binary files into two categories: raw binary files and formatted
     binary files.'
+  id: totrans-15
   prefs: []
   type: TYPE_NORMAL
+  zh: 我们可以将二进制文件分为两类：原始二进制文件和格式化二进制文件。
 - en: '**Raw binaries** are those binary files that contain unprocessed data, so these
     binary files have no format in any way. An example of a raw binary could be a
     memory dump taken from some buffer containing a piece of code.'
+  id: totrans-16
   prefs: []
   type: TYPE_NORMAL
+  zh: '**原始二进制文件**是包含未经处理数据的二进制文件，因此这些二进制文件在任何方面都没有格式。原始二进制文件的一个例子可能是从某个缓冲区中获取的一段代码的内存转储。'
 - en: 'On the other hand, **formatted binaries** are those binary files that have
     a format specification so that you can parse it. Examples of formatted binaries
     are the Windows executable (image) files and object files that follow the **Portable
     Executable** (**PE**) format, the specification of which is available online:
     https://docs.microsoft.com/en-us/windows/win32/debug/pe-format.'
+  id: totrans-17
   prefs: []
   type: TYPE_NORMAL
 - en: For the purpose of Ghidra, raw binaries are a truly general concept, meaning
@@ -91,9 +130,11 @@
     it is much more comfortable to work with formatted binaries. It is for this reason
     that you will want to develop your own loaders for binary formats that are not
     supported yet.
+  id: totrans-18
   prefs: []
   type: TYPE_NORMAL
 - en: Understanding raw binaries
+  id: totrans-19
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
@@ -102,82 +143,102 @@
     For instance, you can write a file that relates numbers with words and separates
     those pairs with a semicolon and Ghidra will be able to load it. We can generate
     a `raw.dat` file in this way by executing the following command:'
+  id: totrans-20
   prefs: []
   type: TYPE_NORMAL
 - en: '[PRE0]'
+  id: totrans-21
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE0]'
 - en: If you drag and drop the resulting `raw.dat` file into a Ghidra project, it
     will be loaded as a **Raw Binary** file (a sequence of bytes without sense) because
     Ghidra doesn't know its file format.
+  id: totrans-22
   prefs: []
   type: TYPE_NORMAL
 - en: 'As you can see in the following screenshot, Ghidra, based on the loader''s
     results, recognizes the file as **Raw Binary** during the importing phase and
     suggests this as the best format to use:'
+  id: totrans-23
   prefs: []
   type: TYPE_NORMAL
 - en: '![Figure 11.1 – Loading a raw binary'
+  id: totrans-24
   prefs: []
   type: TYPE_NORMAL
 - en: '](img/B16207_11_001.jpg)'
+  id: totrans-25
   prefs: []
   type: TYPE_NORMAL
 - en: Figure 11.1 – Loading a raw binary
+  id: totrans-26
   prefs: []
   type: TYPE_NORMAL
 - en: 'The drop-down list of file formats is filled based on two concepts, **tiers**
     and **tiers priority**, which allows you to sort the list of formats from the
     most adequate (**Raw Binary** in *Figure 11.1*) to the least:'
+  id: totrans-27
   prefs: []
   type: TYPE_NORMAL
 - en: '**Tiers**, an integer number in range 0 to 3 allowing us to represent four
     classes of loaders and enabling us to sort the loaders from the most specialized
     (tier 0) or appropriate to the least (tier 3).'
+  id: totrans-28
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
 - en: While the higher-tier value wins, an integer number named **tiers priority**
     is used to tiebreak when more than one loader is able to load a file with the
     same tier. Both tiers and tiers priority are mandatory when developing a loader.
+  id: totrans-29
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
 - en: More about tiers and tiers priority
+  id: totrans-30
   prefs:
   - PREF_IND
   type: TYPE_NORMAL
 - en: 'As always, you can check the documentation on tiers and tiers priority if you
     want to look at them further in depth: [https://ghidra.re/ghidra_docs/api/ghidra/app/util/opinion/LoaderTier.html](https://ghidra.re/ghidra_docs/api/ghidra/app/util/opinion/LoaderTier.html)
     and [https://ghidra.re/ghidra_docs/api/ghidra/app/util/opinion/Loader.html#getTierPriority()](https://ghidra.re/ghidra_docs/api/ghidra/app/util/opinion/Loader.html#getTierPriority()).'
+  id: totrans-31
   prefs:
   - PREF_IND
   type: TYPE_NORMAL
 - en: We did this little experiment with `raw.dat` to understand, in baby steps, the
     basics of loaders using a file that you fully understand. Let's now try something
     a little more complicated!
+  id: totrans-32
   prefs: []
   type: TYPE_NORMAL
 - en: To provide a more realistic example, let's load the shellcode of the Alina malware
     previously shown when analyzing the `0x004554E0` function in [*Chapter 5*](B16207_05_Final_SK_ePub.xhtml#_idTextAnchor082),
     *Reversing Malware Using Ghidra*, under the *In-depth analysis* section.
+  id: totrans-33
   prefs: []
   type: TYPE_NORMAL
 - en: 'As it is not recognized, we must manually set the language in which the shellcode
     was written:'
+  id: totrans-34
   prefs: []
   type: TYPE_NORMAL
 - en: '![Figure 11.2 – Choosing a language and compiler for the raw binary'
+  id: totrans-35
   prefs: []
   type: TYPE_NORMAL
 - en: '](img/B16207_11_002.jpg)'
+  id: totrans-36
   prefs: []
   type: TYPE_NORMAL
 - en: Figure 11.2 – Choosing a language and compiler for the raw binary
+  id: totrans-37
   prefs: []
   type: TYPE_NORMAL
 - en: You can also set a value for **Destination Folder** for the importing file,
     and **Program Name**, which will be used for importing the file into the project.
+  id: totrans-38
   prefs: []
   type: TYPE_NORMAL
 - en: Finally, you can import just a block of the file by clicking on **Options…**,
@@ -185,6 +246,7 @@
     block name (a name for this block of data), the base address, indicating the memory
     address where the block will start or be put on, and finally, a file offset, indicating
     the position of the block in the importing file and the length of the block.
+  id: totrans-39
   prefs: []
   type: TYPE_NORMAL
 - en: 'The block will be labeled using `shellcode` by writing it into the input box).
@@ -192,49 +254,63 @@
     create labels at some addresses as specified by the processor. On the other hand,
     those labels will not be moved even if the image base is changed later if you
     check the **Anchor Processor Defined Labels** box:'
+  id: totrans-40
   prefs: []
   type: TYPE_NORMAL
 - en: '![Figure 11.3 – Loading a block of a raw binary'
+  id: totrans-41
   prefs: []
   type: TYPE_NORMAL
 - en: '](img/B16207_11_003.jpg)'
+  id: totrans-42
   prefs: []
   type: TYPE_NORMAL
 - en: Figure 11.3 – Loading a block of a raw binary
+  id: totrans-43
   prefs: []
   type: TYPE_NORMAL
 - en: 'You can also add, remove, or edit blocks of memory by accessing the **Window**
     | **Memory Map** option of Ghidra''s CodeBrowser:'
+  id: totrans-44
   prefs: []
   type: TYPE_NORMAL
 - en: '![ Figure 11.4 – Adding, removing, and editing memory blocks'
+  id: totrans-45
   prefs: []
   type: TYPE_NORMAL
 - en: '](img/B16207_11_004.jpg)'
+  id: totrans-46
   prefs: []
   type: TYPE_NORMAL
 - en: Figure 11.4 – Adding, removing, and editing memory blocks
+  id: totrans-47
   prefs: []
   type: TYPE_NORMAL
 - en: 'As you can see in the following screenshot, if the file format is not recognized
     by Ghidra, you will have to manually perform a lot of work. In this case, you
     will need to define the bytes as code or strings, create symbols, and so on:'
+  id: totrans-48
   prefs: []
   type: TYPE_NORMAL
 - en: '![ Figure 11.5 – Alina malware shellcode loaded as a raw binary'
+  id: totrans-49
   prefs: []
   type: TYPE_NORMAL
 - en: '](img/B16207_11_005.jpg)'
+  id: totrans-50
   prefs: []
   type: TYPE_NORMAL
 - en: Figure 11.5 – Alina malware shellcode loaded as a raw binary
+  id: totrans-51
   prefs: []
   type: TYPE_NORMAL
 - en: Instead of doing it manually, you can extend Ghidra by developing a loader for
     such a format. Let's look at how we do this in the next section.
+  id: totrans-52
   prefs: []
   type: TYPE_NORMAL
 - en: Understanding formatted binaries
+  id: totrans-53
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
@@ -245,116 +321,160 @@
     it is a really good real-world example to start with. The code of our `hello world`
     old MS-DOS executable program (the `mz.asm` file), written in assembly language,
     looks as follows:'
+  id: totrans-54
   prefs: []
   type: TYPE_NORMAL
 - en: '[PRE1]'
+  id: totrans-55
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE1]'
 - en: '[PRE2]'
+  id: totrans-56
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE2]'
 - en: '[PRE3]'
+  id: totrans-57
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE3]'
 - en: '[PRE4]'
+  id: totrans-58
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE4]'
 - en: '[PRE5]'
+  id: totrans-59
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE5]'
 - en: '[PRE6]'
+  id: totrans-60
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE6]'
 - en: '[PRE7]'
+  id: totrans-61
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE7]'
 - en: '[PRE8]'
+  id: totrans-62
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE8]'
 - en: '[PRE9]'
+  id: totrans-63
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE9]'
 - en: '[PRE10]'
+  id: totrans-64
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE10]'
 - en: Line `00` tells the compiler that this is an old MS-DOS program. At line `04`,
     we are triggering an interrupt, `21h` (most of the DOS API calls are invoked using
     interrupt `21h`), which receives `9h` in the `ah` register as a parameter (line
     `02`), indicating that the program has to print the message referenced by `dx`
     (line `03`), which is located at line `09`, to `stdout`.
+  id: totrans-65
   prefs: []
   type: TYPE_NORMAL
 - en: 'Finally, the program ends, passing control to the operative system. This is
     done by passing the corresponding value in `ax` to indicate that the program must
     end its execution (line `06`) and again triggering the `21h` interruption. Let''s
     compile the program using `fasm`:'
+  id: totrans-66
   prefs: []
   type: TYPE_NORMAL
 - en: '[PRE11]'
+  id: totrans-67
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE11]'
 - en: '[PRE12]'
+  id: totrans-68
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE12]'
 - en: '[PRE13]'
+  id: totrans-69
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE13]'
 - en: By compiling the program, we obtained an `mz.exe` file as a result. To show
     you the format, I'm using HexIt v.1.57, which is a hexadecimal editor that parses
     old DOS executable headers when *F6* is pressed.
+  id: totrans-70
   prefs: []
   type: TYPE_NORMAL
 - en: 'In the following screenshot, you can see the DOS .EXE header. Each row starts
     with the offset of the header field between brackets, then the name of the field,
     and, finally, its value. For instance, at the very beginning of the file (offset
     **[00]**), we have **Signature**, which has a value of **MZ**:'
+  id: totrans-71
   prefs: []
   type: TYPE_NORMAL
 - en: '![Figure 11.6 – Showing the DOS .EXE header in HexIt v1.57'
+  id: totrans-72
   prefs: []
   type: TYPE_NORMAL
 - en: '](img/B16207_11_006.jpg)'
+  id: totrans-73
   prefs: []
   type: TYPE_NORMAL
 - en: Figure 11.6 – Showing the DOS .EXE header in HexIt v1.57
+  id: totrans-74
   prefs: []
   type: TYPE_NORMAL
 - en: 'Ghidra includes a loader that is able to parse these **old-style DOS executable
     (MZ)** binaries, so when you drag and drop this file into Ghidra, the language
     and format will both be recognized:'
+  id: totrans-75
   prefs: []
   type: TYPE_NORMAL
 - en: '![Figure 11.7 – Importing an old-style DOS executable (MZ) to Ghidra'
+  id: totrans-76
   prefs: []
   type: TYPE_NORMAL
 - en: '](img/B16207_11_007.jpg)'
+  id: totrans-77
   prefs: []
   type: TYPE_NORMAL
 - en: Figure 11.7 – Importing an old-style DOS executable (MZ) to Ghidra
+  id: totrans-78
   prefs: []
   type: TYPE_NORMAL
 - en: 'As you can see in the following screenshot, when this formatted binary file
     is loaded by Ghidra''s CodeBrowser, the entry point of the program is successfully
     detected. Addresses and a lot of useful information are automatically given to
     you:'
+  id: totrans-79
   prefs: []
   type: TYPE_NORMAL
 - en: '![Figure 11.8 – Ghidra successfully loaded the old-style DOS executable (MZ)
     and its disassembly matches our source code'
+  id: totrans-80
   prefs: []
   type: TYPE_NORMAL
 - en: '](img/B16207_11_008.jpg)'
+  id: totrans-81
   prefs: []
   type: TYPE_NORMAL
 - en: Figure 11.8 – Ghidra successfully loaded the old-style DOS executable (MZ) and
     its disassembly matches our source code
+  id: totrans-82
   prefs: []
   type: TYPE_NORMAL
 - en: In the following section, we will overview how this **old-style DOS executable
     (MZ)** loader is implemented.
+  id: totrans-83
   prefs: []
   type: TYPE_NORMAL
 - en: Developing a Ghidra loader
+  id: totrans-84
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
@@ -362,14 +482,17 @@
     class. This class has the following methods: `getName`, `findSupportedLoadSpecs`,
     `load`, and, optionally, if supporting custom options,`getDefaultOptions` and
     `validateOptions`.'
+  id: totrans-85
   prefs: []
   type: TYPE_NORMAL
 - en: I'm assuming that you are familiar with loaders and these methods because they
     were superficially overviewed in [*Chapter 4*](B16207_04_Final_SK_ePub.xhtml#_idTextAnchor063),
     *Using Ghidra Extensions*.
+  id: totrans-86
   prefs: []
   type: TYPE_NORMAL
 - en: The old-style DOS executable (MZ) parser
+  id: totrans-87
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
@@ -377,14 +500,17 @@
     DOS executable (MZ) file as we did by using **HexIt v.1.57** in the *Formatted
     binaries* section of this chapter. To do that, Ghidra implements a parser for
     these kinds of binaries that is available here: [https://github.com/NationalSecurityAgency/ghidra/tree/master/Ghidra/Features/Base/src/main/java/ghidra/app/util/bin/format/mz](https://github.com/NationalSecurityAgency/ghidra/tree/master/Ghidra/Features/Base/src/main/java/ghidra/app/util/bin/format/mz).'
+  id: totrans-88
   prefs: []
   type: TYPE_NORMAL
 - en: 'This link contains three files:'
+  id: totrans-89
   prefs: []
   type: TYPE_NORMAL
 - en: '`DOSHeader.java`: A file implementing the old-style DOS executable parser.
     It relies on the `StructConverter` class to create a structure data type that
     is equivalent to the `DOSHeader` class members.'
+  id: totrans-90
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
@@ -392,39 +518,48 @@
     to read data from a generic byte provider and passes it to the `DOSHeader` class
     in order to parse it. The `OldStyleExecutable` class exposes both via getter methods:
     `DOSHeader` and the underlying `FactoryBundledWithBinaryReader` object.'
+  id: totrans-91
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
 - en: '`package.html`: A short description of the directory content.'
+  id: totrans-92
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
 - en: Relevant parser classes
+  id: totrans-93
   prefs:
   - PREF_IND
   type: TYPE_NORMAL
 - en: You can find the documentation for `StructConverter` at [https://ghidra.re/ghidra_docs/api/ghidra/app/util/bin/StructConverter.html](https://ghidra.re/ghidra_docs/api/ghidra/app/util/bin/StructConverter.html).
     You can find the documentation for `FactoryBundledWithBinaryReader` at [https://ghidra.re/ghidra_docs/api/ghidra/app/util/bin/format/FactoryBundledWithBinaryReader.html](https://ghidra.re/ghidra_docs/api/ghidra/app/util/bin/format/FactoryBundledWithBinaryReader.html).
+  id: totrans-94
   prefs:
   - PREF_IND
   type: TYPE_NORMAL
 - en: When writing your own loaders, you can put your parsers into the `format` directory
     of Ghidra (`Ghidra/Features/Base/src/main/java/ghidra/app/util/bin/format`), which
     will be available as both `*.jar` and `*.src` files in your Ghidra distribution.
+  id: totrans-95
   prefs: []
   type: TYPE_NORMAL
 - en: The old-style DOS executable (MZ) loader
+  id: totrans-96
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
 - en: 'After implementing the parser for this format, the loader itself is implemented
     here, extending from `AbstractLibrarySupportLoader`: [https://github.com/NationalSecurityAgency/ghidra/blob/master/Ghidra/Features/Base/src/main/java/ghidra/app/util/opinion/MzLoader.java](https://github.com/NationalSecurityAgency/ghidra/blob/master/Ghidra/Features/Base/src/main/java/ghidra/app/util/opinion/MzLoader.java).'
+  id: totrans-97
   prefs: []
   type: TYPE_NORMAL
 - en: Let's look at how this class is implemented.
+  id: totrans-98
   prefs: []
   type: TYPE_NORMAL
 - en: The getTierPriority method
+  id: totrans-99
   prefs:
   - PREF_H3
   type: TYPE_NORMAL
@@ -433,133 +568,194 @@
     loaded as MZ files. This could happen because the PE file format contains an MZ
     stub at the beginning. On the other hand, MZ files can''t be loaded by the PE
     loader:'
+  id: totrans-100
   prefs: []
   type: TYPE_NORMAL
 - en: '[PRE14]'
+  id: totrans-101
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE14]'
 - en: '[PRE15]'
+  id: totrans-102
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE15]'
 - en: '[PRE16]'
+  id: totrans-103
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE16]'
 - en: '[PRE17]'
+  id: totrans-104
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE17]'
 - en: '[PRE18]'
+  id: totrans-105
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE18]'
 - en: It is a simple method but no less important.
+  id: totrans-106
   prefs: []
   type: TYPE_NORMAL
 - en: The getName method
+  id: totrans-107
   prefs:
   - PREF_H3
   type: TYPE_NORMAL
 - en: 'As mentioned before, a `getName` method must be implemented, allowing us to
     show the name of the loader when importing the file:'
+  id: totrans-108
   prefs: []
   type: TYPE_NORMAL
 - en: '[PRE19]'
+  id: totrans-109
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE19]'
 - en: '[PRE20]'
+  id: totrans-110
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE20]'
 - en: '[PRE21]'
+  id: totrans-111
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE21]'
 - en: '[PRE22]'
+  id: totrans-112
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE22]'
 - en: '[PRE23]'
+  id: totrans-113
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE23]'
 - en: '[PRE24]'
+  id: totrans-114
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE24]'
 - en: '[PRE25]'
+  id: totrans-115
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE25]'
 - en: The returned name must be descriptive enough taking into account the user's
     perspective.
+  id: totrans-116
   prefs: []
   type: TYPE_NORMAL
 - en: The findSupportedLoadSpecs method
+  id: totrans-117
   prefs:
   - PREF_H3
   type: TYPE_NORMAL
 - en: The loader specs are loaded by implementing the `findSupportedLoadSpecs` method,
     which queries the opinion service ([https://ghidra.re/ghidra_docs/api/ghidra/app/util/opinion/QueryOpinionService.html#query(java.lang.String,java.lang.String,java.lang.String](https://ghidra.re/ghidra_docs/api/ghidra/app/util/opinion/QueryOpinionService.html#query(java.lang.String,java.lang.String,java.lang.String)).
+  id: totrans-118
   prefs: []
   type: TYPE_NORMAL
 - en: 'The `query` method receives the name of the loader as the first parameter,
     the primary key as the second parameter, and, finally, the secondary key:'
+  id: totrans-119
   prefs: []
   type: TYPE_NORMAL
 - en: '[PRE26]'
+  id: totrans-120
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE26]'
 - en: '[PRE27]'
+  id: totrans-121
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE27]'
 - en: '[PRE28]'
+  id: totrans-122
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE28]'
 - en: '[PRE29]'
+  id: totrans-123
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE29]'
 - en: '[PRE30]'
+  id: totrans-124
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE30]'
 - en: 'The opinion service retrieves the loader specifications from a `*.opinion`
     file ([https://github.com/NationalSecurityAgency/ghidra/blob/master/Ghidra/Processors/x86/data/languages/x86.opinion](https://github.com/NationalSecurityAgency/ghidra/blob/master/Ghidra/Processors/x86/data/languages/x86.opinion)).
     Opinion files contain constraints allowing you to determine whether the file can
     be loaded or not:'
+  id: totrans-125
   prefs: []
   type: TYPE_NORMAL
 - en: '[PRE31]'
+  id: totrans-126
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE31]'
 - en: '[PRE32]'
+  id: totrans-127
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE32]'
 - en: '[PRE33]'
+  id: totrans-128
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE33]'
 - en: '[PRE34]'
+  id: totrans-129
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE34]'
 - en: '[PRE35]'
+  id: totrans-130
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE35]'
 - en: 'The short format opinion documentation is available here: [https://github.com/NationalSecurityAgency/ghidra/blob/master/Ghidra/Framework/SoftwareModeling/data/languages/Steps%20to%20creation%20of%20Format%20Opinion.txt](https://github.com/NationalSecurityAgency/ghidra/blob/master/Ghidra/Framework/SoftwareModeling/data/languages/Steps%20to%20creation%20of%20Format%20Opinion.txt).'
+  id: totrans-131
   prefs: []
   type: TYPE_NORMAL
 - en: In any case, the XML attributes are self-explanatory.
+  id: totrans-132
   prefs: []
   type: TYPE_NORMAL
 - en: The load method
+  id: totrans-133
   prefs:
   - PREF_H3
   type: TYPE_NORMAL
 - en: 'At last, the `load` method does the hard job of loading the file into Ghidra.
     Let''s analyze the code. The loader starts obtaining information from the program
     being analyzed:'
+  id: totrans-134
   prefs: []
   type: TYPE_NORMAL
 - en: 'It obtains the bytes of the file being analyzed by calling the `MemoryBlockUtils.createFileBytes`
     function (lines `09`–`14`):'
+  id: totrans-135
   prefs:
   - PREF_OL
   type: TYPE_NORMAL
 - en: '[PRE36]'
+  id: totrans-136
   prefs:
   - PREF_IND
   type: TYPE_PRE
+  zh: '[PRE36]'
 - en: The result of the call to `MemoryBlockUtils.createFileBytes()` is the `fileBytes`
     variable containing all the bytes of the file.
+  id: totrans-137
   prefs:
   - PREF_IND
   type: TYPE_NORMAL
@@ -569,123 +765,176 @@
     (for example, the `CS` register) pointing to some segment of memory (for example,
     `code segment`) and an offset. The task of creating an address space for Intel-segmented
     address spaces is performed in two steps:'
+  id: totrans-138
   prefs:
   - PREF_OL
   type: TYPE_NORMAL
 - en: 'a. First, it obtains the address factory for the language of the current program
     (line `15`):'
+  id: totrans-139
   prefs:
   - PREF_IND
   type: TYPE_NORMAL
+  zh: a. 首先，它获取当前程序语言的地址工厂（第`15`行）：
 - en: '[PRE37]'
+  id: totrans-140
   prefs:
   - PREF_IND
   type: TYPE_PRE
+  zh: '[PRE37]'
 - en: The `getAddressFactory()` result is `af`, an `AddressFactory` object that is
     expected to be a segmented address space. It is checked by the `instanceof` operator.
+  id: totrans-141
   prefs:
   - PREF_IND
   type: TYPE_NORMAL
+  zh: '`getAddressFactory()`的结果是`af`，它是一个`AddressFactory`对象，预计是一个分段地址空间。通过`instanceof`运算符进行检查。'
 - en: 'b. Next, it obtains the segmented address space using the address factory (lines
     `23`–`24`):'
+  id: totrans-142
   prefs:
   - PREF_IND
   type: TYPE_NORMAL
+  zh: b. 接下来，它通过地址工厂获取分段地址空间（第`23`–`24`行）：
 - en: '[PRE38]'
+  id: totrans-143
   prefs:
   - PREF_IND
   type: TYPE_PRE
+  zh: '[PRE38]'
 - en: 'After creating an address space, it retrieves the `25`) and the processor register
     context over the address space (line `26`):'
+  id: totrans-144
   prefs:
   - PREF_OL
   type: TYPE_NORMAL
+  zh: 在创建地址空间后，它检索了`25`）以及处理器寄存器上下文（第`26`行）：
 - en: '[PRE39]'
+  id: totrans-145
   prefs:
   - PREF_IND
   type: TYPE_PRE
+  zh: '[PRE39]'
 - en: 'Finally, it obtains the memory of the program (line `27`):'
+  id: totrans-146
   prefs:
   - PREF_OL
   type: TYPE_NORMAL
+  zh: 最后，它获取程序的内存（第`27`行）：
 - en: '[PRE40]'
+  id: totrans-147
   prefs:
   - PREF_IND
   type: TYPE_PRE
+  zh: '[PRE40]'
 - en: 'By using the old-style DOS executable (MZ) parser (line `28`), the loader obtained
     the DOS header (line `34`) and a reader (lines `35` and `36`), allowing it to
     read bytes from the generic provider:'
+  id: totrans-148
   prefs:
   - PREF_OL
   type: TYPE_NORMAL
+  zh: 通过使用旧式DOS可执行文件（MZ）解析器（第`28`行），加载器获得了DOS头（第`34`行）和读取器（第`35`和`36`行），使其能够从通用提供程序中读取字节：
 - en: '[PRE41]'
+  id: totrans-149
   prefs:
   - PREF_IND
   type: TYPE_PRE
+  zh: '[PRE41]'
 - en: 'After retrieving all the previously mentioned information about the executable
     file, the loading actions are performed. Since actions are long tasks, every action
     is preceded by a `monitor.isCancelled()` call, allowing it to cancel the loading
     process (lines `38`, `43`, `47`, `51`, and `55`), and the user is notified when
     starting the action via the `monitor.setMessage()` call (lines `39`, `44`, `48`,
     `52`, and `56`):'
+  id: totrans-150
   prefs: []
   type: TYPE_NORMAL
+  zh: 在获取了有关可执行文件的所有上述信息后，加载操作开始执行。由于操作是长任务，因此每个操作前都会调用`monitor.isCancelled()`，使其能够取消加载过程（第`38`、`43`、`47`、`51`和`55`行），并且用户在开始操作时会通过`monitor.setMessage()`调用（第`39`、`44`、`48`、`52`和`56`行）收到通知：
 - en: '[PRE42]'
+  id: totrans-151
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE42]'
 - en: 'In the upcoming sections, we will look over the following actions in order
     to deeply understand the `load` function:'
+  id: totrans-152
   prefs: []
   type: TYPE_NORMAL
+  zh: 在接下来的部分中，我们将依次讨论以下操作，以深入理解`load`函数：
 - en: '`processSegments()` (line `34`):'
+  id: totrans-153
   prefs:
   - PREF_OL
   type: TYPE_NORMAL
+  zh: '`processSegments()`（第`34`行）：'
 - en: '[PRE43]'
+  id: totrans-154
   prefs:
   - PREF_IND
   type: TYPE_PRE
+  zh: '[PRE43]'
 - en: '`adjustSegmentStarts()` (line `39`):'
+  id: totrans-155
   prefs:
   - PREF_OL
   type: TYPE_NORMAL
+  zh: '`adjustSegmentStarts()`（第`39`行）：'
 - en: '[PRE44]'
+  id: totrans-156
   prefs:
   - PREF_IND
   type: TYPE_PRE
+  zh: '[PRE44]'
 - en: '`doRelocations()` (line `43`):'
+  id: totrans-157
   prefs:
   - PREF_OL
   type: TYPE_NORMAL
+  zh: '`doRelocations()`（第`43`行）：'
 - en: '[PRE45]'
+  id: totrans-158
   prefs:
   - PREF_IND
   type: TYPE_PRE
+  zh: '[PRE45]'
 - en: '`createSymbols()` (line `47`):'
+  id: totrans-159
   prefs:
   - PREF_OL
   type: TYPE_NORMAL
+  zh: '`createSymbols()`（第`47`行）：'
 - en: '[PRE46]'
+  id: totrans-160
   prefs:
   - PREF_IND
   type: TYPE_PRE
+  zh: '[PRE46]'
 - en: '`setRegisters()` (line `56`):'
+  id: totrans-161
   prefs:
   - PREF_OL
   type: TYPE_NORMAL
+  zh: '`setRegisters()`（第`56`行）：'
 - en: '[PRE47]'
+  id: totrans-162
   prefs:
   - PREF_IND
   type: TYPE_PRE
+  zh: '[PRE47]'
 - en: After covering the sequence of calls performed by the `load` function, let's
     analyze each one in detail. In the following section, we will start by looking
     at how program segments are processed.
+  id: totrans-163
   prefs: []
   type: TYPE_NORMAL
+  zh: 在回顾`load`函数执行的调用序列后，我们将逐一详细分析每个调用。接下来的部分将首先讨论程序段是如何被处理的。
 - en: Processing segments
+  id: totrans-164
   prefs:
   - PREF_H4
   type: TYPE_NORMAL
+  zh: 处理段
 - en: 'The `processSegments()` function processes program segments. The following
     code snippet illustrates how it calculates segments. The code snippet extracts
     the code segment relative address from the DOS header via `dos.e_cs()`, as shown
@@ -693,134 +942,209 @@
     (in this case, `csStart`, whose value is equal to the `INITIAL_SEGMENT_VAL` constant,
     as shown on line `00`), it adds the `csStart` value to it, as shown again on line
     `04`:'
+  id: totrans-165
   prefs: []
   type: TYPE_NORMAL
+  zh: '`processSegments()`函数处理程序段。以下代码片段展示了它如何计算段。代码片段通过`dos.e_cs()`从DOS头提取代码段相对地址，如第`04`行所示，并且由于该地址是相对于程序加载所在的段（在本例中为`csStart`，其值等于`INITIAL_SEGMENT_VAL`常量，如第`00`行所示），它将`csStart`的值加到该地址上，如第`04`行再次所示：'
 - en: '[PRE48]'
+  id: totrans-166
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE48]'
 - en: '[PRE49]'
+  id: totrans-167
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE49]'
 - en: '[PRE50]'
+  id: totrans-168
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE50]'
 - en: '[PRE51]'
+  id: totrans-169
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE51]'
 - en: '[PRE52]'
+  id: totrans-170
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE52]'
 - en: 'After calculating the segment addresses, `processSegments()` uses the Ghidra
     `MemoryBlockUtils.createInitializedBlock()` (line `01`) and `MemoryBlockUtils.createUninitializedBlock()`
     (line `09`) API methods to create the segments (memory regions) that were previously
     calculated:'
+  id: totrans-171
   prefs: []
   type: TYPE_NORMAL
+  zh: 在计算完段地址后，`processSegments()`使用Ghidra的`MemoryBlockUtils.createInitializedBlock()`（第`01`行）和`MemoryBlockUtils.createUninitializedBlock()`（第`09`行）API方法来创建先前计算出的段（内存区域）：
 - en: '[PRE53]'
+  id: totrans-172
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE53]'
 - en: '[PRE54]'
+  id: totrans-173
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE54]'
 - en: '[PRE55]'
+  id: totrans-174
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE55]'
 - en: '[PRE56]'
+  id: totrans-175
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE56]'
 - en: '[PRE57]'
+  id: totrans-176
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE57]'
 - en: '[PRE58]'
+  id: totrans-177
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE58]'
 - en: '[PRE59]'
+  id: totrans-178
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE59]'
 - en: '[PRE60]'
+  id: totrans-179
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE60]'
 - en: '[PRE61]'
+  id: totrans-180
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE61]'
 - en: '[PRE62]'
+  id: totrans-181
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE62]'
 - en: '[PRE63]'
+  id: totrans-182
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE63]'
 - en: '[PRE64]'
+  id: totrans-183
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE64]'
 - en: '[PRE65]'
+  id: totrans-184
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE65]'
 - en: '[PRE66]'
+  id: totrans-185
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE66]'
 - en: '[PRE67]'
+  id: totrans-186
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE67]'
 - en: '[PRE68]'
+  id: totrans-187
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE68]'
 - en: Since segment processing is not precise, it requires some adjustment. In the
     next section, we will look at how to adjust the segments.
+  id: totrans-188
   prefs: []
   type: TYPE_NORMAL
+  zh: 由于段处理不精确，因此需要进行一些调整。在下一部分中，我们将讨论如何调整这些段。
 - en: Adjusting segment starts
+  id: totrans-189
   prefs:
   - PREF_H4
   type: TYPE_NORMAL
+  zh: 调整段开始位置
 - en: 'The function responsible for segment adjustment is `adjustSegmentStarts()`.
     It receives the `prog` program object as a parameter (an object of the `Program`
     class). It also retrieves the memory of the program via `prog.getMemory()` (line
     `00`), which allows access to its blocks of memory via the `getBlocks()` method
     (line `01`):'
+  id: totrans-190
   prefs: []
   type: TYPE_NORMAL
+  zh: 负责段调整的函数是`adjustSegmentStarts()`。它接收`prog`程序对象作为参数（`Program`类的一个对象）。它还通过`prog.getMemory()`（第`00`行）获取程序的内存，并通过`getBlocks()`方法（第`01`行）访问其内存块：
 - en: '[PRE69]'
+  id: totrans-191
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE69]'
 - en: '[PRE70]'
+  id: totrans-192
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE70]'
 - en: 'The approach to adjust the segment consists of checking whether the starting
     bytes (`0x10` bytes) of the current block contain a far return (`FAR_RETURN_OPCODE`,
     as shown on line `00`), in which case the block is split by the far return (line
     `03`) appending it and the code preceding it to the previous block of memory (line
     `04`):'
+  id: totrans-193
   prefs: []
   type: TYPE_NORMAL
 - en: '[PRE71]'
+  id: totrans-194
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE71]'
 - en: '[PRE72]'
+  id: totrans-195
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE72]'
 - en: '[PRE73]'
+  id: totrans-196
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE73]'
 - en: '[PRE74]'
+  id: totrans-197
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE74]'
 - en: '[PRE75]'
+  id: totrans-198
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE75]'
 - en: '[PRE76]'
+  id: totrans-199
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE76]'
 - en: '[PRE77]'
+  id: totrans-200
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE77]'
 - en: '[PRE78]'
+  id: totrans-201
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE78]'
 - en: Now that we've covered segment adjustment, let's see how code is loaded in the
     next section.
+  id: totrans-202
   prefs: []
   type: TYPE_NORMAL
 - en: Code relocation
+  id: totrans-203
   prefs:
   - PREF_H4
   type: TYPE_NORMAL
@@ -829,78 +1153,122 @@
     uses the `e_lfarlc()` method of `DOSHeader` to retrieve the address of the MZ
     relocation table (line `01`). By using `e_crlc()`, it also retrieves the number
     of entries comprising the relocation table (line `02`).
+  id: totrans-204
   prefs: []
   type: TYPE_NORMAL
 - en: 'For each entry (line `03`), the segment and the offset being relative to the
     segment (lines `04`-`05`) allows you to calculate the location (line `07`), which
     is relative to the segment the program is loaded at (line `08`):'
+  id: totrans-205
   prefs: []
   type: TYPE_NORMAL
 - en: '[PRE79]'
+  id: totrans-206
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE79]'
 - en: '[PRE80]'
+  id: totrans-207
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE80]'
 - en: '[PRE81]'
+  id: totrans-208
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE81]'
 - en: '[PRE82]'
+  id: totrans-209
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE82]'
 - en: '[PRE83]'
+  id: totrans-210
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE83]'
 - en: '[PRE84]'
+  id: totrans-211
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE84]'
 - en: '[PRE85]'
+  id: totrans-212
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE85]'
 - en: '[PRE86]'
+  id: totrans-213
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE86]'
 - en: '[PRE87]'
+  id: totrans-214
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE87]'
 - en: '[PRE88]'
+  id: totrans-215
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE88]'
 - en: '[PRE89]'
+  id: totrans-216
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE89]'
 - en: '[PRE90]'
+  id: totrans-217
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE90]'
 - en: '[PRE91]'
+  id: totrans-218
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE91]'
 - en: '[PRE92]'
+  id: totrans-219
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE92]'
 - en: '[PRE93]'
+  id: totrans-220
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE93]'
 - en: '[PRE94]'
+  id: totrans-221
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE94]'
 - en: '[PRE95]'
+  id: totrans-222
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE95]'
 - en: '[PRE96]'
+  id: totrans-223
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE96]'
 - en: '[PRE97]'
+  id: totrans-224
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE97]'
 - en: '[PRE98]'
+  id: totrans-225
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE98]'
 - en: Now that the code is loaded, it is also possible to create useful symbols for
     referencing it. We will overview how to create symbols in the next section.
+  id: totrans-226
   prefs: []
   type: TYPE_NORMAL
 - en: Creating symbols
+  id: totrans-227
   prefs:
   - PREF_H4
   type: TYPE_NORMAL
@@ -908,17 +1276,24 @@
     is a symbol. To do that, it uses two `DOSHeader` methods, `e_ip()` (line `00`)
     and `e_cs()` (lines `01`–`02`), whose values are relative to the segment the program
     was loaded at:'
+  id: totrans-228
   prefs: []
   type: TYPE_NORMAL
 - en: '[PRE99]'
+  id: totrans-229
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE99]'
 - en: '[PRE100]'
+  id: totrans-230
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE100]'
 - en: '[PRE101]'
+  id: totrans-231
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE101]'
 - en: 'By using `e_ip()`, the program retrieves the IP start value (the entry point
     offset relative to the code segment) while the code segment is retrieved via `e_cs()`.
     By calling to the `getAddress()` method of `SegmentedAddressSpace` and giving
@@ -926,25 +1301,36 @@
     Finally, it creates the label for the entry point using the `createLabel()` method
     of the `SymbolTable` class (lines `01`–`02`) and adds the entry point symbol (line
     `03`) to the program:'
+  id: totrans-232
   prefs: []
   type: TYPE_NORMAL
 - en: '[PRE102]'
+  id: totrans-233
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE102]'
 - en: '[PRE103]'
+  id: totrans-234
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE103]'
 - en: '[PRE104]'
+  id: totrans-235
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE104]'
 - en: '[PRE105]'
+  id: totrans-236
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE105]'
 - en: After creating the entry point symbol, let's look at how to set the segment
     registers.
+  id: totrans-237
   prefs: []
   type: TYPE_NORMAL
 - en: Setting registers
+  id: totrans-238
   prefs:
   - PREF_H4
   type: TYPE_NORMAL
@@ -952,203 +1338,258 @@
     stack and segment register objects (`ss`, `sp`, `ds`, and `cs`) by calling the
     `getRegister()` method of `ProgramContext`. Then, it sets the register object
     via `setValue()` with values extracted from the DOS header.
+  id: totrans-239
   prefs: []
   type: TYPE_NORMAL
 - en: 'The following code snippet illustrates how to retrieve the `ss` register (line
     `00`) and set the appropriate MZ header-retrieved value (line `04`) to it (line
     `01`):'
+  id: totrans-240
   prefs: []
   type: TYPE_NORMAL
 - en: '[PRE106]'
+  id: totrans-241
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE106]'
 - en: '[PRE107]'
+  id: totrans-242
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE107]'
 - en: '[PRE108]'
+  id: totrans-243
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE108]'
 - en: '[PRE109]'
+  id: totrans-244
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE109]'
 - en: '[PRE110]'
+  id: totrans-245
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE110]'
 - en: '[PRE111]'
+  id: totrans-246
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE111]'
 - en: '[PRE112]'
+  id: totrans-247
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE112]'
 - en: The MzLoader source code
+  id: totrans-248
   prefs: []
   type: TYPE_NORMAL
 - en: 'In the previous code snippets, a lot of implementation details were omitted
     in order to keep the focus on the key aspects and relevant parts. If you want
     to dig into the details, please, follow this link: [https://github.com/NationalSecurityAgency/ghidra/blob/master/Ghidra/Features/Base/src/main/java/ghidra/app/util/opinion/MzLoader.java](https://github.com/NationalSecurityAgency/ghidra/blob/master/Ghidra/Features/Base/src/main/java/ghidra/app/util/opinion/MzLoader.java).'
+  id: totrans-249
   prefs: []
   type: TYPE_NORMAL
 - en: As you will notice, the loader development complexity strongly depends on the
     binary format. We learned about loaders by analyzing a real-world example; therefore,
     the complexity of the code shown here is real-world complexity.
+  id: totrans-250
   prefs: []
   type: TYPE_NORMAL
 - en: Understanding filesystem loaders
+  id: totrans-251
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
 - en: 'Ghidra also allows us to load filesystems. Filesystems are, basically, archive
     files (a file containing other files):'
+  id: totrans-252
   prefs: []
   type: TYPE_NORMAL
 - en: '![ Figure 11.9 – A file named hello_world.zip imported as a filesystem'
+  id: totrans-253
   prefs: []
   type: TYPE_NORMAL
 - en: '](img/B16207_11_009.jpg)'
+  id: totrans-254
   prefs: []
   type: TYPE_NORMAL
 - en: Figure 11.9 – A file named hello_world.zip imported as a filesystem
+  id: totrans-255
   prefs: []
   type: TYPE_NORMAL
 - en: 'A good example of a filesystem loader implemented by Ghidra is the ZIP compressed
     format loader, which is available here: [https://github.com/NationalSecurityAgency/ghidra/tree/master/Ghidra/Features/FileFormats/src/main/java/ghidra/file/formats/zip](https://github.com/NationalSecurityAgency/ghidra/tree/master/Ghidra/Features/FileFormats/src/main/java/ghidra/file/formats/zip).'
+  id: totrans-256
   prefs: []
   type: TYPE_NORMAL
 - en: 'To develop a filesystem, you will need to implement the `GFileSystem` interface
     with the following methods: `getDescription`, `getFileCount`, `getFSRL`, `getInfo`,
     `getInputStream`, `getListing`, `getName`, `getRefManager`, `getType`, `isClosed`,
     `isStatic` `lookup`, and `close`.'
+  id: totrans-257
   prefs: []
   type: TYPE_NORMAL
 - en: FileSystem Resource Locator
+  id: totrans-258
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
 - en: 'A remarkable method of the `GFileSystem` interface is `getFSRL`, which allows
     you to retrieve the **FileSystem Resource Locator** (**FSRL**). An FSRL is a string
     allowing Ghidra to access files and directories stored in a filesystem:'
+  id: totrans-259
   prefs: []
   type: TYPE_NORMAL
 - en: 'The FSRL for accessing a file located in the local filesystem: `file://directory/subdirectory/file`.'
+  id: totrans-260
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
 - en: 'The FSRL for accessing a file located in a ZIP archive file: `file://directory/subdirectory/example.zip|zip://file`.'
+  id: totrans-261
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
 - en: 'The FSRL for accessing a file in nested filesystems (for example, `tar` stored
     in a `zip` file): `file://directory/subdirectory/example.zip|zip:// directory
     /nested.tar|tar://file`.'
+  id: totrans-262
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
 - en: 'The FSRL for accessing a file but checking its `MD5`: `file://directory/subdirectory/example.zip?MD5=
     6ab0553f4ffedd5d1a07ede1230c4887 |zip://file?MD5= 0ddb5d230a202d20a8de31a69d836379`.'
+  id: totrans-263
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
 - en: Another remarkable method is `getRefManager`, which allows accessing `GFileSystem`
     but preventing it from being closed via the `close` method.
+  id: totrans-264
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
 - en: Finally, `FileSystemService` can be used to instantiate filesystems.
+  id: totrans-265
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
 - en: Filesystem loaders
+  id: totrans-266
   prefs:
   - PREF_IND
   type: TYPE_NORMAL
 - en: 'If you want to learn more about loaders, please check out the following official
     documentation links:'
+  id: totrans-267
   prefs:
   - PREF_IND
   type: TYPE_NORMAL
 - en: – [https://ghidra.re/ghidra_docs/api/ghidra/formats/gfilesystem/GFileSystem.html](https://ghidra.re/ghidra_docs/api/ghidra/formats/gfilesystem/GFileSystem.html)
+  id: totrans-268
   prefs:
   - PREF_IND
   type: TYPE_NORMAL
 - en: – [https://ghidra.re/ghidra_docs/api/ghidra/formats/gfilesystem/FSRL.html](https://ghidra.re/ghidra_docs/api/ghidra/formats/gfilesystem/FSRL.html)
+  id: totrans-269
   prefs:
   - PREF_IND
   type: TYPE_NORMAL
 - en: – [https://ghidra.re/ghidra_docs/api/ghidra/formats/gfilesystem/FileSystemService.html](https://ghidra.re/ghidra_docs/api/ghidra/formats/gfilesystem/FileSystemService.html)
+  id: totrans-270
   prefs:
   - PREF_IND
   type: TYPE_NORMAL
 - en: This is the way that filesystem loaders are implemented. If you want to look
     further into the details, please remember to check the ZIP filesystem implementation.
+  id: totrans-271
   prefs: []
   type: TYPE_NORMAL
 - en: Summary
+  id: totrans-272
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
 - en: In this chapter, you learned what a binary file is and how it can be dichotomously
     classified as a raw binary or a formatted binary, and you also learned that any
     formatted binary is also a raw binary.
+  id: totrans-273
   prefs: []
   type: TYPE_NORMAL
 - en: You learned skills for Ghidra file importing by loading both raw binaries and
     formatted binaries. This new skill allows you to configure better options when
     loading a file and manually perform some adjustments if necessary.
+  id: totrans-274
   prefs: []
   type: TYPE_NORMAL
 - en: You also learned about the old-style DOS executable format by producing a `hello
     world` program from scratch written in assembly language and later analyzing it
     with a hexadecimal editor.
+  id: totrans-275
   prefs: []
   type: TYPE_NORMAL
 - en: Finally, you learned how to extend Ghidra with new loaders and filesystems,
     allowing you to import unsupported and exoteric binary formats and archive files.
     You learned this by analyzing the old-style DOS executable format loader, a good
     real-world example to start with.
+  id: totrans-276
   prefs: []
   type: TYPE_NORMAL
 - en: In the next chapter, we will cover an advanced topic in Ghidra, which is processor
     module development. This skill will enable you to incorporate unsupported processors
     into Ghidra. It includes virtualization processors commonly used in advanced binary
     obfuscation. Beyond that, you will learn a lot about disassemblers along the way.
+  id: totrans-277
   prefs: []
   type: TYPE_NORMAL
 - en: Questions
+  id: totrans-278
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
 - en: What is the difference between raw binaries and formatted binaries?
+  id: totrans-279
   prefs:
   - PREF_OL
   type: TYPE_NORMAL
 - en: Taking into account that any formatted binary is also a raw binary, why are
     formatted binaries necessary?
+  id: totrans-280
   prefs:
   - PREF_OL
   type: TYPE_NORMAL
 - en: What is an old-style DOS executable and what software pieces comprise the loader
     enabling Ghidra to support it?
+  id: totrans-281
   prefs:
   - PREF_OL
   type: TYPE_NORMAL
 - en: Further reading
+  id: totrans-282
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
 - en: 'You can refer to the following links for more information on the topics covered
     in this chapter:'
+  id: totrans-283
   prefs: []
   type: TYPE_NORMAL
 - en: '*Mastering Assembly Programming*, *Alexey Lyashko*, *September 2017*: [https://subscription.packtpub.com/book/application_development/9781787287488](https://subscription.packtpub.com/book/application_development/9781787287488)'
+  id: totrans-284
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
 - en: 'The DOS MZ executable – format specification using the Kaitai Struct declarative
     language: [https://formats.kaitai.io/dos_mz/index.html](https://formats.kaitai.io/dos_mz/index.html)'
+  id: totrans-285
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
 - en: 'Online Ghidra loader documentation: [https://ghidra.re/ghidra_docs/api/ghidra/app/util/opinion/Loader.html](https://ghidra.re/ghidra_docs/api/ghidra/app/util/opinion/Loader.html)'
+  id: totrans-286
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
