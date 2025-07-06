@@ -1,6 +1,6 @@
-# 6
 
-# Windows 人工制品分析
+
+# 第六章：Windows 人工制品分析
 
 世界上大多数设备都运行 Microsoft Windows 操作系统，微软的操作系统市场份额接近 90%（[`netmarketshare.com/`](https://netmarketshare.com/)）。根据我个人的经验，我检查过的 Windows 操作系统远远多于其他任何操作系统；macOS 是第二常见的操作系统，而 Linux 则排名第三。尽管你必须准备分析所有操作系统，但无论哪个操作系统在你所工作领域中最为常见，你应该将重点放在它上面。
 
