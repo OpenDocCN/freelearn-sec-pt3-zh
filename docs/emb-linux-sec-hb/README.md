@@ -1,6 +1,6 @@
-# Github DevOps 加速指南
+# 嵌入式 Linux 安全手册
 
-> 原文：[`annas-archive.org/md5/677f27c30764b3701bc2b6cf6de3a30e`](https://annas-archive.org/md5/677f27c30764b3701bc2b6cf6de3a30e)
+> 原文：[`annas-archive.org/md5/e50b83747de08670d28b398597e26f9e`](https://annas-archive.org/md5/e50b83747de08670d28b398597e26f9e)
 > 
 > 译者：[飞龙](https://github.com/wizardforcel)
 > 

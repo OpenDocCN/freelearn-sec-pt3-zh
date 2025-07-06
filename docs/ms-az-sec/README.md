@@ -1,6 +1,6 @@
-# Github DevOps 加速指南
+# 精通 Azure 安全
 
-> 原文：[`annas-archive.org/md5/677f27c30764b3701bc2b6cf6de3a30e`](https://annas-archive.org/md5/677f27c30764b3701bc2b6cf6de3a30e)
+> 原文：[`annas-archive.org/md5/e28739afb6eb8314bc7789c09ec83f5b`](https://annas-archive.org/md5/e28739afb6eb8314bc7789c09ec83f5b)
 > 
 > 译者：[飞龙](https://github.com/wizardforcel)
 > 

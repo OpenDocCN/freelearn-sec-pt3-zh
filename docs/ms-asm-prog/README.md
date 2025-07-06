@@ -1,6 +1,6 @@
-# Github DevOps 加速指南
+# 精通汇编语言编程
 
-> 原文：[`annas-archive.org/md5/677f27c30764b3701bc2b6cf6de3a30e`](https://annas-archive.org/md5/677f27c30764b3701bc2b6cf6de3a30e)
+> 原文：[`annas-archive.org/md5/615c1868845695f8399bbdf3f670718e`](https://annas-archive.org/md5/615c1868845695f8399bbdf3f670718e)
 > 
 > 译者：[飞龙](https://github.com/wizardforcel)
 > 
