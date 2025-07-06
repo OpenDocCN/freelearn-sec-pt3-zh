@@ -1,0 +1,840 @@
+- en: '*Chapter 5*: Azure Key Vault'
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'When talking about cloud computing, discussions are often directed towards
+    data protection, encryption, compliance, data loss (and data loss prevention),
+    trust, and other buzzwords that center around the same group of topics. What they
+    all have in common is the need for a trusted service that helps them to secure
+    cloud data without giving a cloud vendor access to both your data and the corresponding
+    encryption keys. Let''s imagine that you want to create an Azure resource, like
+    a virtual machine, that you will need admin credentials for. In this case, you
+    don''t want to hard code usernames and passwords in your deployment script or
+    template, do you? This is a scenario where Azure Key Vault comes into play. In
+    this chapter, we will cover the following topics:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Understanding Azure Key Vault
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Understanding service-to-service authentication
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Using Azure Key Vault in deployment scenarios
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Understanding Azure Key Vault
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Azure Key Vault is a secure, cloud-based storage solution for keys, secrets,
+    and certificates. Tokens, passwords, certificates, API keys, and other secrets
+    can be securely stored and access to them can be granularly controlled using Azure
+    Key Vault. The service can also be used as a key-management solution. Azure Key
+    Vault makes it easy to create and control the encryption keys that are used to
+    encrypt your data. Another usage scenario is Secure Sockets Layer/Transport Layer
+    Security (SSL/TLS) certificate enrolment and management. You can use Azure Key
+    Vault to address certificate lifecycle management for both Azure and internally
+    connected resources. Secrets and keys that are stored in an Azure Key Vault can
+    be protected either by software or HSMs (hardware security modules) that are FIPS
+    140-2 Level 2 validated.
+  prefs: []
+  type: TYPE_NORMAL
+- en: As you have already learned, you can use Azure Key Vault to manage keys, secrets,
+    and certificates.
+  prefs: []
+  type: TYPE_NORMAL
+- en: A cryptographic key is used for data encryption. Azure Key Vault represents
+    keys as **JSON Web Key** (**JWK**) objects, which are declared as soft or hard
+    keys. A hard key is processed in a **hardware security module** (**HSM**), whereas
+    a soft key is processed in the software by Azure Key Vault. A soft key is still
+    encrypted at rest using a hard key, which is stored in an HSM. Clients can either
+    request Azure Key Vault to generate a key or import an existing RSA or **elliptic**
+    **curve** (**EC**) key. RSA and EC are the algorithms that are supported by Azure
+    Key Vault.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: A secret is basically a string that is encrypted and stored in Azure Key Vault.
+    A secret can be used to securely store passwords, storage account keys, and other
+    highly valuable strings.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: A certificate in Azure Key Vault is an x509 certificate that is issued by a
+    **public key infrastructure** (**PKI**). You can either let Azure Key Vault request
+    a certificate from a supported public **certification authority** (**CA**), which
+    today are DigiCert and GlobalSign, or you can create a **certificate signing request**
+    (**CSR**) within Azure Key Vault and manually let this CSR be signed by any public
+    CA of your choice.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: In this chapter, you will learn how to work with key vault entities. But first,
+    let's look at service-to-service authentication in Azure Key Vault, which is needed
+    to enable other Azure services to leverage Azure Key Vault during deployment or
+    resource-management operations.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Access to an Azure key vault is granted by RBAC. That said, you need to have
+    an Azure AD account to get access to the service, which means that you can use
+    all the protective options for interactive authentications that were discussed
+    in [*Chapter 3*](B15414_03_Final_JM_ePub.xhtml#_idTextAnchor060), *Managing Cloud
+    Identities*. Furthermore, access to items protected by Azure key vault can be
+    restricted to only single aspects of Azure Key Vault. For example, an account
+    could be granted access only to secrets, but not to keys or certificates, or you
+    could grant an account only a subset of permissions, but for all entities stored
+    in a key vault. This granular rights management, in addition to RBAC, which will
+    only grant access to an Azure key vault (being an Azure resource), is implemented
+    by access policies. Let's look at these policies in a little more detail in the
+    next section.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Understanding access policies
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'With access policies, you can granularly define who will get what level of
+    access rights to a single Azure Key Vault instance:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Fig. 5.1 – Azure Key Vault access policies'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Fig_5.1.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Fig. 5.1 – Azure Key Vault access policies
+  prefs: []
+  type: TYPE_NORMAL
+- en: As you can see in the preceding screenshot, the user account called Tom has
+    been granted several permissions to access keys, secrets, and certificates in
+    the **Access policies** settings section of the Azure Key Vault **MasteringAzSec**
+    section. Besides that, you can enable access to keys and secrets for Azure VMs,
+    ARM, and Azure Disk Encryption. These options are necessary if you want to grant
+    Azure VMs in your tenant read access to secrets so that they can be retrieved
+    during VM deployments or if you want to enable Azure Resource Manager to retrieve
+    secrets so they can be used in a template deployment. The third option specifies
+    whether Azure Disk Encryption—a service that encrypts Azure VMs' disks using BitLocker
+    or dm-crypt, depending on the operating system used in the Azure VM—is allowed
+    to retrieve secrets from the Azure key vault and unwrap values from stored keys.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Before we move on to learn more about service-to-service authentication with
+    Azure Key Vault, let's first take a deeper look at what the single entities in
+    Azure Key Vault are.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Understanding service-to-service authentication
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'As we mentioned before, access to an Azure key vault and its entities is usually
+    granted on a per-user basis. That said, to enable service-to-service authentication,
+    you could create an Azure AD application with associated credentials and use this
+    service principal to get an access token for your application. It''s a pretty
+    straightforward process:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Go to **Azure Active Directory** | **App registrations** in the Azure portal
+    and select **New registration** to start the wizard:![Fig. 5.2 – Creating a new
+    app registration
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '](img/Fig_5.2.jpg)'
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: Fig. 5.2 – Creating a new app registration
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: Enter a name and confirm your choice.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Create a client secret by navigating to the **Certificates & secrets** option
+    in the app registration and then select **New client secret**:![Fig. 5.3 – Creating
+    a new client secret
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '](img/Fig_5.3.jpg)'
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: Fig. 5.3 – Creating a new client secret
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: 'Enter a description and decide whether the secret will expire in 1 or 2 years,
+    or whether it will always be valid. After confirming your choices and leaving
+    the wizard, you are presented with the new client secret and its value, which
+    you can copy and then use for authentication:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '![Fig. 5.4 – Your client secret'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Fig_5.4.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Fig. 5.4 – Your client secret
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'A quicker way is to use the Azure CLI. With the following command, you can
+    simply create a new service principal with the name `MasteringAzSecSP`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: The engine will use default settings for the account creation, and once the
+    process is finished, you will find the username `appId` and the client secret
+    password in the CLI window, as shown in the following screenshot`:`
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Fig. 5.5 – Using the Azure CLI to create a new service principal'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Fig_5.5.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Fig. 5.5 – Using the Azure CLI to create a new service principal
+  prefs: []
+  type: TYPE_NORMAL
+- en: The service principal behaves similarly to a user account in terms of access
+    management, which means that you can use the username (the application or client
+    ID) as a principal when granting access to the key vault and its entities.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'While this approach works great, there are two downsides that come with it:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: When creating the application credentials, you will get the app ID and the client
+    secret, which are usually hardcoded in your source code. It's a dilemma, because
+    you cannot store these credentials in Azure Key Vault as they are needed to authenticate
+    before being granted access to the key vault.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Application credentials expire and the renewal process may cause application
+    downtime. You don't want to use a client secret that will never expire and that
+    is hardcoded in your source code.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: So, for automated deployments, we need another approach, which is where the
+    **Managed Identities for Azure Resources** service comes into play. So let's move
+    one step further and learn how this service can address the dilemma.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Understanding Managed Identities for Azure Resources
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Needing credentials to get access to services is a common problem that you will
+    often encounter. Azure Key Vault is an important part of your application design
+    because you can use it to securely store and manage credentials for other services.
+    But Azure Key Vault itself is a service that requires authentication before you
+    are granted access. With *Managed Identities for Azure Resources*, a free feature
+    of Azure Active Directory, you can solve this dilemma. The service provides other
+    Azure services with an automatically managed identity in Azure AD.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'There are two different types of managed identities within the service:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: A system-assigned managed identity is directly enabled on an instance of an
+    Azure service. When the managed identity is enabled, Azure AD automatically creates
+    an identity for the particular service in Azure AD that is automatically trusted
+    by the Azure subscription that the service instance is created in. The credentials
+    are automatically provided to the service instance after the identity is created.
+    The identity's lifecycle is directly tied to the service's lifecycle, which means
+    that a system-assigned managed identity is automatically removed from Azure AD
+    when the service is deleted.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: A user-assigned managed identity is a manually created Azure resource. When
+    creating a user-assigned managed identity, Azure AD will create a service principal
+    in the Azure AD tenant that is trusted by the Azure subscription you are currently
+    using. After creating the identity, you can assign it in one or several Azure
+    service instances. The user-assigned managed identity's lifecycle is organized
+    separately from the services' lifecycles that the identity is assigned to. In
+    other words, when an Azure resource with a user-assigned managed identity is deleted,
+    the managed identity is not automatically removed from Azure AD.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The relationship between a system-assigned managed identity and an Azure resource
+    is 1:1, which means that an Azure resource can only have one system-assigned managed
+    identity and this identity is only usable by the particular service it was created
+    for.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The relationship between the user-assigned managed identity and the Azure resource
+    is `n``:n`, which means that you can use several user-assigned managed identities
+    with one Azure resource at the same time, and that a single user-assigned managed
+    identity can be used by several different Azure resources.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Important Note
+  prefs: []
+  type: TYPE_NORMAL
+- en: Microsoft provides a list of Azure services that currently support system-assigned,
+    user-assigned, or both types of managed identities at [https://docs.microsoft.com/en-us/azure/active-directory/managed-identities-azure-resources/services-support-managed-identities.](https://docs.microsoft.com/en-us/azure/active-directory/managed-identities-azure-resources/services-support-managed-identities)
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The creation process of a system-assigned managed identity in the Azure portal
+    is very easy. All Azure resources that currently support managed identities have
+    an **Identity** option in the resource''s **Settings** section:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Fig. 5.6 – Activating a system-assigned managed identity for an Azure virtual
+    machine'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Fig_5.6.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Fig. 5.6 – Activating a system-assigned managed identity for an Azure virtual
+    machine
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The following steps show you how to activate a system-assigned managed identity
+    for an Azure virtual machine:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: On the **Settings** page, you can choose whether you want to activate a system-assigned
+    managed identity or whether you want to assign a user-assigned managed identity.
+    To activate a system-assigned managed identity, you just have to set the **Status**
+    toggle switch to **On** and then save your selection, as shown in the preceding
+    screenshot.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: You will then be informed that once you confirm this configuration, a managed
+    identity for your resource will be registered in Azure AD, and that once the process
+    has finished, you can grant permissions to that particular managed ID. In the
+    preceding example, I have enabled a system-assigned managed identity for an Azure
+    VM with the name `DC01`.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: When creating a new key vault access policy, we can now select the identity
+    with the same name to grant access to the key vault's entities.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 'If you want to create a new user-assigned managed identity, you have to navigate
+    to the managed identity service in the Azure portal:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: To do so, go to **All resources** and then search for **Managed Identities**.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Once you find the dialog, you can choose to create a new user-assigned managed
+    identity. As mentioned before, this is a new Azure resource and therefore needs
+    to be created in an Azure subscription and stored in an Azure resource group:![Fig.
+    5.7 – Creating a user-assigned managed identity
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '](img/Fig_5.7.jpg)'
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: Fig. 5.7 – Creating a user-assigned managed identity
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: Once the user-assigned managed identity is created, you can assign it to your
+    Azure resource, like the virtual machine we used in the preceding scenario.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Managed identities can also be used for Azure DevOps or Terraform authentication
+    against your Azure environment.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Important Note
+  prefs: []
+  type: TYPE_NORMAL
+- en: You can also use the Azure CLI, PowerShell, ARM templates, and Terraform to
+    create managed identities in Azure. You can find examples of these methods in
+    the GitHub repository that has been created for this book, at [https://github.com/PacktPublishing/Mastering-Azure-Security](https://github.com/PacktPublishing/Mastering-Azure-Security).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Let's assume that you only want to allow Azure resource creation via a DevOps
+    pipeline with all related processes, such as pull requests, authoring, and so
+    on. From a technical point of view, Azure DevOps is nothing but an application
+    that needs to be granted access to an Azure subscription (or management group).
+    Therefore, Azure DevOps needs a service principal that is either manually managed
+    as an application registration with all its downsides, or that can be automatically
+    managed using a managed identity. The same applies to Terraform, which is also
+    just an application that needs rights in an Azure environment.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Important Note
+  prefs: []
+  type: TYPE_NORMAL
+- en: You can use a managed identity for Terraform authentication against Azure AD;
+    however, in this case, the managed identity is created for an Azure VM and Terraform
+    needs to be started from within the VM so that it can make use of the ID.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now that you know how managed identities work and what options you have for
+    service-to-service authentication, let's move one step forward and see how you
+    can use Azure Key Vaults in your deployment scenarios.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Using Azure Key Vault in deployment scenarios
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Azure Key Vault is a nice service when it comes to securely storing and retrieving
+    credentials that are needed during resource creation. It also helps you to encrypt
+    Azure resources, such as Azure storage accounts or VM disks, with your own encryption
+    key.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In this section, we will cover several options for how to use Azure Key Vault
+    in deployment scenarios. You will find examples for PowerShell, ARM templates,
+    and Terraform, as these are the most common deployment tools when it comes to
+    creating Azure resources.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Important Note
+  prefs: []
+  type: TYPE_NORMAL
+- en: The first step you will always have to go through is to authenticate with Azure
+    AD using a principal that has been assigned the appropriate set of access rights
+    in the Azure environment that you want to deploy resources to, depending on the
+    task you want to perform and the resource that is affected by it.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Are you ready? Then let's start by creating a new Azure key vault and a secret
+    that can later be used in a VM deployment scenario in the following section.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Creating an Azure key vault and a secret
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: As with all Azure resources, you can use the Azure portal to create and manage
+    an Azure key vault. Although it might be convenient to click through the portal,
+    it is a better idea to use a scripting or template language for this. Azure Key
+    Vault is a critical resource when it comes to automated deployments. Today, there
+    is no way to granularly grant access to single items of the same type within the
+    same key vault. You can manage levels of access to keys, secrets, and certificates,
+    but only on a key-vault level, not on an item level. This is why you might want
+    to create several key vaults in the same Azure subscription. Using deployment
+    automation, you can make sure that all key vaults in your environment adhere to
+    the rules and policies you have defined.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Key vault creation in PowerShell
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'With PowerShell being an imperative scripting language, you need to define
+    all the steps that are necessary in the correct order:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The first thing you need to do is to log in with an account that has the appropriate
+    set of access rights to create a new resource group and Azure key vault instance
+    in your Azure subscription:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: You will then be prompted to enter your Azure login credentials, which are used
+    by PowerShell to go through the next steps. After logging in, you either create
+    a new resource group or refer to an existing one.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 'We will now assume that a new RG will be created using the following code snippet.
+    Before we do so, it makes sense to define all values for variables that are then
+    used in the following script sections:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: 'Now you can move on and create a new Azure key vault:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: '`ResourceGroupName` defines the Azure resource group that the key vault will
+    be created in.'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '`Location` defines the Azure region that the key vault will be created in.'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 'There are also some optional parameters that are defined in the preceding section:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`EnabledForDeployment` enables the `Microsoft.Compute` resource provider to
+    retrieve secrets from the Azure key vault during resource creation—for example,
+    when deploying a new VM.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`EnabledForTemplateDeployment` enables the **Azure Resource Manager**(**ARM**)
+    to get secrets for an Azure key vault when it is referenced in a template deployment,
+    such as when you are using ARM or Terraform.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`EnabledForDiskEncryption` enables the **Azure Disk Encryption** service to
+    get secrets and unwrap keys from an Azure key vault to use them in the disk encryption
+    process.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`SKU` defines the Azure key vault''s SKU (standard or premium).'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'After the Azure key vault has been created, you need to create an access policy.
+    In the following example, we grant access rights to secrets in the new Azure key
+    vault for the currently logged-in user account:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: 'You can then create a new key vault secret. In the following snippet, you enter
+    the secret as a secure string in the PowerShell session:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: Congratulations! You have just created your first Azure key vault and a secret
+    using PowerShell. Now, that you know how to create an Azure key vault and a key
+    vault secret for your deployment scenario, we can move on to the next section,
+    *Azure VM deployment*, in which you will learn how to use the resources that you
+    have just created in a more complex scenario.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Azure VM deployment
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: When deploying an Azure VM, you always need to pass local admin credentials
+    to it during the deployment process. The downside of deploying VMs using the Azure
+    portal is that you need to manually enter the respective local admin credentials
+    instead of using a secret that is stored in an Azure key vault. This is only one
+    of the reasons why infrastructure-as-code deployments definitely make sense in
+    an enterprise environment. In this section, you will learn how to reference credentials
+    that are stored in an Azure key vault instead of hardcoding the information in
+    the deployment script or template.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We will start by referencing a key vault secret for VM deployments using PowerShell.
+  prefs: []
+  type: TYPE_NORMAL
+- en: VM deployments with PowerShell
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'You can easily access secrets in an Azure key vault with PowerShell, but also
+    with ARM templates and Terraform. Let''s see how we can do this by going through
+    the following steps:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'After you have retrieved a secret, you need to create a new `PSCredential`
+    object that can be used in the VM deployment, as follows:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: 'Later, you can use this `PSCredential` object in your deployment in the respective
+    position. This would look similar to the following code snippet:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: It is always a good idea to work with variables in a PowerShell script. By doing
+    so, you can have a variable section at the beginning of the script where you can
+    define values that change depending on your needs and the environments that the
+    script is used in.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs: []
+  type: TYPE_NORMAL
+- en: Since the complete VM deployment script in PowerShell consists of almost 200
+    lines, we have not printed it in the book, but have published it in the book's
+    GitHub repository.
+  prefs: []
+  type: TYPE_NORMAL
+- en: PowerShell is a good way to deploy Azure resources, but being an imperative
+    scripting language, it is not the best fit for usage in DevOps/CI/CD scenarios.
+    This is why we will explain how to reference a key vault secret in Terraform in
+    the next section.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Referencing a key vault secret in Terraform
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'In Terraform, you can refer to an existing Azure object with data sources.
+    For a key vault secret, the data source is called `azurerm_key_vault_secret`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'This object can then be referenced in the `os_profile` section of a Terraform
+    deployment template, as shown in the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: Terraform is quite an easy way of deploying and referencing Azure resources.
+    As you can see from the preceding examples, you simply need to define a data source
+    and then reference it in the respective resource section of your deployment template.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We have published a complete example for a VM deployment with Terraform in
+    this book''s GitHub repository: [https://github.com/PacktPublishing/Mastering-Azure-Security](https://github.com/PacktPublishing/Mastering-Azure-Security)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: ARM templates are Microsoft's way of using automatic Azure resource deployments
+    in DevOps pipelines. This example is described in detail in the following section.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Referencing a key vault secret in ARM templates
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: ARM templates might be the most complex way to refer to key vault secrets during
+    a template deployment. This is because you need to use linked templates in this
+    scenario. That said, you need to have two different template files that are used
+    for different purposes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The main template is used as a reference to existing Azure resources, such as
+    the Azure key vault and its secrets. In it, there is a `parameters` section that
+    contains values that are either defined directly in the main template or passed
+    to the template by an external call that is an Azure CLI or a PowerShell call
+    and then passed directly to the linked template.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'If the `parameters` section is filled by pipeline input, it will only contain
+    the parameters'' definitions:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'If the parameters'' values are defined within the main template, then this
+    section will look like this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE11]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Behind the `parameters` section, there is a `resource` section in which the
+    key vault reference is defined:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE12]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The *linked template* is used for the actual resource deployment. In this file,
+    the local admin username is defined, but the password value is passed from the
+    main template, as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE13]'
+  prefs: []
+  type: TYPE_PRE
+- en: Using ARM templates to refer to a key vault secret is a bit more complex, but
+    also works well in DevOps pipelines.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We have published a complete example of a VM deployment with ARM templates
+    in this book''s GitHub repository: [https://github.com/PacktPublishing/Mastering-Azure-Security](https://github.com/PacktPublishing/Mastering-Azure-Security)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: You have now learned how to use Azure key vaults and key vault secrets during
+    automated Azure resource deployments with PowerShell, Terraform, and ARM templates.
+    Please make sure that you take a look at this book's GitHub repository, as you
+    will find examples of the steps that we have outlined in this chapter for your
+    reference.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Summary
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Azure Key Vault is one of the many services that are underrated but very valuable
+    when it comes to security in Azure. In this chapter, you have learned how to create
+    Azure key vaults and their entities not only with the Azure portal, but also with
+    scripting and deployment languages. You now know how to grant access to an Azure
+    key vault for both individual users and Azure resources and how to reference items
+    that have been securely stored in a key vault.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the next chapter, we will address data security and encryption, two topics
+    that are heavily dependent on Azure Key Vault, so make sure that you have read
+    and understood this chapter before moving on.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Questions
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Azure Key Vault is used to secure…
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: A. Keys
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: B. Secrets
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: C. Certificates
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: D. All of the above
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: E. None of the above
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: How do we control who can access Azure Key Vault information?
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: A. Key Vault permissions
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: B. Access policies
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: C. Conditional access
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: Service-to-service authentication is done via…
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: A. Service principal
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: B. Certificate
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: C. Direct link
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: In order to use Azure Key Vault for `EnabledForDeployment`
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: B. `EnabledForTemplateDeployment`
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: C. `EnabledForDiskEncryption`
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: In order to use Azure Key Vault for `EnabledForDeployment`
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: B. `EnabledForTemplateDeployment`
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: C. `EnabledForDiskEncryption`
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: In order to use Azure Key Vault for VM encryption, which option do we need to
+    enable?
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: A. `EnabledForDeployment`
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: B. `EnabledForTemplateDeployment`
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: C. `EnabledForDiskEncryption`
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: In order to secure secrets during deployment, we need to…
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: A. Provide a password
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: B. Encrypt a password
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: C. Reference an Azure key vault
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL

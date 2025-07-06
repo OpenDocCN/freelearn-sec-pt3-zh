@@ -1,0 +1,1154 @@
+- en: '*Chapter 11*: Incorporating New Binary Formats'
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In this chapter, we will discuss how to incorporate new binary formats into
+    Ghidra, enabling you to analyze exoteric binaries – for instance, ROMs of video
+    games (a copy of the data from the cartridge or any other read-only memory). Throughout
+    this chapter, you will learn how to develop Ghidra loader extensions, which were
+    previously introduced in the *Loaders* subsection of the *The Ghidra extension
+    module skeleton* section in [*Chapter 4*](B16207_04_Final_SK_ePub.xhtml#_idTextAnchor063),
+    *Using Ghidra Extensions*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We will start by looking at what a binary file is. We will explore the differences
+    between raw binary files and formatted binary files and how Ghidra can deal with
+    them. Next, we will perform some experiments with Ghidra to understand how binaries
+    are loaded from a user perspective. Finally, we will analyze the loader for **old-style
+    DOS executable binaries** from a Ghidra developer perspective. The loader under
+    analysis is responsible for enabling Ghidra to load MS-DOS executable binaries,
+    so you will learn about loader development by analyzing a real-world example.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In this chapter, we''re going to cover the following main topics:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Understanding the difference between raw binaries and formatted binaries
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Developing a Ghidra loader
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Understanding filesystem loaders
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Technical requirements
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The requirements for this chapter are as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**Flat assembler** (**fasm**), which is an assembly language compiler that
+    can produce binaries of different formats (plain binary, MZ, PE, COFF, or ELF):
+    [https://flatassembler.net/download.php](https://flatassembler.net/download.php)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'HexIt v.1.57, which is a hex editor allowing you to parse old MS-DOS executable
+    files (MZ): [https://mklasson.com/hexit.php](https://mklasson.com/hexit.php)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The GitHub repository containing all the necessary code for this chapter can
+    be found at [https://github.com/PacktPublishing/Ghidra-Software-Reverse-Engineering-for-Beginners/tree/master/Chapter11](https://github.com/PacktPublishing/Ghidra-Software-Reverse-Engineering-for-Beginners/tree/master/Chapter11).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Check out the following link to see the Code in Action video: [https://bit.ly/3mQraZo](https://bit.ly/3mQraZo)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Understanding the difference between raw binaries and formatted binaries
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In this section, you will learn the difference between raw and formatted binaries.The
+    concept of a binary file can be easily defined by negation; that is, a **binary
+    file** is a file that is not a text file.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We can classify binary files into two categories: raw binary files and formatted
+    binary files.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**Raw binaries** are those binary files that contain unprocessed data, so these
+    binary files have no format in any way. An example of a raw binary could be a
+    memory dump taken from some buffer containing a piece of code.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'On the other hand, **formatted binaries** are those binary files that have
+    a format specification so that you can parse it. Examples of formatted binaries
+    are the Windows executable (image) files and object files that follow the **Portable
+    Executable** (**PE**) format, the specification of which is available online:
+    https://docs.microsoft.com/en-us/windows/win32/debug/pe-format.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: For the purpose of Ghidra, raw binaries are a truly general concept, meaning
+    any file treated without taking into account its format. You can deal with raw
+    binaries and manually process the data by structuring the file in some way, but
+    it is much more comfortable to work with formatted binaries. It is for this reason
+    that you will want to develop your own loaders for binary formats that are not
+    supported yet.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Understanding raw binaries
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Ghidra can load any kind of file from your filesystem, even if that file is
+    not of a known file format (that is, files not having a known file structure).
+    For instance, you can write a file that relates numbers with words and separates
+    those pairs with a semicolon and Ghidra will be able to load it. We can generate
+    a `raw.dat` file in this way by executing the following command:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: If you drag and drop the resulting `raw.dat` file into a Ghidra project, it
+    will be loaded as a **Raw Binary** file (a sequence of bytes without sense) because
+    Ghidra doesn't know its file format.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'As you can see in the following screenshot, Ghidra, based on the loader''s
+    results, recognizes the file as **Raw Binary** during the importing phase and
+    suggests this as the best format to use:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 11.1 – Loading a raw binary'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/B16207_11_001.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 11.1 – Loading a raw binary
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The drop-down list of file formats is filled based on two concepts, **tiers**
+    and **tiers priority**, which allows you to sort the list of formats from the
+    most adequate (**Raw Binary** in *Figure 11.1*) to the least:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**Tiers**, an integer number in range 0 to 3 allowing us to represent four
+    classes of loaders and enabling us to sort the loaders from the most specialized
+    (tier 0) or appropriate to the least (tier 3).'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: While the higher-tier value wins, an integer number named **tiers priority**
+    is used to tiebreak when more than one loader is able to load a file with the
+    same tier. Both tiers and tiers priority are mandatory when developing a loader.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: More about tiers and tiers priority
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: 'As always, you can check the documentation on tiers and tiers priority if you
+    want to look at them further in depth: [https://ghidra.re/ghidra_docs/api/ghidra/app/util/opinion/LoaderTier.html](https://ghidra.re/ghidra_docs/api/ghidra/app/util/opinion/LoaderTier.html)
+    and [https://ghidra.re/ghidra_docs/api/ghidra/app/util/opinion/Loader.html#getTierPriority()](https://ghidra.re/ghidra_docs/api/ghidra/app/util/opinion/Loader.html#getTierPriority()).'
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: We did this little experiment with `raw.dat` to understand, in baby steps, the
+    basics of loaders using a file that you fully understand. Let's now try something
+    a little more complicated!
+  prefs: []
+  type: TYPE_NORMAL
+- en: To provide a more realistic example, let's load the shellcode of the Alina malware
+    previously shown when analyzing the `0x004554E0` function in [*Chapter 5*](B16207_05_Final_SK_ePub.xhtml#_idTextAnchor082),
+    *Reversing Malware Using Ghidra*, under the *In-depth analysis* section.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'As it is not recognized, we must manually set the language in which the shellcode
+    was written:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 11.2 – Choosing a language and compiler for the raw binary'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/B16207_11_002.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 11.2 – Choosing a language and compiler for the raw binary
+  prefs: []
+  type: TYPE_NORMAL
+- en: You can also set a value for **Destination Folder** for the importing file,
+    and **Program Name**, which will be used for importing the file into the project.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Finally, you can import just a block of the file by clicking on **Options…**,
+    as shown in the following screenshot. It shows a menu allowing you to choose the
+    block name (a name for this block of data), the base address, indicating the memory
+    address where the block will start or be put on, and finally, a file offset, indicating
+    the position of the block in the importing file and the length of the block.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The block will be labeled using `shellcode` by writing it into the input box).
+    If you check the **Apply Processor Defined Labels** box, then the importer will
+    create labels at some addresses as specified by the processor. On the other hand,
+    those labels will not be moved even if the image base is changed later if you
+    check the **Anchor Processor Defined Labels** box:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 11.3 – Loading a block of a raw binary'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/B16207_11_003.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 11.3 – Loading a block of a raw binary
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'You can also add, remove, or edit blocks of memory by accessing the **Window**
+    | **Memory Map** option of Ghidra''s CodeBrowser:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![ Figure 11.4 – Adding, removing, and editing memory blocks'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/B16207_11_004.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 11.4 – Adding, removing, and editing memory blocks
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'As you can see in the following screenshot, if the file format is not recognized
+    by Ghidra, you will have to manually perform a lot of work. In this case, you
+    will need to define the bytes as code or strings, create symbols, and so on:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![ Figure 11.5 – Alina malware shellcode loaded as a raw binary'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/B16207_11_005.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 11.5 – Alina malware shellcode loaded as a raw binary
+  prefs: []
+  type: TYPE_NORMAL
+- en: Instead of doing it manually, you can extend Ghidra by developing a loader for
+    such a format. Let's look at how we do this in the next section.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Understanding formatted binaries
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Executable binaries are formatted binaries; therefore, their importers must
+    import them by taking into account the format structure. To understand this, let''s
+    generate and look at an old MS-DOS executable because it will produce a light
+    binary and, since the old MS-DOS executable structure is not especially complex,
+    it is a really good real-world example to start with. The code of our `hello world`
+    old MS-DOS executable program (the `mz.asm` file), written in assembly language,
+    looks as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: Line `00` tells the compiler that this is an old MS-DOS program. At line `04`,
+    we are triggering an interrupt, `21h` (most of the DOS API calls are invoked using
+    interrupt `21h`), which receives `9h` in the `ah` register as a parameter (line
+    `02`), indicating that the program has to print the message referenced by `dx`
+    (line `03`), which is located at line `09`, to `stdout`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Finally, the program ends, passing control to the operative system. This is
+    done by passing the corresponding value in `ax` to indicate that the program must
+    end its execution (line `06`) and again triggering the `21h` interruption. Let''s
+    compile the program using `fasm`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE11]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE12]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE13]'
+  prefs: []
+  type: TYPE_PRE
+- en: By compiling the program, we obtained an `mz.exe` file as a result. To show
+    you the format, I'm using HexIt v.1.57, which is a hexadecimal editor that parses
+    old DOS executable headers when *F6* is pressed.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In the following screenshot, you can see the DOS .EXE header. Each row starts
+    with the offset of the header field between brackets, then the name of the field,
+    and, finally, its value. For instance, at the very beginning of the file (offset
+    **[00]**), we have **Signature**, which has a value of **MZ**:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 11.6 – Showing the DOS .EXE header in HexIt v1.57'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/B16207_11_006.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 11.6 – Showing the DOS .EXE header in HexIt v1.57
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Ghidra includes a loader that is able to parse these **old-style DOS executable
+    (MZ)** binaries, so when you drag and drop this file into Ghidra, the language
+    and format will both be recognized:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 11.7 – Importing an old-style DOS executable (MZ) to Ghidra'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/B16207_11_007.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 11.7 – Importing an old-style DOS executable (MZ) to Ghidra
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'As you can see in the following screenshot, when this formatted binary file
+    is loaded by Ghidra''s CodeBrowser, the entry point of the program is successfully
+    detected. Addresses and a lot of useful information are automatically given to
+    you:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 11.8 – Ghidra successfully loaded the old-style DOS executable (MZ)
+    and its disassembly matches our source code'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/B16207_11_008.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 11.8 – Ghidra successfully loaded the old-style DOS executable (MZ) and
+    its disassembly matches our source code
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the following section, we will overview how this **old-style DOS executable
+    (MZ)** loader is implemented.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Developing a Ghidra loader
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'A loader is a Ghidra extension module that extends from the `AbstractLibrarySupportLoader`
+    class. This class has the following methods: `getName`, `findSupportedLoadSpecs`,
+    `load`, and, optionally, if supporting custom options,`getDefaultOptions` and
+    `validateOptions`.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: I'm assuming that you are familiar with loaders and these methods because they
+    were superficially overviewed in [*Chapter 4*](B16207_04_Final_SK_ePub.xhtml#_idTextAnchor063),
+    *Using Ghidra Extensions*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The old-style DOS executable (MZ) parser
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'The existing Ghidra loader for MZ files must be able to parse the old-style
+    DOS executable (MZ) file as we did by using **HexIt v.1.57** in the *Formatted
+    binaries* section of this chapter. To do that, Ghidra implements a parser for
+    these kinds of binaries that is available here: [https://github.com/NationalSecurityAgency/ghidra/tree/master/Ghidra/Features/Base/src/main/java/ghidra/app/util/bin/format/mz](https://github.com/NationalSecurityAgency/ghidra/tree/master/Ghidra/Features/Base/src/main/java/ghidra/app/util/bin/format/mz).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'This link contains three files:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`DOSHeader.java`: A file implementing the old-style DOS executable parser.
+    It relies on the `StructConverter` class to create a structure data type that
+    is equivalent to the `DOSHeader` class members.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`OldStyleExecutable.java`: A class that uses `FactoryBundledWithBinaryReader`
+    to read data from a generic byte provider and passes it to the `DOSHeader` class
+    in order to parse it. The `OldStyleExecutable` class exposes both via getter methods:
+    `DOSHeader` and the underlying `FactoryBundledWithBinaryReader` object.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`package.html`: A short description of the directory content.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Relevant parser classes
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: You can find the documentation for `StructConverter` at [https://ghidra.re/ghidra_docs/api/ghidra/app/util/bin/StructConverter.html](https://ghidra.re/ghidra_docs/api/ghidra/app/util/bin/StructConverter.html).
+    You can find the documentation for `FactoryBundledWithBinaryReader` at [https://ghidra.re/ghidra_docs/api/ghidra/app/util/bin/format/FactoryBundledWithBinaryReader.html](https://ghidra.re/ghidra_docs/api/ghidra/app/util/bin/format/FactoryBundledWithBinaryReader.html).
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: When writing your own loaders, you can put your parsers into the `format` directory
+    of Ghidra (`Ghidra/Features/Base/src/main/java/ghidra/app/util/bin/format`), which
+    will be available as both `*.jar` and `*.src` files in your Ghidra distribution.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The old-style DOS executable (MZ) loader
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'After implementing the parser for this format, the loader itself is implemented
+    here, extending from `AbstractLibrarySupportLoader`: [https://github.com/NationalSecurityAgency/ghidra/blob/master/Ghidra/Features/Base/src/main/java/ghidra/app/util/opinion/MzLoader.java](https://github.com/NationalSecurityAgency/ghidra/blob/master/Ghidra/Features/Base/src/main/java/ghidra/app/util/opinion/MzLoader.java).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Let's look at how this class is implemented.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The getTierPriority method
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'This loader defines a tier priority of `60`, which is less than the PE (Portable
+    Executable) tier priority. It is done in this way to prevent PE files from being
+    loaded as MZ files. This could happen because the PE file format contains an MZ
+    stub at the beginning. On the other hand, MZ files can''t be loaded by the PE
+    loader:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE14]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE15]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE16]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE17]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE18]'
+  prefs: []
+  type: TYPE_PRE
+- en: It is a simple method but no less important.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The getName method
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'As mentioned before, a `getName` method must be implemented, allowing us to
+    show the name of the loader when importing the file:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE19]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE20]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE21]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE22]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE23]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE24]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE25]'
+  prefs: []
+  type: TYPE_PRE
+- en: The returned name must be descriptive enough taking into account the user's
+    perspective.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The findSupportedLoadSpecs method
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: The loader specs are loaded by implementing the `findSupportedLoadSpecs` method,
+    which queries the opinion service ([https://ghidra.re/ghidra_docs/api/ghidra/app/util/opinion/QueryOpinionService.html#query(java.lang.String,java.lang.String,java.lang.String](https://ghidra.re/ghidra_docs/api/ghidra/app/util/opinion/QueryOpinionService.html#query(java.lang.String,java.lang.String,java.lang.String)).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The `query` method receives the name of the loader as the first parameter,
+    the primary key as the second parameter, and, finally, the secondary key:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE26]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE27]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE28]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE29]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE30]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The opinion service retrieves the loader specifications from a `*.opinion`
+    file ([https://github.com/NationalSecurityAgency/ghidra/blob/master/Ghidra/Processors/x86/data/languages/x86.opinion](https://github.com/NationalSecurityAgency/ghidra/blob/master/Ghidra/Processors/x86/data/languages/x86.opinion)).
+    Opinion files contain constraints allowing you to determine whether the file can
+    be loaded or not:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE31]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE32]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE33]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE34]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE35]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The short format opinion documentation is available here: [https://github.com/NationalSecurityAgency/ghidra/blob/master/Ghidra/Framework/SoftwareModeling/data/languages/Steps%20to%20creation%20of%20Format%20Opinion.txt](https://github.com/NationalSecurityAgency/ghidra/blob/master/Ghidra/Framework/SoftwareModeling/data/languages/Steps%20to%20creation%20of%20Format%20Opinion.txt).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: In any case, the XML attributes are self-explanatory.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The load method
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'At last, the `load` method does the hard job of loading the file into Ghidra.
+    Let''s analyze the code. The loader starts obtaining information from the program
+    being analyzed:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'It obtains the bytes of the file being analyzed by calling the `MemoryBlockUtils.createFileBytes`
+    function (lines `09`–`14`):'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE36]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: The result of the call to `MemoryBlockUtils.createFileBytes()` is the `fileBytes`
+    variable containing all the bytes of the file.
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: 'It creates an address space to deal with Intel-segmented address spaces. Briefly,
+    Intel memory segmentation allows you to isolate memory regions, offering, in this
+    way, security. Due to segmentation, a memory address consists of a segment register
+    (for example, the `CS` register) pointing to some segment of memory (for example,
+    `code segment`) and an offset. The task of creating an address space for Intel-segmented
+    address spaces is performed in two steps:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 'a. First, it obtains the address factory for the language of the current program
+    (line `15`):'
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: '[PRE37]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: The `getAddressFactory()` result is `af`, an `AddressFactory` object that is
+    expected to be a segmented address space. It is checked by the `instanceof` operator.
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: 'b. Next, it obtains the segmented address space using the address factory (lines
+    `23`–`24`):'
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: '[PRE38]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: 'After creating an address space, it retrieves the `25`) and the processor register
+    context over the address space (line `26`):'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE39]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: 'Finally, it obtains the memory of the program (line `27`):'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE40]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: 'By using the old-style DOS executable (MZ) parser (line `28`), the loader obtained
+    the DOS header (line `34`) and a reader (lines `35` and `36`), allowing it to
+    read bytes from the generic provider:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE41]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: 'After retrieving all the previously mentioned information about the executable
+    file, the loading actions are performed. Since actions are long tasks, every action
+    is preceded by a `monitor.isCancelled()` call, allowing it to cancel the loading
+    process (lines `38`, `43`, `47`, `51`, and `55`), and the user is notified when
+    starting the action via the `monitor.setMessage()` call (lines `39`, `44`, `48`,
+    `52`, and `56`):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE42]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'In the upcoming sections, we will look over the following actions in order
+    to deeply understand the `load` function:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`processSegments()` (line `34`):'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE43]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: '`adjustSegmentStarts()` (line `39`):'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE44]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: '`doRelocations()` (line `43`):'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE45]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: '`createSymbols()` (line `47`):'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE46]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: '`setRegisters()` (line `56`):'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE47]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: After covering the sequence of calls performed by the `load` function, let's
+    analyze each one in detail. In the following section, we will start by looking
+    at how program segments are processed.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Processing segments
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+- en: 'The `processSegments()` function processes program segments. The following
+    code snippet illustrates how it calculates segments. The code snippet extracts
+    the code segment relative address from the DOS header via `dos.e_cs()`, as shown
+    on line `04`, and, as it is relative to the segment the program was loaded at
+    (in this case, `csStart`, whose value is equal to the `INITIAL_SEGMENT_VAL` constant,
+    as shown on line `00`), it adds the `csStart` value to it, as shown again on line
+    `04`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE48]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE49]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE50]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE51]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE52]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'After calculating the segment addresses, `processSegments()` uses the Ghidra
+    `MemoryBlockUtils.createInitializedBlock()` (line `01`) and `MemoryBlockUtils.createUninitializedBlock()`
+    (line `09`) API methods to create the segments (memory regions) that were previously
+    calculated:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE53]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE54]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE55]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE56]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE57]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE58]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE59]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE60]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE61]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE62]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE63]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE64]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE65]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE66]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE67]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE68]'
+  prefs: []
+  type: TYPE_PRE
+- en: Since segment processing is not precise, it requires some adjustment. In the
+    next section, we will look at how to adjust the segments.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Adjusting segment starts
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+- en: 'The function responsible for segment adjustment is `adjustSegmentStarts()`.
+    It receives the `prog` program object as a parameter (an object of the `Program`
+    class). It also retrieves the memory of the program via `prog.getMemory()` (line
+    `00`), which allows access to its blocks of memory via the `getBlocks()` method
+    (line `01`):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE69]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE70]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The approach to adjust the segment consists of checking whether the starting
+    bytes (`0x10` bytes) of the current block contain a far return (`FAR_RETURN_OPCODE`,
+    as shown on line `00`), in which case the block is split by the far return (line
+    `03`) appending it and the code preceding it to the previous block of memory (line
+    `04`):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE71]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE72]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE73]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE74]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE75]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE76]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE77]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE78]'
+  prefs: []
+  type: TYPE_PRE
+- en: Now that we've covered segment adjustment, let's see how code is loaded in the
+    next section.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Code relocation
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+- en: Code relocation allows us to load addresses for position-dependent code, adjusting
+    both code and data. It is implemented by the `doRelocations()` function, which
+    uses the `e_lfarlc()` method of `DOSHeader` to retrieve the address of the MZ
+    relocation table (line `01`). By using `e_crlc()`, it also retrieves the number
+    of entries comprising the relocation table (line `02`).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'For each entry (line `03`), the segment and the offset being relative to the
+    segment (lines `04`-`05`) allows you to calculate the location (line `07`), which
+    is relative to the segment the program is loaded at (line `08`):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE79]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE80]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE81]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE82]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE83]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE84]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE85]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE86]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE87]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE88]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE89]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE90]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE91]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE92]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE93]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE94]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE95]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE96]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE97]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE98]'
+  prefs: []
+  type: TYPE_PRE
+- en: Now that the code is loaded, it is also possible to create useful symbols for
+    referencing it. We will overview how to create symbols in the next section.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Creating symbols
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+- en: 'The `createSymbols()` function creates the entry point of the program, which
+    is a symbol. To do that, it uses two `DOSHeader` methods, `e_ip()` (line `00`)
+    and `e_cs()` (lines `01`–`02`), whose values are relative to the segment the program
+    was loaded at:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE99]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE100]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE101]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'By using `e_ip()`, the program retrieves the IP start value (the entry point
+    offset relative to the code segment) while the code segment is retrieved via `e_cs()`.
+    By calling to the `getAddress()` method of `SegmentedAddressSpace` and giving
+    to it the `IP` and `CS` values, it retrieves the entry point at `addr` (line `00`).
+    Finally, it creates the label for the entry point using the `createLabel()` method
+    of the `SymbolTable` class (lines `01`–`02`) and adds the entry point symbol (line
+    `03`) to the program:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE102]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE103]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE104]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE105]'
+  prefs: []
+  type: TYPE_PRE
+- en: After creating the entry point symbol, let's look at how to set the segment
+    registers.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Setting registers
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+- en: The program registers are set by the `setRegisters()` function, which gets the
+    stack and segment register objects (`ss`, `sp`, `ds`, and `cs`) by calling the
+    `getRegister()` method of `ProgramContext`. Then, it sets the register object
+    via `setValue()` with values extracted from the DOS header.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The following code snippet illustrates how to retrieve the `ss` register (line
+    `00`) and set the appropriate MZ header-retrieved value (line `04`) to it (line
+    `01`):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE106]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE107]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE108]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE109]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE110]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE111]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE112]'
+  prefs: []
+  type: TYPE_PRE
+- en: The MzLoader source code
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In the previous code snippets, a lot of implementation details were omitted
+    in order to keep the focus on the key aspects and relevant parts. If you want
+    to dig into the details, please, follow this link: [https://github.com/NationalSecurityAgency/ghidra/blob/master/Ghidra/Features/Base/src/main/java/ghidra/app/util/opinion/MzLoader.java](https://github.com/NationalSecurityAgency/ghidra/blob/master/Ghidra/Features/Base/src/main/java/ghidra/app/util/opinion/MzLoader.java).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: As you will notice, the loader development complexity strongly depends on the
+    binary format. We learned about loaders by analyzing a real-world example; therefore,
+    the complexity of the code shown here is real-world complexity.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Understanding filesystem loaders
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Ghidra also allows us to load filesystems. Filesystems are, basically, archive
+    files (a file containing other files):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![ Figure 11.9 – A file named hello_world.zip imported as a filesystem'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/B16207_11_009.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 11.9 – A file named hello_world.zip imported as a filesystem
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'A good example of a filesystem loader implemented by Ghidra is the ZIP compressed
+    format loader, which is available here: [https://github.com/NationalSecurityAgency/ghidra/tree/master/Ghidra/Features/FileFormats/src/main/java/ghidra/file/formats/zip](https://github.com/NationalSecurityAgency/ghidra/tree/master/Ghidra/Features/FileFormats/src/main/java/ghidra/file/formats/zip).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To develop a filesystem, you will need to implement the `GFileSystem` interface
+    with the following methods: `getDescription`, `getFileCount`, `getFSRL`, `getInfo`,
+    `getInputStream`, `getListing`, `getName`, `getRefManager`, `getType`, `isClosed`,
+    `isStatic` `lookup`, and `close`.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: FileSystem Resource Locator
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'A remarkable method of the `GFileSystem` interface is `getFSRL`, which allows
+    you to retrieve the **FileSystem Resource Locator** (**FSRL**). An FSRL is a string
+    allowing Ghidra to access files and directories stored in a filesystem:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The FSRL for accessing a file located in the local filesystem: `file://directory/subdirectory/file`.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'The FSRL for accessing a file located in a ZIP archive file: `file://directory/subdirectory/example.zip|zip://file`.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'The FSRL for accessing a file in nested filesystems (for example, `tar` stored
+    in a `zip` file): `file://directory/subdirectory/example.zip|zip:// directory
+    /nested.tar|tar://file`.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'The FSRL for accessing a file but checking its `MD5`: `file://directory/subdirectory/example.zip?MD5=
+    6ab0553f4ffedd5d1a07ede1230c4887 |zip://file?MD5= 0ddb5d230a202d20a8de31a69d836379`.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Another remarkable method is `getRefManager`, which allows accessing `GFileSystem`
+    but preventing it from being closed via the `close` method.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Finally, `FileSystemService` can be used to instantiate filesystems.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Filesystem loaders
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: 'If you want to learn more about loaders, please check out the following official
+    documentation links:'
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: – [https://ghidra.re/ghidra_docs/api/ghidra/formats/gfilesystem/GFileSystem.html](https://ghidra.re/ghidra_docs/api/ghidra/formats/gfilesystem/GFileSystem.html)
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: – [https://ghidra.re/ghidra_docs/api/ghidra/formats/gfilesystem/FSRL.html](https://ghidra.re/ghidra_docs/api/ghidra/formats/gfilesystem/FSRL.html)
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: – [https://ghidra.re/ghidra_docs/api/ghidra/formats/gfilesystem/FileSystemService.html](https://ghidra.re/ghidra_docs/api/ghidra/formats/gfilesystem/FileSystemService.html)
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: This is the way that filesystem loaders are implemented. If you want to look
+    further into the details, please remember to check the ZIP filesystem implementation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Summary
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In this chapter, you learned what a binary file is and how it can be dichotomously
+    classified as a raw binary or a formatted binary, and you also learned that any
+    formatted binary is also a raw binary.
+  prefs: []
+  type: TYPE_NORMAL
+- en: You learned skills for Ghidra file importing by loading both raw binaries and
+    formatted binaries. This new skill allows you to configure better options when
+    loading a file and manually perform some adjustments if necessary.
+  prefs: []
+  type: TYPE_NORMAL
+- en: You also learned about the old-style DOS executable format by producing a `hello
+    world` program from scratch written in assembly language and later analyzing it
+    with a hexadecimal editor.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Finally, you learned how to extend Ghidra with new loaders and filesystems,
+    allowing you to import unsupported and exoteric binary formats and archive files.
+    You learned this by analyzing the old-style DOS executable format loader, a good
+    real-world example to start with.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the next chapter, we will cover an advanced topic in Ghidra, which is processor
+    module development. This skill will enable you to incorporate unsupported processors
+    into Ghidra. It includes virtualization processors commonly used in advanced binary
+    obfuscation. Beyond that, you will learn a lot about disassemblers along the way.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Questions
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: What is the difference between raw binaries and formatted binaries?
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Taking into account that any formatted binary is also a raw binary, why are
+    formatted binaries necessary?
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: What is an old-style DOS executable and what software pieces comprise the loader
+    enabling Ghidra to support it?
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Further reading
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'You can refer to the following links for more information on the topics covered
+    in this chapter:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*Mastering Assembly Programming*, *Alexey Lyashko*, *September 2017*: [https://subscription.packtpub.com/book/application_development/9781787287488](https://subscription.packtpub.com/book/application_development/9781787287488)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'The DOS MZ executable – format specification using the Kaitai Struct declarative
+    language: [https://formats.kaitai.io/dos_mz/index.html](https://formats.kaitai.io/dos_mz/index.html)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Online Ghidra loader documentation: [https://ghidra.re/ghidra_docs/api/ghidra/app/util/opinion/Loader.html](https://ghidra.re/ghidra_docs/api/ghidra/app/util/opinion/Loader.html)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL

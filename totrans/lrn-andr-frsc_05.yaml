@@ -1,0 +1,817 @@
+- en: Extracting Data Physically from Android Devices
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'In this chapter, we will be covering physical data extraction, using free and
+    open source tools wherever possible. The majority of the material that is covered
+    in this chapter will use the **Android Debug Bridge** (**ADB**) methods that we
+    discussed previously in this book. By the end of this chapter, the reader should
+    be familiar with the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: What physical extraction means
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Physical data extraction using `dd`, `nanddump`, and Magnet ACQUIRE
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: RAM imaging and analysis
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: SD card acquisitions
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: JTAG and chip-off methods
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Physical extraction overview
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In digital forensics, a physical extraction is an exact bit-for-bit image of
+    the electronic media, and this definition remains true for mobile devices. In
+    traditional computer forensics, this typically involves removing the evidence
+    drive from the suspect's computer and imaging it via a write-blocker without ever
+    booting the drive, resulting in an image file containing an exact copy of the
+    suspect's drive. The output is frequently referred to as a **raw image**, or simply
+    a binary (`.bin`) file. Physical extractions differ from logical ones in that
+    they are exact copies of the device's memory, and include unallocated space, file
+    slack, volume slack, and so on.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In mobile forensics, the result is the same—an exact bit-for-bit image of the
+    device—but the methods are somewhat different. For example, removing the flash
+    memory from the device to image it can be both time-consuming and expensive, and
+    requires a lot of specialized knowledge (though it can be done, as discussed in
+    the *Chip-off* section later in this chapter). Furthermore, short of using advanced
+    JTAG or chip-off methods, the device must be booted to some degree (and written
+    to in many cases) in order to access the data. Finally, finding a tool that can
+    even parse the final image file can be very difficult. Hard drive images and file
+    systems have long been documented and studied, while mobile images and file systems
+    change frequently; in some cases, mobile file systems are even unique to a specific
+    manufacturer. Knowing what to do with the image after it has been acquired can
+    be just as challenging as acquiring the image in the first place!
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Many of the techniques discussed in [Chapter 4](b5ab11df-1911-4deb-accd-f92c74650e6d.xhtml), *Extracting
+    Data Logically from Android Devices*, will still apply here: booting into a custom
+    recovery is still the most forensically sound process; physically acquiring a
+    live device should be avoided if at all possible.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: What data can be acquired physically?
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The short answer is: everything. Since a physical acquisition is an exact image
+    of the device, every bit of data on the device is in the image file. As mentioned
+    in the preceding section, with a physical extraction, an examiner is usually only
+    limited by their ability to find the relevant data. Generally, this is due to
+    a lack of good image analysis tools in the mobile forensics space. To further
+    compound the matter, applications have been known to encode or otherwise obfuscate
+    user data, so simply browsing through the image in a hex editor will frequently
+    miss valuable evidence. In this chapter, we will cover various methods for mounting
+    or otherwise viewing the file system of a physical extraction, while [Chapter
+    7](c0ffe5a3-4668-436d-9f02-e70a67f3e43e.xhtml),* Forensic Analysis of Android
+    Applications*, will focus on analyzing data from specific applications.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Root access
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Once again, just as in logical extractions, root access is going to be a critically
+    important aspect of physical extractions. To manually image a device, we are going
+    to have to execute commands on the device from the ADB shell, and these will require
+    root permissions. If root access cannot be obtained, the SD card can generally
+    still be imaged. The only recourse beyond that is JTAG or chip-off methods.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Extracting data physically with dd
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The `dd` command should be familiar to any examiner who has done traditional
+    hard drive forensics. `dd` is a Linux command-line utility used by definition
+    to convert and copy files, but is frequently used in forensics to create bit-by-bit
+    images of entire drives. Many variations of `dd` also exist and are commonly used,
+    such as `dcfldd`, `dc3dd`, `ddrescue`, and `dccidd`. As `dd` is built for Linux-based
+    systems, it is frequently included on Android platforms. This means that a method
+    for creating an image of the device often already exists on the device!
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The `dd` command has many options that can be set; only the forensically important
+    options are going to be covered in the following list. A full list of command
+    options can be found at [http://man7.org/linux/man-pages/man1/dd.1.html](http://man7.org/linux/man-pages/man1/dd.1.html).
+    The format of the `dd` command is as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Let''s define the preceding format of `dd` command:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`if`: Specifies the input file to read from.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`of`: Specifies the output file to write to.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`bs`: Block size. Data is read and written in the size of the block specified,
+    and defaults to 512 bytes if not specified.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`conv`: Conversion options:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`notrunc`: Does not truncate the output file.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`noerror`: Continues imaging if an error is encountered.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`sync`: In conjunction with no error, this writes `\x00` for blocks with an
+    error. This is important for maintaining file offsets within the image.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Do not mix up the `if` and `of` flags, as this could result in overwriting the
+    target device!
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Note that there is an important correlation between the `bs`, `noerror`, and `sync`
+    flags: if an error is encountered, `\x00` will be written for the entire block
+    that was read (as determined by the block size). Thus, smaller block sizes result
+    in less data being missed in the event of an error. The downside is that, typically,
+    smaller block sizes result in a slower transfer rate. An examiner will have to
+    decide whether a timely or more accurate acquisition is preferred.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: As discussed in the previous chapter, booting into Recovery Mode for the imaging
+    process is the most forensically sound method.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Determining what to image
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'When imaging a computer, an examiner must first find what the drive is mounted
+    as, for example, `/dev/sda`. The same is true when imaging an Android device.
+    The first step is to launch the ADB shell and view the `/proc/partitions` file
+    by using the following command:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The output will show all of the partitions on the device:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/283d5e63-bddb-4d6c-927b-aa9bc52d2ee1.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: In the preceding output, `mmcblk0` is the entirety of the flash memory on the
+    device. To image the entire flash memory, we could use `/dev/blk/mmcblk0` as the
+    input file flag (`if`) for the `dd` command. Everything following it, indicated
+    by p1-24, is a partition of the flash memory. The size is shown in blocks. In
+    this case, the block size is 1,024 bytes, for a total internal storage size of
+    approximately 16 GB. To obtain a full image of the device's internal memory, we
+    would run `dd` with `mmcblk0` as the input file.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Of course, we are not interested in every partition of the device, as most
+    of them hardly contain any relevant information. As you already know, the most
+    interesting part is the `/data` partition. Usually, it''s the largest one, so
+    it may be `mmcblk0p24`, that is, 11,784,192 blocks in size. Let''s learn more
+    about it by running the `df` command:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/d3b7d2a5-2fce-4f77-a4ce-3631cd5c6603.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: As you can see from the preceding screenshot, we were right—`mmcblk0p24` is
+    the userdata partition.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Writing to an SD card
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The output file of `dd` can be written to the device's SD card. This should
+    only be done if the suspect SD card can be removed and replaced with a forensically
+    sterile SD. This ensures that the `dd` output is not overwriting evidence. Obviously,
+    if you're writing to an SD card, ensure that the SD card is larger than the partition
+    being imaged.
+  prefs: []
+  type: TYPE_NORMAL
+- en: On newer devices, the `/sdcard` partition is actually a symbolic link to `/storage/self/primary`.
+    In this case, using `dd` to copy the `/data` partition to the SD card won't work,
+    and could corrupt the device because the input file is essentially being written
+    to itself.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let''s look at what else we can find under `/storage`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/5e99a8cb-f97a-4223-8658-013998154ce5.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'As you can see, we also have the `6264-3264` and `emulated` subdirectories.
+    But where is our SD card mounted? Let''s run the `mount` command:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/9b4ea91e-8549-4798-9ddf-89531fa528b7.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'We are using a 128 GB SD card, so it must be mounted under `6264-3264`. Now
+    we are ready to start the imaging process of the `/data` partition:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/31619091-1274-4984-8aeb-0de00da86284.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Now, an image of the `/data` partition exists on the SD card. It can be pulled
+    to the examiner's machine with `adb pull`, or simply read from the SD card.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Writing directly to an examiner's computer with netcat
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: If the image cannot be written to the SD card, an examiner can use `netcat`
+    to write the image directly to their machine. `netcat` is a Linux-based tool that's
+    used for transferring data over a network connection. We recommend using a Linux
+    or macOS computer for `netcat`, as it is built-in, though Windows versions do
+    exist. The examples that follow were performed on the SIFT workstation (Linux
+    Ubuntu).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Installing netcat on the device
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In the past, very few, if any, Android devices come with `netcat` installed.
+    To check, simply open the ADB shell and type `nc`. If it returns saying `nc` is
+    not found, `netcat` will have to be installed manually on the device. `netcat`,
+    compiled for Android, can be found in many places online; for example, at [https://github.com/MobileForensicsResearch/netcat](https://github.com/MobileForensicsResearch/netcat).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'If we look back at the results from our mount command from the previous section,
+    we can see that the `/dev` partition is mounted as `tmpfs`. The `tmpfs` is a Linux
+    term meaning that the partition is meant to appear as an actual file system on
+    the device, but is truly only stored in RAM. This means that we can push `netcat`
+    here without making any permanent changes to the device, using the following command
+    on the examiner''s computer:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The command should have created the `Examiner_Folder` in `/dev`, and `nc` should
+    be in it. This can be verified by running the following command in the ADB shell:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: In current versions of Android (starting from Marshmallow), **Toybox**—a free
+    and open source software implementation of some Unix command-line utilities, including
+    `netcat`—is already installed, so an examiner doesn't need to install it.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Using netcat
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: We will need two Terminal windows open, with the ADB shell open in one of them.
+    The other will be used to listen to the data being sent from the device.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Now, we need to enable port forwarding over ADB from the examiner''s computer:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: '`9999` is the port we chose to use for `netcat`; it can be any arbitrary port
+    number between `1023` and `65535` on a Linux or macOS system (`1023` and below
+    are reserved for system processes, and require root permission to use). Windows
+    will allow any port to be assigned.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In the Terminal window with ADB shell, run the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: '`mmcblk0p24` is the userdata partition on this device, however, the entire
+    flash memory or any other partition could also be imaged with this method. In
+    most cases, it is best practice to image the entirety of the flash memory in order
+    to acquire all possible data from the device. Some commercial forensic tools may
+    also require the entire memory image, and may not properly handle an image of
+    a single partition.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In the other Terminal window, run the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: The `userdata.dd` file should have been created and in the current directory
+    of the examiner's computer. When the data has finished transferring, `netcat`
+    in both Terminals will terminate and return to the Command Prompt. This process
+    can take a significant amount of time, depending on the size of the image.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Extracting data physically with nanddump
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In all of the examples that we've covered thus far, the partitions were all
+    MMC blocks, which is typically seen in newer devices. Older devices, however,
+    are far more likely to consist of **Memory Technology Device** (**MTD**) blocks.
+    We have seen cases in the past where `dd` was unable to properly image an MTD
+    block, although more often than not it works fine. If `dd` fails, there is a widely
+    distributed utility called MTD-Utils that's used to read and write from MTD blocks;
+    `nanddump` is a part of MTD-Utils, and can be used similarly to `dd` in order
+    to read from an MTD block. In the cases where `dd` failed, `nanddump` was always
+    successful.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Versions of `nanddump` compiled for Android can be found in many places online;
+    we used the one found here: [https://github.com/jakev/android-binaries/blob/master/nanddump](https://github.com/jakev/android-binaries/blob/master/nanddump).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The process to put `nanddump` on the device is the same as used for `netcat`
+    previously:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Just like `dd`, `nanddump` can be used to write either to an SD card or the
+    examiner''s computer via `netcat`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'From a Terminal window, run the following:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'From a separate Terminal window within the ADB shell, run the following:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'In the first Terminal window, where `adb forward` was used, run the following:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: Extracting data physically with Magnet ACQUIRE
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'ACQUIRE is a free tool by Magnet Forensics that can be used for the acquisition
+    of a wide range of potential digital evidence sources, from hard drives and smartphones
+    to cloud data. Of course, it supports both logical and physical acquisition of
+    Android devices, up to the latest of those running Android Pie. The tool can be
+    downloaded after registration here: [https://www.magnetforensics.com/magnet-acquire/](https://www.magnetforensics.com/magnet-acquire/).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In this example, we are going to image a rooted smartphone running Android
+    Oreo:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Start by choosing the appropriate device from the list:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '![](img/95113152-8c1f-4252-9282-3bf53d4c3a94.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: As you can see, our device has privileged access—this means that it's rooted.
+    Also, we immediately have some metadata, such as OS version, device serial number,
+    and so on. If the device you are going to image isn't listed for some reason,
+    you can use the The device I'm looking for isn't showing up option. This contains
+    step-by-step guides on how to make the tool detect it.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Once you have chosen the right device, you can select the image type:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '![](img/bd621ebd-d091-42a4-8f86-66c3bbf0074b.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'There are two options: Full and Quick. The first one is a physical acquisition
+    and is not always available, while the second is logical—it''s available for any
+    Android device. As our device is rooted, we can choose the Full option.'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 'Finally, choose the folder and image names, destination, and fill in the other
+    fields if necessary:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '![](img/583f31a3-3bf4-46c2-8f78-2d67b14c2216.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Clicking the ACQUIRE button will start the acquisition process. In our example,
+    the imaging of 16 GB of storage only took 10 minutes. If you look in the log file
+    (`activity_log.txt`), you will notice that the same tools are actually used—`dd`
+    and `toybox`:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '![](img/d999d425-4783-424e-a7a3-29f31076e1a0.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: As you can see, imaging an Android device with Magnet ACQUIRE is much easier
+    than with `dd` and `netcat`, but under the hood, the process is the same. Sometimes,
+    the tool may even help you to perform physical acquisition of non-rooted devices,
+    as it contains a number of exploits that are capable of getting temporary privileged
+    access, as well as TWRP custom recoveries that can be used to obtain the full
+    images of unencrypted devices.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Verifying a full physical image
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Verification that an image file is identical to the device is a critical step
+    in traditional digital forensics. It can be a little trickier, if not impossible,
+    on Android devices. The image that has been created can be hashed using whatever
+    tool the examiner typically uses. Verifying the memory on the device can be done
+    through the ADB shell by using the following command, where the path given is
+    the block or partition that was imaged:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE11]'
+  prefs: []
+  type: TYPE_PRE
+- en: However, the `md5sum` command is not included on all Android devices. If it
+    is not included, an examiner may be able to find a version that's been compiled
+    for their device online, and push it to the device in a `tmpfs` partition, as
+    shown previously, with `netcat` and `nanddump`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Another issue is if the image was acquired live, that is, not in Recovery Mode,
+    as discussed in the previous chapter. It is a virtual certainty that the MD5 hashes
+    will not match, as data is constantly changing on the device (even if it is RF-shielded
+    or in Airplane Mode). In this case, an examiner would have to document that the
+    device was live when acquired and explain that the hashes are not expected to
+    match.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Analyzing a full physical image
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Once an image has been obtained using one of the preceding methods, an examiner
+    could conceivably go through the image manually and extract each partition, but
+    would probably prefer to avoid doing that. Luckily, there is a wide variety of
+    mobile forensic tools that can ingest a physical image, such as Cellebrite UFED,
+    Oxygen Forensic, Magnet AXIOM, Belkasoft Evidence Center, and many others. Unfortunately,
+    none of these are free or open source; by far the most popular analysis tool that
+    is free and open source is Autopsy by Basis Technology.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Autopsy
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The Sleuth Kit began as a set of Linux-based command-line tools for forensics;
+    eventually, a browser-based GUI named Autopsy was added. Recently, Autopsy has
+    been released as a standalone platform on Windows, and includes support for analyzing
+    Android images. Version 4.9.0 is shown in the following screenshots. The full
+    process for loading and analyzing an image will be covered in [Chapter 8](1b4c4086-f708-4bea-9bb4-f2f477b10c85.xhtml),
+    *Android Forensic Tools Overview*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Autopsy can be downloaded from [https://www.sleuthkit.org/autopsy/download.php](https://www.sleuthkit.org/autopsy/download.php).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Once the image has been loaded, expanding the image will show all of the volumes
+    that Autopsy found:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/989c8428-746d-486f-9220-8ed4a4cbdf77.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'One of these volumes will be the data partition, as shown in the following
+    screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/e0c614ad-b0ce-457b-ae0b-2eff7aa3382c.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Note that the media directory in the preceding screenshot is the SD card, as
+    it was symbolically linked to the data partition. The `data` folder within the
+    `/data` partition will contain application data:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/b97797c4-91f9-41ac-9569-b56c8168d257.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: As each application is installed, a directory is created for it.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note that a red X icon on a folder indicates it was deleted, and means that
+    the application was removed from the device.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Finally, Autopsy does a good job of pulling out some data automatically for
+    an examiner, but as with all forensic tools, this information should be verified
+    manually. We will cover this in [Chapter 7](c0ffe5a3-4668-436d-9f02-e70a67f3e43e.xhtml), *Forensic
+    Analysis of Android Applications*:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/c462454c-8f53-4a11-b9bf-8540192cd914.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Issues with analyzing physical dumps
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The most common problem we see on many forensic forums and email lists is examiners
+    obtaining a physical dump and then not being able to load that dump into a tool
+    that claims to support the device. The vast majority of the time, this is because
+    the examiner fails to account for the **out-of-band** (**OOB**) area.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The OOB area, sometimes called spare area, is a small section of the flash memory
+    that's been reserved for metadata. The metadata usually consists of **error-correcting
+    code** (**ECC**), information about bad blocks, and in some cases, information
+    about the file system. This causes an issue for examiners because most mobile
+    forensic tools do not account for the OOB area; they expect it to not be included
+    in the image. When presenting the tool with an image containing spare area, the
+    tool frequently does not know what to do and fails to parse the data properly.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The reason that tools fail to account for the OOB area is that it is not included
+    in `dd` images, which is what most tools use to create their images. The OOB area
+    may be included when using `nanddump`, though depending on the binary used, there
+    may be an option to exclude it. The OOB area is included with chip-off and JTAG
+    images.
+  prefs: []
+  type: TYPE_NORMAL
+- en: To properly load the image into forensic tools, the OOB area will need to be
+    removed first. A general rule of thumb is that the OOB size is based on the page
+    size of the device; for every 512 bytes of page size, there will be 16 bytes of
+    OOB space. For example, a device with 2,048 byte page sizes would likely have
+    64 bytes of OOB area at the end of each page. However, this is completely up to
+    the memory manufacturer. Before attempting to remove OOB area, an examiner should
+    find the datasheet for the specific memory chip to confirm the page and OOB area
+    sizes. This can generally be done by finding the memory chip on the phone's circuit
+    board and searching for the model number of the chip.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The following is some sample code for a Python script that will remove the
+    OOB area from an image. Just as in the last chapter, we don''t claim to be Python
+    experts and we''re sure there are better, more efficient ways to do this, but
+    it does work:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE12]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'This file, if named `OOB_Remover.py`, would be executed with the following
+    command:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE13]'
+  prefs: []
+  type: TYPE_PRE
+- en: The output file, with no OOB area, would be named `file_out.bin` in the directory
+    where the script was executed. The original is not edited or modified in any way.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note that the code as it is written assumes a page size of 2,048 and an OOB
+    size of 64; these two numbers would have to be edited for the specific sizes of
+    the memory chip the image was taken from. The output should then be able to be
+    loaded into commercial mobile forensic tools.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Imaging and analyzing Android RAM
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Pulling Android memory is not applicable in a great many cases, due to the fact
+    that it requires root access. Most public root processes involve rebooting the
+    phone, which erases volatile RAM, meaning that by the time an examiner gains root
+    access to image the RAM, it's too late because the RAM has been erased. Because
+    of this, and possibly other reasons, there is not great support for Android RAM
+    imaging and analysis in the commercial forensic world. However, there are cases
+    where imaging RAM is applicable, and may prove invaluable to a case. If a device
+    is already rooted when it is seized, imaging the RAM should be a mandatory step
+    in the seizure process. As powering the phone off will erase the RAM, the device
+    should be placed in Airplane Mode (and any other network connections such as Wi-Fi
+    and Bluetooth should be disabled) and the RAM should be imaged immediately to
+    avoid the device battery dying before the RAM can be pulled.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The main challenge when it comes to RAM is the analysis. RAM is completely raw,
+    unstructured data; there is no file system. When viewed in a hex editor, RAM appears
+    to just be a giant blob of data with very little rhyme or reason to help examiners
+    figure out what they are looking at. This difficulty is compounded by the fact
+    that modern devices commonly have gigabytes' worth of RAM. RAM can easily be searched
+    for by keywords using traditional forensic tools and methods, but that presumes
+    that an examiner knows exactly what they are looking for.
+  prefs: []
+  type: TYPE_NORMAL
+- en: What can be found in RAM?
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Any data that is written to the flash memory must pass through RAM; there is
+    no other way for the processor to communicate with the flash memory. This means
+    that almost anything done on the device may be found in the contents of a RAM
+    dump. Depending on the amount of device usage, data may remain in RAM indefinitely,
+    until it needs to be overwritten. RAM dumps frequently contain text that's been
+    typed on the device, including usernames and passwords, and application data that
+    is not stored permanently on the device. For example, the Facebook application
+    used to store the contents of a user's News Feed in a database in its application
+    folder. Newer versions do not save the user's News Feed, but it exists in RAM.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Imaging RAM with LiME
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The most common tool for Android RAM acquisition is the **Linux Memory Extractor**
+    (**LiME**), previously known as DMD. LiME is free and open source, but isn't highly
+    user-friendly as it requires the user to compile it from the source code, which
+    can only be done on a Linux system. The compilation process must also be done
+    for each specific version of Android for each device being examined, which somewhat
+    limits its usability in the field. This is necessary because LiME is not binary
+    (like the `netcat` and `nanddump` tools we used before); instead, it is a kernel
+    module, which must be built specifically for each kernel it will be loaded into.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In order to ensure that the proper kernel source code is downloaded, we will
+    need to determine the model and software version for a device, which can be done
+    by scrolling through the phone menu to Settings | System | About Phone. Alternatively,
+    this information can be found in the ADB shell by running the following command:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE14]'
+  prefs: []
+  type: TYPE_PRE
+- en: The software version of the model should be in the first few lines at the top
+    of the file.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Luckily, most Android manufacturers release their kernel source code; a quick
+    Google search can usually turn up source code for each model and software version.
+    The following are the open source release sites for a few major manufacturers:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**Samsung**: [http://opensource.samsung.com/reception.do](http://opensource.samsung.com/reception.do)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Motorola**: [http://sourceforge.net/motorola/](http://sourceforge.net/motorola/)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**HTC**: [http://www.htcdev.com/devcenter](http://www.htcdev.com/devcenter)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Google (Nexus devices)**: [https://source.android.com/source/building-kernels.html](https://source.android.com/source/building-kernels.html)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The correct model and version source must be used. Using the wrong kernel source
+    to compile LiME will, at the very least, not work on the device. Loading an incompatible
+    kernel module could also crash the device.
+  prefs: []
+  type: TYPE_NORMAL
+- en: To obtain the source code for LiME, navigate to [https://github.com/504ensicsLabs/LiME](https://github.com/504ensicsLabs/LiME)
+    and choose the Download ZIP option, and then extract the `.zip`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'There are many excellent resources online explaining how to compile LiME for
+    a specific kernel, and even how to create a custom Volatility plugin to examine
+    the resulting RAM dump, so they won''t be duplicated here:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**Linux Memory Extractor**: [https://github.com/504ensicsLabs/LiME/tree/master/docV](https://github.com/504ensicsLabs/LiME/tree/master/doc)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Volatility**: [https://github.com/volatilityfoundation/volatility/wiki/Android](https://github.com/volatilityfoundation/volatility/wiki/Android)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Acquiring Android SD cards
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: As discussed previously in this chapter and in previous chapters, the SD card
+    can refer to a physical, external SD card or a partition within the flash memory.
+    A removable external SD card can be imaged separately from the device through
+    a write-blocker with typical computer forensics tools, or using the `dd/nanddump`
+    techniques shown previously, although the former is usually faster due to not
+    needing to write data over `netcat`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Physically imaging an SD card is extremely similar to the physical imaging that
+    we discussed previously; in fact, if the SD card is symbolically linked to the
+    `/data` partition, it would be acquired as part of the `/data` partition, as seen
+    in the *Autopsy* section's screenshots. The only difference in the process is
+    that if the SD card is being imaged, the output file cannot be written to the
+    SD card! This means that using the `netcat` methods we covered previously are
+    the best option for physically imaging an internal SD card.
+  prefs: []
+  type: TYPE_NORMAL
+- en: What can be found on an SD card?
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: By default, the SD card is typically used to store large files, including downloaded
+    items and pictures that have been taken with the device. Many applications will
+    also create their own directory on the SD card for storing data such as images
+    that have been sent or received through chat applications. In some cases, as will
+    be seen in [Chapter 8](1b4c4086-f708-4bea-9bb4-f2f477b10c85.xhtml), *Android Forensic
+    Tools Overview*, there are even applications that will routinely perform a backup
+    of all of their data to the SD card. This is especially useful to forensic examiners
+    because they may not be able to access the internal memory due to security settings
+    or the inability of obtaining root access, but may be able to access the SD card.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Common SD card locations of interest include, but, of course, are not limited
+    to the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`/Alarms`: May contain custom alarms'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`/Android/data`: Storage location for some application data'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`/DCIM/Camera`: Includes pictures taken with the device''s camera'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`/Download`: May contain downloaded files'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`/Movies`: May contain downloaded video files'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`/Notifications`: May contain custom notifications'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`/Pictures`: May contains different images, including screenshots taken on
+    the device'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`/Podcasts`: May contain downloaded podcasts'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`/Ringtones`: May contain custom ringtones'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The `/Android/data` folder may persist, even if the app has been deleted. The
+    contents of the folders will be deleted, but the folders may remain, which is
+    an indication that the application was previously installed on the device.
+  prefs: []
+  type: TYPE_NORMAL
+- en: These are just common default locations; if a device is rooted, the user could
+    place any data from the internal memory onto the SD card.
+  prefs: []
+  type: TYPE_NORMAL

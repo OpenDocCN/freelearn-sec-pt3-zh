@@ -1,0 +1,942 @@
+- en: Coming Full Circle
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In this chapter, we will revisit the scripts we've built in the previous chapters
+    to create a prototype forensic framework. This framework will accept an input
+    directory, such as the root folder of a mounted image, and run our plugins against
+    the files to return a series of spreadsheet reports for each plugin.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Up to this point, we've developed standalone scripts in each chapter, never
+    building upon the work in the previous chapters. By developing a framework, we
+    will illustrate how to bring these scripts together and execute them in one context.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In [Chapter 8](5844a835-314a-474b-9c28-60880408629d.xhtml), *The Media Age*,
+    we created a miniature framework for parsing various types of embedded metadata.
+    We will borrow from that design and add object-oriented programming to it. Using
+    classes simplifies our framework by creating an abstract object for plugins and
+    writers.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Additionally, in our framework, we will showcase the use of a few external libraries
+    that serve an aesthetic purpose rather than functional. These are colorama and
+    FIGlet, which allow us to easily print colored text to standard out and create
+    ASCII art, respectively. In addition, our framework  requires all of the third-party
+    modules that we used in the previous chapters.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The following topics will be discussed in this chapter:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Framework fundamentals, challenges, and structure
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Adding aesthetic touches to our programs with Colorama and FIGlet
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The code for this chapter was developed and tested using Python 2.7.15 and Python
+    3.7.1.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Frameworks
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Why build a framework? The question could be, why develop a script at all? Frequently,
+    we perform the same series of steps for a given piece of evidence. For example,
+    we commonly prepare reports for LNK, prefetch, and jumplist files, examine registry
+    keys, and establish external device and network activity to answer forensic questions.
+    As we've seen, we can develop a script to parse these artifacts for us and display
+    the data in a format that's conducive for rapid analysis. Why not write a series
+    of scripts, each responsible for one artifact, and then control them with a singular
+    script, to execute all at once and hence further automate our analysis?
+  prefs: []
+  type: TYPE_NORMAL
+- en: A framework can be developed to run a series of scripts and parse multiple artifacts
+    at once. The output of such a framework could be a series of analysis-ready spreadsheets.
+    This allows the examiner to skip the same tedious series of steps and start answering
+    meaningful questions about the evidence.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Frameworks typically have three main components:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: A main controller
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Plugins
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Writers
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The main controller isn't very different from our `main()` functions and essentially
+    calls a series of plugins on some input, which parse specific artifacts, store
+    the returned results, and then send the results to a writer for output. Our plugins
+    are scripts that perform a specific task, for example, a script that parses `UserAssist`
+    artifacts. Writers, similar to our `csv_writer()` functions, take the output from
+    our plugins and write it out to disk. While this seems like a fairly straightforward
+    process, developing frameworks is more complex than developing a single script.
+    This is because we have to worry about building a simple yet efficient structure
+    and keeping data standardized between plugins.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Building a framework to last
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: A challenge when developing frameworks is how to keep the code simple and efficient
+    while continuously adding more functionality to the framework. You might find
+    that while the structure of the framework made sense initially, it doesn't support
+    the needs of your increasingly complex framework, requiring you to rethink and
+    rebuild the internals of the framework. Unfortunately, there's no magical way
+    to future-proof your framework and will likely require multiple revisions during
+    its development cycle.
+  prefs: []
+  type: TYPE_NORMAL
+- en: This is no different from normal script development. In the early chapters of
+    this book, we iterated through multiple versions of a script. We did this to illustrate
+    the iterative build process you'll discover during development. This same iterative
+    process can be applied at a larger scale for frameworks. While we are not highlighting
+    that process in this chapter, keep in mind that you may need to rewrite the framework
+    developed here might need to be rewritten if more plugins are later added and 
+    efficiency starts to lag. Development by iteration allows us to continuously improve
+    on our original design to create a stable and efficient program.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Data standardization
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: One of the biggest challenges when developing a framework is data standardization.
+    What that means is standardizing the input and output data for each plugin to
+    keep things simple. For example, imagine one plugin that returns a list of dictionaries
+    and another that returns just a list. To process these results correctly, you
+    would need to include logic in your writers to handle both scenarios. It pays
+    to implement each plugin in such a way that they return the same data structures.
+    This helps keep your code simple by minimizing additional logic for a variety
+    of special cases.
+  prefs: []
+  type: TYPE_NORMAL
+- en: That said, there may very well be special scenarios you need to consider for
+    each plugin. In our framework, for example, we'll see that some plugins return
+    a list of dictionaries, whereas others return a single dictionary. Consider `setupapi_parser.py`
+    from [Chapter 3](f5b49c85-69ce-4f37-b62d-7f2934e8d30e.xhtml), *Parsing Text Files*—for
+    a moment, it can identify multiple distinct USB devices and generate a dictionary
+    for each one, whereas our `exif_parser.py` only returns one dictionary containing
+    the embedded metadata within a single file. In this case, rather than trying to
+    rewrite the plugins to comply with our rule, we leverage logic to handle additional
+    recursion.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Forensic frameworks
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'There are a lot of forensic frameworks and plenty of these are open source,
+    allowing anyone to contribute to their development. These frameworks are great,
+    not only to contribute to, but to see how experienced developers structure their
+    frameworks. Some popular open source forensic frameworks include the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**Volatility**: A memory forensic framework ([http://github.com/volatilityfoundation/volatility](http://github.com/volatilityfoundation/volatility))'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Plaso**: A artifact timelining tool ([http://github.com/log2timeline/plaso](http://github.com/log2timeline/plaso))'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**GRR ( short for Google Rapid Response)**: An agent-based analysis and response
+    framework for remote forensic analysis ([http://github.com/google/grr](http://github.com/google/grr))'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Contributing on an actively developing project, whether it's a framework or
+    not, is a great way of actively learning good programming techniques and developing
+    connections for collaboration on future projects.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Make sure to read contribution rules before developing for any project.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Enough has been said about frameworks: let''s discuss the third-party modules
+    we''ll use to enhance the aesthetics of our framework.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Colorama
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The `colorama` module (version 0.4.1) allows us to easily create colored Terminal
+    text. We''re going to use this to highlight good and bad events to the user. For
+    example, when a plugin completes without errors, we display that with a green
+    font. Similarly, we will print encountered errors in red. The colorama module
+    can be installed with pip:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Traditionally, printing colored text to the Terminal is achieved by a series
+    of escape characters on Linux or macOS systems. This, however, won''t work for
+    Windows operating systems. The following are examples of ANSI escape characters
+    being used to create colored text in Linux or macOS Terminals:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/a30091c6-ff83-4ba5-9608-ddce5b4a343c.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: The color format is the escape character, `\033`, followed by an open bracket
+    and then the desired color code. We can change the background color in addition
+    to the foreground color and even do both at the same time by separating the codes
+    with a semicolon. The color code, `31m`, sets the foreground text to red. The
+    color code, `47m`, sets the background to white. Notice in the second example,
+    in the preceding screenshot, `m` designates the end of the color codes and should
+    therefore only follow the final color code.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We can use the `colorama` and `call` built-in variables, which are aliases
+    for the desired ANSI codes. This makes our code more readable and best of all
+    works with Windows Command Prompts after calling `colorama.init()` at the beginning
+    of your script:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/9233c4f6-e48e-4673-b06d-289ae393dcb2.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'The `colorama` module has three main formatting options: `Fore`, `Back`, and
+    `Style`. These allow us to make changes to the foreground or background text color
+    and its style, respectively. The colors available for the foreground and background
+    include: black, red, green, yellow, blue, magenta, cyan, and white.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: It's possible to change other text properties using ANSI escape characters,
+    such as if we wanted to make the text dimmer or brighter. ANSI color codes and
+    other information on the `colorama` library is available at  [https://pypi.python.org/pypi/colorama](https://pypi.python.org/pypi/colorama).
+  prefs: []
+  type: TYPE_NORMAL
+- en: FIGlet
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'FIGlet, and its Python extension, `pyfiglet` (version 0.8.post0), is a simple
+    way of generating ASCII art. All we need to do is supply FIGlet with a string
+    of our choice and a font style, which dictates the design of our text. We''ll
+    use this module to print the title of our framework at the beginning of the program''s
+    execution to give it some personality. We can use pip to install pyfiglet:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'To use FIGlet, we need to create a FIGlet object and specify the type of font
+    we would like to use. We then call the object''s `renderText` method, along with
+    the string to style. A full list of fonts is available at [http://www.figlet.org/examples.html](http://www.figlet.org/examples.html):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: With the necessary third-party modules introduced, let's start walking through
+    the framework code itself.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Exploring the framework – framework.py
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Our framework takes some input directory, recursively indexes all of its files,
+    runs a series of plugins to identify forensic artifacts, and then writes a series
+    of reports into a specified output directory. The idea is that the examiner could
+    mount a `.E01` or `.dd` file using a tool such as FTK Imager and then run the
+    framework against the mounted directory.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The layout of a framework is an important first step in achieving a simplistic
+    design. We recommend placing writers and plugins in appropriately labeled subdirectories
+    under the framework controller. Our framework is laid out in the following manner:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Our `framework.py` script contains the main logic of our framework-handling
+    the input and output values for all of our plugins. The `requirements.txt` file
+    contains one third-party module on each line used by the framework. In this format,
+    we can use this file with `pip` to install all of the listed modules. `pip` will
+    attempts to install the latest version of the module unless a version is specified
+    immediately following the module name and two equal to signs (that is, `colorama==0.4.1`).
+    We can install third-party modules from our `requirements.txt` file using the
+    following code:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The plugins and writers are stored in their own respective directories with
+    an `__init__.py` file to ensure that Python can find the directory. Within the
+    plugins directory are seven initial plugins our framework will support. The plugins
+    we''ll include are as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The EXIF, ID3, and Office embedded metadata parsers from [Chapter 8](5844a835-314a-474b-9c28-60880408629d.xhtml), *The
+    Media Age*
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The PST parser from [Chapter 11](90da6f73-2678-4460-8cfb-b388db40a6c3.xhtml), *Parsing
+    Outlook PST Containers*
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The Setupapi parser from [Chapter 3](f5b49c85-69ce-4f37-b62d-7f2934e8d30e.xhtml), *Parsing
+    Text Files*
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The UserAssist parser from [Chapter 6](59414e87-5820-4942-bd47-aba762dd9f14.xhtml), *Extracting
+    Artifacts from Binary Files*
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The WAL file parser from [Chapter 12](f4d95d98-e057-4ad3-b737-4fd72a810e27.xhtml), *Recovering
+    Transient Database Records*
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'There''s also a `helper` directory containing some helper scripts that are
+    required by some of the plugins. There are currently three supported output formats
+    for our framework: CSV, XLSX, and KML. Only the `exif` plugin will make use of
+    `kml_writer` to create a Google Earth map with plotted EXIF GPS data, as we saw
+    in [Chapter 8](5844a835-314a-474b-9c28-60880408629d.xhtml), *The Media Age*.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now that we understand the how, why, and layout of our framework, let's dig
+    into some code. On lines 2 through 11, we import the modules we plan to use. Note
+    that this is only the list of modules that are required in this immediate script.
+    It doesn't include the dependencies required by the various plugins. Plugin-specific
+    imports are made in their respective scripts.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Most of these imports should look familiar from the previous chapters, with
+    the exception of the new additions of `colorama` and `pyfiglet`. On lines 7 and
+    8, we import our plugins and writers subdirectories, which contain the scripts
+    for our plugins and writers. The `colorama.init()` call on line 13 is a prerequisite
+    that allows us to print colored text to the Windows Command Prompt:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'On line 49, we define our `Framework` class. This class will contain a variety
+    of methods, all of which handle the initialization and execution of the framework.
+    The `run()` method acts as our typical main function and calls the `_list_files()`
+    and `_run_plugins()` methods. The `_list_files()` method walks through files in
+    the user-supplied directory and, based upon the name or extension, adds the file
+    to a plugin-specific processing list. Then, the `_run_plugins()` method takes
+    these lists and executes each plugin, stores the results, and calls the appropriate
+    writer:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Within the `Framework` class are two subclasses: `Plugin` and `Writer`. The
+    `Plugin` class is responsible for actually running the plugin, logging when it
+    completes, and sending data to be written. The `run()` method repeatedly executes
+    each function for every file in the plugin''s processing list. It appends the
+    returned data to a list, mapped to the key in a dictionary. This dictionary also
+    stores the desired field names for the spreadsheet. The `write()` method creates
+    the plugin specific output directory and, based on the type of output specified,
+    makes appropriate calls to the `Writer` class:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The `Writer` class is the simplest class of the three. Its `run()` method simply
+    executes the desired writers with the correct input:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'As with all of our scripts, we use `argparse` to handle command-line switches.
+    On lines 285 and 287, we create two positional arguments for our input and output
+    directories. The two optional arguments on lines 288 and 290 specify XLSX output
+    and the desired log path, respectively:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'We can see our first use of the `colorama` library on line 297\. If the supplied
+    input and output directories are files, we print a red error message to the console.
+    For the rest of our framework, we use error messages displayed in red text and
+    success messages in green:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'On line 300, we check whether the optional directory path was supplied for
+    the log file. If so, we create these directories (if they don''t exist), and store
+    the filename for the log in the `log_path` variable:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE11]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'On lines 307 and 309, we create our `Framework` object and then call its `run()`
+    method. We pass the following arguments into the `Framework` constructor to instantiate
+    the object: `INPUT_DIR`, `OUTPUT_DIR`, `log_path`, and `excel`. In the next section,
+    we inspect the `Framework` class in greater detail:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE12]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The following flow chart highlights how the different methods in the `framework.py`
+    script interact. Keep in mind that this flow chart only shows interactions within
+    the immediate script and doesn''t account for the various plugin, writer, and
+    utility scripts:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/97d8fbb0-fb28-4318-9f48-7421e0049564.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Exploring the Framework object
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'We developed our framework with an object-oriented programming design in mind.
+    This allows us to create compartmentalized and reusable objects. Within our `Framework`
+    object are the `Plugin` and `Writer` objects, which we explored in the proceeding
+    sections. The `Framework` class is defined on line 49 and extends the `object`
+    class. In Python 2.X, inheriting from an object that replaces the previous tradition
+    of inheriting nothing has become standard in Python 3.X:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE13]'
+  prefs: []
+  type: TYPE_PRE
+- en: Understanding the Framework __init__() constructor
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The `__init__()` method for the framework is defined on line 51\. In this constructor,
+    we assign the arguments passed to the constructor as instance variables. We also
+    configure the logging module on line 55\. Let''s look at the `run()` method, which,
+    as we saw, is called immediately after the `Framework` object is instantiated:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE14]'
+  prefs: []
+  type: TYPE_PRE
+- en: Creating the Framework run() method
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The `run()` method, defined on line 61, executes the entire logic of our framework
+    in a few lines of code. Lines 62 through 68 simply print and log startup information
+    for debugging purposes. Notice the use of `Figlet` on lines 65 and 66 to print
+    our framework''s title to the console:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE15]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'On line 69, we check to see whether the output directory exists. If it doesn''t,
+    we create it using the `os.makedirs()` method. Finally, on lines 71 and 72, we
+    call the `_list_files()` and `_run_plugins()` methods to index the input directory
+    files and run our plugins against them:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE16]'
+  prefs: []
+  type: TYPE_PRE
+- en: Iterating through files with the Framework _list_files() method
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The `_list_files()` method is used to iterate through each file in the input
+    directory recursively. It stores the files into a processing list for a plugin
+    based on the file's name or extension. One drawback to this approach is that we're
+    relying on file extensions to be correct rather than using the file signatures
+    themselves. We could implement this functionality into the framework by using
+    struct to check each file's signature, as we've done in the previous chapters.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Notice that the `_list_files()` method has a single leading underscore. This
+    is Python's way of declaring an internal method. What it means here is that we're
+    declaring that the `_list_files()` method shouldn't be imported and, generally,
+    shouldn't be directly called by the user. For instance, we should not call `Framework`. `_list_files()`
+    on our `Framework` object after we instantiated it on line 309\. Instead, we can
+    call the `run()` method, which in turn calls the `_list_files()` method.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The `_list_files()` method is defined on line 74 and prints and logs the current
+    execution status. On lines 79 through 85, we create a series of lists specific
+    to each plugin. These lists are used to store any file identified as compatible
+    with a plugin for later processing:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE17]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Starting on line 87, we use the `os.walk()` method that we used in the previous
+    chapters to iterate over the input directory. For each file, we create two variables,
+    one for the name of the current file and another for the extension of the current
+    file:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE18]'
+  prefs: []
+  type: TYPE_PRE
+- en: Using our `current_file` and `ext` variables, we use a series of conditional
+    statements to identify files for our plugins. For example, on line 96, we check
+    whether the file contains `ntuser.dat` in its name as this most likely identifies
+    it as a user's registry hive and is appended to our `userassist_files` list.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Similarly, on line 100, anything ending in `.jpeg` or `.jpg` is most likely
+    a photo with EXIF embedded metadata and is appended to our `exif_metadata` list.
+    If the current file doesn''t meet any of our requirements, then we can''t parse
+    it with our current plugins, and we use `continue` to start the next loop:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE19]'
+  prefs: []
+  type: TYPE_PRE
+- en: Developing the Framework _run_plugins() method
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The `_run_plugins()` is another internal method and handles the logic for calling
+    each plugin and then sending the returned results to the appropriate writer. There
+    are two twists in handling each plugin. We highlight these different twists for
+    two plugins. We won't cover the other five plugins to cut down on explaining the
+    same code.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The first plugin example is the `wal_crawler` plugin. On line 117, we check
+    whether we need to create a `Plugin` object for the `wal_crawler` at all because
+    if the `wal_files` list is empty, there'll be nothing to run the plugin against.
+    If it isn't empty, we create a `Plugin` object on line 118.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Next, we create `wal_output`, which stores our plugin's output directory. On
+    line 121, we call the `run()` method of the `Plugin` class and then, based on
+    whether the `excel` output option is specified, `write()` the results of the plugin,
+    passing along the `excel` keyword argument, if necessary.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Recall that the `wal_crawler` script returns a list of dictionaries where each
+    dictionary contains a cells worth of data. When we call the plugin, we put the
+    results in yet another list. By default, the writers expect just a list of dictionaries
+    to iterate over and write the appropriate report. Because we append a list of
+    dictionaries to yet another list, we need to tell the writer that it needs another
+    `for` loop to access the list of dictionaries. We do this by passing the recursion
+    keyword argument to the plugin''s `write()` method. We set the `recursion` value
+    to `1`,  to mark it as enabled:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE20]'
+  prefs: []
+  type: TYPE_PRE
+- en: Unlike in the previous example, our ID3 metadata script returns a single dictionary,
+    which is appended to a list. In these scenarios, we don't need to specify the
+    `recursion` keyword argument, as seen on lines 190 and 193\. Beyond this single
+    difference, the plugin is handled in the same fashion as the previous plugin.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Remember one goal of our framework is to be able to disable or add a new plugin
+    in as few lines of code as possible.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'This increases the simplicity of the framework, making it far easier to maintain.
+    We''ve tried to maintain that here by keeping the logic consistent and using keyword
+    arguments to handle slight variations:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE21]'
+  prefs: []
+  type: TYPE_PRE
+- en: Exploring the Plugin object
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'On line 207, we have the beginning of the `Plugin` subclass. This class contains
+    the `run()` and `write()` methods, which are used to handle the execution of each
+    plugin as well as the calls to the writers:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE22]'
+  prefs: []
+  type: TYPE_PRE
+- en: Understanding the Plugin __init__() constructor
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The `Plugin` constructor method is fairly straightforward. We create instance
+    variables for the plugin name, the files to process, the log, and a dictionary
+    containing the results of the plugin. The results dictionary contains a data list,
+    which stores the actual results returned from each plugin call. The headers key
+    will eventually have a list storing the field names to use in the writers:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE23]'
+  prefs: []
+  type: TYPE_PRE
+- en: Working with the Plugin run() method
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The `run()` method defined on line 215 is responsible for executing the plugin
+    against each file stored in the plugin's list. In addition, this method prints
+    out various status messages pertaining to the execution of the plugin.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The function argument passed into the `run()` method is the name of the entry-point
+    method in the plugin. We call this entry-point for each file in the plugin''s
+    file list. For example, the `wal_crawler` plugin''s entry-point method is `plugins.wal_crawler.main`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE24]'
+  prefs: []
+  type: TYPE_PRE
+- en: On line 220, we begin to iterate through each file in the plugin's file list.
+    On line 222, we call the function variable and supply it with the file to process.
+    This restricts all of our plugins to comply with a single file as its input. Some
+    of the modifications we made to our existing plugins involved modifying their
+    required arguments to work within the bounds of the framework. For example, in
+    the previous chapters, we may have passed in an output file or directory as one
+    of the script's arguments. However, now, the writers, a separate part of the framework,
+    handle the output and so the plugins only need to focus on processing and returning
+    the data to the framework.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Notice that the function call is wrapped around try and except. In the plugins
+    themselves, you can see that we raise `TypeError` when we encounter an error in
+    the plugin; in the case of an error, the plugin logs the actual error while the
+    framework continues to process the next file.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'On lines 223 and 224, we append the returned results from the plugin to the
+    data list and set the headers for the plugin. The returned headers list is a constant
+    list of field names that''s set whenever the plugin returns successfully:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE25]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Finally, on lines 231 through 234, we print out and log the successful completion
+    of the plugin, including the current time to the user:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE26]'
+  prefs: []
+  type: TYPE_PRE
+- en: Handling output with the Plugin write() method
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The `write()` method is first defined on line 236\. This method creates the
+    plugin-specific output directory and call the appropriate writer to create the
+    plugin report. On lines 241 and 242, after printing out a status message to the
+    user, we create the plugin output directory if it doesn''t already exist:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE27]'
+  prefs: []
+  type: TYPE_PRE
+- en: On line 243, we check to see whether the `excel` keyword argument was specified
+    in the function call. If it was, we call `xlsx_writer` and pass the output directory,
+    the desired filename, field names, and the data to write.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'If the `excel` keyword argument isn''t supplied, the default `csv_writer` is
+    called instead. This function takes the same arguments as `xlsx_writer`. On line 253,
+    we check whether the plugin name is `exif_metadata`. If so, we call `kml_writer`
+    to plot the Google Earth GPS data:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE28]'
+  prefs: []
+  type: TYPE_PRE
+- en: Exploring the Writer object
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The `Writer` object is defined on line 258\. This class is responsible for
+    creating the report for each plugin. The class has one main method, `run()`, which
+    simply calls the writer that was described in the `plugin.write` method:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE29]'
+  prefs: []
+  type: TYPE_PRE
+- en: Understanding the Writer __init__() constructor
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The constructor method instantiates session variables, including the output
+    filename of the report, the header, and the data to be written. If the `recursion`
+    keyword argument is present, we set the session variable before calling the `run()`
+    method:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE30]'
+  prefs: []
+  type: TYPE_PRE
+- en: Understanding the Writer run() method
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The `run()` method is very straightforward. Based on whether recursion was
+    specified, we call the specified writer, passing along the `recursion` keyword
+    argument:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE31]'
+  prefs: []
+  type: TYPE_PRE
+- en: Our Final CSV writer – csv_writer.py
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Each writer essentially works in the same manner. Let''s briefly discuss the
+    `csv_writer` method before discussing the more complex `xlsx_writer` script. Depending
+    on whether the framework is run with Python 2.X or 3.X, we import the native `csv`
+    or `unicodecsv` modules to handle Unicode strings. The `unicodecsv` module was
+    first introduced in [Chapter 5](a4ae250a-8aa8-49b9-8fd6-0cac51975f11.xhtml), *Databases
+    in Python*:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE32]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Our writer is very simple. On line 61, we create a `csv.DictWriter` object
+    and pass it the output filename and headers list. As always, we indicate to the
+    writer to ignore the case where they are keys that are not specified in the supplied
+    headers:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE33]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'With the `DictWriter` object created, we can use the built-in `writerheader()`
+    method to write our field names as the first row of the spreadsheet. Notice that
+    we wrap this in a try and except, something we haven''t done in the past. Imagine
+    a scenario where there''s only one file for a plugin to process and it encounters
+    and error and returns prematurely. In this case, the headers list will be none,
+    which will cause an error. This last check allows us to exit writing invalid output
+    files for this scenario:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE34]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Next, on line 73, if the `recursion` keyword argument was supplied, we use
+    two `for` loops before calling the `writerow` method on the dictionaries. Otherwise,
+    on line 79, we only need to use one `for` loop to access the data to write:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE35]'
+  prefs: []
+  type: TYPE_PRE
+- en: The writer – xlsx_writer.py
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The `xlsx_writer` function is a slightly modified version of `xlsx_writer`,
+    which we created in [Chapter 6](59414e87-5820-4942-bd47-aba762dd9f14.xhtml), *Extracting
+    Artifacts from Binary Files*. We use the same `xlsxwriter` third-party module
+    to handle the excel output. On line 32, we use list comprehension to create a
+    list of capitalized alphabetical characters from `A` to `Z`. We''re going to use
+    this list to designate the column letter based on the supplied headers length.
+    This method works as long as there are less than 26 field names, which for the
+    current set of plugins is true:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE36]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'On line 44, we create the `xlsxwriter` workbook and supply the output filename
+    to save it as. Before going any further, we check whether the supplied headers
+    are equal to none. This check is necessary, just as in `csv_writer`, to avoid
+    writing invalid data from a bad call to the writer. On line 52, we set `title_length`
+    equal to the letter that the right-most column will be, in case there are more
+    than 26 columns. We''ve currently set the right-most value to be `Z`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE37]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Next, on line 56, we create our worksheet. In a similar fashion to the `csv_writer`
+    function, if recursion is specified, we loop through the list, adding a worksheet
+    for each additional list to prevent them from writing over each other. We then
+    use list comprehension to quickly order the dictionary values based on the order
+    of the field names. In `csv_writer`, the `writerow` method from the `DictWriter`
+    object orders the data automatically. For `xlsx_writer`, we need to use list comprehension
+    to recreate that same effect:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE38]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'On line 69, we create a table from `A3` to `XY`, where `X` is the alphabet
+    character representing the length of the field names list and `Y` is the length
+    of the `output_data` list. For example, if we have a dataset that has six field
+    names and 10 entries, we want our table to span from `A3` to `F13`. In addition,
+    we pass along the ordered data and specify each column using list comprehension
+    once again to specify a dictionary with one key-value pair for each header:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE39]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'On line 74, we handle the scenario where we don''t supply the `recursion` keyword
+    argument. In this case, we handle the same execution minus the additional `for`
+    loop. Lastly, on line 84, we close the workbook:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE40]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The `add_worksheet()` method is called on lines 56 and 61\. This function is
+    used to create the worksheet and writes the first two rows of the spreadsheet.
+    On line 96, we create the `title_format` style, which contains the text properties
+    we want for our two title rows. On lines 101 and 103, we create both of our title
+    rows. Currently, the values of these title rows are hardcoded but could be programmed
+    into the framework by adding them as optional switches in `argparse`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE41]'
+  prefs: []
+  type: TYPE_PRE
+- en: Changes made to plugins
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: We've discussed the framework, its subclasses, and the two main writer scripts.
+    What about the changes we had to make to the plugin scripts from previous chapters?
+    For the most part, their core functionality is unchanged. Modifications we made
+    include removing printing and logging statements, deleting the `argparse` and
+    log setup sections, and removing unnecessary functions such as the script's output
+    writer (since the framework handles that).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Instead of walking through each plugin, we invite you to view the source files
+    yourself and compare. You'll see that these files are mostly the same from the
+    previous scripts. Keep in mind that when we originally wrote these scripts, we
+    had it in the back of our minds that they would eventually be added to a framework.
+    While the similarity between the framework and non-framework versions of the scripts
+    was intentional, it was necessary to still make modifications to get everything
+    working correctly.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Executing the framework
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'To run the framework, at a minimum, we need to supply an input and output directory.
+    Optionally, we can provide arguments for the desired log output path and enable
+    XLSX output rather than the default CSV. The first example and the following screenshot
+    highlight the minimum arguments to run the framework. The second example shows
+    the additional switches we can call with our framework:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE42]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Upon running the framework, the user will be presented with a variety of output
+    text detailing the execution status of the framework:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/61a8605b-78c2-4f27-b25a-6620e3231008.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'As each plugin successfully processes, a report is generated in the plugin''s
+    output folder. We decided to organize the output by storing each plugin report
+    in a separate folder to allow the examiner to drill down to their plugin of interest
+    easily:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/6cbccc55-d556-47ca-8de1-5a0d4d095883.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Additional challenges
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: There are a lot of potential opportunities for improvement with our framework.
+    Obviously, we could continue to add more plugins and writers to the framework.
+    For example, while we have the beginning of USB device artifacts with the `Setupapi`
+    plugin, it could be expanded by parsing various USB pertinent registry keys using
+    the `Registry` module from [Chapter 6](59414e87-5820-4942-bd47-aba762dd9f14.xhtml), *Extracting
+    Artifacts from Binary Files*. Alternatively, consider adding other scripts we've
+    already created. For instance, it might be useful to generate an active file listing
+    using the script from [Chapter 5](a4ae250a-8aa8-49b9-8fd6-0cac51975f11.xhtml), *Databases
+    in Python*. This would allow us to monitor what files have been processed by the
+    framework.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Additionally, adding novel sources of user activity artifacts, such as a prefetch
+    parser would enhance the intrinsic value of the framework. The file format for
+    prefetch files is described at [http://forensicswiki.org/wiki/Windows_Prefetch_File_Format](http://forensicswiki.org/wiki/Windows_Prefetch_File_Format).
+    As with any binary file, we recommend using the struct module to parse the file.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Finally, for those looking for a challenge, consider adding `E01` and `dd` support
+    by using `libewf` ([https://github.com/libyal/libewf](https://github.com/libyal/libewf))
+    or `libtsk` ([https://github.com/py4n6/pytsk](https://github.com/py4n6/pytsk)).
+    This would get rid of the need to mount the image file before running the framework
+    against it. This would be more of an undertaking and will likely require a rewrite
+    of the framework. However, the harder the challenge, the more you'll get out of
+    it once complete.
+  prefs: []
+  type: TYPE_NORMAL
+- en: An example of this implementation is available in the Python Digital Forensics
+    Cookbook by Packt, which is available at [https://www.packtpub.com/networking-and-servers/python-digital-forensics-cookbook](https://www.packtpub.com/networking-and-servers/python-digital-forensics-cookbook).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Summary
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: This is the final chapter, where we learned how to develop our own forensic
+    framework using scripts we've previously built. This is the first step to building
+    your very own automated forensic solution, greatly increasing your lunch break,
+    or for the more serious, efficiency. We've learned how to balance code complexity
+    with efficiency to develop a sustainable framework to help us to answer investigative
+    questions. The code for this project can be downloaded from GitHub or Packt, as
+    described in the *Preface*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: At the outset of this book, we wanted to teach investigators the advantages
+    of Python by showing increasingly complex scripts. Throughout this process, we've
+    introduced common techniques, best practices, and a myriad of first and third-party
+    modules. We hope that, at this point, you're comfortable with developing your
+    own scripts and understand the fundamentals of Python and are well on your way
+    to becoming a forensic developer.
+  prefs: []
+  type: TYPE_NORMAL
+- en: As we close out of this book, we wanted to list a few recommendations. If you
+    haven't done so, please attempt to solve the various challenges. Some are fairly
+    straightforward while others are more difficult, but in any case, they will help
+    you develop your skills further. Additionally, go beyond just following along
+    with the code provided with this book. Find a problem or task that's frequently
+    encountered and script it from scratch. And, as always, ask friends, use the internet,
+    read additional books, and collaborate with others to continue learning. Our capacity
+    to learn is only waylaid by our lack of effort to pursue it.
+  prefs: []
+  type: TYPE_NORMAL

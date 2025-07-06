@@ -1,0 +1,530 @@
+- en: '6'
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Disk Encryption
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The **Linux Unified Key Setup** (**LUKS**) standard for encrypting block devices
+    within Linux was created way back in 2004\. No wonder I feel like I’ve been using
+    it forever! Twenty years is a long time for a tool to get stable and feature-rich.
+    It’s also been around long enough to be universally loved and appreciated by engineers
+    around the world. It’s virtually a mainstay of every Linux distribution’s installer
+    options when configuring storage for your Linux systems. But each of those installers
+    only lets you take LUKS so far. You will be forced to manually enter keys every
+    time you boot or reboot. As this book is meant to be by no means introductory,
+    let’s assume you have some great baseline Linux skills and continue our journey
+    down the mineshaft of complexities and advanced skill sets.
+  prefs: []
+  type: TYPE_NORMAL
+- en: This chapter’s goal is to open your mind to more ways to secure the storage
+    of your system. Here, I plan to expand your insights into how that can be configured
+    alternatively.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Grab some caffeinated beverages and a snack. This will be a deeper dive into
+    the employment of LUKS for your future products.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In this chapter, we will cover the following topics:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Introduction to LUKS
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Implementing LUKS on an appliance with automated keys
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Is recovery possible?
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Let’s get started.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Technical requirements
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: For the exercise in this chapter, you will need a physical or virtual machine
+    that you can (re)install Linux onto to complete these tasks. Administrative (root)
+    access is implied. You will be required to create some custom partitions/filesystems.
+    You will need a fresh installation of a Linux system with the regular filesystems
+    you may have regularly created. Also create a 500 MiB XFS LUKS encrypted partition,
+    labeled `data3`, with the mount point set as `/data3`. Use `CreatePass` as the
+    initial key passphrase. Root or sudo access is mandatory. I cannot highlight enough
+    how important it is that this prerequisite is done as specified – not doing this
+    will impact your ability to easily complete this chapter’s exercises.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Introduction to LUKS
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: With LUKS in play, any Linux filesystem can be encrypted. There are some caveats
+    that you should be aware of ahead of time.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Encrypting your data at rest (that is, everything stored on disk, SSD, or NVME)
+    is not just a nice-to-have option, it’s almost assumed to be present depending
+    on whom your target clientele may be. For discussion’s sake, let’s imply that
+    the expected customer for your solution is a government entity. Most government
+    customers (regardless of the country we are referring to) are mandated to have
+    an exceptional level of security within whatever may be deployed within their
+    walls. Their standards are significantly higher, as are their risks. It’s safe
+    to say that disk encryption is assumed to be present. We shall cover how to implement
+    some of these more stringent government security standards later in [*Chapter
+    13*](B22104_13.xhtml#_idTextAnchor400).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Crucial to the encryption process is an open source utility called `cryptsetup`.
+    This relies on functionality provided by the `dm-crypt` Linux kernel module. These
+    tools, along with your own distribution-specific tooling for managing storage,
+    are installed generally by default in every Linux distribution. Once a volume
+    is encrypted with LUKS, the encryption can only be fully removed when the volume
+    is offline and not mounted.
+  prefs: []
+  type: TYPE_NORMAL
+- en: LUKS, most simply stated, leverages `dm-crypt` module to cipher/decipher data
+    on disks. LUKS requires a passphrase to be entered each time a volume is mounted
+    and accessed. Its inner workings, which are thankfully obscured from us end-users,
+    are rather complex. Automating this process is even more complex.
+  prefs: []
+  type: TYPE_NORMAL
+- en: For systems using the `/boot` partition. GRUB and GRUB2 both support such encryption.
+    There are other bootloaders that may not do this, so check before considering
+    this option.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Most commonly, the root partition along with any application partitions should
+    be encrypted to protect the system from tampering. Swap and user home directory
+    partitions should also be considered.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The current version of LUKS (LUKS2) supports up to 32 encryption keys per encrypted
+    volume, whereas LUKS1 only supports up to 8 keys. This will be a crucial golden
+    nugget to remember when we discuss recovery later on in this chapter.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Basic implementation review
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: With the excellent graphical installers available in today’s Linux distributions,
+    you have probably seen exactly how they try to assist you with the configuration
+    of LUKS encryption as part of the build process. We won’t be covering LUKS basics
+    in any depth, but if you need a reference, please check the project’s repository
+    at [https://gitlab.com/cryptsetup/cryptsetup/blobmC5#WdW07?dhVJ4aster/README.md](https://gitlab.com/cryptsetup/cryptsetup/blobmC5#WdW07?dhVJ4aster/README.md).
+    However, I do want to highlight specifically that configuring LUKS via the base
+    installer will force the manual entry of the key passphrase every time the system
+    is booted or rebooted.
+  prefs: []
+  type: TYPE_NORMAL
+- en: As this is not a beginner’s guide to installing Linux, I’d like to make an important
+    point. The installer can only minimally configure LUKS encryption. This configuration
+    may be suitable for people building things in their lab, but it is not acceptable
+    when one takes on the customers’ perspective in the situation where they’re paying
+    prime money for a well-crafted secure solution.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Here’s an example of configuring LUKS via the Linux distribution’s installer:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 6.1 – Configuring encryption via the installer](img/B22104_06_01.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 6.1 – Configuring encryption via the installer
+  prefs: []
+  type: TYPE_NORMAL
+- en: Creating encrypted filesystems through the installer is definitely a positive
+    jumpstart to securing your appliance build, but if you stop there, it’s only a
+    matter of time before the customer complaints over usability and security (as
+    they’ll have to give out the passphrase to all the admins at minimum) will force
+    you to make changes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: As we continue to build upon each piece of security and usability criteria in
+    this book, let’s move on to the next section, which will definitely improve the
+    customers’ end-user experience and, without a shadow of a doubt, will improve
+    the security posture of the appliance itself. Automating the encryption/decryption
+    process and securing this information from the end-user becomes a key initiative.
+    The fewer people with access to the ability to decrypt the data, the better the
+    solution will be perceived. Let’s now explore exactly how such automation looks
+    and let’s get our hands dirty.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Implementing LUKS on an appliance with automated keys
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: A key point to keep at the forefront of your thought process in the implementation
+    of any security factor in an appliance solution is your end-user experience. This
+    book was created to help you and your team create a secure but usable embedded
+    Linux system.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Depending on what your solution is and how it is utilized by the end-users,
+    it is paramount to prevent the need for those end-users to have to enter keys
+    every time a system is turned on. Firstly, that appliance may not even have a
+    console or a keyboard attached. Secondly, forcing the end-user to manually enter
+    such a key will ultimately result in them writing the key down on a note somewhere
+    taped to the machine or elsewhere in clear view in the workplace. Making the end-user
+    enter the key passphrases should be avoided if at all feasible.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Here’s an example screenshot of how you may be prompted for a passphrase before
+    the boot sequence can continue:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 6.2 – Manual encryption key passphrase entry at boot](img/B22104_06_02.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 6.2 – Manual encryption key passphrase entry at boot
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now that you can see how having your end-user be forced to enter a passphrase
+    is not a great idea, we’ll take a journey in the next section to see how this
+    process can be securely automated. Let’s move on.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Exercise – implementing LUKS with stored keys and leveraging the crypttab file
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Before we start pounding the keyboard, please allow me to introduce an ally
+    that you may have known that you have in this battle. The `/etc/crypttab` file
+    is used by all distributions of Linux to store information about encrypted block
+    devices for them to be automatically unlocked at boot time. In my opinion, this
+    is one of the true hidden gems in Linux.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'For this exercise, we’ll be using the machine mentioned in this chapter’s *Technical
+    requirements* section and we will be automating the unlocking of that `/data3`
+    filesystem. Let’s begin with the following steps:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Log in as root.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 'Check device availability. Identify the UUID and the device name of the partition
+    you have created for this exercise. Your output will most likely have differences:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: 'Now, let’s determine the UUID for our specific volume. Yours may be a different
+    device so please pay attention:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: Important note
+  prefs: []
+  type: TYPE_NORMAL
+- en: For me, my device name was `/dev/sda7` – yours will be different for a variety
+    of reasons (disk type, the partitioning scheme of your system, etc.) Wherever
+    I have typed `/dev/sda7` or my unique UUID for the volume, *you must replace it
+    with your* *own information*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Generate a random passkey as root and save it under `/etc` as `luks-keyfile`:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: 'luks-keyfile file:'
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: cryptsetup luksAddKey /dev/sda7 /etc/luks-keyfile
+  prefs:
+  - PREF_IND
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: '/etc/crypttab file created by the Linux installer. We’ll need to see whether
+    the installer created a definition for the manual decryption of our volume (in
+    my case, it did):'
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: umount /data3
+  prefs:
+  - PREF_IND
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: cryptsetup -v luksClose luks-8e1fb810-b471-491a-adcf-32048a0eb534
+  prefs:
+  - PREF_IND
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Command successful.
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: '[PRE6]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: '[PRE7]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: Important note
+  prefs: []
+  type: TYPE_NORMAL
+- en: For this exercise, we will also name the volume `data3`. As my `/data3` partition
+    was created during the installation (for speed purposes), there was already an
+    entry with the same UUID as my `/data3` volume so I created a new entry with the
+    label of `data3` as the new first entry and commented out the original entry.
+    This is a very important step. You may later choose to delete the older entry,
+    but in testing, I recommend simply commenting it out. Additionally, I must remind
+    you that your own UUIDs will be different than mine.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Edit the `/etc/crypttab` file using your favorite editor:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: /etc/crypttab
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Let’s manually force LUKS to use our new keyfile and test open the encryption
+    and then mount the volume:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: 'Let’s now mount the device:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE11]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: $ df –h
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: Filesystem      Size  Used Avail Use% Mounted on
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: /dev/sda3        55G  7.2G   48G  13% /
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: devtmpfs        4.0M     0  4.0M   0% /dev
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: tmpfs            16G     0   16G   0% /dev/shm
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: tmpfs           6.3G  1.9M  6.3G   1% /run
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: tmpfs            16G   76K   16G   1% /tmp
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: /dev/sda2       3.0G  406M  2.6G  14% /boot
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: /dev/sda5        40G  2.6G   38G   7% /var
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: /dev/sda6        40G  875M   40G   3% /home
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: tmpfs           3.2G  224K  3.2G   1% /run/user/1000
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: /dev/dm-0       444M  135K  415M   1% /data3
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: '[PRE12]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: Finally, we need to do a reboot of the system and re-verify all filesystems
+    mounted automatically.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: We’ve come a long way with LUKS thus far through some serious advanced automation.
+    Your customers will truly appreciate your attention to detail and the ease of
+    use your solution provides (along with the encryption). We are not done yet. Let’s
+    dive into the million-dollar question in our next section.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Is recovery possible?
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Wow. Is recovery possible? That’s the million-dollar support question. Please
+    allow me to paint a picture and offer you what may just be the only solution.
+    The truest answer is both *yes* and *no*. It’s mostly *No!* So, let’s explore
+    what I mean and why I call it the million-dollar support question.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Please humor me for just a moment. Let’s envision that the worst possible situation
+    has arrived – due to a perfect storm of either a broken TPM module or filesystem
+    corruption or, even worse, a malicious act by a rogue employee or hacker, the
+    keystore for your automated encryption passkeys is lost on one of your customers’
+    appliances.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Your support team is flustered. Not only is that customer offline but there
+    will probably be some significant data loss involved. “*Oh man*,” you think to
+    yourself, “*Why didn’t I call in* *sick today?*”
+  prefs: []
+  type: TYPE_NORMAL
+- en: How can your support team help this customer? Will your company lose credibility
+    or the end-customers' trust? How could you have prevented this?
+  prefs: []
+  type: TYPE_NORMAL
+- en: Okay, here’s the bad news. Brace for impact. If you only have one passkey and
+    it’s lost or compromised or whatever, you and that customer are definitely going
+    to have a very, very bad day. There is no recovery from the loss of the sole key/passphrase
+    store. Period. This type of encryption has ramifications. It’s built into the
+    design. No key or passphrase means zero access, and that is the point!
+  prefs: []
+  type: TYPE_NORMAL
+- en: The implications of not being able to help your customer recover can be costly,
+    but it may not be as easy to predict just how costly it could be. If you are unable
+    to assist a customer recover from a passkey/encryption issue, they’ve lost data,
+    and they’ve lost time. We don’t know and can’t possibly calculate whether this
+    impacts their customers too. You’re probably going to lose them as a customer.
+    You will lose credibility in the market. Hopefully, they don’t sue your company
+    for losses. As I said, it’s costly.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now this is where I say, “*Where there’s a will there’s a way!*” In the fullest
+    disclosure, nothing can prevent unforeseen failures entirely, but some additional
+    engineering and planning will give your support staff the virtual lifeboat to
+    survive the shipwreck if it ever happens. Please indulge me for a little more
+    time.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We have already covered that the current version of LUKS (i.e., LUKS2) supports
+    up to 32 slots for keys or passphrases. There’s a good reason for this. You need
+    more than one. In my jaded opinion, you truly need several. Don’t be lazy. Set
+    multiple. Document them for your product and support staff. They can be a lifeboat
+    for your customer in the event of a catastrophe.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'How you apply that knowledge is up to you. What I recommend is at minimum having
+    three options, and I repeat, this is the bare minimum. They are as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The passphrase for LUKS used in the installer
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The key you create for the automated decryption of filesystems
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: An emergency passphrase for all encrypted filesystems that is known only to
+    your support team
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: That said, depending on the scale of some of your customers’ implementations
+    of your solution, you might consider adding a standard recovery passphrase as
+    the fourth option. This would empower your support team to work more closely and
+    freely with the customer to deal with any encryption issues.
+  prefs: []
+  type: TYPE_NORMAL
+- en: At this point, your own internal documentation and processes for building and
+    support must be spot on. Yet in all of this, who actually has access to those
+    specific keys/passphrases must be controlled and regulated. “*Why?*” one may ask.
+    Let me be blunt. The worst-case scenario would be a disgruntled employee with
+    access to this critical information and sharing it – *anywhere* – such as on the
+    Internet. The level of compromise for all your customers would be devastating.
+  prefs: []
+  type: TYPE_NORMAL
+- en: You might be thinking to yourself, “*Geez, this whole book is chock full of
+    doom and gloom!*” Well, yeah – it’s a security book. Fear is a motivator. Move
+    on. But all kidding aside, this is a very serious subject and a design decision
+    you and your team must make.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Summary
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Now, let’s review what we’ve covered in this chapter. We have gone way beyond
+    the base configuration of LUKS from common Linux installers. We have reviewed
+    advanced ways of automating LUKS to improve security and the end-user experience;
+    we have also covered more advanced ways of configuring the encryption keys and
+    passphrases; and finally, and just as importantly, we have covered preventative
+    measures with multiple keys and passphrases to virtually eliminate the probability
+    of data loss during a critical support issue. I hope you have enjoyed this deep
+    dive into LUKS as much as I have.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The benefits of leveraging this kind of encryption automation are extensive.
+    In doing this, you will immediately create a better end-user experience as they
+    will not be forced to memorize or type the passphrase every boot cycle. This implemented
+    encryption protects your appliance and your end-customers' data or intellectual
+    properties. Having this strong encryption gives the end-customer greater *peace
+    of mind* in acquiring and using your solution. At the end of the day, it truly
+    is all about solving your customers’ problems and creating repeat customers who,
+    in turn, tout your solution to their friends and colleagues.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Using LUKS should not add complexity for your customers and end-users. This
+    is where implementing the automation of the passkeys is crucial. Ultimately, positive
+    user experience and security can both be achieved in this instance. I hope that
+    this deep dive into LUKS has been inspirational for you and given you new ideas
+    on securing your filesystems.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Let’s now move on to our next chapter where we’ll drill deep into BIOS and boot
+    security.
+  prefs: []
+  type: TYPE_NORMAL

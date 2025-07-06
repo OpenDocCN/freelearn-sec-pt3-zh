@@ -1,0 +1,485 @@
+- en: Sandboxing - Virtualization as a Component for RE
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In previous chapters, we have used virtualization software, in particular, VirtualBox
+    or VMware, to set up our Linux and Windows environments to conduct analysis. virtualization
+    worked fine since these virtualization software only support x86 architecture.
+    Virtualization is a very useful component of reverse engineering. In fact, most
+    software is built under x86 architecture.  Virtualization uses the resources of
+    the host machine's CPU via the hypervisor.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Unfortunately, there are other CPU architectures out there that doesn't support
+    virtualization. VirtualBox nor VMware doesn't support these architectures.  What
+    if we were given a non-x86 executable to work with?  And all we have is an operating
+    system installed in an x86 machine. Well, this should not stop us from doing reverse
+    engineering.
+  prefs: []
+  type: TYPE_NORMAL
+- en: To work around this issue, we will be using emulators. Emulators have been around
+    long before the hypervisor was even introduced.  Emulators, basically, emulates
+    a CPU machine.  Treating this as a new machine, operating systems that run on
+    a non-x86 architecture can be deployed.  After then, we can run native executables.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In this chapter, we will learn about QEMU to deploy an non-x86 operating system. 
+    We will also learn about emulating the boot up of an x86 machine using Bochs.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Emulation
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The beauty of emulation is that it can fool the operating system into thinking
+    that it is running on a certain CPU architecture. The drawback is noticeably slow
+    performance, since almost every instruction is interpreted. To explain CPUs briefly,
+    there are two CPU architecture designs: **Complex Instruction Set Computing**
+    (**CISC**) and **Reduced Instruction Set Computing** (**RISC**). In assembly programming,
+    CISC would only require a few instructions. For example, a single arithmetic instruction,
+    such as MUL, executes lower-level instructions in it. In RISC, a low-level program
+    should be carefully optimized. In effect, CISC has the advantage of requiring
+    less memory space, but a single instruction would require more time to execute.
+    On the other hand, RISC has better performance, since it executes instructions
+    in a simplistic way. However, if a code is not properly optimized, programs built
+    for RISC may not perform as fast as they should and may consume space. High-level
+    compilers should have the ability to optimize low-level code for RISC.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Here is a short list of CPU architectures, categorized in terms of CISC and
+    RISC:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'CISC:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Motorola 68000
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: x86
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: z/Architecture
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'RISC:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: ARM
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: ETRAX CRIS
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: DEC Alpha
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: LatticeMico32
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: MIPS
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: MicroBlaze
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Nios II
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: OpenRISC
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: PowerPC
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: SPARC
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: SuperH
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Hewlett Packard PA-RISC
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Infineon TriCore
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: UNICORE
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Xtensa
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Popular among CISC and RISC architectures are x86 and ARM. x86 is used by Intel
+    and AMD computers, in favor of having a minimum number of instructions used by
+    programs. Newer devices, such as smartphones and other mobile devices, make use
+    of ARM architecture, as it has the advantages of low power consumption with high
+    performance.
+  prefs: []
+  type: TYPE_NORMAL
+- en: For the purpose of discussion in this chapter, we are using ARM as the architecture
+    that we are going to emulate on top of an x86 machine. We chose the ARM architecture
+    since it is currently the most popular processor used in handheld devices today.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Emulation of Windows and Linux under an x86 host
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: We explained that installing an operating system on a VM follows the architecture
+    of the host machine. For example, a Windows x86 build can only be installed on
+    a VM that is itself installed on an x86 machine.
+  prefs: []
+  type: TYPE_NORMAL
+- en: A lot of Linux operating systems, including Arch Linux, Debian, Fedora, and
+    Ubuntu, have support for running under ARM processors. On the other hand, Windows
+    RT and Windows Mobile were built for devices using ARM CPUs.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Since we are working on PCs using x86 processors, analyzing a non-x86-based
+    executable still follows the same reverse engineering concepts of static and dynamic
+    analysis. The only addition to these steps is that we would need to set up the
+    environment for which the executable can run and learn the tools that can be used
+    on top of this emulated environment.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Emulators
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'We are going to introduce two of the most popular emulators: QEMU (Quick Emulator)
+    and Bochs.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: QEMU has a reputation of being the most widely used emulator because of its
+    support for a vast range of architectures, including x86 and ARM. It can also
+    be installed under Windows, Linux, and macOS. QEMU is used from the command line,
+    but there are available GUI tools, such as virt-manager, that can help set up
+    and manage the guest operating system images. virt-manager, however, is only available
+    for Linux hosts.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Bochs is another emulator, but is limited to only supporting x86 architecture.
+    It is worth mentioning this emulator, as it is used to debug the **Memory Boot
+    Record** (**MBR**) code.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Analysis in unfamiliar environments
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Here, the reverse engineering concepts are the same. However, the availability
+    of tools is limited. Static analysis can still be done under an x86 environment,
+    but when we need to execute the file, it would require sandbox emulation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: It is still best to debug native executables locally in the emulated environment.
+    But, if local debugging is slim, one alternative way is to do remote debugging.
+    For Windows, the most popular remote debugging tools are Windbg and IDA Pro. For
+    Linux, we usually use GDB.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Analyzing ARM-compiled executables is not far from the process that we perform
+    with x86 executables. We follow the same steps as we did with x86:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Study the ARM low-level language
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Do deadlisiting using disassembly tools
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Debug the program in the operating system environment
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Studying the ARM low-level language is done in the same way that we studied
+    x86 instructions. We just need to understand the memory address space, general
+    purpose registers, special registers, stack, and language syntax. That would also
+    include how API functions are called.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tools such as IDA Pro, among other ARM disassembly tools, can be used to show
+    the ARM disassembly code of a native ARM executable.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Linux ARM guest in QEMU
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Linux ARM can be installed in an ARM CPU guest of QEMU, which runs under a
+    Windows in an x86 CPU. Let''s head straight to deploying an Arch Linux ARM, then.
+    Running an Arch Linux instance as a QEMU guest is not that hard because of all
+    the available resources we can download from the internet. For demo purposes,
+    we will be using a pre-installed image of Arch Linux and running it in QEMU. Prepare
+    to download these files:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: QEMU: [https://qemu.weilnetz.de/](https://qemu.weilnetz.de/)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Arch Linux image: [http://downloads.raspberrypi.org/arch/images/archlinuxarm-29-04-2012/archlinuxarm-29-04-2012.img.zip](http://downloads.raspberrypi.org/arch/images/archlinuxarm-29-04-2012/archlinuxarm-29-04-2012.img.zip)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: System kernel: [https://github.com/okertanov/pinguin/blob/master/bin/kernel/zImage-devtmpfs](https://github.com/okertanov/pinguin/blob/master/bin/kernel/zImage-devtmpfs)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: In this book, we will install QEMU on a Windows host. While installing, **take
+    note of where QEMU was installed**. This is particularly important, as QEMU's
+    path will be used later.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Extract the image file from `archlinuxarm-29-04-2012.img.zip` to a new directory,
+    and copy `zImage-devtmpfs` into the same directory.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Open a command line in the image and kernel file''s directory. Then, execute
+    the following line:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Here, change `C:\Program Files\qemu` to the path where QEMU was installed.
+    This should fire up QEMU with Arch Linux running, as shown here:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/dca8e425-cb70-404d-83f3-229d47e58296.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Now, log in using these credentials:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: You can go ahead and play with it like a regular Linux console. Arch Linux is
+    a popular OS installed by enthusiasts of Raspberry Pi.
+  prefs: []
+  type: TYPE_NORMAL
+- en: MBR debugging with Bochs
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: When we turn on a computer, the first code that runs is from the BIOS (Basic
+    Input/Output System), a program embedded in the CPU.  It performs a power-on self-test
+    (POST)  that makes sure connected hardware are working properly.  The BIOS loads
+    the master boot record (MBR) to memory and then passes code execution.  The master
+    boot record (MBR) was read from the first disk sector of the designated boot disk. 
+    The MBR contains the bootstrap loader which is responsible for loading an operating
+    system.
+  prefs: []
+  type: TYPE_NORMAL
+- en: If, for example, we want to debug a given MBR image, we can do that with an
+    emulator called Bochs. Bochs can be downloaded from [http://bochs.sourceforge.net/](http://bochs.sourceforge.net/).
+  prefs: []
+  type: TYPE_NORMAL
+- en: To test this out, we have provided a disk image that can be downloaded from [https://github.com/PacktPublishing/Mastering-Reverse-Engineering/blob/master/ch8/mbrdemo.zip](https://github.com/PacktPublishing/Mastering-Reverse-Engineering/blob/master/ch8/mbrdemo.zip).
+    This ZIP archive extracts to about 10MB. The file contains the `mre.bin` disk
+    image and the `bochsrc` image configuration file that will be passed to Bochs.
+  prefs: []
+  type: TYPE_NORMAL
+- en: If we open the `mre.bin` using IDA Pro, we should be able to statically analyze
+    the MBR code. The MBR almost always starts at the `0x7c00` address. It is a 16-bit
+    code that uses hardware interrupts to control the computer.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'When loading the file in IDA Pro, make sure to change the loading offset to
+    `0x7c00`, as shown in the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/f01c86a8-1189-4eea-a220-a728cfa0d6fe.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'When asked about the disassembly mode, choose 16-bit mode. Since everything
+    is still undefined, we need to turn the data into code. Select the first byte
+    code, right-click to open the context menu, then select Code, as shown here:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/40d220ad-a964-45ab-8a4d-689426c01d22.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'When converted into disassembly code, we can see that IDA Pro was also able
+    to identify the interrupt functions and how these are used. The following screenshot
+    shows 16-bit disassembly and the use of interrupt `13h` to read data from disk
+    sectors:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/cb1146c6-932a-41f9-bce9-ec8d4b3aa36f.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'To debug the MBR with Bochs, we will have to make sure that `bochsrc` contains
+    the following line:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: This line enables the use of the Bochs GUI debugger.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'If we have a different disk image, we can change the file name of the disk
+    image file in the `at0-master` line. In this demo, the disk image''s filename
+    is `mre.bin`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'To emulate the disk image, execute these commands:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: You might need to change `C:\Program files (x86)\Bochs-2.6.8` to the path where
+    you have installed Bochs. Take note that, for the `$BXSHARE` environment variable,
+    there are no quotes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Here, Bochs was installed under a Windows environment. The paths can be changed
+    if working in a Linux environment.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Once running, the console will be filled up with logged lines, as shown here:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/b1310cd3-20ab-4479-9c88-2b89c564d6cd.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'This will bring up the debugging console, which should look like the one shown
+    in this screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/23c8ac52-51b1-44a8-af00-1e8eddee7420.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Another window that shows the output should also appear:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/ff86704e-52f5-41f6-aa57-88430f201331.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'The MBR code begins at the `0x7c00 `address. We will have to place a breakpoint
+    at `0x7c00`. Bochs GUI has a command line where we get to set the breakpoints
+    at specified addresses. This is located at the bottom of the window. See the highlighted
+    area in the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/1305472c-1266-4cb8-af5f-7490917eb602.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'To set a breakpoint at `0x7c00`, enter `lb 0x7c00`. To see a the list of commands,
+    enter `help`. The most common commands used are the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: The GUI has also mapped keyboard keys with the commands. Select the Command
+    menu to view these keys.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Press *F5* to continue the code, until it reaches the MBR code at `0x7c00`.
+    We should now see the same disassembly code that we saw in IDA Pro. We can then
+    start pressing *F11* to step debug on each instruction line:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/5db1ddf4-91c2-4b77-9c3b-6151d881e66f.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'At some point, the code will enter an endless loop state. If we look at the
+    output window, the end result should have the same message, as in the following
+    screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/0e4129c8-d9f1-4db7-b4ce-f380046a868d.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Summary
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In this chapter, we have learned that, even if the file is not a Windows or
+    a Linux x86-native executable, we can still analyze a non-x86 executable file.
+    With static analysis alone, we can analyze a file without even doing dynamic analysis,
+    although we still need references to understand the low-level language of non-x86
+    architectures, categorized as RISC or CISC. Just as we learned x86 assembly language,
+    languages such as ARM assembly can be learned with the same concepts.
+  prefs: []
+  type: TYPE_NORMAL
+- en: However, an analysis can still be proven with actual code execution, using dynamic
+    analysis. To do that, we need to set up the environment where the executable will
+    run natively. We introduced an emulation tool called QEMU that can do the job
+    for us. It has quite a number of architectures that it can support, including
+    ARM. Today, one of the most popular operating system using ARM architecture is
+    Arch Linux. This operating system is commonly deployed by Raspberry Pi enthusiasts.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We also learned about debugging MBR code taken from a disk image. Using Bochs,
+    a tool that can emulate the boot sequence of an x86 system, we were able to show
+    how you can load and debug 16-bit code that uses hardware interrupts. In addition,
+    some ransomware employ features that can inject or replace the MBR with malicious
+    code. With what we learned in this chapter, nothing can stop us from reversing
+    these pieces of code.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Further Reading
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: KVM and CPU feature enablement -[https://wiki.qemu.org/images/c/c8/Cpu-models-and-libvirt-devconf-2014.pdf](https://wiki.qemu.org/images/c/c8/Cpu-models-and-libvirt-devconf-2014.pdf)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: A way for installing Windows ARM in QEMU - [https://withinrafael.com/2018/02/11/boot-arm64-builds-of-windows-10-in-qemu/](https://withinrafael.com/2018/02/11/boot-arm64-builds-of-windows-10-in-qemu/)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: How to DEBUG System Code using The Bochs Emulator on a Windows PC - [https://thestarman.pcministry.com/asm/bochs/bochsdbg.html](https://thestarman.pcministry.com/asm/bochs/bochsdbg.html)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL

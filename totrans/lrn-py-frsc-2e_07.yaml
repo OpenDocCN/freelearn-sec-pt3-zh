@@ -1,0 +1,1158 @@
+- en: Fuzzy Hashing
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Hashing is one of the most common processes run in DFIR. This process allows
+    us to summarize file content and assign a representative and repeatable signature
+    that represents the file's content. We generally employ file and content hashes
+    using algorithms such as MD5, SHA1, and SHA256\. These hash algorithms are valuable
+    as we can use them for integrity validation since a change to even one byte of
+    a file's content will completely alter the resulting hash value. These hashes
+    are also commonly used to form whitelists to exclude known or irrelevant content,
+    or alert lists that quickly identify known interesting files. In some cases, though,
+    we need to identify near matches—something that our MD5, SHA1, and SHA256 algorithms
+    can't handle on their own.
+  prefs: []
+  type: TYPE_NORMAL
+- en: One of the most common utilities that assists with similarity analysis is ssdeep,
+    developed by Jessie Kornblum. This tool is an implementation of the spamsum algorithm,
+    developed by Dr. Andrew Tridgell, which generates a base64 signature representing
+    file content. These signatures can be used, independently of the file's content,
+    to help to determine the confidence that two files are similar. This allows for
+    a less computationally intense comparison of these two files and presents a relatively
+    short signature that can be shared or stored easily.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In this chapter, we''ll do the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Hash data using MD5, SHA1, and SHA256 algorithms with Python
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Discuss how to hash streams of data, files, and directories of files
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Explore how the spamsum algorithm works and implement a version in Python
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Leverage the compiled ssdeep library via Python bindings for increased performance
+    and features
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The code for this chapter was developed and tested using Python 2.7.15 and Python
+    3.7.1.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Background on hashing
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Hashing data is a common technique in the forensics community to `fingerprint`
+    a file. Normally, we create a hash of an entire file; however, in the script we'll
+    build later in this chapter, we'll hash segments of a file to evaluate the similarity
+    between two files. Before diving into the complexities of fuzzy hashing, let's
+    walk through how Python can generate cryptographic hashes such as MD5 and SHA1
+    values.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Hashing files in Python
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: As previously discussed, there are multiple algorithms commonly used by the
+    DFIR community and tools. Before generating a file hash, we must decide which
+    algorithm we would like to use. This can be a tough question, as there are multiple
+    factors to consider. The **Message Digest Algorithm 5** (**MD5**) produces a 128-bit
+    hash and is one of the most commonly used cryptographic hash algorithms across
+    forensic tools. The algorithm is relatively lightweight and the resulting hash
+    is short in length, when compared with other algorithms. Since cryptographic hashes
+    have a fixed length output, selecting an algorithm with a shorter length can help
+    in reducing the impact on system resources.
+  prefs: []
+  type: TYPE_NORMAL
+- en: However, the main issue with MD5 is the probability of hash collisions. A hash
+    collision is where two different input values result in the same hash, an issue
+    that is a product of having a fixed length hash value. This is an issue in forensics,
+    as we rely on the hash algorithm to be a unique fingerprint to represent the integrity
+    of data. If the algorithm has known collisions, the hash may no longer be unique
+    and can't guarantee integrity. For this reason, MD5 isn't recommended for use
+    as the primary hash algorithm in most forensic situations.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In addition to MD5, there are several other common cryptographic hash algorithms
+    including the **Secure Hash Algorithm** (**SHA**) family. The SHA family consists
+    of SHA-1 (160-bit), SHA-256 (256-bit), and SHA-512 (512-bit) to name a few of
+    the more prominent algorithms used in forensics. The SHA-1 algorithm frequently
+    accompanies the MD5 hash in most forensic tools. Recently a research group discovered
+    collisions in the SHA-1 algorithm and shared their findings on their site, [https://shattered.io/](https://shattered.io/).
+    Like MD5, SHA-1 is now losing popularity in the field.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Leveraging one of these hash algorithms is fairly straightforward in Python.
+    In the following code block, we'll demonstrate the examples of hashing with the
+    MD5, SHA-1, and SHA-256 algorithms in the interpreter.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To facilitate this, we''ll need to import the standard library, `hashlib`,
+    and provide data to generate a hash of. After importing `hashlib`, we create a
+    hashing object using the `md5()` method. Once defined as `m`, we can use the `.update()`
+    function to add data to the algorithm and the `hexdigest()` method to generate
+    the hexadecimal hash we''re accustomed to seeing from other tools. This process
+    can be handled by a single line as demonstrated here:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: In the preceding example, we hashed a string object. But what about files? After
+    all, that's what we're truly interested in doing.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To hash a file, we need to pass the contents of the file to the hash object.
+    As seen in the code block, we begin by opening and writing to a file to generate
+    some sample data that we can hash. After the setup, we close and then reopen the
+    file for reading and use the `read()` method to read the full content of the file
+    into the `buffer` variable. At this point, we provide the `buffer` value as the
+    data to hash and generate our unique hash value. See the following code:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: The hashing method shown here is good for small files or streams of data. We
+    need to adjust our approach some if we want to be able to more flexibly handle
+    files.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Hashing large files – hashing_example.py
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Our first script in this chapter is short and to the point; it'll allow us to
+    hash a provided file's content with a specified cryptographic algorithm. This
+    code will likely be more useful as a feature within a larger script, such as our
+    file listing utility; we'll demonstrate a standalone example to walk through how
+    to handle hashing files in a memory-efficient manner.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To begin, we only need two imports, `argparse` and `hashlib`. Using these two
+    built-in libraries, we''ll be able to generate hashes, as shown in the prior example.
+    On line 33, we list out the supported hash algorithms. This list should only contain
+    algorithms available as a module within `hashlib`, as we''ll call (for example)
+    `md5` from the list as `hashlib.md5()`. The second constant defined, on line 34,
+    is `BUFFER_SIZE`, which is used to control how much of a file to read at a time.
+    This value should be smaller, 1 MB in this instance, to preserve the amount of
+    memory required per read, although we also want a number large enough to limit
+    the number of reads we have to perform on the file. You may find this number is
+    adjusted based on the system you choose to run it on. For this reason, you may
+    consider specifying this as an argument instead of a constant:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Next, we define our arguments. This is very brief as we''re only accepting
+    a filename and an optional algorithm specification:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Once we know the specified arguments, we''ll translate the selected algorithm
+    from an argument into a function we can call. To do this, we use the `getattr()`
+    method as shown on line 43\. This built-in function allows us to retrieve functions
+    and properties from an object (such as a method from a library, as shown in the
+    following code). We end the line with `()` as we want to call the specified algorithm''s
+    initialization method and create an instance of the object as `alg` that we can
+    use to generate the hash. This one-liner is the equivalent of calling `alg = hashlib.md5()` (for
+    example), but performed in an argument-friendly fashion:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'On line 45, we open the file for reading, which we start on line 47 by reading
+    the first buffer length into our `buffer_data` variable. We then enter a `while`
+    loop where we update our hash algorithm object on line 49 before getting the next
+    buffer of data on line 50\. Luckily for us, Python will read all of the data from
+    `input_file`, even if `BUFFER_SIZE` is greater than what remains in the file.
+    Additionally, Python will exit the loop once we reach the end of the file and
+    close it for us when exiting the `with` context. Lastly, on line 52, we print
+    the `.hexdigest()` of the hash we calculated:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: Creating fuzzy hashes
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Now that we've mastered how to generate cryptographic hashes, let's work on
+    generating fuzzy hashes. We'll discuss a few techniques we could employ for similarity
+    analysis, and walk through a basic example of how ssdeep and spamsum employ rolling
+    hashing to help generate more resilient signatures.
+  prefs: []
+  type: TYPE_NORMAL
+- en: It may go without saying that our most accurate approach to similarity analysis
+    is to compare the byte content of two files, side by side, and look for differences.
+    While we may be able to accomplish this using command-line tools or a difference
+    analysis tool (such as kdiff3), this only really works at a small scale. Once
+    we move from comparing two small files to comparing many small files, or a few
+    medium-sized files, we need a more efficient approach. This is where signature
+    generation comes into play.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To generate a signature, we must have a few things figured out:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: What alphabet we want to use for our signature
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: How we want to segment the file into summarizable blocks
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The technique for converting our block summary into a character from our alphabet
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: While the alphabet is an optional component, it allows us humans to better review
+    and understand the data. We can always store it as integers and save a tiny bit
+    of computational resources. Base64 is a common choice for the alphabet and is
+    used by both spamsum and ssdeep.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'For the aforementioned second and third items, let''s discuss a few techniques
+    for slicing up our file and generating our hash value. For this example (and to
+    keep things simple), let''s use the following character sequence as our file content:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Our first approach is to slice the file into equal sized blocks. The first
+    row in the following example is our file content, and the second is the numeric
+    ASCII value for each character in our first row. For this example, we''ve decided
+    to split our file into 4-byte blocks with the vertical bars and color-coded numeric
+    ASCII values:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/bcd0cb6e-f1ee-49c5-a62b-9917512558d6.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: We then summarize each of these 4-byte blocks by summing the ASCII value of
+    the four characters, as shown in the third row of the table. We then convert this
+    summarization of our file content into our base64 representation by taking 394
+    modulo 64 (*394 % 64*) which is 10, or K in the base64 alphabet. This base64 value,
+    as you may have guessed, is on the fourth row.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The letter K becomes our summarization of the first block, a for the second,
+    and it continues until we have our complete file signature of Kaq6KaU.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In the next diagram, there''s a slightly modified version of our original file.
+    As seen below, someone replaced jklmn with hello. We can now run our hashing algorithm
+    against this file to get a sense of how much has changed between the two versions:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/89201581-e5a0-496f-89e5-cd5cd7d50b39.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Using the same technique, we calculate the new hash value of Kai6KaU. If we
+    wanted to compare the similarity of our two files, we should be able to use our
+    signatures to facilitate our comparison, right? So in this case, we have one letter
+    difference between our signatures, meaning our two file streams are largely similar!
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'As you may have spotted, there''s an issue here: we''ve found a hash collision
+    when using our algorithm. In the prior example, the fourth block of each file
+    is different; the first is mnop and the second is loop. Since we''re summing our
+    file content to determine our signature value, we''re bound to get an unhealthy
+    amount of collisions. These collisions may cause us to think files are more similar
+    when they aren''t, and unfortunately are a product of summarizing file content
+    without the use of a cryptographic hash algorithm. For this reason, we have to
+    find a better balance between summarizing file content and encountering hash collisions.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Our next example demonstrates what happens when insertion occurs. As you can
+    see in the following diagram, the letter h was inserted after mn, adding one byte
+    to the file and causing the entire content to shift right by one. In this instance,
+    our last block will just contain the number 1, though some implementations may
+    handle this differently:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/4e15eba7-e435-418c-ad0a-649fbaff8669.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Using our same formula, we calculate a hash of KaqyGUbx. This hash is largely
+    different than Kaq6KaU. In fact, once we reach the block containing the change,
+    the hash is completely different even though we have similar content in the latter
+    half of the file.
+  prefs: []
+  type: TYPE_NORMAL
+- en: This is one of the main reasons that using a fixed block size isn't the best
+    approach for similarity analysis. Any shift in content moves data across the boundaries
+    and will cause us to calculate completely different hashes for similar content.
+    To address that, we need to be able to set these boundaries in another way.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Context Triggered Piecewise Hashing (CTPH)
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: As you probably guessed, this is where CTPH comes into play. Essentially, we're
+    aiming to calculate reset points with this technique. Reset points, in this case,
+    are boundaries similar to the 4-byte boundaries we used in the prior example,
+    as we use these reset points to determine the amount of a file we want to summarize.
+    The notable exception is that we pick the boundaries based on file content (our
+    context triggering) versus fixed windows. What this means is we use a rolling
+    hash, as employed by ssdeep and spamsum, to calculate values throughout the file;
+    when this specific value is found, a boundary line is drawn and the content since
+    the prior boundary is summarized (the piecewise hash). In the following example,
+    we're using a simplified calculation to determine whether we've reached a reset
+    point.
+  prefs: []
+  type: TYPE_NORMAL
+- en: While both spamsum and ssdeep calculate the reset point number for each file,
+    for our example, we'll use *7* to keep things simple. This means whenever our
+    rolling hash has a value of *7*, we'll summarize the content between this boundary
+    and the previous. As an additional note, this technique is meant for files with
+    more than 28 bytes, so our hashes here will be really short and, therefore, less
+    useful outside of our illustrative purposes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Before jumping into the example, let''s talk through what a rolling hash is.
+    Once again, we''ll use the same example file content we used previously. We then
+    use what''s known as a rolling hash to calculate our value for each byte of the
+    file. A rolling hash works by calculating a hash value for all of the characters
+    within a certain window of the file. In our case, we''ll have a window size of
+    three. The window movement in our file would look like this across the first four
+    iterations:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`[''a'', '''', ''''] = [97, 0, 0]`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`[''a'', ''b'', ''''] = [97, 98, 0]`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`[''a'', ''b'', ''c''] = [97, 98, 99]`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`[''b'', ''c'', ''d''] = [98, 99, 100]`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: As you can see, this rolling window would continue through the file, adding
+    a new byte each iteration and removing the oldest byte, in FIFO style. To generate
+    a hash of this window, we would then perform a series of further calculation against
+    the values in the window.
+  prefs: []
+  type: TYPE_NORMAL
+- en: For this example, as you likely guessed, we'll sum the ASCII values to keep
+    things simple. This sum is shown in the first row of the following example. To
+    keep the numbers smaller though, we'll then take our summed ASCII values (*S*)
+    modulo 8 (*S % 8*) and use this integer to look for our boundaries in the file
+    content. This number is found in the second row of the following screenshot. If
+    *S % 8 == 7*, we've reached a reset point and can create a summarization of the
+    prior block.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The ssdeep and spamsum algorithms handle this rolling window calculation differently,
+    though the product of the calculation is used in the same manner. We have simplified
+    the calculation to make this process easier to discuss.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Since our reset point is 7, as previously selected, we'll define a chunk of
+    a file any time our rolling hash calculation returns a seven. This is represented
+    in the following screenshot with horizontal lines showing the blocks we've set
+    within the file.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'For each block, we''ll calculate our signature in the same way as before: summing
+    up the ASCII integer values of the content within the entire block (as shown in
+    the fourth row) and applying modulo 64 to get the character for the signature
+    (as seen in the last row). Please remember that the only relationship between
+    rows 2 and 4 in this example is that row 2 tells us when to set the reset point
+    and calculate the number shown in row 4\. These two hashes are algorithmically
+    independent of one another by design. Row 4 is still the summation of the ASCII
+    values for *a + b + c + d + e + f* and not the summation of our rolling hash output:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/ee120ac7-f0a4-4081-9c02-a9fc71583a47.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: This produces the signature VUUD. While much shorter, we now have context triggered
+    hashes. As previously described, we've accomplished this by using the rolling
+    hash to define our boundaries (the context triggering), and the summation of our
+    block (piecewise hashing) to identify common chunks of the file that we can compare
+    to files with similar reset point sizes (or other files with a reset point of
+    7).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'For our final example, let''s revisit what happens when we perform the same
+    insertion of the letter h. Using our rolling hash to calculate our context-based
+    blocks (as shown in the first row), we can calculate the summarization of blocks
+    using the same algorithm and generate the signature VUH1D:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/bf27cd4e-684f-4f06-a801-7bcf23102561.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: As you can see, this technique is more resilient to insertions and allows us
+    to more accurately compare differences in files than using the fixed blocks. In
+    this case, our signatures are showing that the two files are more different than
+    they are, though this technique is more accurate than our fixed block calculation
+    as it understands that the tail of our file is the same between our two versions.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Obviously, this technique requires files larger than 28 bytes in order to produce
+    accurate results, though hopefully this simplification can help depict how these
+    fuzzy hashes are formed. With this understanding, let's start working on our script.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Implementing fuzzy_hasher.py
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: This script was tested with both Python versions 2.7.15 and 3.7.1 and doesn't
+    leverage any third-party libraries.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'While we''ll get to the internals of the fuzzy hashing algorithm, let''s start
+    our script as we have the others. We begin with our imports, all standard libraries
+    that we''ve used before as shown in the following. We also define a set of constants
+    on lines 36 through 47\. Lines 37 and 38 define our signature alphabet, in this
+    case all of the base64 characters. The next set of constants are used in the spamsum
+    algorithm to generate the hash. `CONTEXT_WINDOW` defines the amount of the file
+    we''ll read for our rolling hash. `FNV_PRIME` is used to calculate the hash while
+    `HASH_INIT` sets a starting value for our hash. We then have `SIGNATURE_LEN`,
+    which defines how long our fuzzy hash signature should be. Lastly, the `OUTPUT_OPTS`
+    list is used with our argument parsing to show supported output formats—more on
+    that later:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'This script has three functions: `main()`, `fuzz_file()`, and `output()`. The
+    `main()` function acts as our primary controller, handling the processing of directories
+    versus single files and calling the `output()` function to display the result
+    of the hashing. The `fuzz_file()` function accepts a file path and generates a
+    spamsum hash value. The `output()` function then takes the hash and filename and
+    displays the values in the specified format:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The structure of our script is fairly straightforward, as emphasized by the
+    following diagram. As illustrated by the dashed line, the `fuzz_file()` function
+    is the only function that returns a value. This is true as our `output()` function
+    displays content on the console instead of returning it to `main()`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/ec8fd59d-9b8c-4fbf-ad5c-8ae4d19a960b.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Finally, our script ends with argument handling and log initiation. For command-line
+    arguments, we''re accepting a path to a file or folder to process and the format
+    of our output. Our output will be written to the console, with current options
+    for text, CSV, and JSON output types. Our logging parameter is standard and looks
+    very similar to our other implementations, with the notable difference that we''re
+    writing the log messages to `sys.stderr` instead so that the user can still interact
+    with the output generated by `sys.stdout`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: With this framework, let's explore how our `main()` function is implemented.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Starting with the main() function
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Our main function accepts two parameters: the file path and output type. We
+    first check the output type to ensure it''s in the `OUTPUT_OPTS` list, just in
+    case the function was called from other code that did not validate. If it is an
+    unknown output format, we''ll raise an error and exit the script:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'We then start working with the file path, getting its absolute file path on
+    line 67, and checking whether it''s a directory on line 69\. If so, we begin to
+    iterate over the directory and subdirectories to find and process all files within.
+    The code on lines 71 through 73 should look familiar from [Chapter 5](a4ae250a-8aa8-49b9-8fd6-0cac51975f11.xhtml),
+    *Databases in Python*. On line 74, we call the `fuzz_file()` function to generate
+    our hash value, `sigval`. This `sigval` value is then provided, along with the
+    filename and output format, to our `output()` function:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE11]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The remainder of our `main()` function handles single file processing and error
+    handling for invalid paths. If, as seen on lines 76 through 79, the path is a
+    file, we''ll process it the same as we did before, generating the hash with `fuzz_file()`
+    and passing the values to our `output()` function. Lastly, on lines 80 through
+    84, we handle errors with accessing the specified file or folder path:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE12]'
+  prefs: []
+  type: TYPE_PRE
+- en: Creating our fuzzy hashes
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Before we dive into the code for our `fuzz_file()` function, let''s talk briefly
+    about the moving parts here:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: A rolling hash
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: A calculated reset point that is derived from the file's size
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Two traditional hashes, in this case leveraging the FNV algorithm
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The rolling hash is similar to our earlier example in that it's used to identify
+    the boundaries that we'll summarize using our traditional hashes. In the case
+    of ssdeep and spamsum, the reset point that the rolling hash is compared to (set
+    to `7` in our prior example) is calculated based on the file's size. We'll show
+    the exact function for determining this value in a bit, though we wanted to highlight
+    that this means only files with the same block size can be compared. While there
+    is more to talk about conceptually, let's start working through the code and applying
+    these concepts.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We now move to the fun function: `fuzz_file()`. This function accepts a file
+    path and uses the constants found at the beginning of the file to handle the calculation
+    of the signature:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE13]'
+  prefs: []
+  type: TYPE_PRE
+- en: Generating our rolling hash
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The following code block is our rolling hash function. Now, it may seem odd
+    to have a function within a function, though this design has a few advantages.
+    First, it's useful for organization. This rolling hash code block is only used
+    by our `fuzz_file()` function and, by nesting it inside this function, we can
+    inform the next person who reads our code that this is the case. Secondly, by
+    placing this function within `fuzz_file()`, we can assure anyone who imports our
+    code as a module doesn't misuse the rolling hash function. And while there are
+    multiple other efficiencies and management reasons for selecting this design,
+    we wanted to incorporate this feature into this script to introduce you to the
+    concept. As you see in our other scripts, this isn't always used for specialized
+    functions but is a tool that you can employ in your scripts to refine their design.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'This nested function takes two arguments, shortened to `nb` for `new_byte`
+    and `rh` for our rolling hash tracking dictionary. In our prior example, to calculate
+    the rolling hash, we added the ASCII values of the entire window together. In
+    this function, we''ll perform a series of calculations to help us generate a rolling
+    hash of a larger 7-byte window:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE14]'
+  prefs: []
+  type: TYPE_PRE
+- en: The `rh` rolling hash tracking dictionary is used to keep an eye on the moving
+    parts within this rolling hash. There are three numbers that are stored as `r1`,
+    `r2`, and `r3`. These numbers face additional calculations, as shown in the following
+    code block, and the sum of the three are returned as the integer representing
+    the rolling hash for that frame of the file.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The other two elements tracked by the dictionary are `rn` and `rw`. The `rn`
+    key holds the offset the rolling hash is at within the file and is used to determine
+    what character in the window is replaced by the `nb`, `new_byte`, value. This
+    window, as you may have guessed, is stored in `rw`. Unlike our prior example where
+    each character in the window was shifted left for each calculation of the rolling
+    hash, this implementation just replaces the oldest character in the array. This
+    improves efficiency as it results in one operation instead of eight:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE15]'
+  prefs: []
+  type: TYPE_PRE
+- en: This logic is computationally the same as that used by ssdeep and spamsum. To
+    start, we compute the `r2` value by subtracting `r1` and adding the product of
+    `CONTEXT_WINDOW` and `new_byte`. We then update the `r1` value by adding `new_byte`
+    and subtracting the oldest byte within the window. This means that `r1` stores
+    the sum of the entire window, similarly to our entire rolling hash algorithm in
+    the earlier example.
+  prefs: []
+  type: TYPE_NORMAL
+- en: On line 111, we start updating our window, replacing the oldest byte with our
+    `new_byte` character. After this, we increment the `rn` value so that it accurately
+    tracks the offset within the file.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Finally, we calculate our `r3` value, which uses some operations we haven't
+    introduced at this point. The `<<` operator is a bitwise operator that shifts
+    our value to the left, in this case by five places. This is effectively the same
+    as us multiplying our value by 2**5\. The second new bitwise operator on line
+    115 is `&`,which in Python is a bitwise `AND` statement. This operator evaluates
+    each bit for the values on either side of the operation, position by position,
+    and if they're both equal to `1`, they're enabled in that position of the output;
+    otherwise, they're disabled. As a note, two `0` values in the same position do
+    not result in `1` when using a bitwise `AND` statement. The third new bitwise
+    operator is on line 116 and is `^`, or the exclusive `OR` operator, also called
+    an XOR operation. This works mostly as the opposite of our bitwise `AND` statement,
+    where if the bits between the two values, position by position, are different,
+    `1` is returned for that position and if they're the same, `0` is returned.
+  prefs: []
+  type: TYPE_NORMAL
+- en: More information on bitwise operations in Python is available at [https://wiki.python.org/moin/BitwiseOperators](https://wiki.python.org/moin/BitwiseOperators).
+  prefs: []
+  type: TYPE_NORMAL
+- en: With our bitwise operations out of the way, we return the sum of `r1`, `r2`,
+    and `r3` for further use in our fuzzy hash calculation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Preparing signature generation
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Moving back into our `fuzz_file()` function, we evaluate the provided file
+    to see whether it has any content, and if so, open the file. We store this file
+    size for later use:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE16]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'We now start with our first factor in the hashing algorithm, the **reset point**.
+    This value is noted as the first value in a signature, as it''s used to determine
+    what hashes can be compared. To calculate this number, we start with `3`, as selected
+    in the spamsum algorithm as a minimum reset point. We then double the reset point,
+    as shown on line 130, until it''s larger than the `filesize / 64`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE17]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Once we have our initial reset point, we read our file into memory as `bytearray`
+    since we want to read each character as a byte that we can interpret. We then
+    set up our `while` loop, which we''ll use to adjust the `reset_point` size if
+    we need to—more on that later on:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE18]'
+  prefs: []
+  type: TYPE_PRE
+- en: Once within our `while` loop, we'll initiate our hashing objects. The first
+    object is `rolling_hash`, a dictionary with five keys. The `r1`, `r2`, and `r3`
+    keys are used to compute the hash; the `rn` key tracks the position of the cursor
+    in the file; the `rw` key holds a list the size of the `CONTEXT_WINDOW` constant.
+    This is the dictionary that's referenced heavily in our `update_rolling_hash()`
+    function. It may be helpful to re-read that section now that you've seen what
+    the `rolling_hash` dictionary looks like.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Following this dictionary, we have `trad_hash1` and `trad_hash2` initialized
+    with the `HASH_INIT` constant. Lastly, we initialize the two signatures, `sig1`
+    and `sig2`. The variable `trad_hash1` is used to populate the `sig1` value, and
+    similarly, `trad_hash2` is used to populate the `sig2` value. We''ll show how
+    we calculate these traditional hashes and update our signatures shortly:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE19]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Once we''ve initialized our hash values, we can start iterating through the
+    file as seen on line 151\. On line 153, we calculate the rolling hash using the
+    latest byte from the file and the `rolling_hash` dictionary. Remember that dictionaries
+    can be passed into a function and updated, and can retain their updated values
+    outside of the function without needing to be returned. This allows a simpler
+    interface with our rolling hash function. This function simply returns the calculated
+    rolling hash, which is in the form of an integer as previously discussed. This
+    rolling hash allows us to hash a moving (or rolling) window of data through a
+    byte stream and is used to identify when in our file we should add a character
+    to our signature:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE20]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'After calculating the rolling hash value, we need to update our traditional
+    hashes. These hashes use the **Fowler–Noll–Vo** (**FNV**) hash, where we multiply
+    the former value of the hash against the fixed prime, defined as one of our constants,
+    before being XOR''d (`^` as previously discussed) against the new byte of data.
+    Unlike the rolling hash, these hash values continue to increment with each new
+    byte and grow in size until we reach one of our boundaries:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE21]'
+  prefs: []
+  type: TYPE_PRE
+- en: These boundaries are evaluated by two conditionals, one for each of our hash/signature
+    pairs. Lines 161 through 164 are functionally equivalent to lines 165 through
+    168, with the exception of which traditional hash and signature is in use. For
+    simplicity, we'll walk through the first.
+  prefs: []
+  type: TYPE_NORMAL
+- en: On lines 161 and 162 (due to line wrapping), we have our first conditional statement,
+    which evaluates whether the product of our rolling hash modulo `reset_point`,
+    is equal to `reset_point - 1`. We also ensure that our overall signature length
+    is less than the maximum signature length minus 1\. If these conditions are met,
+    we've reached a boundary and will convert our traditional hash into a character
+    of our signature, as shown on line 163\. After adding a character to our signature,
+    we then reset our traditional hash back to the initial value, meaning the next
+    block of data will have a hash value starting from the same point as the prior
+    block.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'As mentioned, this is repeated for the second signature, with the notable exception
+    that the second signature is modifying `reset_point` (by multiplying it by two)
+    and the maximum signature length (by dividing it by two). This second reset point
+    was added to address the desire for the spamsum signature to be short—64 characters
+    by default. This means that the primary signature may be cut off and the tail
+    of the file may represent one character of the signature. To combat this, spamsum
+    added the second signature to generate a value that represents more, if not all,
+    of the file. This second signature effectively has a `reset_point` twice as large
+    as the first signature:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE22]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'This is the end of our for loop; this logic will repeat until we''ve reached
+    the end of the file, though the signatures will only grow to 63 and 31 characters
+    in length, respectively. After our `for` loop exists, we evaluate whether we should
+    start the `while` loop (beginning on line 136) over again. We would want to do
+    this if our first signature was less than 32 characters and our `reset_point`
+    wasn''t the default value of `3`. If we have too short a signature, we halve our
+    `reset_point` value and re-run our entire calculation again. This means that we
+    need every efficiency possible within this `while` loop, as we could be re-processing
+    content over and over:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE23]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'If our signature length is greater than 32 characters, we exit our `while`
+    loop and generate the last character for our signature. If the product of our
+    rolling hash isn''t equal to zero, we add the last character to each signature,
+    as shown on lines 180 and 181:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE24]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'At this point, we can close the file and return our full spamsum/ssdeep signature.
+    This signature has three, hopefully recognizable, parts:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Our `reset_point` value
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The primary signature
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The secondary signature
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Providing the output
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Our last function, luckily, is a whole lot simpler than the previous one. This
+    function provides output of the signature and filename in one of the supported
+    formats. In the past, we''ve written separate functions to handle separate formats,
+    though in this case we''ve opted to place them all in the same function. This
+    design decision is because we want to provide results in near-real time, especially
+    if the user is processing a number of files. Since our logs are redirected to
+    `STDERR`, we can use the `print()` function to provide results on `STDOUT`. This
+    allows flexibility to our users, who can pipe the output into another program
+    (such as grep) and perform additional processing on the results:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE25]'
+  prefs: []
+  type: TYPE_PRE
+- en: Running fuzzy_hasher.py
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The following screenshot shows us how we can generate our fuzzy hashing on
+    a set of files within a directory and perform post-processing on the output. In
+    this case, we''re hiding the log messages by sending `STDERR` to `/dev/null`.
+    Then, we pipe our output into `jq`, a utility that formats and queries JSON data,
+    to present our output in a nicely formatted manner:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/4e98a7a3-2022-44aa-a1f5-95ca7c1e6af6.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: There are a few things you may have identified in this output. The first we'll
+    highlight is that the files aren't in alphabetical order. This is because our
+    `os.walk` function doesn't preserve alphabetical order by default when it iterates
+    through a path. The second thing is, even though all of these files are identical
+    in size, they vary in block size. What this means is that some of these files
+    (containing random content) didn't have enough blocks and therefore the signatures
+    were too short. This means we needed to halve the block size and try again, so
+    when we move to the comparison component, we can compare files with enough similar
+    blocks. On the other hand, the second signature in the files with the 3,072 blocks
+    (`file_2` and `file_4`) can be compared in part to the first signature of the
+    other files with block sizes of 6,144.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We've provided these test files for your use and comparison to confirm our implementation
+    matches yours and the output of the next script.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Using ssdeep in Python – ssdeep_python.py
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: This script was tested with both Python 2.7.15 and 3.7.1, and requires the ssdeep
+    version 3.3 third-party library.
+  prefs: []
+  type: TYPE_NORMAL
+- en: As you may have noticed, the prior implementation is almost prohibitively slow.
+    In situations like this, it's best to leverage a language, such as C, that can
+    perform this operation much faster. Luckily for us, spamsum was originally written
+    in C, then further expanded by the ssdeep project, also in C. One of the expansions
+    the ssdeep project provides us with is Python bindings. These bindings allow us
+    to still have our familiar Python function calls while offloading the heavy calculations
+    to our compiled C code. Our next script covers the implementation of the ssdeep
+    library in a Python module to produce the same signatures and handle comparison
+    operations.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In this second example of fuzzy hashing, we're going to implement a similar
+    script using the ssdeep Python library. This allows us to leverage the ssdeep
+    tool and the spamsum algorithm, which has been widely used and accepted in the
+    fields of digital forensics and information security. This code will be the preferred
+    method for fuzzy hashing in most scenarios as it's more efficient with resources
+    and produces more accurate results. This tool has seen wide support in the community,
+    and many ssdeep signatures are available online. For example, the VirusShare and
+    VirusTotal websites host hashes from ssdeep on their sites. This public information
+    can be used to check for known malicious files that match or are similar to executable
+    files on a host machine, without the need to download the malicious files.
+  prefs: []
+  type: TYPE_NORMAL
+- en: One weakness of ssdeep is that it doesn't provide information beyond the matching
+    percentage and can't compare files with significantly different block sizes. This
+    can be an issue as ssdeep automatically generates the block size based on the
+    size of the input file. The process allows ssdeep to run more efficiently and
+    accommodates scaling much better than our script; however, it doesn't provide
+    a manual solution to specify a block size. We could take our prior script and
+    hardcode our block size, though that introduces other (previously discussed) issues.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'This script starts the same as the other, with the addition of the new import
+    of the ssdeep library. To install this library, run `pip install ssdeep==3.3`,
+    or if that fails, you can run `BUILD_LIB=1 pip install ssdeep==3.3` as per the
+    documentation at [https://pypi.python.org/pypi/ssdeep](https://pypi.python.org/pypi/ssdeep).
+    This library wasn''t built by the developer of ssdeep, but another member of the
+    community who created the bindings Python needs to communicate with the C-based
+    library. Once installed, it can be imported as seen on line 7:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE26]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'This iteration has a similar structure to our previous one, though we hand
+    off all of our calculations to the `ssdeep` library. Though we may be missing
+    our hashing and comparison functions, we''re still using our main and output functions
+    in a very similar manner:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE27]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Our program flow has also remained similar to our prior iteration, though it''s
+    missing the internal hashing function we developed in our prior iteration. As
+    seen in the flow diagram, we still make calls to the `output()` function in the
+    `main()` function:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/54931c15-04a4-4b6a-b142-6f5b246441e5.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Our argument parsing and logging configurations are nearly identical to the
+    prior script. The major difference is that we''ve introduced one new file path
+    argument and renamed our argument that accepted files or folders. On line 134,
+    we once more create the `argparse` object to handle our two positional arguments
+    and two optional output format and logging flags. The remainder of this code block
+    is consistent with the prior script, with the exception of renaming our log files:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE28]'
+  prefs: []
+  type: TYPE_PRE
+- en: Revisiting the main() function
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'This `main()` function is very similar to the prior script, though it has a
+    few additional lines of code as we''ve added some functionality. This script starts
+    the same with checking that the output type is a valid format, as shown on lines
+    56 through 62\. We then add another conditional on line 63 that allows us to print
+    the CSV header row since this output is more complicated than the last iteration:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE29]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Now that we''ve handled the output format validation, let''s pivot to our files
+    for comparison. To start, we''ll get the absolute path for both our known file
+    and comparison path for consistency to our prior script. Then, on line 73, we
+    check to ensure our known file exists. If it does, we then calculate the ssdeep
+    hash on line 78\. This calculation is completely handled by ssdeep; all we need
+    to do is provide a valid file path to the `hash_from_file()` method. This method
+    returns a string value containing our ssdeep hash, the same product as our `fuzz_file()`
+    function in our prior script. The big difference here is speed improvements through
+    the use of efficient C code running in the `ssdeep` module:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE30]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Now that we have our known hash value, we can evaluate our comparison path.
+    In case this path is a directory, as shown on line 81, we''ll walk through the
+    folder and it''s subfolders looking for files to process. On line 86, we generate
+    a hash of this comparison file as we had for the known file. The next line introduces
+    the `compare()` method, allowing us to provide two hashes for evaluation. This
+    compare method returns an integer between (and including) 0 and 100, representing
+    the confidence that these two files have similar content. We then take all of
+    our parts, including the filenames, hashes, and resulting similarity, and provide
+    them to our output function along with our formatting specification. This logic
+    continues until we''ve recursively processed all of our files:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE31]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Our next conditional handles the same operations, but for a single file. As
+    you can see, it uses the same `hash_from_file()` and `compare()` functions as
+    in the directory operation. Once all of our values are assigned, we pass them
+    in the same manner to our `output()` function. Our final conditional handles the
+    case where an error on input is found, notifying the user and exiting:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE32]'
+  prefs: []
+  type: TYPE_PRE
+- en: Redesigning our output() function
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Our last function is `output()`; this function takes our many values and presents
+    them cleanly to the user. Just like our prior script, we''ll support TXT, CSV,
+    and JSON output formats. To show a different design for this type of function,
+    we''ll use our format specific conditionals to build out a template. This template
+    will then be used to print our contents in a formatted manner. This technique
+    is useful if we plan on changing our output function (in this case `print()`)
+    to another output function down the road:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE33]'
+  prefs: []
+  type: TYPE_PRE
+- en: To begin, we need to convert our one integer value, `comp_val`, into a string
+    for compatibility with our templates. With this complete on line 112, we'll build
+    our template for the text format. The text format gives us the freedom to display
+    the data in a way that we find useful for visual review. The following is one
+    option, though feel free to make modifications.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'On lines 113 and 114, we''re able to build our template with named placeholders
+    by using the curly braces surrounding our placeholder identifier. Skipping ahead
+    to lines 127 to 132, you can see that when we call `msg.format()`, we provide
+    our values as arguments using the same names as our placeholders. This tells the
+    `format()` method which placeholder to fill with which value. The main advantage
+    of naming our placeholders is that we can arrange the values however we want when
+    we call the `format()` method, and even have the elements in different positions
+    between our template formats:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE34]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Next is our JSON formatting. The `json.dumps()` method is the preferred way
+    to output dictionaries as JSON content, though in this case we''ll explore how
+    you can accomplish a similar goal. Using our same templating method, we build
+    out a dictionary where the keys are fixed strings and the values are the placeholders.
+    Since the templating syntax uses a single curly brace to indicate a placeholder,
+    we must escape the single curly brace with a second curly brace. This means our
+    entire JSON object it wrapped in an extra curly brace—don''t fear, only one of
+    the two curly braces will display on print:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE35]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Lastly, we have our CSV output, which uses the named placeholder templating
+    again. As you may have noticed, we wrapped each value in double quotes to ensure
+    that any commas within the values don''t cause formatting issues down the line:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE36]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The only reason we have our `msg` variable on multiple lines here is for word
+    wrapping. There''s nothing else stopping you from having one long string as a
+    format template. Lastly, we have our `else` conditional, which will catch any
+    unsupported output type:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE37]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'After our conditional, we print out the template with the applied values in
+    place of the placeholders. If we wanted to support a new or alternate format,
+    we could add a new conditional above and create the desired template without needing
+    to re-implement this `print()` function:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE38]'
+  prefs: []
+  type: TYPE_PRE
+- en: Running ssdeep_python.py
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'We can now run our script, providing, for example, `test_data/file_3` as our
+    known file and the whole `test_data/` folder as our comparison set. Using the
+    JSON output again, we can see the result of our templating in the two following
+    screenshots:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/34112c19-7d80-433e-a0c4-c0140a7d8d8a.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'The following is our continued output:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/125e09b2-8cf2-414b-bdef-fb5f225d80f0.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'You''ll also notice that this script, using the `ssdeep` library, produces
+    the same signatures as our prior implementation! One thing to notice is the speed
+    difference between these two scripts. Using the tool time, we ran our two scripts
+    against the same folder of these six files. As seen in the following screenshot,
+    there''s a significant performance boost in using our `ssdeep` imported module:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/25a60288-e966-45e6-b4ea-4e190365c2b0.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Additional challenges
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: You've created a script that implements the spamsum algorithm to generate ssdeep
+    compatible hashes! With this, there are a few additional challenges to pursue.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'First, we''re providing six sample files, found in the previously mentioned
+    `test_data/` directory. These files are available to confirm you''re getting the
+    same hashes as those printed and to allow you to perform some additional testing.
+    The `file_1`, `file_2`, and `file_3` files are our originals, whereas the instances
+    with an appended `a` are a modified version of the original. The accompanying
+    `README.md` file contains a description of the alterations we performed, though
+    in short, we have the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`file_1` with a relocation of some file content to a later portion of the file'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`file_2` with an insertion in the early portion of the file'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`file_3` with a removal of the start of the file'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: We encourage you to perform additional testing to learn about how ssdeep responds
+    to different types of alterations. Feel free to further alter the original files
+    and share your findings with the community!
+  prefs: []
+  type: TYPE_NORMAL
+- en: Another challenge is to study the ssdeep or spamsum code and learn how it handles
+    the comparison component with the goal of adding it into the first script.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We can also explore developing code to expose the content of, for example, word
+    documents and generate ssdeep hashes of the document's content instead of the
+    binary file. This can be applied to other file types and doesn't have to be limited
+    to text content. For example, if we discover that an executable is packed, we
+    may also want to generate a fuzzy hash of the unpacked byte content.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Lastly, there are other similarity analysis utilities out there. To name one,
+    the `sdhash` utility takes a different approach to identifying similarities between
+    two files. We recommend you spend some time with this utility, running it against
+    your and our provided test data to see how it performs with different types of
+    modifications and alterations. More information on `sdhash` is available on the
+    website: [http://roussev.net/sdhash/sdhash.html](http://roussev.net/sdhash/sdhash.html).
+  prefs: []
+  type: TYPE_NORMAL
+- en: References
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Kornblum, J. (2006). *Identifying Almost Identical Files Using Context Triggered
+    Piecewise Hashing*, Digital Investigation, 91-97\. Retrieved October 31, 2015,
+    from [http://dfrws.org/2006/proceedings/12-Kornblum.pdf](http://dfrws.org/2006/proceedings/12-Kornblum.pdf)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Stevens, M. Karpmanm P. Peyrin, T. (2015), *RESEARCHERS URGE: INDUSTRY STANDARD
+    SHA-1 SHOULD BE RETRACTED SOONER*, retrieved October 31, 2015, from [https://ee788fc4-a-62cb3a1a-s-sites.googlegroups.com/site/itstheshappening/shappening_PR.pdf](https://ee788fc4-a-62cb3a1a-s-sites.googlegroups.com/site/itstheshappening/shappening_PR.pdf)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Summary
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Hashing is a critical component of the DFIR workflow. While most use cases of
+    hashing are focused on integrity checking, the use of similarity analysis allows
+    us to learn more about near matches and file relations. This process can provide
+    insight for malware detection, identification of restricted documents in unauthorized
+    locations, and discovery of closely related items based on content only. Through
+    the use of third-party libraries, we're able to lean on the power behind the C
+    languages with the flexibility of the Python interpreter and build powerful tools
+    that are user and developer friendly. The code for this project can be downloaded
+    from GitHub or Packt, as described in the *Preface*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: A fuzzy hash is a form of metadata, or data about data. Metadata also includes
+    embedded attributes such as document editing time, image geolocation information,
+    and source application. In the next chapter, you'll learn how to extract embedded
+    metadata from various files including images, audio files, and office documents.
+  prefs: []
+  type: TYPE_NORMAL

@@ -1,0 +1,773 @@
+- en: Macro Instructions
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Using Assembly language for the implementation of your ideas is fun (I surely
+    have said that already and, probably, even more than once). However, it may become
+    quite annoying when it comes to certain operations, which have to be re-implemented
+    in different parts of your program. One possible solution may be implementing
+    those operations in the form of a procedure and calling it when needed. However,
+    this may quickly become a nuisance as well, once you have a procedure; which receives
+    more than zero parameters. While in high-level languages you simply "pass" the
+    parameters to a function, in Assembly, you have to actually pass them to a procedure
+    in accordance with the calling convention of your choice, which, in turn, may
+    imply additional headache with management of registers (if parameters are passed
+    via certain registers) or accessing the stack. Sometimes, this complication is
+    worth it, but that is not always the case, especially when it comes to a short
+    set of recurring instructions. This is exactly the case where macro instructions
+    may save us from a lot of headaches and redundant efforts, not to mention the
+    amount of CPU time spent on calls (parameter preparations and procedure prolog
+    and epilog), tiny fractions of a millisecond which may, at the end, aggregate
+    into quite substantial delays.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In this chapter, we will cover the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Macro instructions and the mechanisms behind them
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: How macro instructions may be parameterized
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Learning variadic macro instructions and power thereof
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Getting acquainted with common calling conventions
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Examining additional assembler directives and conditional assembly
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: All of this is essential for our future work with this book, as the methods
+    and algorithms we will explore would be too cumbersome otherwise.
+  prefs: []
+  type: TYPE_NORMAL
+- en: What are macro instructions?
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: First of all, before we submerge into the world of macro instructions, we have
+    to understand what they actually are. Putting it the simplest way, macro instructions
+    are aliases for sequences of instructions. You may be familiar with the term from
+    high-level languages ( we say "may be" because not all high-level languages implement
+    this feature), but we'll still explain it here. Remember the following sequence
+    from the previous chapter?
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'This sequence loads all four singles of an XMM register (in this specific case,
+    it was XMM3) with a single precision floating point value from memory pointed
+    by `dpy`. We used such sequences several times in our code, so it would be natural
+    to try and replace it with a single macro instruction. Thus, defining the following
+    macro would make our code look more elegant and readable:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'We use it in our code like this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: This would make the code look more elegant and much more readable.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Parentheses are a great feature of FASM and are present neither in MASM nor
+    in GAS. Instead, you would write the following code for MASM:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`MACRO macro_name`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`; macro body`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`ENDM`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'And the following code for GAS:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`.macro macro_name`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`; macro_body`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`` `.endm` ``'
+  prefs: []
+  type: TYPE_NORMAL
+- en: How it works
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The logic behind macro instructions is quite simple. The preprocessor parses
+    the code for the definitions of macro instructions and stores them, simply speaking,
+    in the form of a dictionary, where the name of the macro instruction is the key
+    and its content is the value. Of course, in reality, it is more complicated, as
+    macro instructions may have (and most of the time, they do have) parameters, not
+    to mention the fact that they may also be variadic (have an undefined number of
+    parameters).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'When the assembler processes the code and encounters unknown instructions,
+    it checks this dictionary for a macro instruction with the corresponding name.
+    Once such an entry is found, the assembler replaces the macro instruction with
+    its value--expands macro. Consider that the assembler sees the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Then, it refers to the collected macro instruction definitions and replaces
+    this line with the actual code:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: If the assembler finds no relevant macro definition, we are notified of this
+    via the error reporting mechanism.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Macro instructions with parameters
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Although you definitely can define a macro instruction that receives no parameters
+    at all, you would rarely need to do this. Most of the time, you would define macro
+    instructions that need at least one parameter. Let us take, for example, a macro
+    instruction that implements the procedure prolog:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The `frameSize` property in the preceding macro instruction is a macro parameter
+    which, in this case, is used to specify the size of the stack frame in bytes.
+    The usage of such a macro instruction would be as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The preceding code is logically equivalent to (and is expanded by the preprocessor
+    into) the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'In addition, we may define the `return` macro, which would implement the destruction
+    of the stack frame and return from the procedure:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'This would make our procedure even shorter:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: Here, the `return` macro is also a good example of parameterless macro instruction.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Variadic macro instructions
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In certain cases, we do not know how many parameters would be passed to the
+    same macro instruction used in different places in our code, and FASM provides
+    a great and easy solution for such a problem--support for variadic macro instructions.
+    The term *variadic* means that an operator, a procedure, or a macro can take a
+    varying number of operands/parameters.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Syntactically, variadic macro instructions are very simple. We begin with the
+    macro keyword, then the name of the macro followed by a comma-separated list of
+    parameters, if any. The variadic portion of the list of parameters is enclosed
+    in square brackets. For example, should we have a macro instruction that expands
+    to the `printf()` function or invokes it, and we want it to have a similar declaration,
+    then the macro declaration would start like this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: Here, `fmt` stands for the format argument of the `printf()` function and `args`
+    represents all optional parameters.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let''s consider a very simple example of the reworked `prolog` macro, which,
+    in addition to the size of a stack frame, receives the list of registers that
+    need to be stored on the stack as they would be altered in the body of a procedure:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE11]'
+  prefs: []
+  type: TYPE_PRE
+- en: Here, you've definitely noticed the `common` and `forward` keywords, which are
+    essential for the correctness of the expansion of this macro instruction. The
+    interesting feature of variadic macro instructions is that the content thereof
+    is expanded for each and every variadic parameter (parameters specified in square
+    brackets). As the creation of the stack frame after each and every register (specified
+    by the `regs` parameter) is pushed onto stack would look weird, we have to instruct
+    the preprocessor to expand a specific portion of the macro instruction only once,
+    and this is what the `common` keyword does.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The `forward` keyword (and its counterpart, the `reverse` keyword) instructs
+    the preprocessor about the order the variadic parameters should be processed in.
+    The line `push regs` expands into the `push` instruction for each parameter specified
+    in `regs` and the preceding `forward` keyword instructs the preprocessor to process
+    parameters in exactly the order they were written in. For example, consider the
+    following code:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE12]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'This piece of code would expand to the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE13]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Let''s apply proper fixes to the `return` macro instruction for the sake of
+    completeness:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE14]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Here, for the sake of an example, we use the `reverse` keyword, as we specify
+    registers that should be retrieved from stack in exactly the same order in which
+    they were passed to the `prolog` macro instruction. The procedure would then look
+    like this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE15]'
+  prefs: []
+  type: TYPE_PRE
+- en: An introduction to calling conventions
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: When writing code in Assembly language, it's preferable to stick to certain
+    calling conventions (the way parameters are passed to procedures) when invoking
+    procedures because, first of all, this minimizes the occurrence of annoying and
+    hard to find errors and, of course, help you link your Assembly modules to high-level
+    languages. There are quite a few calling conventions for Intel Architecture, but
+    we will only consider some of them, which we will use later in this book.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We already know about procedures and we have even mentioned the term "calling
+    convention" in the previous chapter, so you may wonder why it is now that we cover
+    the mechanism itself. The answer is quite simple--invocation of a procedure is
+    a process that requires certain preparations, and, as such preparations would
+    logically be the same with every procedure call, it is obvious to implement these
+    preparations in the form of macro instruction.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'First, let''s see the calling conventions that we will cover in this part of
+    the chapter:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/ecf71298-a12a-4430-a2ad-7667c82a00a0.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: cdecl (32-bit)
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The `cdecl` calling convention is the standard convention in C and C++ high-level
+    languages. Parameters are stored on a stack with the rightmost parameter pushed
+    onto stack first and the leftmost parameter pushed onto stack last. It is the
+    caller's responsibility to restore the stack once it regains control.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The simplest macro that emulates the `cdecl` procedure invocation would be
+    as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE16]'
+  prefs: []
+  type: TYPE_PRE
+- en: The `if` clauses here are self-explanatory; however, you may simply ignore them
+    for now as they will be covered a bit later in this chapter.
+  prefs: []
+  type: TYPE_NORMAL
+- en: stdcall (32-bit)
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The `stdcall` calling convention is almost identical to `cdecl` in that parameters
+    are passed on to the stack in the same manner--the rightmost is pushed first and
+    leftmost is pushed last. The only difference is that the caller does not have
+    to take care of stack cleanup:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE17]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Let''s consider a simple example that uses both the calling conventions:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE18]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'While all is clear with the `cdecl_proc` and `stdcall_proc` procedures, let''s
+    take a closer look at what the `main` procedure expands to:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE19]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'In the preceding example, the `stdcall` macro invocation also illustrates what
+    happens when there is more than one parameter--the rightmost parameter is pushed
+    first. Such mechanisms allow easier and more intuitive addressing of parameters
+    within the function. Given the nature of a stack frame, we could access them as
+    follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE20]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'We are using an EBP register as the base pointer. The first (leftmost) parameter
+    is located at offset `8` from the value stored in EBP, as the procedure''s return
+    address and the previously pushed value of EBP register occupy exactly 8 bytes.
+    The following table shows the content of the stack after the creation of the stack
+    frame:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| **Offset from EBP** | **Content** |'
+  prefs: []
+  type: TYPE_TB
+- en: '| +12 | rightmost parameter (32) |'
+  prefs: []
+  type: TYPE_TB
+- en: '| +8 | leftmost parameter (128) |'
+  prefs: []
+  type: TYPE_TB
+- en: '| +4 | procedure return address |'
+  prefs: []
+  type: TYPE_TB
+- en: '| EBP points here | previous value of EBP |'
+  prefs: []
+  type: TYPE_TB
+- en: '| -4 | first stack frame variable |'
+  prefs: []
+  type: TYPE_TB
+- en: '| .... | other stack frame variables |'
+  prefs: []
+  type: TYPE_TB
+- en: '| .... | saved registers |'
+  prefs: []
+  type: TYPE_TB
+- en: '| ESP points here | current stack position |'
+  prefs: []
+  type: TYPE_TB
+- en: Microsoft x64 (64-bit)
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Microsoft uses its own calling convention in the 64-bit mode (long mode) using
+    a mixed register/stack paradigm for passing procedure parameters. This means that
+    only the first four parameters may be passed via registers and the rest (if any)
+    should be pushed onto the stack. The following table illustrates which registers
+    are used and in what manner:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| **Parameter index** **(zero based)** | **Integer/pointer** | **Floating point**
+    |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 0 | RCX | XMM0 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 1 | RDX | XMM1 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 2 | R8 | XMM2 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 3 | R9 | XMM3 |'
+  prefs: []
+  type: TYPE_TB
+- en: 'All of this looks quite clear, yet there are two things that we need to pay
+    special attention to:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The stack must be aligned on a 16-bytes boundary
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: A 32-bytes shadow space on the stack is required--32 bytes between the last
+    pushed stack parameter (if any) and the return address
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'The following macro instruction (`ms64_call`) is simplistic; it is a primitive
+    implementation of this calling convention. This specific macro does not support
+    stack parameters:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE21]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Consider an example of calling the procedure labeled `my_proc` in the 64-bit
+    code, using Microsoft x64 calling convention:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE22]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Such a macro instruction would be expanded to the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE23]'
+  prefs: []
+  type: TYPE_PRE
+- en: AMD64 (64-bit)
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The AMD64 calling convention is used on 64-bit Unix-like systems by default.
+    The idea is very similar except that a different set of registers is used and
+    there is no shadow space requirement. Another difference is that the AMD64 calling
+    convention allows up to 6 integer parameters and up to 8 floating point values
+    to be passed via registers:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| **Parameter index** **(zero based)** | **Integer/pointer** | **Floating point**
+    |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 0 | RDI | XMM0 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 1 | RSI | XMM1 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 2 | RDX | XMM2 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 3 | RCX | XMM3 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 4 | R8 | XMM4 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 5 | R9 | XMM5 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 6 | on stack | XMM6 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 7 | on stack | XMM7 |'
+  prefs: []
+  type: TYPE_TB
+- en: 'The following macro instruction is a primitive implementation of such a mechanism.
+    Just as in the case of the Microsoft x64 example, this one does not handle stack
+    parameters:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE24]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Using such a macro in 64-bit code intended to run on a Unix-like system for
+    calling the procedure `my_proc` like this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE25]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Would expand it into:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE26]'
+  prefs: []
+  type: TYPE_PRE
+- en: A note on Flat Assembler's macro capabilities
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'One of the huge advantages of Flat Assemblers over other assemblers for the
+    Intel platform is its macro engine. In addition to being able to perform its original
+    task--substituting macro instructions with their definitions--it is able to perform
+    relatively complex computations, and I would dare to call it an additional programming
+    language. The preceding examples only utilize a tiny fraction of what FASM''s
+    macro processor is capable of. While we only used a set of `if` clauses and a
+    variable, we may, in necessary cases, use loops (with `while` or `repeat` statements).
+    For example, imagine a string of characters that you want to keep encrypted:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE27]'
+  prefs: []
+  type: TYPE_PRE
+- en: Here, `my_string_len` is the length of the string.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`$` is a special symbol denoting the current address. Thus, `$-my_string` means
+    the current address minus the address of `my_string`, which is the length of the
+    string.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'A simplistic XOR encryption may be applied with just a four-line macro:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE28]'
+  prefs: []
+  type: TYPE_PRE
+- en: The `%` symbol here denotes the current iteration and the `-1` value is needed
+    because the count of iterations starts at 1.
+  prefs: []
+  type: TYPE_NORMAL
+- en: This is just a short and primitive example of what the macro engine of FASM
+    is able to do, and there is a lot more. However, this book, though it uses FASM
+    as a primary assembler, is dedicated to Intel Assembly language rather than to
+    specific dialect, so this additional information goes beyond its scope. I strongly
+    recommend that you refer to the FASM documentation available at [http://flatassembler.net](http://flatassembler.net).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Macro instructions in MASM and GAS
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Although the core idea behind the macro instruction mechanism is the same across
+    all assemblers, the syntax of macro instructions and the capabilities of the engine
+    vary. The following are two examples of simple macros for MASM and GAS.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Microsoft Macro Assembler
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Remember our test program for MASM in [Chapter 2](cb7ac242-8ebb-4d6a-946a-220133f96674.xhtml),
+    *Setting Up a Development
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Environment*? We can replace the code that invokes the `show_message` procedure
+    with the following macro instruction:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE29]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'This may make the code a bit more readable as we may then call the `show_message`
+    procedure this way:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE30]'
+  prefs: []
+  type: TYPE_PRE
+- en: The GNU Assembler
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The macro engine of the GNU Assembler is quite similar to that of Microsoft's
+    MASM, yet there are a few syntactic differences (not taking into account the overall
+    syntax difference) that we have to pay attention to. Let us take the `output_message`
+    procedure from the Linux test program in [Chapter 2](https://cdp.packtpub.com/mastering_assembly_programming/wp-admin/post.php?post=221&action=edit#post_52),
+    *Setting Up a Development
+  prefs: []
+  type: TYPE_NORMAL
+- en: Environment*, and replace the call to `printf()` with a simple macro for demonstration
+    purposes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE31]'
+  prefs: []
+  type: TYPE_PRE
+- en: Other assembler directives (FASM Specific)
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Up until now, we mostly considered macro instructions to be some sort of replacement
+    for procedure calls, although I believe it would be correct to refer to them as
+    convenience instruments for simplifying the writing and maintenance of the code.
+    In this part of the chapter, we will see some so to say built-in macro instructions--assembler
+    directives--which may virtually be divided into three categories:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Conditional assembly
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Repeat directives
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Inclusion directives
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Additional categories may be present depending on assembler implementation.
+    You should refer to the documentation of the assembler you are using for more
+    information.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The conditional assembly
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Sometimes we may want a macro instruction or a code fragment to be assembled
+    differently depending on certain conditions. Both MASM and GAS provide this functionality
+    too, but let''s get back to FASM (as the most convenient one) and consider the
+    following macro instruction:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE32]'
+  prefs: []
+  type: TYPE_PRE
+- en: It may appear a bit complicated at first, but the purpose of the macro is rather
+    simple. We extend an XOR instruction so that we may specify two memory locations
+    as operands, which cannot be done with the original instruction. For simplicity,
+    we only operate on double word values.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the beginning, we check whether both parameters are labels of memory locations
+    and if they are, we load the value from one of them to a register and perform
+    a XOR operation, as we would when the first operand is a memory location and the
+    second operand is a register.
+  prefs: []
+  type: TYPE_NORMAL
+- en: If this condition is not true, we move to the second part of the macro instruction,
+    where we perform a XOR operation appropriately depending on whether the first
+    operand is a memory location or the second one, or whether they are both general
+    purpose registers.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'As an example, let''s take two variables named `my_var1` and `my_var2` containing
+    values `0xCAFECAFE` and `0x02010201`, respectively, and swap them with XOR:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE33]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Once processed, the preceding code would expand to this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE34]'
+  prefs: []
+  type: TYPE_PRE
+- en: As we see, the `exordd` macro instruction is expanded differently depending
+    on its parameters.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Repeat directives
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'There may be a need to repeat the same portion of code with minor differences
+    or even without them. Assemblers have directives (sometimes referred to as built-in
+    macro instructions) that allow us exactly this. There are three such statements
+    common to all three assemblers--FASM, MASM and GAS:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`rept count`: The `rept` directive followed by the `count` parameter simply
+    makes `count` copies of the code defined in the block. In case of Flat Assembler,
+    we may declare the second parameter, which will equal the number of the current
+    iteration (1 based). For example, the following code:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[PRE35]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'This would generate an array of hexadecimal characters named `hex_chars`, and
+    is equivalent to:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE36]'
+  prefs: []
+  type: TYPE_PRE
+- en: '`irp arg, a, b, c, ...`: The `irp` directive is followed by an argument and
+    a list of parameters. The argument (here `arg`) represents a single parameter
+    during each iteration. For example, this code:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[PRE37]'
+  prefs: []
+  type: TYPE_PRE
+- en: Sequentially increments registers EAX, EBX then ECX.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`**irps arg, a b c ...**`: The `irps` directive is the same as `irp`, except
+    that parameters in the list are not separated with commas.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Inclusion directives
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'There are two directives that we have hardly touched upon in previous chapters,
+    which appear to be very useful. These directives are:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`include ''filename''`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`file ''filename''`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The include directive
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The syntax of the `include` directive is very simple. It is the directive itself
+    followed by a quoted name of a source file we want to include. Logically, the
+    operation is the same as of `#include` keyword in C or C++. Programming in Assembly
+    is not always simple and it is a very good idea to split your code into several
+    source files (for example, put all your definitions of macro instructions in a
+    separate file), then combine them all by including them in the main source.
+  prefs: []
+  type: TYPE_NORMAL
+- en: File directive
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: While syntactically `include` and `file` directives are similar and both cause
+    a file to be included in source processing, logically they are very different.
+    Unlike the `include` directive, the `file` directive does not cause any processing
+    of a file being included. This allows inclusion of binary data into the data section
+    or into any place you need.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Summary
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In this chapter, we have very briefly covered the numerous abilities of the
+    macro instructions in Assembly language programming. Unfortunately, it may require
+    an entire book to mention everything that may be done with macro instructions,
+    especially when it comes to the Flat Assembler, which has an exceptional preprocessor.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'An example from my own practice: I once had to implement a heavily obfuscated
+    version of the AES128 decryption algorithm, which took 2175 lines in total, having
+    only a few procedures, and almost half of that (1064 lines) was occupied by the
+    definition of different macro instructions. As you may safely assume, about 30%
+    to 60% of each procedure contained the invocation thereof.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the next chapter, we will continue to dive deeper into the preprocessor and
+    deal with different data structures, and the creation and management thereof.
+  prefs: []
+  type: TYPE_NORMAL

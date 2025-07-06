@@ -1,0 +1,1033 @@
+- en: Parallel Data Processing
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: I remember sitting in front of my ZX Spectrum with 64 KB of memory (16 KB ROM
+    + 48 KB RAM) with an old tape recorder plugged in, and a newly bought cassette
+    inserted. Among the relatively large amount of programs on the cassette, there
+    was one that specifically drew my attention. Not that it was able to do anything
+    special; after all, it simply computed personal biorhythm graphs based on the
+    date of birth (in fact, I had to enter the current date too) and plotted them
+    on the screen. There wasn't even any sophistication in the algorithm (how ever
+    sophisticated an algorithm may be when it is all about calculation of sine over
+    some value). What seemed to be interesting was the Wait while results are being
+    processed message, which had some kind of a progress bar that appeared for for
+    almost half a minute (yes, I was naive enough to think that some calculations
+    were really taking place "behind" the message), and the three graphs being plotted
+    simultaneously. Well, it looked as if they were being plotted simultaneously.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The program was written in BASIC, so reversing it was a fairly easy task. Easy
+    but disappointing. Of course, there was no parallel processing when plotting the
+    graphs, simply the same function, sequentially called for each graph on each point.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Obviously, the ZX Spectrum was not the right platform to look for parallel processing
+    capabilities. Intel architecture, on the other hand, provides us with such a mechanism.
+    In this chapter, we will examine a few capabilities provided by the **Streaming
+    SIMD Extension** (**SSE**), which allows simultaneous computations on the so-called
+    packed integers, the packed single precision or packed double precision floating
+    point numbers that are contained in 128-bit registers.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We will begin the chapter with a brief introduction to the SSE technology, reviewing
+    available registers and access modes thereof. Later, we will proceed to the implementation
+    of the algorithm itself, which involves parallel operations of single precision
+    floating point values related to all three biorhythms.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Some steps, which are essential for biorhythmic graph calculation and are trivial
+    when implemented in high-level languages, like calculation of sine, exponentiation,
+    and factorial, will be covered in more detail, as we do not have access (at this
+    moment) to any math library; hence, we have no ready-to-use implementation of
+    the procedures involved in the aforementioned calculations. We will make our own
+    implementation for each step.
+  prefs: []
+  type: TYPE_NORMAL
+- en: SSE
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The Intel Pentium II processor brought along the **MMX** technology (unofficially
+    called the **MultiMedia eXtension**, however, such an alias has never been used
+    in Intel documentation), which provided us with the possibility of working with
+    packed integer data using 64-bit registers. Despite the obvious benefit, there
+    were at least two disadvantages:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: We could process integer data only
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The MMX registers were mapped onto the registers of the **floating-point unit**
+    (**FPU**)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: While being better than nothing, the MMX technology still did not provide enough
+    computational power.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The situation changed a lot with the introduction of the Pentium III processor
+    with its Streaming SIMD Extension with its own set of 128-bit registers and instructions,
+    allowing a wide range of operations to be performed on scalar or packed bytes,
+    32-bit integers, 32-bit single precision floating-point values, or 64-bit double
+    precision floating point values.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Registers
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Intel-based processors have 8 XMM registers for use with SSE, which are named
+    XMM0 to XMM7 on 32-bit platforms, and 16 XMM registers, named XMM0 to XMM15, on
+    64-bit platforms. It is important to note that only 8 XMM registers are available
+    on 64-bit platforms while not in long mode.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The content of each of the XMM registers may be considered to be one of the
+    types below:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 16 bytes (which we saw in the AES-NI implementation)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Eight 16-bit words
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Four 32-bit double words
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Four 32-bit single precision floating-point numbers (we will use the registers
+    this way throughout the chapter)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Two 64-bit quad words
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Two 64-bit double precision floating point numbers
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: SSE instructions are able to operate on the same parts of registers that are
+    used as operands and on different parts of the operands (for example, they can
+    move the lower part of the source register to the higher part of the destination
+    register).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Revisions
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'There are, at the moment, five revisions of the SSE instruction set (and hence
+    of the technology), which are as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**SSE**: This was introduced in 1999 and contained the initial design of the
+    technology and instructions thereof'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**SSE2**: This revision came out with Pentium 4 and brought 144 new instructions
+    with it'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**SSE3**: Although only 13 new instructions were added with SSE3, they introduced
+    the ability to perform the so-called "horizontal" operations (operations performed
+    on a single register)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**SSSE3**: This introduced 16 new instructions, including the instructions
+    for horizontal integer operations'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**SSE4**: This brought another 54 instructions, thus making life significantly
+    easier for developers'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Biorhythm calculator
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: I have mentioned it before and I would like to reiterate that, in my eyes, the
+    best way to understand and learn things is by example. We began this chapter by
+    mentioning an old program for biorhythm level calculation and it seems that this
+    program, when implemented using the SSE architecture, may be a simple yet good
+    example of how parallel calculations may be performed. The code in the next section
+    demonstrates biorhythms calculations for my humble self for the period between
+    May 9, 2017 and May 29, 2017, storing results into a table. All calculations (including
+    exponentiation and sine) are implemented using SSE instructions and, obviously,
+    XMM registers.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The idea
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The word "biorhythm" originates from two Greek words; "bios", meaning life and
+    "rhythmos", meaning rhythm. The idea itself was developed by Wilhelm Fliess, a
+    German otolaryngologist, who lived in the late nineteenth and the beginning of
+    the twentieth centuries. He believed that our life is influenced by biological
+    cycles, which affect the mental, physical, and emotional aspects.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Fliess derived three major biorhythmic cycles:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**Physical cycle**'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Duration: 23 days'
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: 'Denotes:'
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: Coordination
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Strength
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Well-being
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Emotional cycle**'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Duration: 28 days'
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: 'Denotes:'
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: Creativity
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Sensitivity
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Mood
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Awareness
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Intellectual cycle**'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Duration: 33 days'
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: 'Denotes:'
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: Alertness
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Analytical and logical abilities
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Communication
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The theory itself may be quite arguable, especially since it is considered pseudoscience
+    by most of scientific public; however, it is scientific enough to, at least, serve
+    for an example of a parallel data processing mechanism.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The algorithm
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The algorithm of biorhythm calculation is fairly simple, not to say trivial.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Variable values, used to specify the rate of each biorhythm at specific date,
+    are in the (-1.0, 1.0) range and are calculated using this formula:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*x = sin((2 * PI *t) / T)*'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Here, *t* is the number of days that have passed since the date of the person's
+    birth till the date we want to know the biorhythms' values for (most likely, the
+    current date), and *T* is the period of a given biorhythm.
+  prefs: []
+  type: TYPE_NORMAL
+- en: There aren't too many things we may optimize with the aid of the SSE technology.
+    What we definitely can do is calculate data for all three types of biorhythms
+    at once, which in turn is sufficient to demonstrate the abilities and power of
+    the Streaming SIMD Extension.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Data section
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'As there is no specific order of sections in the source file, we will begin
+    with a quick look at the data section in order to better comprehend the code.
+    The data section or, to be more precise, the arrangement of data in a data section,
+    is quite self-explanatory. The emphasis was made on data alignment, allowing faster
+    access with aligned SSE instructions:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: The code
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: We will begin with the standard template for 32-bit Windows (if you are on Linux,
+    you may safely use the Linux template instead).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Standard header
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'First of all, we tell the assembler what kind of output we expect, which is
+    the GUI executable (although, it would be without any GUI), what our entrypoint
+    is, and, of course, we include the `win32a.inc` file in order to be able to call
+    the `ExitProcess()` Windows API. Then, we create the code section:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: The main() function
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The following is the analog of the C/C++ `main()` function, which controls the
+    whole algorithm and is responsible for performing all the needed preparations
+    as well as for the execution of the forecast calculation loop.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Data preparation steps
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: First of all, we need to make some tiny corrections to the dates (months are
+    specified by their number). We are interested in the number of days since January
+    1 until the first day of a month. The easiest and fastest way to perform such
+    correction would be using a small table with 12 entries, containing the number
+    of days between January 1 and the first day of a month. The table is called `monthtab`
+    and is located in the data section.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The preceding code illustrates this very fix being applied:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: We read the month number from the birth date
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Decrement it as the table we are using is in fact a 0-based array of values
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Replace the original month number with the value read from the table
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: By the way, the addressing mode used when reading a value from the table is
+    a variation of the scale/index/base/displacement. As we may see, `monthtab` is
+    the displacement, `eax` register holds the index and 4 is the scale.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The day/month/year of the two dates are specifically pre-arranged to fit properly
+    in the XMM registers and to ease calculations. It may seem that the first line
+    of the following code loads the value of `cday` into XMM0, but, in fact, the instruction
+    being used loads `xmmword` (128-bit data type) starting from the address of `cday`,
+    meaning that it loads four values into XMM0:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| **bits 96 - 127** | **bits 64 - 95** | **bits 32 - 63** | **bits 0 - 31**
+    |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `byear` | `bday` | `cyear` | `cday` |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 1979 | 16 | 2017 | 9 |'
+  prefs: []
+  type: TYPE_TB
+- en: Data representation in the XMM0 register
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Similarly, the second `movaps` loads XMM1 register with four double words starting
+    at address of `cmonth`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| **bits 96 - 127** | **bits 64 - 95** | **bits 32 - 63** | **bits 0 - 31**
+    |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 0 | `bmonth` | 0 | `cmonth` |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 0 | 0 | 0 | 120 |'
+  prefs: []
+  type: TYPE_TB
+- en: Data representation in the XMM1 register
+  prefs: []
+  type: TYPE_NORMAL
+- en: As we can see, placing the two tables directly one above the other and thinking
+    of them as XMM registers 0 and 1, we have `cmonth`/`cday` and `bmonth`/`bday`
+    loaded to the same double words in both XMM0 and XMM1\. We will see why such an
+    arrangement of the data was so important in a few moments.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The `movaps` instruction is only able to move data between two XMM registers
+    or an XMM register and a 16 bytes aligned memory location. You should use `movups`
+    for accessing unaligned memory locations.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In the last two lines of the following code fragment, we convert the values
+    we have just loaded from double words to single precision float numbers:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'We still have not finished conversion of dates into the amount of days, as
+    years are still, well, years, and the number in days of a month and the number
+    of days since January 1st for both dates are still stored separately. All we have
+    to do before summation of the days for each date is multiply each year by 365.25
+    (where 0.25 is a compensation for leap years). However, parts of the XMM registers
+    cannot be accessed separately, as with parts of general purpose registers (for
+    example, there is no analog to AX, AH, AL in EAX). We can, however, manipulate
+    parts of XMM registers by using special instructions. In the first line of the
+    following code fragment we load the lower 64-bit part of XMM2 register with two
+    float values stored at `dpy` (days per year). The aforementioned values are `1.0`
+    and `365.25`. What does 1.0 have to do with it, you may ask, and the answer is
+    shown in the following table:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| **bits 96 - 127** | **bits 64 - 95** | **bits 32 - 63** | **bits 0 - 31**
+    | **register name** |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 1979.0 | 16.0 | 2017.0 | 9.0 | XMM0 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 0.0 | 0.0 | 0.0 | 120.0 | XMM1 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 0.0 | 0.0 | 365.25 | 1.0 | XMM2 |'
+  prefs: []
+  type: TYPE_TB
+- en: Content of XMM0 - XMM2 registers
+  prefs: []
+  type: TYPE_NORMAL
+- en: Packed operations on XMM registers (packed means operations on more than one
+    value) are, most of the time, performed in columns. Thus, in order to multiply
+    `2017.0` by `365.25`, we need to multiply XMM2 by XMM0\. However, we must not
+    forget about `1979.0` either, and the easiest way to multiply both `2017.0` and
+    `1979.0` by `365.25` with a single instruction is to copy the content of the lower
+    part of XMM2 register to its upper part with the `movlhps` instruction.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'After these instructions the content of the XMM0 - XMM2 registers should look
+    like this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| **bits 96 - 127** | **bits 64 - 95** | **bits 32 - 63** | **bits 0 - 31**
+    | **register name** |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 1979.0 | 16.0 | 2017.0 | 9.0 | XMM0 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 0.0 | 0.0 | 0.0 | 120.0 | XMM1 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 365.25 | 1.0 | 365.25 | 1.0 | XMM2 |'
+  prefs: []
+  type: TYPE_TB
+- en: Content of XMM0 - XMM2 registers after movlhps
+  prefs: []
+  type: TYPE_NORMAL
+- en: Use `pinsrb`/`pinsrd`/`pinsrq` instructions for insertions of individual bytes/double
+    words/quad words into an XMM register when needed. They are not used in our code
+    for the purpose of demonstration of horizontal operations.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Now we are safe to proceed with multiplication and summation:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: The preceding code first calculates the total number of days since January 1
+    up to the day of the month for both dates on the first line. On the second line,
+    at last, it multiplies the years of both dates by the number of days per year.
+    This line also explains why the days per year value was accompanied by `1.0`--as
+    we are multiplying XMM1 by XMM2 and we do not want to lose the previously calculated
+    number of days, we simply multiply the number of days since January 1st by `1.0`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'At this moment the content of the three XMM registers should be like this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| **bits 96 - 127** | **bits 64 - 95** | **bits 32 - 63** | **bits 0 - 31**
+    | **register name** |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 1979.0 | 16.0 | 2017.0 | 9.0 | XMM0 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 1979.0 | 16.0 | 2017.0 | 129.0 | XMM1 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 722829.75 | 16.0 | 736709.25 | 129.0 | XMM2 |'
+  prefs: []
+  type: TYPE_TB
+- en: Content of XMM0 - XMM2 registers after addition of days and multiplication by
+    days per year of relative parts of XMM2 and XMM1 registers
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'There are two remaining operations to perform:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Finalize calculation of the total number of days for each date
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Subtract the earlier date from the later one
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'By this time, all of the values that we need to use in our calculations are
+    stored in a single register, XMM2\. Luckily, SSE3 introduced two important instructions:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`haddps`: Horizontal addition of single-precision values'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Adds the single-precision floating-point values in the first and second and
+    in third and fourth dwords of the destination operand, and stores the results
+    in the first and second dwords of the destination operand respectively. The third
+    and fourth dwords are overwritten with the results too, where the third dword
+    contains the same value as the first dword and the fourth dword the same value
+    as the second dword.
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: '`hsubps`: Horizontal subtraction of single-precision values'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Subtracts the single-precision floating-point value in the second dword of the
+    destination operand from the first dword of the destination operand and the value
+    of the fourth dword of the destination operand from the third dword, and stores
+    the results into the first and second dwords and third and fourth dwords of the
+    destination operand respectively.
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: 'Upon completion of `hsubps` instruction, the content of the registers should
+    be:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| **bits 96 - 127** | **bits 64 - 95** | **bits 32 - 63** | **bits 0 - 31**
+    | **register name** |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 1979.0 | 16.0 | 2017.0 | 9.0 | XMM0 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 1979.0 | 16.0 | 2017.0 | 129.0 | XMM1 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 13992.5 | 13992.5 | 13992.5 | 13992.5 | XMM2 |'
+  prefs: []
+  type: TYPE_TB
+- en: Content of XMM0 - XMM2 registers after addition and later subtraction of values
+  prefs: []
+  type: TYPE_NORMAL
+- en: As we see, the XMM2 register contains the number of days between the two dates
+    (the date of birth and the current date) minus 1, as the day of birth itself is
+    not included (this problem will be solved in the calculation loop);
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: The preceding three lines set up the step value for our forecast by loading
+    the double word stored at `dpy`, which is `1.0`, and propagate this value throughout
+    the XMM3 register. We will be adding XMM3 to XMM2 for each new day of the forecast.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The following three lines are logically similar to the previous three; they
+    set all four single precision floats of the XMM4 register to *2*PI*:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'And the last step before entering the calculation loop: we load XMM1 with the
+    lengths of the biorhythmic cycles and set the `eax` register to point to the location
+    in the memory where we are going to store our output data (the forecast). Given
+    the arrangement of data in the data section, the fourth single of the XMM1 register
+    will be loaded with *2*PI*, but, since the fourth single is not going to be used
+    in our calculations, we simply leave it as is. We could, however, zero it out
+    with the value of `eax` by using the `pinsrd xmm1, eax, 3` instruction:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'At last we have all the data set up and ready for actual calculation of biorhythmic
+    values for a given range of dates. The registers XMM0 to XMM4 should now have
+    the following values:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| **bits 96 - 127** | **bits 64 - 95** | **bits 32 - 63** | **bits 0 - 31**
+    | **register name** |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 1979.0 | 16.0 | 2017.0 | 9.0 | XMM0 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 6.2831802 | 33.0 | 28.0 | 23.0 | XMM1 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 13992.5 | 13992.5 | 13992.5 | 13992.5 | XMM2 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 1.0 | 1.0 | 1.0 | 1.0 | XMM3 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 6.2831802 | 6.2831802 | 6.2831802 | 6.2831802 | XMM4 |'
+  prefs: []
+  type: TYPE_TB
+- en: Calculation loop
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Once all the preparations are done, the calculation loop in which we generate
+    our forecast is fairly simple. First of all we increment the number of days value,
+    which has a dual purpose--during the first iteration, it solves the problem of
+    the day of birth not being included and advances the current date one day during
+    the remaining iterations.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The second instruction copies the XMM4 register to XMM0, which will be used
+    for most of our calculations, and multiplies it with the number of days in XMM2
+    by the execution of the third instruction--which actually calculates the (*2*PI*t*)
+    part of the formula.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The fourth instruction completes the calculation of the value we need the sine
+    of, by division of XMM0 by lengths of biorhythmic periods:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Now we need to calculate the sine for the resulting values, which is a bit
+    problematic due to the algorithm we are going to use for sine computation and
+    the relatively large numbers. The solution is simple--we need to normalize the
+    values so they fit the (*0.0, 2*PI*) range. This is implemented by the `adjust()`
+    procedure:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Having adjusted the values in XMM0 (ignore the value of the fourth part of
+    XMM0 as it is irrelevant), we may now compute sine for each of the first three
+    single-precision float parts of the register:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE11]'
+  prefs: []
+  type: TYPE_PRE
+- en: We store computed sine values to a table pointed by the `eax` register (since
+    the table is aligned on a 16-bytes boundary, we are safe to use the `movaps` instruction,
+    which is slightly faster than its `movups` counterpart). Then, we advance the
+    table pointer by 16 bytes, decrement ECX, and keep looping while ECX is not 0
+    with the `loop` instruction.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'When ECX reaches `0`, we simply terminate the process:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE12]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The table, by the end of the loop, should contain the following values:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| **Date** | **Physical (P)** | **Emotional (S)** | **Intellectual (I)** |
+    **Irrelevant** |'
+  prefs: []
+  type: TYPE_TB
+- en: '| May 9^(th), 2017 | 0.5195959 | -0.9936507 | 0.2817759 | -NAN |'
+  prefs: []
+  type: TYPE_TB
+- en: '| May 10^(th), 2017 | 0.2695642 | -0.9436772 | 0.4582935 | -NAN |'
+  prefs: []
+  type: TYPE_TB
+- en: '| May 11^(th), 2017 | -8.68E-06 | -0.8462944 | 0.6182419 | -NAN |'
+  prefs: []
+  type: TYPE_TB
+- en: '| May 12^(th), 2017 | -0.2698165 | -0.7062123 | 0.7558383 | -NAN |'
+  prefs: []
+  type: TYPE_TB
+- en: '| May 13^(th), 2017 | -0.5194022 | -0.5301577 | 0.8659862 | -NAN |'
+  prefs: []
+  type: TYPE_TB
+- en: '| May 14^(th), 2017 | -0.7308638 | -0.3262038 | 0.9450649 | -NAN |'
+  prefs: []
+  type: TYPE_TB
+- en: '| May 15^(th), 2017 | -0.8879041 | -0.1039734 | 0.9898189 | -NAN |'
+  prefs: []
+  type: TYPE_TB
+- en: '| May 16^(th), 2017 | -0.9790764 | 0.1120688 | 0.9988668 | -NAN |'
+  prefs: []
+  type: TYPE_TB
+- en: '| May 17^(th), 2017 | -0.9976171 | 0.3301153 | 0.9718016 | -NAN |'
+  prefs: []
+  type: TYPE_TB
+- en: '| May 18^(th), 2017 | -0.9420508 | 0.5320629 | 0.909602 | -NAN |'
+  prefs: []
+  type: TYPE_TB
+- en: '| May 19^(th), 2017 | -0.8164254 | 0.7071083 | 0.8145165 | -NAN |'
+  prefs: []
+  type: TYPE_TB
+- en: '| May 20^(th), 2017 | -0.6299361 | 0.8467072 | 0.6899831 | -NAN |'
+  prefs: []
+  type: TYPE_TB
+- en: '| May 21^(st), 2017 | -0.3954292 | 0.9438615 | 0.5407095 | -NAN |'
+  prefs: []
+  type: TYPE_TB
+- en: '| May 22^(nd), 2017 | -0.128768 | 0.9937283 | 0.3714834 | -NAN |'
+  prefs: []
+  type: TYPE_TB
+- en: '| May 23^(rd), 2017 | 0.1362932 | 0.9936999 | 0.1892722 | -NAN |'
+  prefs: []
+  type: TYPE_TB
+- en: '| May 24^(th), 2017 | 0.3983048 | 0.9438586 | -8.68E-06 | -NAN |'
+  prefs: []
+  type: TYPE_TB
+- en: '| May 25^(th), 2017 | 0.6310154 | 0.8467024 | -0.18929 | -NAN |'
+  prefs: []
+  type: TYPE_TB
+- en: '| May 26^(th), 2017 | 0.8170633 | 0.7069295 | -0.371727 | -NAN |'
+  prefs: []
+  type: TYPE_TB
+- en: '| May 27^(th), 2017 | 0.9422372 | 0.5320554 | -0.5407244 | -NAN |'
+  prefs: []
+  type: TYPE_TB
+- en: '| May 28^(th), 2017 | 0.9976647 | 0.3303373 | -0.6901718 | -NAN |'
+  prefs: []
+  type: TYPE_TB
+- en: Adjustment of sine input values
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: As we have seen, using SSE instructions is quite convenient and effective; although,
+    as we were mostly loading data from memory to registers and moving it within the
+    registers, we have not been able to see its actual effectiveness yet. There are
+    two procedures called from the calculation loop that perform the actual computations.
+    One of them is the `adjust()` procedure.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Due to the overall simplicity of the algorithm, and since each of the two procedures
+    is called from exactly one place, we are not following any specific calling convention;
+    instead, we're using the XMM0 register for passing the floating point values and
+    the ECX register for passing integer parameters.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In the case of the `adjust()` procedure, we only have one parameter, which
+    is already loaded into the XMM0 register, so we simply call the procedure:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE13]'
+  prefs: []
+  type: TYPE_PRE
+- en: This is a standard way to create a stack frame for local variables and temporary
+    storage of non-general-purpose registers used in the procedure by saving the stack
+    pointer ESP/RSP in EBP/RBP registers (we are free to use other general-purpose
+    registers). General-purpose registers may be saved on stack by issuing a push
+    instruction right after the allocation of space for local variables. The allocation
+    of space for local variables is performed by subtracting the overall size of variables
+    from the ESP/RSP register.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Addressing the allocated space is shown in the following code:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE14]'
+  prefs: []
+  type: TYPE_PRE
+- en: In the preceding two lines, we temporarily store the content of the XMM1 and
+    XMM2 registers as we are going to use them, but we need to preserve their values.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The adjustment of the input values is very simple and may be expressed by the
+    following code in C:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE15]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'However, in C, we would have to call this function for every value (unless
+    we use intrinsic functions), while in Assembly, we may adjust all three simultaneously
+    with a few simple SSE instructions:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE16]'
+  prefs: []
+  type: TYPE_PRE
+- en: We are already familiar with the above sequence, which loads a double word into
+    an XMM register and duplicates it to every single-precision float part of it.
+    Here, we load *2*PI* into XMM1.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The following algorithm performs the actual calculations:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: We duplicate the input parameter into the XMM2 register
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Divide its singles by *2*PI*
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Round down the result (SSE has no floor or ceiling instructions, instead we
+    may use `roundps` and specify the rounding mode in the third operand; in our case,
+    we instruct the processor to, roughly speaking, round down)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Multiply rounded down results by *2*PI*
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Subtract them from the initial value and get results that fit into the (*0.0,
+    2*PI*) range
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'and the Assembly implementation thereof is:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE17]'
+  prefs: []
+  type: TYPE_PRE
+- en: The result of the last operation is already in XMM0, so we simply return from
+    procedure to our calculation loop.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Computing sine
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'We hardly ever think about how sine or cosine are calculated without actually
+    having a right-angled triangle with known lengths of each of the cathetus and
+    the hypotenuse. There are at least two approaches to make those computations in
+    a fast and efficient way:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**CORDIC algorithm**: This stands for **COordinate Rotation DIgital Computer**.
+    This one is implemented in simple calculators or primitive hardware devices.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Taylor series**: A fast approximation algorithm. It does not provide the
+    exact value, but is definitely enough for our needs.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: LIBC on the other hand uses a different algorithm, which we could implement
+    here, but it would be much more than a simple example. Therefore, what we are
+    using in our code is a simple implementation of the simplest approximation algorithm,
+    which provides us with a nice precision (much nicer than we need in this program)
+    of up to the sixth digit after the point--the Taylor series for trigonometric
+    functions (also known as Maclaurin series).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The formula for sine computation using the Taylor series is as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*sin(x) = x - x³/3! + x⁵/5! - x⁷/7! + x⁹/9! ...*'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Here, the ellipsis denote an infinite function. However, we do not need to run
+    it forever to obtain values of satisfactory precision (after all, we are only
+    interested in 2 digits after the point), instead, we will run it for 8 iterations.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Just as with the `adjust()` procedure, we will not follow any specific calling
+    convention and, since the parameter we need to compute sine for is already in
+    XMM0, we will simply leave it there. The head of the the `sin_taylor_series` procedure
+    does not contain anything new for us:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE18]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The following computation loop is simple and does not contain any instructions
+    that we have not met yet. However, there are two procedure calls taking two parameters
+    each. Parameters are passed with the XMM0 register (three single-precision floating-point
+    numbers) and the ECX register containing the currently used value of the exponent:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE19]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'All computations have completed and we now have sine values for the three inputs.
+    For the first iteration, the inputs in XMM0 would be as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| **bits 96 - 127** | **bits 64 - 95** | **bits 32 - 63** | **bits 0 - 31**
+    | **register name** |'
+  prefs: []
+  type: TYPE_TB
+- en: '| (irrelevant) | 0.28564453 | 4.8244629 | 2.5952148 | XMM0 |'
+  prefs: []
+  type: TYPE_TB
+- en: 'Also, the result of our `sin()` approximation with eight iterations of Taylor
+    series is as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| **bits 96 - 127** | **bits 64 - 95** | **bits 32 - 63** | **bits 0 - 31**
+    | **register name** |'
+  prefs: []
+  type: TYPE_TB
+- en: '| (irrelevant) | 0.28177592 | -0.99365967 | 0.51959586 | XMM0 |'
+  prefs: []
+  type: TYPE_TB
+- en: 'This shows a perfect (at least for our needs) level of approximation. Then,
+    we restore the previously saved XMM registers and return to caller procedure:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE20]'
+  prefs: []
+  type: TYPE_PRE
+- en: Exponentiation
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'We make use of exponentiation in our `sin_taylor_series` procedure, an algorithm
+    which is not as trivial as it may seem when it comes to real numbers used as exponents;
+    however, we are quite lucky because the Taylor series only uses natural numbers
+    for that purpose, but, it is worth mentioning that, should we need larger exponents,
+    the algorithm would have been too slow. Therefore, our implementation of an exponentiation
+    algorithm is as basic as it gets--we simply multiply the parameter in XMM0 by
+    itself ECX-1 times. ECX is decremented once because there is no need to calculate
+    `x¹`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE21]'
+  prefs: []
+  type: TYPE_PRE
+- en: Factorials
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'We also make use of factorials as we divide exponentiated values by a factorial
+    of exponents thereof. The factorial of a given number `n` is the product of all
+    positive integers less than or equal to the given number `n`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE22]'
+  prefs: []
+  type: TYPE_PRE
+- en: AVX-512
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: This chapter would not have been complete without mentioning AVX-512 - Advanced
+    Vector Extensions 512-bit. It, in fact, consists of multiple extensions, while
+    only the core one - AVX-512F ("F" stands for foundation) is mandatory for all
+    processors. AVX-512 does not only add new instructions, but greatly enhances the
+    implementation of parallel (vectored) computations, allowing calculations to be
+    performed over vectors of single or double-precision floating point values up
+    to 512 bits long. Also, 32 new 512-bit registers are introduced (ZMM0 - ZMM31)
+    and with its ternary logic it resembles dedicated platforms.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Summary
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The example code in this chapter was designed for the demonstration of the parallel
+    data processing capabilities of modern Intel-based processors. Of course, the
+    technology being used herein is far from able to provide the power of architectures
+    such as CUDA, but it is definitely able to significantly speed up certain algorithms.
+    While the algorithm we worked on here is very simple and hardly requires any optimization
+    at all, as it could be implemented with FPU instructions alone and we would hardly
+    notice any difference, it still illustrates the way in which multiple data may
+    be processed simultaneously. A much better application could be solving an *n*-body
+    problem, as SSE allows simultaneous computation of all vectors in a 3 dimensional
+    space or even the implementation of a multilayer perceptron (one of many types
+    of artificial neural networks) as it could have made it possible to process several
+    neurons at once or; if the network is small enough, host them all in available
+    XMM registers without the need to move data from/to memory. Especially keeping
+    in mind the fact that sometimes procedures that seem to be quite complex, when
+    implemented with SSE, may still be faster than a single FPU instruction.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now that we know about at least one technology that may make our life easier,
+    we will learn about the way assemblers can, if not simplify, then definitely ease
+    the work of Assembly developer--macro instructions. Similar to macros in C or
+    any other programming language supporting such features, macro instructions can
+    have a significantly positive impact, allowing the replacement of a series of
+    instructions with a single macro instruction, iteratively and/or conditionally
+    assemble or skip certain sequences, or even create new instructions if the assembler
+    is not supporting instructions we need (never happened to me yet, but "never say
+    never").
+  prefs: []
+  type: TYPE_NORMAL

@@ -1,0 +1,643 @@
+- en: Rapidly Triaging Systems
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In today's brave new world, where incidents have a way of rapidly ballooning
+    out of control without a rapid and effective response, it is integral that DFIR
+    professionals are able to query hosts for relevant information, such as the processes
+    and services running on the system, to make informed investigative decisions to
+    quickly contain the incident. While we can often collect this information on a
+    forensic image of a machine, some of this information is volatile or it may be
+    necessary to collect quickly rather than waiting for a forensic image to be created.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In this chapter, we develop a single script that is compatible with modern operating
+    systems and, using various first- and third-party libraries, extract useful information
+    about the system that the script is running on. With some modification, this script
+    could be leveraged in an environment by deploying it to many hosts and collecting
+    basic system information that may be valuable for the investigation. For example,
+    in the case of an incident involving malware, if that malware, as part of its
+    successful infection of a host, creates a new process, one could use this information
+    to quickly determine the universe of hosts infected and, upon further investigation,
+    which machine was likely infected first.
+  prefs: []
+  type: TYPE_NORMAL
+- en: To achieve a script that is compatible across different operating systems, we
+    will rely on a third-party module called `psutil` to obtain information about
+    running processes, while more OS-specific intel, in the case of the Windows operating
+    systems, will be extracted using the **Windows Management Interface** (**WMI**).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In this chapter, we will cover the following topics:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Extracting OS-agnostic process information using `psutil`
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Interacting with Windows systems by querying the WMI with Python and the `wmi`
+    and `pywin32` modules
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Creating a multi-platform triage artifact collection script
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The code for this chapter was developed and tested using Python 2.7.15 and Python
+    3.7.1.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Understanding the value of system information
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Why bother with collecting system information, anyway? Not all investigations
+    revolve around the user and what actions they took on the system, but, rather,
+    what the system is like and how it is behaving. For example, in the previous section,
+    we discussed how running processes and created services can be informative based
+    on indicators of compromise for a given scenario. However, as DFIR professionals
+    well know, sources for system information can also provide insight into user activity,
+    such as what disks are currently attached to the machine or querying the event
+    log for user logins.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the first edition of this book, this chapter originally showcased a `keylogger`
+    script that we developed, whose purpose was mainly to illustrate how to use operating
+    system APIs. For the second edition, we elected to keep that focus intact, but
+    apply it in a more forensically relevant way. Let's dive in and discuss the third-party
+    libraries. We will need to develop this script starting with `psutil`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Querying OS-agnostic process information with psutil
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The `psutil` module (version 5.4.5) is a cross-platform library capable of gathering
+    various system information from different operating systems, for both 32-bit and
+    64-bit architectures. While we use this library to extract process information
+    from the host system running the script, be aware that this library is capable
+    of extracting more system information than just running processes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let''s walk through a few examples, some of which we will not leverage in the
+    script; however, first install the library with `pip`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: We can get a list of active process IDs using the `pids()` function and then
+    use a PID to collect additional information about the process. For instance, in
+    the following code block, we select the first PID in the list of PIDs, with PID
+    62, create a process object for PID 62, and use various functions to display its
+    name, parent PID, and open files.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Note that, for some of these functions, such as the `open_files()` method,
+    you need to run the commands in an elevated Command Prompt:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: While we use this library to print details about processes, we can use it to
+    perform other tasks as well.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'For example, we can collect information about connected disks, using the `disk_partitions()`
+    function:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Additionally, we could use the `users()` function to identify user profiles
+    on the system and when the user session started:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: You can learn more about this library by reading the documentation page at [https://pypi.org/project/psutil/](https://pypi.org/project/psutil/).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Using WMI
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The `wmi` library, maintained by Tim Golden, is a wrapper for the `pywin32`
+    module, covered in the next section, that allows programmers to interact with
+    the WMI API and provides programmers with a great deal of relevant information
+    about Windows systems. You can even use this library to query other Windows systems
+    on your network.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'First, install WMI using `pip` by executing the following at Command Prompt:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: It should go without saying that the examples that we will discuss here will
+    only work on Windows systems and therefore should be executed on a Windows system.
+    Let's first take a look at querying running services.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We will need to create a WMI object and then use the `query()` method to identify
+    running services:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: We can, for example, use this module to identify installed printers associated
+    with the system.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'A portion of the output, denoted by the string `[...]`, has been sanitized
+    in the following example:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: Lastly, a very useful feature of this library, which we use in this script,
+    allows us to query Windows Event Logs.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In the following example, we query to the `OAlerts.evtx` file, an event log
+    that stores Microsoft Office alerts, and print out each event''s message and the
+    time the event was generated. Only one such message is shown here, in order to
+    be succinct:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: We could discuss many other features of this library; however, we invite you
+    to explore and experiment with its capabilities. We will introduce a few more
+    examples of this library in this chapter's script.
+  prefs: []
+  type: TYPE_NORMAL
+- en: This module requires the `pywin32` library, which is an incredibly powerful
+    library that gives developers access to a number of different Windows APIs and
+    is covered briefly in the next section. Understand that we are only scratching
+    the surface with these libraries and focus on the specific goals of our script.
+    Spend some time reading the documentation for these libraries and experimenting
+    with their capabilities, as you will likely find these libraries useful in any
+    script that interacts with the Windows operating system.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Read more about the `wmi` library and its capabilities on the documentation
+    page at [https://pypi.org/project/WMI/](https://pypi.org/project/WMI/). Sample
+    cookbook recipes using the `wmi` library can be found here:[ http://timgolden.me.uk/python/wmi/cookbook.html](http://timgolden.me.uk/python/wmi/cookbook.html).
+  prefs: []
+  type: TYPE_NORMAL
+- en: What does the pywin32 module do?
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: One of the most versatile Windows API libraries for Python is `pywin32` (version
+    224). This project is hosted on GitHub (historically on SourceForge) by Mark Hammond
+    and is an open source project that the community contributes to. There are many
+    different APIs available for Windows through this library. These features allow
+    developers to build GUIs for their applications, leverage built-in authentication methods, and
+    interact with hard drives and other external devices.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The `pywin32` module can be installed with `pip` by executing the following
+    at Command Prompt:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: Windows defines a **Component Object Model** (**COM**) that allows information
+    to be shared between applications. A COM can be in the form of a **Dynamic Link
+    Library** (**DLL**) or other binary file formats. These modules are designed in
+    such a manner that any programming language can interpret the information. This
+    single set of instructions, for example, allows a C++-based and Java-based program
+    to share a single resource, rather than requiring a separate version for each
+    language. COMs are generally only found on Windows, although they could be ported
+    to a UNIX platform if desired. The `win32com` library, a part of the `pywin32`
+    library, allows us to interact with COMs in Windows and is used by the `wmi` library
+    to obtain the information we request from it.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The `pywin32` library can be found on GitHub at [https://github.com/mhammond/pywin32](https://github.com/mhammond/pywin32).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Rapidly triaging systems – pysysinfo.py
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'We are now ready to dive into the focus of this chapter, the `pysysinfo.py`
+    script after having already covered the importance of collecting volatile information
+    and the libraries we will use. This script is composed of a number of functions,
+    most of which have to do with the `psutil` library, but at its heart identifies
+    early on what type of system it is running on and, if that system is using the
+    Windows operating system, runs an additional function using the WMI API, discussed
+    previously. You can see in the following diagram how the various functions interact
+    with each other and make up the code discussed throughout the remainder of this
+    chapter:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/4e8d31ee-900c-4a28-a337-089734af5dfc.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: This script was developed and tested on Python 2.7.15 and 3.7.1\. As with any
+    script we develop, we must start with the imports necessary to successfully execute
+    the code we've developed. You'll notice a number of the usual imports; however,
+    a few stand out—notably the `platform` module and `psutil` on lines 5 and 8\.
+    You may also notice that `wmi` is missing from this set of imports. You will understand
+    why this is imported later in the script in a few paragraphs. This script contains
+    seven different functions, most of which are used to process the data from the
+    `psutil` library.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Note that the `return_none()` function is covered in the following code block
+    instead of in a new section, as it is a one-line function that simply returns
+    `None` to the calling code:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: The `platform` module, which we have not touched on previously, is part of the
+    standard library and also provides some information about the system it is running
+    on. In this case, we only use this library to determine the operating system of
+    the host system executing the script.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Learn more about the platform module by reading the documentation page at [https://docs.python.org/3/library/platform.html](https://docs.python.org/3/library/platform.html).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Moving on to the script setup, we have the argument parser, which is decidedly
+    bland compared to some other chapters, featuring only one positional argument,
+    `OUTPUT_DIR`, the output directory to write the processed data to.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'If the desired output directory does not exist, we create it using the `os.makedirs()`
+    function on line 323:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Here''s where things differ a little from normal. On line 325, using the `platform.system()`
+    function, we check to see if the script is being executed on a Windows system.
+    If so, we try to import the `wmi` module and, if successful, call the `wmi_info()`
+    method. As alluded to earlier, we import the `wmi` library here for a reason.
+    When the `wmi` library is imported, it also loads the `pywin32` module, specifically
+    the `win32com.client` module. On a non-Windows system, where the `pywin32` library
+    won''t be installed, this can then cause an `ImportError` exception. For that
+    reason, we do not try importing `wmi` until we know the script is executing on
+    a Windows machine. It''s also not a bad idea to only import libraries once they
+    are needed:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE11]'
+  prefs: []
+  type: TYPE_PRE
+- en: Regardless of whether the system is Windows or not, we run the code captured
+    in the next code block. On line 336, we call the `get_process_info()` method,
+    which ultimately returns process data in the form of a dictionary. On line 337,
+    we create a list containing the desired column names and keys of our `pid_data`
+    dictionary. Lastly, on line 341, we call the `csv_writer()` method and pass in
+    the data, desired output directory, output name, the `fields` list, and a keyword
+    argument.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We will see what that keyword-argument does in a little bit:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE12]'
+  prefs: []
+  type: TYPE_PRE
+- en: As you may have noticed, we do not have a `main()` function for this script
+    and will, instead, jump right into a review of the `get_process_info()` method.
+    We will cover the Windows-specific function, `wmi_info()`, toward the end of this
+    chapter.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Understanding the get_process_info() function
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: As far as functions go, the `get_process_info()` function, is relatively straightforward
+    and mainly serves to set up the rest of the code execution. On line 166, we create
+    the `pid_info` dictionary, which is ultimately returned to the calling function
+    on line 336 and contains the extracted process data. Next, using the `psutil.pids()`
+    method as an iterator, which we showed in the demonstration of this library earlier,
+    we pass each process ID to the `get_pid_details()` method and store the returned
+    data in the `pid_info` dictionary, with the PID serving as the dictionary key.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let''s look at the `get_pid_details()` function next:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE13]'
+  prefs: []
+  type: TYPE_PRE
+- en: Learning about the get_pid_details() function
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The `get_pid_details()` method starts to gather information about each PID
+    that is passed to it. For each PID, we create a dictionary, `details`, which is
+    pre-populated with relevant keys we can expect to extract values for using the
+    `psutil` library. The dictionary keys are initialized with placeholder values,
+    mostly consisting of empty strings and lists:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE14]'
+  prefs: []
+  type: TYPE_PRE
+- en: Next, on line 118, we enter a `try` and `except` block that tries to create
+    a `Process` object for each provided PID. In this case, on lines 120 and 124,
+    we have two different exception clauses to handle situations where there is no
+    process matching the provided PID (perhaps if the process closed immediately after
+    script execution) or if there is an operating system error. In either event, should
+    such exceptions occur, the errors are appended to the `details` dictionary and
+    the dictionary is returned to the calling function.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Rather than crashing or halting the script due to an issue with a given process,
+    the script continues and will provide any such errors as a column in the CSV report
+    that is generated by the script:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE15]'
+  prefs: []
+  type: TYPE_PRE
+- en: If a `Process` object is created for the provided PID, we then iterate through
+    each key in the `details` dictionary on line 128, and if the key is anything other
+    than `pid` or `_errors`, we attempt to get the value associated with the key with
+    the `getattr()` function on line 144\. There are a few exceptions to that, however;
+    for instance, we have specific `elif` statements for the `children`, `threads`,
+    `connections`, or `files` keys. In the case of the `children` and `threads` keys,
+    we use list comprehension on lines 134 and 138 to associate the children's PIDs
+    and thread's IDs to the `children` and `threads` keys, respectively.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'For both the `connections` and `files` keys, we have developed separate functions
+    to extract the desired information and store the returned data to the appropriate
+    key in the `details` dictionary. Lastly, on lines 145, 148, and 151, we create
+    exceptions that may occur throughout the conditional statements, including handling
+    issues where we lack sufficient privilege, for instance, if the script is running
+    from a non-elevated prompt, or if the process no longer exists, or an operating
+    system error has occurred:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE16]'
+  prefs: []
+  type: TYPE_PRE
+- en: As discussed, for two keys, the `connections` and `files` keys, we called separate
+    functions to handle each of them. Let's now take a look at the first of those.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Extracting process connection properties with the read_proc_connections() function
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The `read_proc_connections()` function, defined on line 58, starts by creating
+    an empty list, `conn_details`, which will store the details of each PID connection:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE17]'
+  prefs: []
+  type: TYPE_PRE
+- en: For each connection in the provided process, we create a `conn_items` dictionary,
+    and store within it, the details of each connection, including the status of the
+    connection and the local and remote IP addresses and ports. As seen before, we
+    use the `getattr()` method, querying for named attributes of the specified object
+    and storing the returned value in our dictionary. If the named object does not
+    exist, we use `None` or empty strings as default values defined as the third input
+    of the `getattr()` function.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We then append the dictionary of details for each connection to the `conn_details`
+    list which, after this process has completed for each connection, is itself returned
+    to the calling function:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE18]'
+  prefs: []
+  type: TYPE_PRE
+- en: Obtaining more process information with the read_proc_files() function
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The `read_proc_files()` method, defined on line 81, follows a similar pattern
+    to what was discussed in the preceding section. Essentially, on line 88, we iterate
+    through all of the open files associated with the process and, using the `getattr()`
+    method, attempt to extract information about each open file, such as its path
+    and mode.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We return the `file_details` list after extracting all values for each open
+    file and inserting the data into the `file_details` list:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE19]'
+  prefs: []
+  type: TYPE_PRE
+- en: Extracting Windows system information with the wmi_info() function
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The `wmi_info()` function, defined on line 172, starts by defining a dictionary
+    that will store the various types of information we query using the WMI API.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Similarly, on line 185, we create the WMI object and assign it to the variable,
+    `conn`, which is what we will be specifically querying:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE20]'
+  prefs: []
+  type: TYPE_PRE
+- en: In some of these code blocks, you will notice that we call a specific function
+    of the `conn` object, but in others, we use the `query()` method. Note that either
+    option is viable in some cases. For instance, instead of calling `conn.Win32_UserAccount()`,
+    we could call `conn.query("SELECT * from Win32_UserAccount")`. The `query()` method
+    gives us some additional flexibility, as we can provide additional logic to our
+    query, which will be seen when we query for specific event log entries.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Starting with the `print` statement on line 190, we begin to collect information
+    using the `wmi` library. Iterating through each user profile on line 191, we append
+    various attributes of the user account to the `wmi_dict` users list:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE21]'
+  prefs: []
+  type: TYPE_PRE
+- en: We start to use the `query()` method in the following code block to list all
+    (`*`) shares on line 205\. For each share, we append various details about it
+    to the appropriate list in the `wmi_dict` dictionary. On line 213, we again use
+    the `query()` method, this time for services, but only capture services that are
+    currently running.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Hopefully, you can appreciate the value of the `query()` method, as it provides
+    the developer with a lot of flexibility on isolating and providing data only matching
+    specified criteria, thereby cutting out a lot of junk:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE22]'
+  prefs: []
+  type: TYPE_PRE
+- en: On line 224, we begin to collect details on the connected drives by iterating
+    through each drive using the `conn.Win32_DiskDrive()` function. To collect all
+    of the information we want to extract, we need to also iterate through each partition
+    and the logical volume of each disk; hence, the additional `for` loops on lines
+    225 and 227.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Once we have the `disk`, `partition`, and `logical_disk` objects, we use each
+    and append a dictionary to the appropriate list of the `wmi_dict` dictionary containing
+    the various properties of each disk, partition, and volume:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE23]'
+  prefs: []
+  type: TYPE_PRE
+- en: Next, on line 253, we create a variable, `wmi_query`, to hold a string that
+    we will use to extract all events with event ID 4624 from the `Security` event
+    log.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note that it was observed in testing that the script needs to be run from an
+    elevated Command Prompt to be able to extract information from the `Security`
+    event log.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Similar to the other queries, we iterate through the returned results and append
+    various attributes to the appropriate list in the `wmi_dict` dictionary:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE24]'
+  prefs: []
+  type: TYPE_PRE
+- en: Lastly, after extracting all of the information and storing it in the `wmi_dict`
+    dictionary, we begin to make calls to the `csv_writer()` function to write a spreadsheet
+    for each type of data to the output directory. Most of the values being passed
+    into the `csv_writer()` are self-explanatory and include the artifact-specific
+    data (that is, User Profiles under the `Users` key), the output directory, and
+    the output filename. The last argument is an alphabetically sorted list of keys
+    from the artifact-specific data to serve as column headers for our CSV.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'You will also notice that we have a `try` and `except` block to handle writing
+    the event log data. The reason for this, as previously discussed, is that, if
+    the script is not run from an elevated Command Prompt, it is possible that the
+    `Event Log` key will consist of an empty list:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE25]'
+  prefs: []
+  type: TYPE_PRE
+- en: Writing our results with the csv_writer() function
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Our `csv_writer()`, defined on line 279, begins normally enough, by creating
+    a `csvfile` file object based on the version of Python being used to execute the
+    script. One thing that is different is the `**kwargs` argument listed in the definition
+    of the function. The `**` component of that argument indicates that this function
+    accepts keyword arguments. In Python, by convention, keyword arguments are referred
+    to as `kwargs`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We use keyword arguments in this function to differentiate between using the
+    regular `csv.writer()` method and the `csv.DictWriter()` method. This is necessary
+    because the CSV calls from the `wmi_info()` and the `get_process_info()` functions
+    pass in a list and dictionary, respectively.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'While using additional logic in the `csv_writer()` method solves our problem,
+    we could also have solved this issue by making both the `wmi_info()` and `get_process_info()`
+    functions return similarly structured objects:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE26]'
+  prefs: []
+  type: TYPE_PRE
+- en: As you can see on line 298, we check to see if a keyword argument called `type` was
+    passed into the function call. Given that we only do this on the call to this
+    function on line 341,we know what this signifies. We should use the `csv.DictWriter`
+    method. On line 341, you'll note that we assigned the `type` keyword argument
+    to the `DictWriter` string  However, in this case, we could have passed any arbitrary
+    string, as we do not use its value at all here. Rather, we need only know that
+    the `type` keyword argument was assigned a value.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'For the dictionary from the `get_process_info()` function, we can use list
+    comprehension to write the values of each entry of the dictionary. For the `wmi_info()`
+    function, we need to first iterate through each entry in the provided list and
+    then write the value associated with each of the provided headers to the CSV file:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE27]'
+  prefs: []
+  type: TYPE_PRE
+- en: Executing pysysinfo.py
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'In the following screenshot, you can see the output printed to the when running
+    this script on a Windows system:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**![](img/51f36ee7-799b-434e-b612-59df0f15a3f7.png)**'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Additionally, after executing the script on a Windows system, CSV files for
+    connected drives, shares, services, processes, users, and logon events are created
+    in the specified output directory. A screenshot of the contents of one such spreadsheet,
+    the user profile spreadsheet, is captured here:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/18e3b3b1-571f-4b09-b7c0-6a920c9afb68.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Challenges
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: As alluded to in the *Using the WMI* section, consider expanding the script's
+    capabilities by being able to query remote Windows hosts. Similarly, both `wmi`
+    and `psutil` offer access to additional information that is worth collecting.
+    Experiment with these two libraries and collect more information, especially focusing
+    on collecting system information for non-Windows systems, which, in the current
+    iteration of this script, is more fully supported thanks to the `wmi` library.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Lastly, for a more advanced challenge, consider developing a more useful storage
+    repository to collect and query the data. It's all well and good to collect and
+    present data in the way we have for a few systems, but how well would this scale
+    when run across many hundreds of systems? Imagine a scenario where you deploy
+    and run a modified version of this script against many hosts on a network and
+    have that processed information stored in a singular centralized database for
+    storage and, more importantly, as a more efficient means of querying the collected
+    data.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Summary
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In this chapter, we confirmed the value of system information and how to extract
+    that information on live systems. Using the `psutil` library, we learned how to
+    extract process information in an OS-agnostic manner. We also briefly touched
+    on how to use the WMI API to obtain even more information from the Windows operating
+    system. The code for this project can be downloaded from GitHub or Packt, as described
+    in the *Preface*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the next chapter, we will learn how to process an Outlook archive `.pst`
+    file with Python and create a listing of its contents.
+  prefs: []
+  type: TYPE_NORMAL

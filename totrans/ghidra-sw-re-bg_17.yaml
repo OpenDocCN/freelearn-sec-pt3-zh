@@ -1,0 +1,740 @@
+- en: '*Chapter 14*: Extending Ghidra for Advanced Reverse Engineering'
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In this chapter, we will discuss the next steps you can take to learn more about
+    Ghidra and fully exploit its functionally. Throughout this book, you've learned
+    how to use Ghidra for reverse engineering purposes. You've also learned how to
+    modify and extend Ghidra, as well as how to contribute to the project with your
+    own developments. Although it seems that we have already covered everything, we
+    haven't talked about how to use Ghidra for breaking state-of-the-art reverse engineering
+    challenges yet.
+  prefs: []
+  type: TYPE_NORMAL
+- en: During this chapter, you will learn about some advanced reverse engineering
+    topics that are trending at the time of writing, including static and dynamic
+    symbolic execution and **Satisfiability Modulo Theories** (**SMT**) solvers.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Static symbolic execution (or simply symbolic execution) is a systematic program
+    analysis technique that executes programs on symbolic inputs (for example, a vector
+    of 32 bits named x) instead of concrete values (for example, 5 units).
+  prefs: []
+  type: TYPE_NORMAL
+- en: As the execution of the program progresses in a static symbolic execution session,
+    the inputs go through restrictions (for example, if conditions, loop conditions,
+    and so on), giving rise to formulas. These formulas contain arithmetic but also
+    logical operations, which makes these **Satisfiability Modulo Theories** (**SMT**)
+    problems; that is, problems where we must determine whether a first-order formula
+    is satisfiable with respect to some logical theory. SMT is an extension of SAT
+    (the Boolean satisfiability problem). As the name suggests, SAT formulas involves
+    Boolean values, while SMT is a variant of SAT that has been enriched to cover
+    integers, reals, arrays, data types, bit vectors, and pointers.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Since both SAT and SMT are known to be hard problems (NP-Complete problems),
+    in some situations, it is necessary to reduce their formulas. This can be done
+    by partially feeding the formula with concrete values, something that is known
+    as dynamic symbolic execution or concolic execution (where the word concolic refers
+    to mixing concrete and symbolic values).
+  prefs: []
+  type: TYPE_NORMAL
+- en: We will start by providing an overview of the basics of some advanced reverse
+    engineering tools and techniques, before exploring the Ghidra extensions and capabilities
+    that make use of these kinds of tools to make their jobs easier.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In this chapter, we''re going to cover the following topics:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Learning the basics of advanced reverse engineering
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Using Ghidra for advanced reverse engineering
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Let's get started!
+  prefs: []
+  type: TYPE_NORMAL
+- en: Technical requirements
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The technical requirements for this chapter are as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Microsoft Z3 theorem prover: [https://github.com/Z3Prover/z3](https://github.com/Z3Prover/z3).'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Miasm reverse engineering framework: [https://github.com/cea-sec/miasm](https://github.com/cea-sec/miasm).'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'This book''s GitHub repository, which contains all the necessary code for this
+    chapter: [https://github.com/PacktPublishing/Ghidra-Software-Reverse-Engineering-for-Beginners/tree/master/Chapter14](https://github.com/PacktPublishing/Ghidra-Software-Reverse-Engineering-for-Beginners/tree/master/Chapter14)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Check out the following link to see the Code in Action video: [https://bit.ly/2K1SmGd](https://bit.ly/2K1SmGd)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Learning the basics of advanced reverse engineering
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In this section, we will provide an overview of the Ghidra processor module
+    skeleton. This skeleton will be a little bit different since processor modules
+    are not written in Java. Instead, the processor modules are written in SLEIGH,
+    the Ghidra processor specification language.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Learning about symbolic execution
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'You should already be familiar with the aspects of debugging a program. In
+    this kind of process, you explore the program using concrete values, which is
+    why this is called concrete execution. For instance, the following screenshot
+    shows an x86_64 debugging session. The `RAX` register takes a value of `0x402300`
+    while debugging the `hello_world.exe` program, which is a concrete value:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 14.1 – Ghidra SLEIGH Editor plugin for the Eclipse IDE'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/B16207_14_001.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 14.1 – Ghidra SLEIGH Editor plugin for the Eclipse IDE
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'But there is a way of exploring a program using symbols instead of concrete
+    values. This way of exploring a program is called symbolic execution and offers
+    you the advantage of using a mathematical formula that represents all the possible
+    values instead of a single one:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Symbolic: *y = x + 1*'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Concrete: *y = 5 + 1 = 6*; (assuming *x = 5*)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Let''s analyze the same code, from the first instruction (the `0x402300` address
+    to the first jump instruction (the `0x402310`) address) using MIASM (https://github.com/cea-sec/miasm),
+    which allows symbolic execution to be performed:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE11]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE12]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE13]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE14]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE15]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE16]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE17]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE18]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE19]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'This piece of code performs the following operations to symbolically execute
+    the first basic block of our `hello_world.exe` program:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: This declares that this is a Python 3 script (line `00`).
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: This code starts importing some necessary MIASM components (lines `01` to `04`).
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: This instantiates the location database, which will be required later (line
+    `07`)
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: This opens the `hello_world.exe` file as a MIASM container (lines `08` and `09`).
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: This creates a machine for the architecture of our `hello_world.exe` program,
+    which is x86_64 (line `11`).
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: This initializes the queue disassembly engine (line `12`).
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: This initializes the IRA machine (line `13`). IRA is the MIASM intermediate
+    representation that is analogous to PCode on Ghidra.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: This retrieves the control flow graph for the assembly language (line `14`).
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: This retrieves the control flow graph for IRA intermediate representation (line
+    `15`).
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: It initializes the symbolic engine (line `16`).
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: This runs the basic block at the `0x402300` address using the symbolic engine
+    (line `17`).
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: This prints the state of the symbolic engine (line `18`).
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 'If we run the preceding code, it will produce the following results:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE20]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE21]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The symbolic state of the program can be understood as follows: If the 64-bit
+    address stored in `0x404290` points to a 32-bit value equal to `0x2` (this is
+    how you must to read the left part of the interrogation, which is equivalent to
+    an `if` statement), then jump to `0x402318`; otherwise, go to `0x402312`.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: MIASM
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'If you want to learn more about MIASM, check out the following link: [https://github.com/cea-sec/miasm](https://github.com/cea-sec/miasm).
+    If you want to deeply understand the preceding code, check out the MIASM auto-generated
+    Doxygen documentation: [https://miasm.re/miasm_doxygen/](https://miasm.re/miasm_doxygen/).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: In this section, you learned the basics of symbolic execution by writing a simple
+    example. In the next section, we will learn why this is useful for symbolic execution.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Learning about SMT solvers
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'SMT solvers take a (quantifier-free) first-order logic formula, *F*, as input
+    over a background theory, *T*, and return the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`sat` (+ model): If *F* is satisfiable'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`unsat`: If *F* is unsatisfiable'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Let''s take a look at a Python example that''s using the z3 theorem solver
+    developed by Microsoft:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE22]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE23]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE24]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE25]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE26]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE27]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE28]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE29]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'In the preceding code, we performed the following operations:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Imported Microsoft `z3`.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 'Declared two z3 integer variables of the `int` type: `x` and `y`.'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 'Instantiated the z3 solver: s.'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Added a restriction indicating that `y` is `x` plus `5`.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Added another restriction indicating that `y` is less than `x`.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Checked if it is possible to find a concrete value that satisfies the formula.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Obviously, the solver returns `unsat` because values for `y` and `x` do not
+    exist. This is because `x` exceeds `y` by `5` units while `y` is less than `x`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'If we repeat this experiment while changing the condition so that `y` is greater
+    than `x`, the solver will return `sat`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE30]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE31]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE32]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE33]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE34]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE35]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE36]'
+  prefs: []
+  type: TYPE_PRE
+- en: In this case, the formula can be solved, and we can also ask for the concrete
+    values that are satisfying it by calling `model()`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: SMT solvers can be combined with symbolic execution to check if a certain formula
+    returns `sat` or `unsat`; for instance, if a certain path of a call graph can
+    be reached or not.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In fact, you can easily convert from a MIASM IRA symbolic state (the `symbex_state`
+    variable on line `17` in the script shown in the previous section) using the `TranslatorZ3`
+    module of MIASM. This can be seen in the following code snippet, which extends
+    the script from the previous section:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE37]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE38]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE39]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE40]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE41]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE42]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE43]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE44]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE45]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE46]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE47]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE48]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE49]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE50]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE51]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'In the previous code snippet, the following operations are being performed:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Import Microsoft `z3` (line `19`).
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Import `TranslatorZ3`, which allows us to translate from a MIASM IRA machine
+    symbolic state to a Microsoft z3 formula (line `20`).
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Instantiate the `TranslatorZ3` (line `21`).
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Instantiate the Microsoft z3 solver (line `22`).
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Convert the IRA symbolic state into a Microsoft `z3` formula and add a constraint
+    to it indicating that the jump instruction must go directly to the `0x402302`
+    address (line `23`).
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Ask whether the solver if this formula has a solution; that is, if it is possible
+    to take the `0x402302` branch in some possible situation (line `24`).
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: If the branch can be taken, ask the solver for a solution (lines `25` and `26`).
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Instantiate the solver again and repeat this process for the other branch (lines
+    `27`-`31`).
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 'The result of executing the complete script gives us the following output:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE52]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE53]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE54]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE55]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE56]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The preceding code prints the symbolic state of the MIASM IRA machine. Since
+    we have no further restriction conditions for this branch, it returns `sat` for
+    both paths of the branch. This means that both branches can be taken: the `0x402302`
+    branch is taken when the zero flag is set to `1`, while the `0x4022E0` branch
+    is taken when the zero flag is set to `0`.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Learning about concolic execution
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Symbolic execution (also known as static symbolic execution) is powerful since
+    you can explore a path for all possible values. You can also explore other paths
+    since it doesn''t depend on the input that it receives. However, it does face
+    some limitations:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The SMT solver cannot handle non-linear and very complex constraints.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Since it is a white-box technique, modeling libraries is a hard problem.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: To solve these limitations, we can feed the symbolic execution with concrete
+    values. This technique is known as concolic execution (also known as dynamic symbolic
+    execution).
+  prefs: []
+  type: TYPE_NORMAL
+- en: A popoular Python framework for analyzing binaries that combines both static
+    and dynamic symbolic execution is known as the Angr framework.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Angr framework
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'If you want to learn more about the Angr framework, check out the following
+    link: [https://angr.io/](https://angr.io/). If you are interested in checking
+    out some examples of Angr in action, refer to the Angr documentation: [https://docs.angr.io/](https://docs.angr.io/).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: As you can guess, these kinds of tools and techniques can be applied to a lot
+    of challenging tasks during reverse engineering, especially during deobfuscation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Using Ghidra for advanced reverse engineering
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Ghidra has an intermediate language known as PCode. It makes Ghidra powerful
+    because it is suitable for applying these kinds of techniques. As we mentioned
+    in [*Chapter 9*](B16207_09_Final_SK_ePub.xhtml#_idTextAnchor155), *Scripting Binary
+    Audits*, in the *PCode versus assembly language* section, the reason why PCode
+    is more suitable for symbolic execution is because it offers more granularity
+    than assembly. In fact, the side effects that take place in the assembly language,
+    such as flag registers being modified during the execution of an instruction,
+    doesn't happen in PCode because they are split into many instructions. This aspect
+    of intermediate representations simplifies the task of creating and maintaining
+    SMT formulas.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the next section, you will learn how to extend Ghidra with Angr, a powerful
+    binary analysis framework for implementing symbolic execution.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Adding symbolic execution capabilities to Ghidra with AngryGhidra
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'When looking for ways to perform symbolic execution on Ghidra''s Telegram channel,
+    I found a plugin that added Angr capabilities to Ghidra:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 14.2 – AngryGhidra plugin posted on the GhidaRE Telegram channel'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/B16207_14_002.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 14.2 – AngryGhidra plugin posted on the GhidaRE Telegram channel
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'As we mentioned in [*Chapter 13*](B16207_13_Final_SK_ePub.xhtml#_idTextAnchor228),
+    *Contributing to the Ghidra Community*, Telegram groups about Ghidra are really
+    useful. You can download the plugin for AngryGhidra from the following link: https://github.com/Nalen98/AngryGhidra.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'When using the AngryGhidra plugin, by right-clicking on an address, you can
+    specify the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Where to start the Angr analysis (**Blank State Address**).
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Path addresses you does not want to reach (**Avoid Address**).
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The address you want to reach (**Find Address**).
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'The aforementioned fields can be seen in the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 14.3 – AngryGhidra plugin interface'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/B16207_14_003.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 14.3 – AngryGhidra plugin interface
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'By using these fields, you can solve challenging binary problems in a few seconds:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 14.4 – Quickly solving a challenge using AngryGhidra'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/B16207_14_004.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 14.4 – Quickly solving a challenge using AngryGhidra
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the next section, we will learn how to convert PCode into a **Low-Level Virtual
+    Machine** (**LLVM**) intermediate representation. LLVM provides a few compiler
+    and toolchain subprojects, but for this book, we are only interested in the LLVM
+    intermediate representation subproject.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Converting from PCode into LLVM with pcode-to-llvm
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'There''s a conversation on Telegram asking about how it''s possible to translate
+    between two intermediate representations – specifically, translating from PCode
+    to LLVM. This is because a lot of tools are not available for PCode and Ghidra
+    is limited to Python 2 due to Jython:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 14.5 – Idea of converting from PCode into LLVM for fuzzing purposes,'
+  prefs: []
+  type: TYPE_NORMAL
+- en: posted in the GhidraRE Telegram channel
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/B16207_14_005.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 14.5 – Idea of converting from PCode into LLVM for fuzzing purposes,
+    posted in the GhidraRE Telegram channel
+  prefs: []
+  type: TYPE_NORMAL
+- en: LLVM
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The LLVM project is a collection of modular and reusable compiler and toolchain
+    technologies. Its core project is also named LLVM and contains everything you
+    need to process intermediate representations and convert them into object files.
+    For more information, check out the following link: [https://llvm.org/docs/GettingStarted.html](https://llvm.org/docs/GettingStarted.html).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: In this case, the person who asked this needs LLVM to use, for instance, a fuzzing
+    library named libFuzzer ([https://llvm.org/docs/LibFuzzer.html](https://llvm.org/docs/LibFuzzer.html))
+    in order to find vulnerabilities in binaries.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'You can use Ghidra to lift a compiled binary for LLVM by using the following
+    plugin:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[https://github.com/toor-de-force/Ghidra-to-LLVM](https://github.com/toor-de-force/Ghidra-to-LLVM).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: As you know, there are a lot of interesting topics outside the scope of this
+    book that you can investigate. I recommend that you join the Ghidra Telegram channels
+    and the Ghidra community to learn more.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Summary
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In this chapter, you learned about some advanced reverse engineering topics;
+    that is, symbolic execution, SMT solvers, and concolic execution.
+  prefs: []
+  type: TYPE_NORMAL
+- en: You learned how to perform symbolic execution by writing some simple code using
+    MIASM that symbolically executed a basic block of a hello world program. You also
+    learned about the z3 theorem solver by performing two simple experiments.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Finally, you learned how to incorporate symbolic and concolic execution when
+    using Ghidra by extending it with a plugin. You also learned how to convert from
+    PCode into an LLVM intermediate representation, which can be useful for performing
+    some advanced reverse engineering tasks.
+  prefs: []
+  type: TYPE_NORMAL
+- en: I hope you enjoyed reading this book. You've learned a lot, but remember to
+    put this knowledge to practice in order to develop your skills further. Binary
+    protections are becoming more and more complex, so it is necessary to master advanced
+    reverse engineering topics. Ghidra can be a good ally in this battle, so use it
+    and combine it with other powerful tools – maybe even your own.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Questions
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: What is the difference between concrete and symbolic execution?
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Can symbolic execution substitute concrete execution?
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Can Ghidra apply symbolic or concolic execution to a binary file?
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Further reading
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Please refer to the following links for more information on the topics that
+    were covered in this chapter:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*An abstract interpretation-based deobfuscation plugin for Ghidra*: [https://www.msreverseengineering.com/blog/2019/4/17/an-abstract-interpretation-based-deobfuscation-plugin-for-ghidra](https://www.msreverseengineering.com/blog/2019/4/17/an-abstract-interpretation-based-deobfuscation-plugin-for-ghidra)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*A Survey of Symbolic Execution Techniques*, *Baldoni, R., Coppa, E., Cono
+    D''Elia, D., et al.*, *October 2016*: [https://ui.adsabs.harvard.edu/abs/2016arXiv161000502B/abstract](https://ui.adsabs.harvard.edu/abs/2016arXiv161000502B/abstract)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*A Survey of Satisfiability Modulo Theory*, *David Monniaux*, *January 2017*:
+    [https://hal.archives-ouvertes.fr/hal-01332051/document](https://hal.archives-ouvertes.fr/hal-01332051/document)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL

@@ -1,0 +1,1060 @@
+- en: The Media Age
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Metadata, or data describing data, is a powerful artifact an examiner can leverage
+    to answer investigative questions. Broadly speaking, metadata can be found through
+    examination of filesystems and embedded elements. File permissions, MAC timestamps,
+    and file size are recorded at the filesystem level. However, for specific file
+    types, such as JPEGs, additional metadata is embedded within the file itself.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Embedded metadata is more specific to the object in question. This embedded
+    metadata can provide additional sources of timestamps, the author of a particular
+    document, or even GPS coordinates for a photo. Entire software applications, such
+    as Phil Harvey's ExifTool, exist to extract embedded metadata from files and collate
+    it with filesystem metadata.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'This chapter will cover the following topics:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Using first- and third-party libraries to extract metadata from files
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Understanding **Exchangeable Image File Format** (**EXIF**), ID3, and Microsoft
+    Office embedded metadata
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Learning to build frameworks to facilitate rapid development and integration
+    of scripts
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The code for this chapter was developed and tested using Python 2.7.15 and Python
+    3.7.1.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Creating frameworks in Python
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Frameworks are incredibly useful for large-scale projects in Python. We previously
+    called the `UserAssist` script a framework in [Chapter 6](59414e87-5820-4942-bd47-aba762dd9f14.xhtml),
+    *Extracting Artifacts from Binary Files*; however, it doesn't really fit that
+    model. The frameworks we build will have an abstract top layer, which will act
+    as the controller of the program. This controller will be responsible for executing
+    plugins and writers.
+  prefs: []
+  type: TYPE_NORMAL
+- en: A plugin is code contained in a separate script that adds a specific feature
+    to the framework. Once developed, a plugin should be easily integrated into an
+    existing framework in a few lines of code. A plugin should also execute standalone
+    functionality and not require modification of the controller to operate. For example,
+    we'll write one plugin to specifically process EXIF metadata and another to process
+    Office metadata. An advantage of the framework model is that it allows us to group
+    many plugins together in an organized manner and execute them all for a shared
+    objective, such as extracting various types of embedded metadata from files.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Building out frameworks requires some forethought and planning. It's vital to
+    plan out and test the types of data structures you want to use for your framework.
+    Some data structures are better suited for different tasks. Consider the types
+    of input and output your framework will handle and let that guide your decision
+    to the appropriate data type. Having to rewrite your framework after discovering
+    a more optimal data structure can be a frustrating and time-consuming task.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Without this step, a framework can rapidly get out of hand and become an absolute
+    bogged down mess. Imagine scenario where each plugin requires its own unique arguments,
+    and worse, returns different types of data that require special handling. For
+    example, one plugin might return a list of dictionaries and another plugin may
+    return a dictionary of dictionaries. Most of your code would be written to convert
+    these data types into a common form for your writers. For your sanity, we recommend
+    creating standardized input and output that each plugin adheres to. This will
+    have the benefit of making your framework much easier to understand and more stable
+    from unnecessary conversion errors.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Writers take processed data from the plugins and write them to output files.
+    An example of a writer we're familiar with is a CSV writer. In previous chapters,
+    our CSV writers take processed data input and write it to a file. In larger projects,
+    such as this, we might have writers for various types of output. For example,
+    in this chapter, we'll develop a Google Earth KML writer to plot GPS data we extract
+    from embedded EXIF metadata.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Introduction to EXIF metadata
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: EXIF metadata is a standard that's used for image and audio file tags that are
+    created by devices and applications. Most commonly, this kind of embedded metadata
+    is associated with JPEG files. However, EXIF metadata is also present in TIFF,
+    WAV, and other files. In JPEG files, EXIF metadata can contain technical camera
+    settings used to take the photo such as the shutter speed, F-stop, and ISO values.
+    These may not be inherently useful to an examiner, but tags containing the make,
+    model, and GPS location of the photo can be used for attributing an individual
+    to a crime. Each of these elements are associated with a tag. For example, the
+    make metadata is EXIF tag 271 or `0x010F`. A list of tags can be found at [http://www.exiv2.org/tags.html](http://www.exiv2.org/tags.html).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'EXIF metadata is stored at the beginning of JPEG images and, if present, is
+    located at byte offset 24\. The EXIF header begins with the hex `0x45786966`,
+    which is Exif in ASCII. The following is a hex dump of the first 52 bytes of a
+    JPEG image:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/33d72819-5c38-454c-a051-a310b140a4f1.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Note the EXIF header starting at offset 24\. The hex `0x4D4D` following it
+    represents Motorola or big-endian byte alignment. The `0x010F` tag ID at byte
+    offset 40 is the EXIF `Make` metadata tag. Each tag is made up of four components:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| **Byte offset** | **Name** | **Description** |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 0-1 | ID | The tag ID representing a specific EXIF metadata element |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 2-3 | Type | Type of data (integer,+ string, and so on) |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 4-7 | Length | The length of the data |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 8-11 | Offset | The offset from the byte alignment value |'
+  prefs: []
+  type: TYPE_TB
+- en: 'In the preceding table, the `Make` tag has a data type of 2, equating to an
+    ASCII string, is 6 bytes long, and is located 2,206 bytes from the byte alignment
+    value of `0x4D4D`. The second screenshot shows a 52 byte slice of data `2206`
+    bytes from the beginning of the file. Here, we can see Nokia, the make of the
+    phone that was used to take the photograph, as a 6 byte long ASCII string:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/58d35dd2-900d-4b52-96b2-a43e6b902e3d.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: If we were so inclined, we could use `struct` and parse through the header and
+    grab the pertinent EXIF metadata. Fortunately, the third-party **Python Imaging
+    Library**, PIL, module already supports EXIF metadata and makes this task much
+    simpler.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Introducing the Pillow module
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Pillow (version 5.3.0) is an actively maintained fork of the Python Imaging
+    Library and is an extensive module that can archive, display, and process image
+    files. A full description of this module can be read at [http://www.pillow.readthedocs.io](https://pillow.readthedocs.io).
+    This library can be installed using `pip` as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'PIL provides a function named `_getexif()`, which returns a dictionary of tags
+    and their values. Tags are stored in their decimal format rather than hexadecimal.
+    Interpreting `0x010F` in big-endian corresponds to the decimal value 271 for the
+    `Make` tag. Rather than doing this the hard way with `struct`, we can simply query
+    whether a tag exists and, if it does, then process the value:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: Introduction to ID3 metadata
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The ID3 metadata container is often associated with MP3 files. There are two
+    versions of the embedded structure: ID3v1 and ID3v2\. The ID3v1 version is the
+    final 128 bytes of the file and has a different structure from the updated format.
+    The newer version, which we''ll focus on, is located at the beginning of the file
+    and is variable in length.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'An ID3 tag has a simpler structure compared with EXIF tags. The first 16 bytes
+    are evenly split between the tag ID and the length of the metadata. Following
+    that is the metadata itself. The following screenshot contains the first 144 bytes
+    of an MP3 file:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/a6599dbf-35ca-49ae-a9d0-c880ba3ca339.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: The file signature of MP3 files is the ASCII ID3\. Shortly after the signature,
+    we can see different tags, such as TP1, TP2, and TCM. These are metadata tags
+    for the artist, band, and composer, respectively. The next 8 bytes following TP1
+    is the length represented by the hex `0x0B` or 11\. Following the 2 byte buffer
+    is the data for the artist formerly known as `The Artist`. `The Artist` is 10
+    bytes long with an additional single null byte (0x00) prepended to the data for
+    a total of 11 bytes. We'll use a module named Mutagen to load the file and read
+    any ID3 tags that are present.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Some MP3 files may not have embedded ID3 metadata. In this case, the tags we
+    can see in the previous screenshot may not be present.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Introducing the Mutagen module
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Mutagen (version 1.41.1) is capable of reading and writing different audio
+    metadata formats. Mutagen supports a wide variety of embedded audio formats, such
+    as ASF, FLAC, M4A, and MP3 (ID3). The full documentation for this module can be
+    found at[ http://www.mutagen.readthedocs.io](http://www.mutagen.readthedocs.io).
+    We can install this module with `pip` as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Using Mutagen is straightforward. We need to create an ID3 object by opening
+    our MP3 file and then, as with PIL, look for specific tags in a dictionary, as
+    follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: Introduction to Office metadata
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: With the launch of Office 2007, Microsoft introduced a new proprietary format
+    for their office products, such as `.docx`, `.pptx`, and `.xlsx` files. These
+    documents are actually a zipped directory consisting of XML and binary files.
+    These documents have a great deal of embedded metadata stored in the XML files
+    within the document. The two XML files we'll look at are `core.xml` and `app.xml`,
+    which store different types of metadata.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The `core.xml` file stores metadata related to the document such as author,
+    the revision number, and who last modified the document. The `app.xml` file stores
+    metadata that's more specific to the contents of the file. For example, Word documents
+    store page, paragraph, line, word, and character counts, whereas a PowerPoint
+    presentation stores information related to slides, hidden slides, and note count,
+    among others.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To view this data, use an archive utility of your choice and unzip an existing
+    2007 or higher version Office document. You may need to add a `.zip` extension
+    to the end of your file to get the option to unzip the archive with your tool
+    of choice. The following is a screenshot of the contents of an unzipped Word document:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/25a35a59-7a76-4ff5-977a-013e38a4242d.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'In the `docProps` folder, we can see our two XML files, which contain the metadata
+    related to our specific word document. The word directory contains the actual
+    word document itself in `document.xml` and any inserted media stored in the media
+    subdirectory. Now, let''s take a look at the `core.xml` file:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/115bd8be-b47b-45cd-b39a-0e4e90401a78.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: In [Chapter 4](a7837b20-94b0-4a49-a096-42a2a8620423.xhtml), *Working with Serialized
+    Data Structures*, we discussed serialized data and mentioned that XML was a popular
+    format for data serialization. XML works on the concept of directives, namespaces,
+    and tags and is similar to another popular markup language, HTML. Most XML files
+    begin with header directives detailing the version, encoding, and any instructions
+    to parsers.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The `core.xml` file also contains five namespaces that are declared only once
+    at the beginning of the file and are then referred to by their assigned namespace
+    variable thereafter. The primary purpose of namespaces is to avoid name conflict
+    resolutions and are created using the `xmlns` attribute.
+  prefs: []
+  type: TYPE_NORMAL
+- en: After the namespaces, we have a variety of tags, similar to HTML, such as the
+    title, subject, and creator. We can use an XML parser, such as `lxml`, to iterate
+    through these tags and process them.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Introducing the lxml module
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The `lxml` (version 4.2.5) third-party module has Python bindings to the C
+    `libxml2` and `libxslt` libraries. This module is a very popular XML parser for
+    its speed and can be used to parse HTML files. We''ll use this module to walk
+    through each `child` tag and print out those of interest. Full documentation for
+    this library can be found at [http://www.lxml.de](http://www.lxml.de). Once again,
+    installing a library is made simple using `pip`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Let''s take a look at how to iterate through the `core.xml` file in the interactive
+    prompt. The `etree` or element tree API provides a simple mechanism of iterating
+    through children in the XML file. First, we need to parse an XML file into an
+    element tree. Next, we get the root-level element in the tree. With the root,
+    we can walk through each child using the `root.iter()` function and print out
+    the tag and text values. Note that the tag contains the fully expanded namespace.
+    In just a few lines of code, we can now parse basic XML files with ease using
+    `lxml`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: The Metadata_Parser framework overview
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Now that we understand the concept of frameworks and what kind of data we''re
+    dealing with, we can examine the specifics of our framework implementation. Rather
+    than a flow diagram, we use a high-level diagram to show how the scripts interact
+    with each other:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/41d06044-4d8e-46f0-8eb2-e042ff464511.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: This framework is going to be controlled by the `metadata_parser.py` script.
+    This script will be responsible for launching our three plugin scripts and then
+    shuttling the returned data to the appropriate writer plugins. During processing,
+    the plugins make calls to processors to help validate data or perform other processing
+    functions. We have two writer plugins, one for CSV output and another to plot
+    geotagged data using Google Earth's KML format.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Each plugin will take an individual file as its input and store the parsed metadata
+    tags in a dictionary. This dictionary is then returned to `metadata_parser.py`
+    and is appended to a list. Once all of our input files are processed, we send
+    these lists of dictionaries to writers. We use the `DictWriter` from the `csv`
+    module to write our dictionary output to a CSV file.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Similar to [Chapter 6](59414e87-5820-4942-bd47-aba762dd9f14.xhtml), *Extracting
+    Artifacts from Binary Files*, we''ll have multiple Python directories to organize
+    our code in a logical manner. To use these packages, we need to make the directory
+    searchable with an `__init__.py` script and then import the directory in the code:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: Our main framework controller – metadata_parser.py
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The `metadata_parser.py` script contains a single function, `main()`, on line
+    45 that handles coordinating logic between our plugins and writers. At the top
+    of the script, we call our imports we will use for this chapter. On lines 8 and
+    9, we specifically import our plugins and writers directories that we''ve created
+    as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'On line 133, we set up the arguments for our program. This script takes two
+    positional arguments, an input and output directory, and an optional log argument
+    to change the directory and name of the log file. Lines 142 through 154 focus
+    on setting up the log, as in previous chapters. The lines are as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'On line 156, we create our output directory if the supplied output directory
+    doesn''t exist. This output directory is created with the `makedirs()` function.
+    This function accepts a string representing the file path to a directory and creates
+    the directory and any intermediate directories that don''t exist in the file path.
+    On line 159, we check whether the supplied input is a directory and whether it
+    exists. If so, on line 161, the `main()` function is called, and the input and
+    output directory arguments are passed. If the input doesn''t exist or isn''t a
+    directory, we log and print the error and exit with status code 1\. We have the
+    following code:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: Controlling our framework with the main() function
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'On lines 57 through 59, we create our lists that will store the returned dictionaries
+    from our plugin calls. But before we can call our plugins, we need to generate
+    a file listing from the user''s input directory argument. We do this on line 65
+    with the `os.walk()` function, which we used in previous chapters. A new argument,
+    `topdown`, is passed to our directory walking loop. This allows us to control
+    the flow of the iteration and step through the directory from the top level down
+    to the furthest level. This is the default behavior, though it can be specified
+    to ensure the anticipated behavior. For each file, we need to `join()` it with
+    the root to generate the full path to the file:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Finally, on line 68, we separate the extension from the full path using the
+    `os.path.splitext()` function. The `splitext()` function takes a string representing
+    a file path and returns a list with the path as the first element and the extension
+    as the second element. We could have also used the `split()` function, splitting
+    on the period and accessing the last element of the newly formed list:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE11]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'After we have `current_file`, we look at its extension on lines 71, 83, and
+    96 to determine whether any of our existing plugins are appropriate. If our file
+    is a JPEG image, then the conditional on line 71 will evaluate to `True`. On line 73,
+    we call our `exif_parser()` function, which is found in the `exif_parser.py` script
+    within the plugins subdirectory. Because we''re only matching on extension, this
+    function call is wrapped around `try` and `except` to handle situations where
+    we raise an error in the `exif_parser()` function due to mismatching file signatures:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE12]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'If the function doesn''t raise an error, it''ll return the EXIF metadata for
+    that particular file and the headers for the CSV writer. On line 75, we append
+    the EXIF metadata results to our `exif_metadata` list and continue processing
+    the other input files:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE13]'
+  prefs: []
+  type: TYPE_PRE
+- en: Note the similar structure employed for the other two plugins. All plugins take
+    only one input, `current_file`, and return two output values, the metadata dictionary
+    and CSV headers. Only eight lines of code are required to properly call and then
+    store the results of each plugin. A few more lines of code are required to write
+    the stored data to an output file.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Once we''ve iterated through all of the files, we can begin writing any necessary
+    output. On lines 113, 119, and 123, we check to see whether any of the metadata
+    lists contain dictionaries. If they do, we call the `csv_writer()` function in
+    the `csv_writer.py` script under the writers subdirectory. For EXIF metadata,
+    we also call the `kml_writer()` function on line 114 to plot GPS coordinates:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE14]'
+  prefs: []
+  type: TYPE_PRE
+- en: This completes the controller logic for our framework. The main processing occurs
+    in each individual plugin file. Now, let's look at our first plugin.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Parsing EXIF metadata – exif_parser.py
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The `exif_parser` plugin is the first we''ll develop and is relatively simple
+    due to our reliance on the PIL module. There are three functions within this script:
+    `exif_parser()`, `get_tags()`, and `dms_to_decimal()`. The `exif_parser()` function,
+    on line 39, is the entry point into this plugin and takes a string representing
+    a filename as its only input. This function primarily serves as coordinating logic
+    for the plugin.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The `get_tags()` function on line 62 is responsible for parsing the EXIF tags
+    from our input file. Finally, the `dms_to_decimal()` function on line 172 is a
+    small helper function, which is responsible for converting GPS coordinates into
+    decimal format. Take a look at the following code:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE15]'
+  prefs: []
+  type: TYPE_PRE
+- en: Understanding the exif_parser() function
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'This function serves three purposes: it validates the input file, extracts
+    the tags, and returns the processed data to `metadata_parser.py`. To validate
+    an input value, we''ll evaluate its file signature against known signatures. Rather
+    than relying on the extension of a file, which can be incorrect, we check the
+    signature to avoid any additional sources of error.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Checking a file''s signature, sometimes referred to as its magic number, typically
+    consists of examining the first couple of bytes of a file and comparing that with
+    known signatures for that file type. Gary Kessler has a great list of file signatures
+    documented on his website, [https://www.garykessler.net/library/file_sigs.html](https://www.garykessler.net/library/file_sigs.html):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE16]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'On line 50, we create a list of known file signatures for JPEG images. On line
+    52, we call the `check_header()` function in the `utility.py` script in the processors
+    subdirectory. This function will evaluate to `True` if the header of the file
+    matches one of the supplied known signatures:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE17]'
+  prefs: []
+  type: TYPE_PRE
+- en: If we do have a legitimate JPEG file, we call and return the results of the
+    `get_tags()` function on line 54\. Alternatively, if `check_header()` returns
+    `False`, then we have a mismatch and we raise a `TypeError` exception to our parent
+    script, `metadata_parser.py`, to handle the situation appropriately.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Developing the get_tags() function
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The `get_tags()` function, with the help of the PIL module, parses EXIF metadata
+    tags from our JPEG image. On line 72, we create a list of headers for our CSV
+    output. This list contains all of the possible keys that might be created in our
+    EXIF dictionary in the order we want them to be displayed in a CSV file. As all
+    JPEG images may not have the same or any embedded EXIF tags, we''ll run into the
+    scenario where some dictionaries have more tags than others. By supplying the
+    writer with the list of ordered keys, we''ll ensure that the fields are written
+    in the appropriate order and columns:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE18]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'On line 77, we open the JPEG file using the `Image.open()` function. Once again,
+    we perform one final validation step using the `verify()` function. This function
+    checks for any file corruption and raises errors if encountered. Otherwise, on
+    line 84, we call the `_getexif()` function, which returns a dictionary of EXIF
+    metadata:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE19]'
+  prefs: []
+  type: TYPE_PRE
+- en: On line 86, we create our dictionary, `tags`, which will store metadata about
+    our file object. On lines 87 through 94, we populate the dictionary with some
+    filesystem metadata, such as the full path, name, size, and create and modify
+    timestamps. The `os.path.basename()` function takes the full pathname and returns
+    the filename. For example, `os.path.basename('Users/LPF/Desktop/myfile.txt')`
+    would simply return `myfile.txt`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Using the `getsize()` function will return the file size in bytes. The larger
+    the number, the less useful it is for humans. We're more accustomed to seeing
+    sizes with common prefixes, such as MB, GB, and TB. The `convert_size()` processor
+    function does just this to make the data more useful for the human analyst.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'On lines 91 and 93, we convert the integer returned by `os.path.getctime()`,
+    representing the creation time expressed in seconds since the epoch. The epoch,
+    `01/01/1970 00:00:00`, can be confirmed by calling `time.gmtime(0)`. We use the
+    `gmtime()` function to convert these seconds into a time-structured object (similar
+    to `datetime`). We use the `strftime` to format the time object into our desired
+    date string:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE20]'
+  prefs: []
+  type: TYPE_PRE
+- en: On line 95, we check whether there are any keys in the `exif` dictionary. If
+    there are, we iterate through each key and check its value. The values we're querying
+    for are from the EXIF tags described at [http://www.exiv2.org/tags.html](http://www.exiv2.org/tags.html).
+    There are many potential EXIF tags, but we're going to query for only some of
+    the more forensically relevant ones.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'If the particular tag does exist in the `exif` dictionary, then we transfer
+    the value to our tags dictionary. Some tags require some additional processing,
+    such as timestamp, scene, flash, and GPS tags. The timestamp tags are displayed
+    in a format that''s inconsistent with how we''re representing other timestamps.
+    For example, the time from tag 36867 on line 99 is separated by colons and in
+    a different order:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE21]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'In line 100, we use the `strptime` function to convert our existing time string
+    into a `datetime` object. In the very next line, we use the `strftime` function
+    to convert it into our desired date string format:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE22]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The scene (`41990`) and flash (`37385`) tags have an integer value rather than
+    a string. As we mentioned previously, the online documentation ([http://www.exiv2.org/tags.html](http://www.exiv2.org/tags.html))
+    explains what these integers represent. In these two scenarios, we create a dictionary
+    containing the potential integers as keys and their descriptions as values. We
+    check whether the tag''s value is a key in our dictionary. If it''s present, we
+    store the description in the tags dictionary rather than the integer. Again, this
+    is for the purpose of making analysis easier on the examiner. Seeing a string
+    explanation of the scene or flash tag is more valuable than a number representing
+    that explanation:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE23]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Finally, on line 155, we look for the GPS tags that are stored as a nested
+    dictionary under the key 34853\. If the latitude and longitude tags exist, we
+    pass them to the `dms_to_decimal()` function to convert them into a more suitable
+    manner for the KML writer:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE24]'
+  prefs: []
+  type: TYPE_PRE
+- en: Adding the dms_to_decimal() function
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The `dms_to_decimal()` function converts GPS coordinates from degree minute
+    second format into decimal. A simple formula exists to convert between the two
+    formats. The GPS data we extract from our EXIF metadata contains three tuples
+    within another tuple. Each interior tuple represents the numerator and denominator
+    of the degree, minute, or second. First, we need to separate the individual degree,
+    min, and second numerators from their denominators in the nested tuples. The following
+    diagram highlights how we can convert our extracted GPS data into decimal format:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/f06fd0dd-c6be-440b-b2a6-5d509011cf7d.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'On line 178, we use list comprehension to create a list containing the first
+    element of every element in the tuple. We then unpack this list into the three
+    elements: `deg`, `min`, and `sec`. The formula we use is dependent on whether
+    the degree value is positive or negative.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'If `deg` is positive, then we add the minutes and seconds. We divide seconds
+    by 360,0000 rather than 3,600 because originally we did not divide the seconds''
+    value by its denominator. If `deg` is negative, we instead subtract the minutes
+    and seconds as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE25]'
+  prefs: []
+  type: TYPE_PRE
+- en: Parsing ID3 metdata – id3_parser.py
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: '`id3_parser` is similar to `exif_parser` we''ve previously discussed. The `id3_parser()`
+    function defined on line 37 checks the file signature and then calls the `get_tags()`
+    function. The `get_tags()` function relies on the `mutagen` module to parse MP3
+    and ID3 tags:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE26]'
+  prefs: []
+  type: TYPE_PRE
+- en: Understanding the id3_parser() function
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'This function is identical to the `exif_parser()` function, with the exception
+    of the signature that''s used to check file headers. The MP3 format has only one
+    file signature, `0x494433`, unlike the JPEG format. When we call the `check_header()`
+    function, we supply the file, known signature, and the number of bytes to read
+    from the header. If the signatures match, we call and return the results of the
+    `get_tags()` function, as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE27]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Although it might be boring to see the same type of logic in each plugin, this
+    greatly simplifies the logic of our framework. In scenarios with larger frameworks,
+    creating things in the same uniform manner helps those maintaining the code sane.
+    Copying and pasting a pre-existing plugin and working from there is often a good
+    way to ensure that things are developed in the same manner. See the following
+    code:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE28]'
+  prefs: []
+  type: TYPE_PRE
+- en: Revisiting the get_tags() function
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The `get_tags()` function follows the same logic we used for our EXIF plugin.
+    Like any good programmer, we copied that script and made a few modifications to
+    fit ID3 metadata. In the `get_tags()` function, we first need to create our CSV
+    headers on line 69\. These headers represent the possible keys our dictionary
+    might possess and the order we want to see them in our CSV output:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE29]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'On line 74, we create our tags dictionary and populate it with some filesystem
+    metadata in the same manner as the EXIF plugin, as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE30]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Mutagen has two classes that we can use to extract metadata from MP3 files.
+    The first class, `MP3`, has some standard metadata stored in MP3 files, such as
+    the bitrate, channels, and length in seconds. Mutagen has built-in functions to
+    access this information. First, we need to create an MP3 object, which is accomplished
+    on line 85, using the `mp3.MP3()` function. Next, we can use the `info.bitrate()`
+    function, for example, to return the bitrate of the MP3 file. We store these values
+    in our tags dictionary in lines 88 through 92, as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE31]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The second class, `ID3`, extracts ID3 tags from an MP3 file. We need to first
+    create an ID3 object using the `id3.ID3()` function. This will return a dictionary
+    of ID3 tags as keys. Sound familiar? This is what we were presented with in the
+    previous plugin. The only difference is that the value in the dictionaries are
+    stored in a slightly different format:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE32]'
+  prefs: []
+  type: TYPE_PRE
+- en: To access the value, `The Artist`, we need to treat the value as a list and
+    specify the element in the zeroth index.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In a similar manner, we look for each of our tags of interest and store the
+    first element in the value in the tags dictionary. At the end of this process,
+    we return the tags and header objects back to `id3_parser()`, which in turn returns
+    it to the `metadata_parser.py` script:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE33]'
+  prefs: []
+  type: TYPE_PRE
+- en: Parsing Office metadata – office_parser.py
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The last of the plugins, `office_parser.py`, parses DOCX, PPTX, and XLSX files,
+    extracting embedded metadata in XML files. We use the `zipfile` module, which
+    is part of the standard library, to unzip and access the contents of the Office
+    document. This script has two functions, `office_parser()` and `get_tags()`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE34]'
+  prefs: []
+  type: TYPE_PRE
+- en: Evaluating the office_parser() function
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The `office_parser()` function first checks the input file against the known
+    file signature. All Office documents share the same file signature, `0x504b0304140006000`,
+    and if the input file matches, it''s then further processed by the `get_tags()`
+    function, as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE35]'
+  prefs: []
+  type: TYPE_PRE
+- en: The get_tags() function for the last time
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'On line 70, we create the list of headers for our potential dictionary. Line
+    81 is where the proverbial magic happens. The built-in `zipfile` library is used
+    to read, write, append, and list files in a ZIP archive. On line 81, we create
+    our ZIP file object, allowing us to read the documents contained within it. See
+    the following code:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE36]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Specifically, on lines 86 and 87, we read the core and app XML files and then
+    convert them into an XML element tree. The `etree.fromstring()` method allows
+    us to build an element tree from a string and is a different method of accomplishing
+    the same task we described earlier in this chapter, which used the `ElementTree.parse()`
+    function:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE37]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'As in the previous sections, we create the tags dictionary and populate it
+    with some filesystem metadata:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE38]'
+  prefs: []
+  type: TYPE_PRE
+- en: Starting on line 104, we begin to parse the core XML document by iterating through
+    its children using the `iterchildren()` function. As we iterate through each child,
+    we look for various keywords in the `child.tag` string. If found, the `child.text`
+    string is associated with the appropriate key in the tags dictionary.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'These tags in the `core.xml` and `app.xml` files aren''t always present and
+    this is the reason we have to first check whether they are there before we can
+    extract them. Some tags, such as the revision tag, are only present in specific
+    Office documents. We''ll see much more of that with the `app.xml` file:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE39]'
+  prefs: []
+  type: TYPE_PRE
+- en: The `app.xml` file contains metadata more specific to a given application. On
+    line 133, when we iterate through the children of the element tree, we're only
+    checking tags for specific extensions.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'For example, DOCX files contain page and line count metadata that doesn''t
+    make sense for PPTX and XLSX files. Therefore, we separate the tags we look for
+    based on the extension of the file. The `TotalTime` tag is particularly insightful
+    and is the time spent editing the document in minutes. See the following code:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE40]'
+  prefs: []
+  type: TYPE_PRE
+- en: Moving on to our writers
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Within the writers directory, we have two scripts: `csv_writer.py` and `kml_writer.py`.
+    Both of these writers are called depending on the types of data being processed
+    in the `metadata_parser.py` framework.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Writing spreadsheets – csv_writer.py
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In this chapter, we'll use `csv.DictWriter` instead of `csv.writer`, just like
+    we did in [Chapter 5](a4ae250a-8aa8-49b9-8fd6-0cac51975f11.xhtml), *Databases
+    in Python*, and [Chapter 6](59414e87-5820-4942-bd47-aba762dd9f14.xhtml), *Extracting
+    Artifacts from Binary Files*. As a reminder, the difference is that the `DictWriter`
+    writes dictionary objects to a CSV file and the `csv.writer` function is more
+    suited for writing lists.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The great thing about `csv.DictWriter` is that it requires an argument, `fieldnames`,
+    when creating the writer object. The `fieldnames` argument should be a list that
+    represents the desired order of columns in the output. In addition, all possible
+    keys must be included in the `fieldnames` list. If a key exists that isn''t contained
+    in the list, an exception will be raised. On the other hand, if a key isn''t present
+    in the dictionary but is in the `fieldnames` list, then that column will simply
+    be skipped for that entry:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE41]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'On line 69, we create our `csv.DictWriter` function, passing in the output
+    file and the headers as a list of `fieldnames` from our plugin function. To write
+    the headers for our CSV file, we can simply call the `writeheader` function, which
+    uses the `fieldnames` list as its list of headers. Finally, we need to iterate
+    through each dictionary in our metadata container list and write them using the
+    `writerow()` function in line 76, as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE42]'
+  prefs: []
+  type: TYPE_PRE
+- en: Plotting GPS data with Google Earth – kml_writer.py
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The `kml_writer.py` script uses the `simplekml` module (version 1.3.1) to quickly
+    create our KML output. Full documentation for this module can be found at [http://simplekml.com](https://simplekml.readthedocs.io/en/latest/). This
+    module can be installed with `pip`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE43]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'With this module, we can create and add a geotagged point and save KML in three
+    lines of code:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE44]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'In line 51, we create our KML object using the `simplekml.Kml()` call. This
+    function takes an optional keyword argument name that represents the name of the
+    KML file. Lines 52-71 check whether the original date key is present and prepares
+    our GPS points to be entered into the KML object:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE45]'
+  prefs: []
+  type: TYPE_PRE
+- en: Our GPS coordinates are in decimal format from the `exif_parser.py` script.
+    However, in this script, we didn't account for the reference point. The reference
+    point determines the sign of the GPS coordinate. A south latitude reference makes
+    the latitude negative. Likewise, west makes the longitude negative.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Once that has been accounted for, we can create our geotagged point passing
+    the name, description, and coordinates of the point. The else statement on lines
+    76 and 77 is executed if the conditional checking of the latitude and longitude
+    EXIF tags that exist return `False`. Although these two lines could be omitted,
+    they should be implemented as a reminder of the implemented logic. Once we''ve
+    created all of our points, we can save the KML file by calling the `kml.save()`
+    function and passing along the desired output path and the name of the file. The
+    following are lines 73 through 78:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE46]'
+  prefs: []
+  type: TYPE_PRE
+- en: Supporting our framework with processors
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The processors directory contains one script, `utility.py`. This script has
+    some helper functions that are used by all current plugins. Rather than writing
+    the functions for each separate plugin, we gathered them under one script.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Creating framework-wide utility functions – utility.py
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'This script has two functions, `check_header()` and `convert_size()`. The former
+    performs file signature matching, whereas the latter converts an integer representing
+    the byte size of a file into a human-readable format, as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE47]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The `check_header()` function, defined on line 33, takes a filename, list of
+    known signatures, and the amount of data to read from the file as arguments. On
+    line 46, we open the input file and then read the first few bytes based on the
+    value passed in as the size argument. On line 48, we convert the ASCII representation
+    of the data into a hex string. On line 49, we iterate through each known signature
+    and compare it with `hex_header`. If they match, we return `True` and otherwise,
+    we return `False` and log the warning, as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE48]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The `convert_size()` function is a useful utility function that converts byte-size
+    integers into human-readable format. On line 66, we create our list of potential
+    prefixes. Note, we''re assuming that the user won''t encounter any file requiring
+    more than a `TB` prefix, at least for a few years:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE49]'
+  prefs: []
+  type: TYPE_PRE
+- en: We use a `while` loop to continually divide the size by 1024 until it's less
+    than 1024\. Every time we make a division, we add one to the index. When the size
+    is less than 1024, the index is the location in the sizes list of the appropriate
+    prefix.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'On line 71, we use the string formatting function, `format`, to return our
+    float and prefix in the desired way. `{:.2f}` tells the format function that this
+    first argument is a float and we want to round up to two decimal places:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE50]'
+  prefs: []
+  type: TYPE_PRE
+- en: As seen in the below screenshot, we can run our framework across a directory
+    and gather an output report for our review. In this case, we've run the code against
+    a folder containing an image with geolocation data.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/4e8004b2-ac33-435a-bf1a-24dc6f68e422.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Our output report is shown below, though we've wrapped the columns to ensure
+    it fits on one page.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/373a91e2-6212-49e5-95ae-17f24e8612c5.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Our script also generated KML output viewable in Google Earth as shown below:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/bed99712-e9ee-4794-b294-10ccb6d9864b.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Framework summary
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Frameworks are incredibly useful to organize multiple collections of scripts
+    under one roof, so to speak. There are challenges that come with frameworks; mainly
+    keeping standardized operations through the growth of the project. Our `metadata_parser.py`
+    framework is in its first iteration and, if we continue to develop it, we may
+    find that the current setup is only suitable on a smaller level.
+  prefs: []
+  type: TYPE_NORMAL
+- en: For example, as we implement more and more features, we might realize that the
+    efficiency of our framework starts to lag. At that point, we would need to go
+    back to the drawing board and determine whether we're using the correct data type
+    or the best way to write our plugins and writers.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Additional challenges
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: We had difficulties deciding between two main challenges for this chapter. We
+    could add additional plugins or refine what currently exists. In actual development,
+    your time would be spent balancing these two objectives as the framework continues
+    to grow. For this chapter, we propose a recursive-based challenge.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Remember that, while explaining the post Office 2007 format of documents, we
+    determined that attached media is stored in the media subdirectory of the document.
+    In its current incarnation, when an Office document is encountered, that media
+    subdirectory, which might have copies of files containing embedded metadata themselves,
+    isn't processed. The challenge here is to add the newly discovered files to the
+    current file listing.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We might do that by returning a list of newly discovered files back to `metadata_parser.py`.
+    Another route might be to check the file extensions in the `office_parser.py`
+    script and pass them immediately onto the appropriate plugins. The latter method
+    would be easier to implement but not ideal as it removes some of the control from
+    the `metadata_parser.py` script. Ultimately, it's up to the developer to determine
+    the most efficient and logical method of completing this challenge.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Beyond this, some other efficiency achievements can be made. For example, we
+    don't need to return the headers for the plugin each and every time the plugin
+    is called. Since the headers will always be the same, we only need to have them
+    created/returned once. Alternatively, this framework is limited by the types of
+    writers it supports. Consider adding a writer for Excel spreadsheets to create
+    more useful reports.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Summary
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In this chapter, you learned how to handle some of the popular embedded metadata
+    formats, perform basic file signature analysis, and create frameworks in Python.
+    Frameworks become a normal programming solution as programs increase in complexity.
+    The code for this project can be downloaded from GitHub or Packt, as described
+    in the *Preface*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the next chapter, you'll learn how to develop a basic graphical user interface,
+    or GUI, in Python using the first-party TkInter module. This GUI will be responsible
+    for converting timestamps of various types into a human-readable format.
+  prefs: []
+  type: TYPE_NORMAL

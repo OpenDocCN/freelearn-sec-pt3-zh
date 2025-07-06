@@ -1,0 +1,1210 @@
+- en: Identification and Extraction of Hidden Components
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Today, the most common use for reverse engineering is in targeting malware.
+    Like any other software, malware has its installation process. The difference
+    is that it does not ask for the user's permission to install. Malware does not
+    even install in the `Program files` folder where other legitimate applications
+    are installed. Rather, it tends to install its malware file in folders that are
+    not commonly entered by the user, making it hidden from being noticed. However,
+    some malware shows up noticed and generates copies of itself in almost all noticeable
+    folders such as the desktop. Its purpose is to get its copies executed by users,
+    be it by accidental double-click or by curiosity. This is what we usually call
+    malware persistence.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Persistence is when malware consistently runs in the background. In this chapter,
+    we will be pointing out general techniques used by malware to become persistent.
+    We will also explain common locations where malware files are stored. Major behaviors
+    of malware and some tools that are capable of identifying how the malware installs
+    itself in the system will also be shown.  Understanding how malware is delivered
+    will definitely help a reverse engineer explain how the attacker was able to compromise
+    the system.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In this chapter we will learn about the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The basics of the operating system environment
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Typical malware behavior:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Malware delivery
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Malware persistence
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Malware payload
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Tools used to identify hidden components
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Technical requirements
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The discussions will use the Windows environment. We will be using the virtual
+    machine setup we created in the previous *chapter*. In addition, you''ll need
+    to download and install this software: the SysInternals suite ([https://docs.microsoft.com/en-us/sysinternals/downloads/sysinternals-suite](https://docs.microsoft.com/en-us/sysinternals/downloads/sysinternals-suite)).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The operating system environment
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Doing reverse engineering requires the analyst to understand where the software
+    being reversed is being run. The major parts that software requires in order to
+    work in an operating system are the memory and the filesystem. In Windows operating
+    systems, besides the memory and the filesystem, Microsoft introduced the registry
+    system, which is actually stored in protected files called registry hives.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The filesystem
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The filesystem is where data is stored directly to the physical disk drive. These
+    filesystems manage how files and directories are stored in the disk. Various disk
+    filesystems have their own variation of efficiently reading and writing data.
+  prefs: []
+  type: TYPE_NORMAL
+- en: There are different disk filesystems such as `FAT`, `NTFS`, `ex2`, `ex3`, `XFS`,
+    and `APFS`. Common filesystems used by Windows are `FAT32` and `NTFS`. Stored
+    in the filesystem is information about the directory paths and files. It includes
+    the filename, size of the file, date stamps, and permissions.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The following screenshot shows the information stored in the filesystem about
+    `bfsvc.exe`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/3d3d23fa-993b-4722-9c78-5229f649f2c0.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: In previous MacOS X versions, file information and data are stored in resource
+    forks. Resource forks are actually deprecated but backward compatibility still
+    exists on recent versions of MacOS. A file has two forks stored in the filesystem,
+    the data fork and the resource fork. The data fork contains unstructured data,
+    while the resource fork contains structured data. The resource fork contains information
+    such as the executable machine code, icons, shape of an alert box, string used
+    in the file, and so forth. For instance, if you wanted to back up a Mac application
+    by simply moving it to a Windows hard drive then moving it back, the Mac application
+    will no longer open. While transferring, only the file gets transferred but the
+    resource fork gets stripped out in the process. Simple copy tools don't respect
+    the forks. Instead, Mac developers developed tools to synchronize files to and
+    from external disks.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Memory
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: When a Windows executable file executes, the system allocates a memory space,
+    reads the executable file from the disk, writes it at predefined sections in the
+    allocated memory, then allows the code to execute from there. This block of memory
+    is called a process block and is linked to other process blocks. Basically, every
+    program that executes consumes a memory space as a process.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The following screenshot shows a Windows Task Manager''s view of the list of
+    processes:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/b604f103-6f56-472c-892b-76c701360402.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: The registry system
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'In Windows, the registry is a common database that contains system-wide configuration
+    and application settings.  Examples of stored information in the registry are
+    as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Associated programs that execute specific files:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: DOCX files are associated with Microsoft Word
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: PDF files are associated with Adobe Reader
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Associated icons to specific files and folders
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Software settings:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Uninstall configuration
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Update sites
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Ports used
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Product IDs
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: User and group profiles
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Printer setup:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Default printer
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Driver names
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Designated drivers for specific services
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'The registry is stored in hive files. The list of hive files is also found
+    in the registry itself, as can be seen in the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/a752ad00-daec-41d9-ae13-89640296cb69.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Writing and reading information from the registry requires using Windows registry
+    APIs. The registry can be viewed visually using the Registry Editor. Entries in
+    the right pane of the Registry Editor are the registry keys. On the left pane,
+    the registry values are found under the Name column, as can be seen in the following
+    screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/fcefc1ec-f942-4c85-91ec-2a9f928c85ad.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Typical malware behavior
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Malware is simply defined as malicious software. You''d expect bad things to
+    happen to your system environment once malware has entered. Once typical malware
+    enters the system, it does two basic things: installs itself and does its evil
+    work. With the intent of forcing itself to be installed in the system malware
+    does not need to notify the user at all. Instead, it directly makes changes to
+    the system.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Persistence
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: One of the changes malware makes in the system is to make itself resident. 
+    Malware persistence means that the malware will still be running in background
+    and, as much as possible, all the time. For example, malware gets executed after
+    every boot-up of the system, or malware gets executed at a certain time of the
+    day. The most common way for malware to achieve persistence is to drop a copy
+    of itself in some folder in the system and make an entry in the registry.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The following view of the registry editor shows a registry entry by the `GlobeImposter`
+    ransomware:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/6f1764a9-ab35-4af3-af54-29c59201920c.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Any entries made under the registry key `HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\
+    Windows\CurrentVersion\Run` are expected to run every time Windows starts. In
+    this case, the `GlobeImposter` ransomware's executable file stored in `C:\Users\JuanIsip\AppData\Roaming\huVyja.exe` becomes
+    persistent.   `BrowserUpdateCheck` is the registry value, while the path is the
+    registry data. What matters under this registry key are the paths, regardless
+    of the registry value name.
+  prefs: []
+  type: TYPE_NORMAL
+- en: There are several areas in the registry that can trigger the execution of a
+    malware executable file.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Run keys
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Entering a file path in the registry data under these registry keys will trigger
+    execution when Windows starts, as can be seen in the following registry path for
+    the Windows 64-bit versions
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`HKEY_LOCAL_MACHINE\Software\Microsoft\Windows\CurrentVersion\Run`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`HKEY_LOCAL_MACHINE\Software\Microsoft\Windows\CurrentVersion\RunOnce`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`HKEY_LOCAL_MACHINE\Software\Microsoft\Windows\CurrentVersion\RunOnceEx`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`HKEY_LOCAL_MACHINE\Software\Microsoft\Windows\CurrentVersion\RunServices`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`HKEY_LOCAL_MACHINE\Software\Microsoft\Windows\N\RunServicesOnce`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`HKEY_LOCAL_MACHINE\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer\Run`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`HKEY_LOCAL_MACHINE\SOFTWARE\Wow6432Node\Windows\CurrentVersion\Run`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Programs that are listed under these registry keys will trigger execution when
+    the current user logs in, as can be seen in the following registry path:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\RunOnce`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\RunOnceEx`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`HKEY_LOCAL_MACHINE\Software\Microsoft\Windows\CurrentVersion\RunServices`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`HKEY_LOCAL_MACHINE\Software\Microsoft\Windows\CurrentVersion\RunServicesOnce`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`HKEY_CURRENT_USER\Software\Microsoft\Windows NT\CurrentVersion\Windows\Run`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The keys names containing `Once` will have the listed programs that run only
+    once. The malware may still persist if it keeps on placing its own file path under
+    the `RunOnce`, `RunOnceEx` or `RunServicesOnce` keys.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Load and Run values
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The following registry values, under their respective registry key, will trigger
+    execution when any user logs in:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`HKEY_CURRENT_USER\Software\Microsoft\Windows NT\CurrentVersion\Windows`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`Load = <file path>`'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`Run = <file path>`'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**BootExecute value**'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`HKEY_LOCAL_MACHINE\SYSTEM\ControlSetXXX\Control\Session Manager`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`XXX` in `ControlSetXXX` is a three digit number usually `ControlSet001`, `ControlSet002`,
+    or `ControlSet003`.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`BootExecute = <file path>`'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The default value of `BootExecute` is `autocheck autochk *`
+  prefs:
+  - PREF_IND
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Winlogon key**'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Activities under this registry key are executed during Windows logon
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`UserInit = <file path>`'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The default value of `Userinit` is `C:\Windows\system32\userinit.exe`
+  prefs:
+  - PREF_IND
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`Notify = <dll file path>`'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`Notify` is not set by default. It is expected to be a dynamic link library
+    file'
+  prefs:
+  - PREF_IND
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`Shell = <exe file path>`'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The default value of `Shell` is `explorer.exe`
+  prefs:
+  - PREF_IND
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`HKEY_CURRENT_USER\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`Shell = <exe file path>`'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The default value of `Shell` is `` `explorer.exe` ``
+  prefs:
+  - PREF_IND
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Policy scripts keys**'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`HKEY_LOCAL_MACHINE\Software\Microsoft\Windows\CurrentVersion\Group Policy\Scripts\Shutdown\0\N`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: where `N` is a number starting from `0`. Multiple scripts or executables can
+    be run during the shutdown sequence
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`Script = [file path of executable file or script]`'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`HKEY_LOCAL_MACHINE\Software\Microsoft\Windows\CurrentVersion\Group Policy\Scripts\Startup\0\N`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: This is where `N` is a number starting from `0`. Multiple scripts or executables
+    can be run during the startup sequence.
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`Script = [file path of executable file or script]`'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Group Policy\Scripts\Logon\0\N`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: This is where `N` is a number starting from `0`. Multiple scripts or executables
+    can be run when a user logs off.
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`Script = [file path of executable file or script]`'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Group Policy\Scripts\Logoff\0\N`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: where N is a number starting from 0\. Multiple scripts or executables can be
+    run when a user logs off
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`Script = [file path of executable file or script]`'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**AppInit_DLLs values**'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Windows`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`AppInit_DLLs = [a list of DLLs]`'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The list of DLLs are delimited by a comma or space
+  prefs:
+  - PREF_IND
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`LoadAppInit_DLLs = [1 or 0]`'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Here, `1` means enabled, and `0` means disabled
+  prefs:
+  - PREF_IND
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Services keys**'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\[Service Name]`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: This is where `ServiceName` is the name of the service
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`ImagePath = [sys/dll file path]`'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Loads a system file (`.sys`) or a library file (`.dll`), which is the driver
+    executable
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'The service triggers depending on the value of the start:'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`0`  (`SERVICE_BOOT_START` triggers when OS is being loaded)'
+  prefs:
+  - PREF_IND
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`1`  (`SERVICE_SYSTEM_START` triggers when OS is being initialized)'
+  prefs:
+  - PREF_IND
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`2` (`SERVICE_AUTO_START` triggers when service manager starts.)'
+  prefs:
+  - PREF_IND
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`3`  (`SERVICE_DEMAND_START` triggers when it is manually started)'
+  prefs:
+  - PREF_IND
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`4`  (`SERVICE_DISABLED`. The service is disabled from triggering)'
+  prefs:
+  - PREF_IND
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**File associations**'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`HKEY_CLASSES_ROOT or in HKEY_LOCAL_MACHINE\SOFTWARE\Classes\[File type or
+    extension name]\shell\open\command`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The entry in the (`Default`) registry value executes files that are described
+    by [File type or extension name].
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'The following code shows the associated entry for executable files or `.EXE`
+    files:'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`` `<show image of exefile entry in HKEY_LOCAL_MACHINE\SOFTWARE\Classes\exefile\shell\open\command>`
+    ``'
+  prefs:
+  - PREF_IND
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The (`Default`) value contains `"%1" %*`.  `%1` pertains to the executable being
+    run as is, while `%*` pertains to the command-line arguments.  Persistence is
+    implemented by malware by appending its own executable. For example, the `(Default)`
+    value is set to `malware.exe "%1" %*`.  As a result, `malware.exe` runs and uses
+    `%1` (the executable being run) and `%*` as its arguments.  `malware.exe` is then
+    responsible for running `%1` with its `%*`.
+  prefs:
+  - PREF_IND
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Startup values
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The startup registry value contains the path to a folder which contains files
+    that are executed after the user has logged in. The default folder location is
+    at `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\Shell
+    Folders`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`Startup = [startup folder path]`'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\User
+    Shell Folders`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`Startup = [startup folder path]`'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\User
+    Shell Folders`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`Common Startup = [startup folder path]`'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Shell
+    Folders`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`` `Common Startup = [startup folder path]` ``'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The Image File Execution Options key
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'File paths set in the debugger of the `Image File Execution Options` key is
+    run when the process is to be debugged or is run with the `CreateProcess` API:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`HKEY_LOCAL_MACHINE\Software\Microsoft\Windows NT\CurrentVersion\Image File
+    Execution Options\[Process Name]`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`Debugger = [executable file]`'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`[Process Name]` pertains to the filename of the running executable'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: This persistence only triggers when there is a need for  `[Process Name]` to
+    invoke a debugger
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Browser Helper Objects key**'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`HKEY_LOCAL_MACHINE\Software\Microsoft\Windows\CurrentVersion\Explorer\Browser
+    Helper Objects\[CLSID]`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Having the `CLSID` as a subkey simply means that it is installed and enabled
+    as an Internet Explorer BHO
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The `CLSID` is registered under the `HKEY_CLASSES_ROOT\CLSID\[CLSID]\InprocServer32`
+    key
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The `(Default)` value points to the DLL file associated with the BHO
+  prefs:
+  - PREF_IND
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The DLL file is loaded every time Internet Explorer is opened
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Besides registry entries, an executable can also be triggered by schedule using
+    the task scheduler or `cron` jobs. An executable or a script can be triggered
+    even at certain conditions. Take, for example, the following screenshot of a Windows
+    Task scheduler:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/cc0452a4-685c-4ecf-9818-aa764c6c15a5.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: There are many more ways in which malware gets persistence other than those
+    which have been listed previously. These are the challenges that a reverse engineer
+    learns as they encounter new techniques.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Malware delivery
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In the software security industry, the activity of an attacker to spread and
+    compromise a system is called a malware campaign. There are various ways that
+    malware gets into a system. The most common way that these malware executable
+    files are delivered is through an email attachment sent to its target user(s).
+    As communication technology changes, the logistics that these campaigns implement
+    adapt to whatever technology there is. This includes looking for vulnerabilities
+    in the target system and penetrating it with exploits.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Email
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Malware sent as an email delivery would require the recipient to open the attached
+    file. The email is crafted in such a way that the recipient becomes curious about
+    opening the attachment. These unsolicited emails that are spread to many addresses
+    are called email spam. They usually contain a subject and a message body that
+    uses social engineering to get the recipient''s attention and eventually have
+    them execute the malware. An example of this can be seen in the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/ce4c0c7f-e5fc-43d3-830c-001d0cb6e798.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Activities that deceive a person or a group of people to do an activity is called***social
+    engineering***. With poor security awareness, users may fall into this famous
+    proverbial trap: *curiosity killed the cat*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Instant messenger
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Besides email, there is what we call SPIM or Instant Messaging Spam. This is
+    spam sent to instant messaging such as Facebook, Skype, and Yahoo Messenger applications.
+    This also includes public or private messages spimmed using Twitter, Facebook,
+    and other social networking services. The messages usually contain a link to a
+    compromised site containing malware or spyware. Some services that support file
+    transfers are abused by malware spim. Today, these social networking services
+    have implemented back-end security to mitigate SPIM.  However, at the time of
+    writing, there are still a few incidents of malware spreading through instant
+    messaging. An example of this can be seen in the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/4afd4239-23ac-4750-bce5-72eb2f4ae67c.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Image from John Patrick Lita from `CSPCert.ph`
+  prefs: []
+  type: TYPE_NORMAL
+- en: The previous screenshot is a private message from Facebook's instant messenger
+    containing a ZIP file that actually contains a malware file.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The computer network
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: It is a necessity today that a computer has to be connected to a network so
+    users can access resources from each other. With each computer linked to another
+    whether it is LAN (Local Area Network) or WAN (Wide Area Network), file sharing
+    protocols are also open for attackers to abuse. Malware can attempt to drop copies
+    of itself to file shares. However, the malware depends on the user at the remote
+    end running the malware file from the file share. These kinds of malware are called
+    network worms.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To list down the shared folders in Windows, you can use the `net share` command,
+    as can be seen in the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/b9883f2f-f1bf-4545-9ed9-3cda3b8c15e1.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: As an analyst, we can make recommendations on what to do with these shared folders.
+    We can say that these shares either be removed, if not used. We can also have
+    these folders reviewed for the permissions of who can access it and what type
+    of permissions (like read and write permissions) certain users can have. That
+    way, we are helping secure the network from getting infested by network worms.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Media storage
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Network administrators are very restrictive when it comes to using thumb drives.
+    The primary reason is that external storage devices, such as USB thumb drives,
+    CDs, DVDs, external hard drives, and even smartphones are all media in which malware
+    can store itself. Once a storage device gets mounted to a computer, it serves
+    like a regular drive. Malware can simply drop copies of itself to these storage
+    drives. Similar to network worms, these are worms that depend on the user to run
+    the malware. But with the Windows Autorun feature turned on, malware may execute
+    once the drive is mounted, as can be seen in the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/2d80a5c6-bf0f-4133-aab9-1f2ec761dea0.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: The previous image is the default dialog encountered when inserting a CD drive
+    containing setup software.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The `autorun.inf` file in the root of a drive contains information on which
+    file to automatically execute. This is used by software installers stored in CDs
+    so that, when the disk is inserted, it automatically runs the setup program. This
+    is abused by malware by doing these steps:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Dropping a copy of its malware file in removable drives
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 'Along  with its dropped copy, it generates an `autorun.inf` file that points
+    to the dropped executable file, as can be seen in the following example:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '![](img/3caf8d06-f65d-4fc7-9dbf-2d1373d0c5a7.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: The `autorun.inf` for the VirtualBox setup autoplay dialog shown previously
+    contains the text as shown in the previous screenshot. The `open` property contains
+    the executable to be run.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Exploits and compromised websites
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Exploits are also categorized under malware. Exploits are crafted to compromise
+    specific vulnerabilities of software or network services. These are usually in
+    the form of binary data. Exploits take advantage of vulnerability, thereby causing
+    the target software or service to behave in such a manner that the attacker intends
+    it should behave. Usually, the attacker intends to gain control over the target
+    system or simply take it down.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Once an attacker identifies vulnerabilities on its target, an exploit is crafted
+    containing code that would download malware that can give the attacker more access.
+    This concept was used to develop exploit kits. Exploit kits are a set of known
+    vulnerability scanners and known exploits packaged as a toolkit.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The following diagram gives an example:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/dd9c8d78-682e-4cfc-ae8d-9e377a599f5a.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: In a malware campaign, social engineering is used to lure users to visit links
+    that are actually compromised. Usually, the compromised sites were manually hacked
+    and have been injected with a hidden script that redirects to another website. The
+    malicious links are spammed to email messages, instant messaging, and social networking
+    sites. Visiting legitimate sites that are compromised with malicious advertisements
+    also counts as bait. These sites include software or media piracy sites, the dark
+    web, or even pornographic sites. Once the user clicks the link, typically, the
+    site redirects to another compromised site, and to another, until it reaches the
+    exploit kit landing gate page. From the user's internet browser, the exploit kit
+    gate gathers information on the machine, such as software versions, and then determines
+    whether or not the software is known to be vulnerable. It then delivers all exploits
+    applicable to the vulnerable software. The exploits typically contain code that
+    will download and execute malware. As a result, the unaware user gets a compromised
+    system.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Software piracy
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Hacking tools, pirated software, serial generating tools, and pirated media
+    files are just some of the distributed software where malware or adware may be
+    included. For example, the setup file of the installer of pirated software may
+    be downloading malware and installing it in the background without asking the
+    user for permission.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Malware file properties
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The initial behavior of common malware is to drop a copy of itself, drop its
+    malware component embedded in it, or download its malware component. It creates
+    the dropped files which are usually found in these folders:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The Windows System folder: `C:\Windows\System32`
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The Windows folder:  `C:\Windows`
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The user profile folder:   `C:\Users\[username]`
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The Appdata folder:  `C:\Users\[username]\AppData\Roaming`
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The recycle bin folder:  `C:\$Recycle.Bin`
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'The desktop folder: `C:\Users\[username]\Desktop`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The temporary folder:  `C:\Users\[username]\AppData\Local\Temp`
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'As part of its social engineering, another cheap technique is to change the
+    icon of a malware file to something that would lure the user to open it, for example,
+    folder icons, Microsoft Office icons, or Adobe PDF icons. It also uses file names
+    that are deceiving, such as the words *INVOICE,* *New* *Folder*, *Scandal,* *Expose,*
+    *Pamela,* *Confidential,* and so on. The following screenshot gives examples of
+    actual malware that mimics known documents:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/4c96205c-9be2-4f40-84de-5455a0c46d75.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Notice that highlighting the fake PDF file shows that it is actually an application.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Payload – the evil within
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The attacker develops malware for a purpose. This is typically to cause harm
+    to the target, maybe because of hate, for fun, for monetary or, probably, political
+    reasons. Here are some typical malware payloads that were seen in the wild:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Encrypting files for ransom
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Deleting all files
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Formatting drives
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Gaining full access to the system and the network
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Stealing accounts and passwords
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Stealing documents, images, and videos
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Changing specific configuration and settings
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Turning the computer into a proxy server
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Installing `cryptocoin` miners
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Continuously opening websites - ad or porn sites
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Installing more malware
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Installing adware
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: One of the conclusions that a reverse engineer includes in the report is the
+    payload. This determines what malware actually does to the machine other than
+    getting installed.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tools
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Identifying the registry entry, files dropped, and running processes that are
+    related to the malware requires tools. There are existing tools that we can use
+    to extract these objects. There are two analysis events we should consider: analysis
+    after the malware has been executed and analysis before the malware executes.
+    Since our aim for this chapter is to extract components, we will discuss the tools
+    that can help us find suspected files. Analysis tools that are used after we have
+    extracted our suspected malware will be discussed in further chapters.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: When a system has already been compromised, the analyst would need to use tools
+    that can identify suspected files. Each suspected file will be analysed further.
+    To start off, we can identify it based on persistence.
+  prefs: []
+  type: TYPE_NORMAL
+- en: List down all processes and their respective file information
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: From the list of known registry persistence paths, look for entries containing
+    the file paths
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Extract the suspected files
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 'The above steps may require pre-existing tools from Microsoft Windows, such
+    as:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The Registry Editor (`regedit`/`regedt32)` to search the registry
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: You can also use the command line for accessing the registry `reg.exe`, as seen
+    in the following screenshot:   ![](img/34dfced5-4b4d-4808-9a34-3b1c81d62655.png)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Task manager (`taskmgr`) to list down the processes
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Windows Explorer (`explorer`) or Command prompt (`cmd`) to traverse directories
+    and retrieve the files.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'However, there are also third-party  tools that we can use that can help us
+    list down suspected files. Here are a few we will briefly discuss:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Autoruns
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Process explorer
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Autoruns
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The startup list we saw earlier in this chapter, covers registry entries, schedule
+    jobs, and file location. The bottom line is that this tool covers all of those,
+    including other areas we have not discussed, such as Microsoft Office add-ons,
+    codecs, and printer monitors, as can be seen in the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/9aef4cb4-672a-4e3f-aa33-eaa1e50bf60d.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: There are 32- and 64-bit versions of the autoruns tool. The screenshot above
+    shows all possible triggers for an executable which was based on the research
+    of the SysInternals' authors Mark Russinovich and Bryce Cogswell. The screenshot
+    also categorizes each autorun entry, shows the description of each entry, and
+    indicates the file path related to the entry.
+  prefs: []
+  type: TYPE_NORMAL
+- en: As for reverse engineers, the identification of suspected files can be determined
+    by having knowledge of what files are common to the startup prior to the system
+    getting compromised. Continuous practice and experience will make the reverse
+    engineer easily identify which are good or suspected executable files.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The Process explorer
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'In essence, the `Process` explorer tool is similar to the Task Manager, as
+    demonstrated in the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/4ed1ab11-4f36-4fbe-ad59-bf27992bfb3a.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'The advantage of this tool is that it can show more information about the process
+    itself, such as how it was run, including the parameters used, and even its autostart
+    location, as can be seen in the following example:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/b8c9a968-e48b-406c-9e75-83a73bd95b62.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'In addition, the process explorer has tools to send it VirusTotal identification,
+    shows a list of strings identified from its image and the threads associated with
+    it. From a reverser''s point of view, the highly used information here is the
+    command-line usage, and autostart location. VirusTotal is an online service that
+    scans a submitted file or URL using multiple security software, as demonstrated
+    in the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/b355e1f2-34fb-41b9-bd08-3a65b11a2cc8.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: The results are not conclusive, but it gives the submitter an idea about the
+    file's credibility of being legit software or malware.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Summary
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'In the first chapter, we learned about reverse engineering and its importance
+    when analyzing malware. To begin with our reverse engineering adventures, we have
+    to learn the system we are analyzing. We discussed the three main areas in the
+    Windows operating system environment: memory, disk, and the registry.  In this
+    chapter, we aimed to find malware from a compromised Windows system by extracting
+    suspected files. To do that, we listed common startup areas in the system that
+    we can search into. These areas include the registry, task schedules, and startup
+    folder.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: We learned that typical malware behaves by installing itself and runnng code
+    that harms the system. Malware installs itself basically for persistence which
+    results in the malware file triggering most of the time the system is online.
+    We then listed a few behaviors as to why malware was called malicious. This malicious
+    code consisted of anything to do with crime entailing monetary or political gain,
+    such as ransom and backdoor access.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We ended this chapter by listing tools we can use to easily identify the suspected
+    files. We first introduced pre-existing Windows tools such as the Registry editor,
+    Task Manager and the Task Scheduler. We followed these with two more tools from
+    SysInternals: autoruns and Process explorer.  With these tools at hand, we should
+    be able to list down our suspected files. However, as with any other tasks, we
+    will be able to master identification faster with practice and experience.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Further reading
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: '[https://msdn.microsoft.com/en-us/library/windows/desktop/ms724871(v=vs.85).aspx](https://msdn.microsoft.com/en-us/library/windows/desktop/ms724871(v=vs.85).aspx)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[https://medium.com/@johnpaticklita/cryptomalware-spreads-on-facebook-79a299590116](https://medium.com/@johnpaticklita/cryptomalware-spreads-on-facebook-79a299590116)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL

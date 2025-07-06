@@ -1,0 +1,2058 @@
+- en: '7'
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Understanding Kernel-Mode Rootkits
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In this chapter, we are going to dig deeper into the Windows kernel and its
+    internal structures and mechanisms. We will cover different techniques used by
+    malware authors to hide the presence of their malware from users and antivirus
+    products.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We will look at different advanced kernel-mode hooking techniques, process injection
+    in kernel mode, and how to perform static and dynamic analysis there.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Before we get into rootkits and learn how they are implemented, we need to understand
+    how the **operating system** (**OS**) works and how rootkits can target different
+    parts of the OS and use it to their advantage.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In this chapter, we will cover the following topics:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Kernel mode versus user mode
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Windows internals
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Rootkits and device drivers
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Hooking mechanisms
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: DKOM
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Process injection in kernel mode
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: KPP in x64 systems (PatchGuard)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Static and dynamic analysis in kernel mode
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Kernel mode versus user mode
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: You have already seen several user-mode processes on your computer (all the
+    applications you see are running in user mode) and learned how to modify files,
+    connect to the internet, and perform lots of activities. However, you might be
+    surprised to know that user-mode applications don't have privileges to do all
+    of this.
+  prefs: []
+  type: TYPE_NORMAL
+- en: For any process to create a file or connect to a domain, it needs to send a
+    request to the kernel mode to perform that action. This request is done through
+    what is known as a system call, and this system call switches to kernel mode to
+    perform this action (if permission is granted). Kernel mode and user mode are
+    not only supported by the OS – they are also supported by the processors through
+    protection rings (or hardware restrictions).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Protection rings
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'x86 processors provide four rings of privileges (x64 is slightly different).
+    Each ring has lower privileges than the previous one, as shown in the following
+    diagram:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 7.1 – Processor rings'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_7.1_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 7.1 – Processor rings
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Windows uses mainly two of these rings: *RING 0* for kernel mode and *RING
+    3* for user mode. Modern processors such as Intel and AMD have another ring (*RING
+    1*) for hypervisors and virtualization so that each OS can run natively with hypervisors
+    controlling certain operations, such as hard disk access.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: These rings are created for handling faults (such as memory access faults or
+    any type of exceptions) and for security. *RING 3* has the least privileges –
+    that is, the processes in this ring cannot affect the system, they cannot access
+    the memory of other processes, and they cannot access physical memory (they must
+    run in virtualized memory). In contrast, *RING 0* can do anything – it can directly
+    affect the system and its resources. Therefore, it's only accessible to the Windows
+    kernel and the device drivers.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Windows internals
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Before we dive into the malicious activities of rootkits, let's take a look
+    at how the Windows OS works and how the interaction between the user mode and
+    kernel mode is organized. This knowledge will allow us to understand the specifics
+    of kernel-mode malware and what parts of the system it may target.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The anatomy of Windows
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'As we mentioned previously, the OS is divided into two parts: user mode and
+    kernel mode. This is shown in the following diagram:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 7.2 – The Windows OS design'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_7.2_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 7.2 – The Windows OS design
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Now, let''s learn about the scope of these applications:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`kernel32.dll` in the Win32 and Win64 subsystems.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'These `ntdll.dll`), which communicates directly to kernel mode. `Ntdll.dll`
+    is a library that sends requests to the kernel using special instructions, such
+    as `sysenter` or `syscall` (depending on the mode and whether it is Intel or AMD;
+    in this chapter, we will be using them interchangeably). The request ID is passed
+    using the `eax` register:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 7.3 – The syscall instruction'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_7.3_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 7.3 – The syscall instruction
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**Kernel mode**: This manages all the resources, including the memory, files,
+    UI, sound, graphics, and more. It also schedules threads and processes and manages
+    the UI of all applications. Kernel mode communicates with device drivers that
+    directly send commands or receive inputs from the hardware. It manages all of
+    these requests and any operations that should be done before and after.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: That was a brief explanation of how the Windows OS works. Now, it is time to
+    explore the life cycle of a request from user mode to kernel mode so that we can
+    gain an understanding of how all this works together. Additionally, we will explore
+    how rootkits can interfere with the system to perform malicious activities.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The execution path from user mode to kernel mode
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'First, let''s take a look at the life cycle of one API call that requires kernel
+    mode functionality (in this example, this will be `FindFirstFileA`). We will dissect
+    each step so that we can understand the role that each part of the system plays
+    in handling process requests. This is an important prerequisite for us to understand
+    where malware can intervene in this sequence of actions:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 7.4 – The API call life cycle'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_7.4_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 7.4 – The API call life cycle
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let''s break down the preceding diagram, as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: First, the process calls the `FindFirstFileA` API, which is implemented in the
+    `kernel32.dll` library.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Then, `kernel32.dll` (like all subsystem DLLs) calls a function in the `ntdll.dll`
+    library. In this example, it calls an API called `ZwQueryDirectoryFile` (or `ZwQueryDirectoryFileEx`).
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: All of the `Zw*` APIs execute the `syscall` instruction, as you saw in *Figure
+    7.3*. `ZwQueryDirectoryFile` executes `syscall` by providing the command ID in
+    `eax` form (here, the command ID is changing from one Windows version to another).
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Now, the application moves to kernel mode and the execution is redirected to
+    a kernel-mode function called System Service Dispatcher. It is available under
+    the name `KiSystemService` (or directly `KiFastCallEntry`) on 32-bit machines
+    and `KiSystemCall64` on 64-bit machines; compatibility mode will use the `KiSystemCall32`
+    name. The system may also use shadow versions of them with a suffix of `Shadow`
+    at the end of it (for example, `KiSystemServiceShadow` or `KiSystemCall64Shadow`).
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 'System Service Dispatcher searches for the function that represents the command
+    ID that was in `eax` form (in this case, it is 0x91) in the `NtQueryDirectoryFile`.
+    It calls this function and passes all the arguments that were passed to `FindFirstFileA`:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '![Figure 7.5 – SSDT explained'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_7.5_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 7.5 – SSDT explained
+  prefs: []
+  type: TYPE_NORMAL
+- en: Next, `NtQueryDirectoryFile` is executed, and this function sends a request
+    called an `fastfat.sys` or `ntfs.sys` driver (this depends on the filesystem that
+    is installed). More details on IRPs will be provided shortly.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: This request passes through multiple device drivers attached to the filesystem
+    driver. These device drivers can modify the inputs in any request and the outputs
+    (or responses) from the filesystem.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Finally, the filesystem driver processes the request. The IRP request makes
+    its way back to `NtQueryDirectoryFile` with an instruction called `sysret` (or
+    `sysexit`). Then, control is returned to the user-mode process, along with the
+    results.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: This may sound relatively complex but for now, this is all you need to know
+    to be able to understand how kernel-mode rootkits work and, more importantly,
+    what weaknesses in this process the rootkits can use to achieve their goals.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Rootkits and device drivers
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Now that you understand Windows internals and how user mode and kernel mode
+    interactions work, let's dig into rootkits. In this section, we will understand
+    what rootkits are and how they are designed. After we grasp the basic concepts
+    of rootkits, we will discuss device drivers.
+  prefs: []
+  type: TYPE_NORMAL
+- en: What is a rootkit?
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Rootkits are essentially low-level tools that provide stealth capabilities to
+    malicious modules. This way, their main purpose is generally to complicate the
+    malware detection and remediation procedures on the target machine by hiding the
+    presence of related artifacts. There are multiple ways this can be done, so let's
+    discuss them in detail.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Types of rootkits
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'There are various types of rootkits in user mode, kernel mode, and even boot
+    mode:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**User-mode or application rootkits**: We covered user-mode rootkits in [*Chapter
+    5*](B18500_05.xhtml#_idTextAnchor446), *Inspecting Process Injection and API Hooking*;
+    they inject malicious code into other processes and hook their APIs to hide the
+    malware files, registry keys, and other **Indicators of Compromise** (**IoCs**)
+    from these processes. They can be used to bypass AV programs, task managers, and
+    more.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Kernel-mode rootkits**: We will be primarily covering these rootkits in this
+    chapter. These rootkits are device drivers that hook different functions in kernel
+    mode to hide the malware''s presence and give the malware the power of kernel
+    mode. They can also inject code and data into other processes, terminate AV processes,
+    intercept network traffic, perform **man-in-the-middle** (**MITM**) attacks, and
+    more.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Bootkits**: Bootkits are rootkits that modify the boot loader. They are used
+    to load malicious files before the OS even boots. This allows the malware to take
+    full control before the OS and its security mechanisms launch.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Firmware rootkits**: This group of threats targets firmware (such as **Unified
+    Extensible Firmware Interface** (**UEFI**) or **Basic Input/Output System** (**BIOS**))
+    to achieve the earliest execution possible.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Hypervisor or virtual rootkits**: At the time of writing, these threats exist
+    mostly in the form of **Proofs of Concept** (**PoCs**). They are supposed to reside
+    in Ring 1 (hypervisor).'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: In this chapter, we will focus on kernel-mode rootkits and how they can hook
+    multiple functions or modify kernel objects to hide malware. Before we get into
+    their hooking mechanisms, first, let's understand what device drivers are.
+  prefs: []
+  type: TYPE_NORMAL
+- en: What is a device driver?
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Device drivers are kernel-mode tools that are created to interact with hardware.
+    Each hardware manufacturer creates a device driver to communicate with their own
+    hardware and translate the IRPs into requests that the hardware device understands.
+  prefs: []
+  type: TYPE_NORMAL
+- en: One of the main purposes of any OS is to standardize the channel of communication
+    with any type of device, regardless of the vendor. For example, if you have replaced
+    your wired mouse with a wireless one from a different vendor, it should not affect
+    the applications that interact with the mouse in general. Additionally, if you
+    are a developer, you should not worry about what type of keyboard or printer the
+    user has.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Device drivers make it possible to understand the I/O request and return the
+    output in a standardized format, regardless of how the device works.
+  prefs: []
+  type: TYPE_NORMAL
+- en: There are other drivers as well that are not related to actual devices, such
+    as antivirus modules and, in our case, rootkits. Kernel-mode rootkits are device
+    drivers that use the capabilities that kernel mode provides to support the actual
+    malware in terms of stealth and persistence.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now, let's take a look at how rootkits achieve their goals and what weaknesses
+    in the execution path from user mode to kernel mode they take advantage of.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Hooking mechanisms
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'In this section, we will explore different types of hooking mechanisms. In
+    the following diagram, we can see various types of hooking techniques that rootkits
+    use at different stages of the request processing flow:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 7.6 – The hooking mechanisms of rootkits'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_7.6_B18500_.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 7.6 – The hooking mechanisms of rootkits
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Rootkits can install hooks at different stages of this process flow:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**User-mode hooking/API hooking**: These are the user-mode API hooking mechanisms
+    that are used for hiding malware processes, files, registry keys, and more. We
+    covered this in [*Chapter 5*](B18500_05.xhtml#_idTextAnchor446), *Inspecting Process
+    Injection and API Hooking*.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`sysenter` will transfer the execution to and intercept all requests from user
+    mode to kernel mode.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**SSDT hooking**: This technique works more closely with the functions that
+    the rootkit wants to hook. This type of hooking modifies the SSDT so that it redirects
+    requests to a malicious function instead of the actual function that handles the
+    request (it is similar to IAT hooking).'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Code patching**: Rather than modifying the SSDT, this rootkit patches the
+    function that handles the request to call the malicious function at the start
+    (it is similar to API hooking).'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Layered drivers/IRP hooking**: This is the legitimate technique for hooking
+    and intercepting requests and modifying inputs and outputs. It is harder to detect
+    as it is officially supported by Microsoft.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: We will also be exploring other techniques used by rootkits, such as `EPROCESS`
+    and `ETHREAD`, which we talked about in [*Chapter 3*](B18500_03.xhtml#_idTextAnchor084),
+    *Basic Static and Dynamic Analysis for x86/x64*. Apart from that, `sysenter` became
+    the preferred method of doing this.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now, let's go through these techniques in greater detail.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Hooking the SYSENTER entry function
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: When a user-mode application executes `sysenter` (`int 0x2e` in Windows 2000
+    and earlier versions), the processor switches the execution to kernel mode and,
+    in particular, to a specific address stored in the **Model-Specific Register**
+    (**MSR**). MSRs are the control registers that are used for debugging, monitoring,
+    toggling, or disabling various CPU features.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'There are several important registers for the user-mode-to-kernel-mode switching
+    process when it''s using `sysenter`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`sysenter`; here, the SS segment register will be a CS value of + 8.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`sysenter` is executed; it is where the arguments will be copied to.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`sysenter`. It points to System Service Dispatcher.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`KiSystemCall64`).*   `KiSystemCall32`).'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'These registers can be read and modified using the `rdmsr` and `wrmsr` assembly
+    instructions, respectively. The `rdmsr` instruction takes the register ID in the
+    `ecx/rcx` register and returns the result in `edx:eax` (`rdx:rax` registers in
+    x64; the higher 32 bits in both registers are not used). An example of this is
+    as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: '`wrmsr` is very similar to `rdmsr`. `wrmsr` takes the register ID in `ecx`
+    and the value to write in the `edx:eax` pair. The hooking code is as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'This technique has multiple drawbacks, as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: For environments that have multiple processors, only one processor is hooked.
+    This means that the attacker has to create multiple threads, hoping that they
+    will run on all processors so that it becomes possible to hook all of them.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The attacker needs to get the arguments from the user-mode stack and parse them.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: In this way, all functions are being hooked, so it is necessary to implement
+    some filtration to check only the functions that are supposed to be hooked.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: This is the first place that malware can hook in kernel mode. Let's take a look
+    at the second place, which is while modifying SSDT.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Modifying SSDT in an x86 environment
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'First things first, the SSDT table is different from and pointed to by the
+    first element of the `ntoskrnl.exe` under the name of `KeServiceDescriptorTable`.
+    There are slots for four different SDT entries, but Windows has used only two
+    of them at the time of writing: `KeServiceDescriptorTable` and `KeServiceDescriptorTableShadow`.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'When a user-mode application uses `sysenter`, as you saw in *Figure 7.3*, the
+    application provides the function number or ID in the `eax` register. In `eax`,
+    this value is divided in the following way:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 7.7 – The sysenter eax argument value'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_7.7_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 7.7 – The sysenter eax argument value
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'These values are as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`bits 0-11`: This is the **System Service Number** (**SSN**), which is the
+    index of this function in the SSDT'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`bits 12-13`: This is the SDT, which represents the SDT number (here, `KeServiceDescriptorTable`
+    is 0x00 and `KeServiceDescriptorTableShadow` is 0x01)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`bits 14-31`: This value is not used and is filled with zeros'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'The SDT stores an array of `SYSTEM_SERVICE_TABLE` entries with the first element
+    mainly used by modern OSs. It consists of the following fields:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`KiServiceTable`: This is an SSDT table, an array of function addresses representing
+    each SSN that can be passed via `eax` before `sysenter`.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`CounterBaseTable`: Not used in free (retail) versions of Windows.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`nSystemCalls`: This is the number of items in the `KiServiceTable` and `KiArgumentTable`
+    tables.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`KiArgumentTable`: This is an array that is sorted in the same way as `KiServiceTable`.
+    Here, each item includes the number of bytes that should be allocated for each
+    function''s arguments.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'For malware to hook this table, it needs to get `KeServiceDescriptorTable`,
+    which is exported by `ntoskrnl.exe`, and then move to `KiServiceTable` and modify
+    the function that it wants to hook. To be able to modify this table, it needs
+    to disable the write protection (as this is a read-only table). There are multiple
+    ways to do this, and the most common way is by modifying the `CR0` register value
+    and setting the write-protection bit to zero:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The full hooking mechanism looks as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 7.8 – The SSDT hooking code from the winSRDF project'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_7.8_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 7.8 – The SSDT hooking code from the winSRDF project
+  prefs: []
+  type: TYPE_NORMAL
+- en: As you can see, the application was able to get the address of the SDT, which
+    was exported under the `KeServiceDescriptorTable` name from `ntoskrnl.exe`. Then,
+    it got the `KiServiceTable` array, disabled the write protection, and, finally,
+    used `InterlockedExchange` to modify the table while no other thread was using
+    it (`InterlockedExhange` protects the application from writing at the same time
+    when another thread is reading).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Modifying SSDT in an x64 environment
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: For x64 environments, Windows implemented more protection from patching SSDT.
+    Initially, SSDT hooking was used by malware and anti-malware products alike. It
+    was also used by sandboxes and other behavioral antivirus tools. However, in the
+    64-bit version, Microsoft decided to stop this completely and began offering legitimate
+    applications and other alternatives rather than SSDT hooking.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Microsoft implemented multiple forms of protection to stop SSDT hooking, such
+    as `KeServiceDescriptorTable` via `ntoskrnl.exe`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Since `KeServiceDescriptorTable` is not exported, malware families started to
+    search for functions that used this table to gain access to the addresses. One
+    of the functions they used was `KiSystemServiceRepeat`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'This function contains the following code:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'As you can see, this function uses the addresses of both SSDT entries. However,
+    finding this function and the code inside it isn''t very easy. As this function
+    is close to `KiSystemCall64` (the `sysenter` entry function in the x64 environment),
+    malware generally gets the address of `KiSystemCall64` using the `IA32_SYSENTER_EIP`
+    MSR register. By doing so, it can start searching from it until it finds the preceding
+    code. In general, malware searches for particular opcodes to find this function,
+    as shown in the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 7.9 – SSDT hooking in the x64 environment by the zer0m0n project'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_7.9_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 7.9 – SSDT hooking in the x64 environment by the zer0m0n project
+  prefs: []
+  type: TYPE_NORMAL
+- en: This mechanism is not completely reliable, and it could easily be broken in
+    a later Windows version; however, it's one of the best-known mechanisms for finding
+    an SSDT address in x64.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Patching SSDT functions
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: The final technique worth mentioning in SSDT hooking is hooking the functions
+    that are referenced in the SSDT. This is very similar to API hooking. In this
+    case, malware gets the function from the SSDT using the function ID and patches
+    the first few bytes with `jmp <malicious_func>`. Then, it returns the execution
+    to the original function after checking the process that called this function
+    and its parameters.
+  prefs: []
+  type: TYPE_NORMAL
+- en: This technique is used because SSDT hooks can easily be detected by antivirus
+    or rootkit scanning programs. It's easy to loop through all the functions inside
+    the SSDT and search for a function that is outside the legitimate driver's or
+    application's memory image.
+  prefs: []
+  type: TYPE_NORMAL
+- en: That's all for SSDT hooking; now, let's take a look at layered drivers, also
+    known as IRP hooking.
+  prefs: []
+  type: TYPE_NORMAL
+- en: IRP hooking
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'IRPs are the main objects that represent the input (a request) and the output
+    (a response) from a device. In many cases, a request packet is processed by a
+    chain of drivers until the message can be understood by either the final device
+    or the user-mode application (depending on the direction):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 7.10 – The structure of the IRP from the official documentation'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_7.10_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 7.10 – The structure of the IRP from the official documentation
+  prefs: []
+  type: TYPE_NORMAL
+- en: For example, consider that you want to play a music file (such as an MP3 file).
+    Once the file has been opened by an application that understands MP3 format, it
+    is converted into the format that can be understood by a kernel-mode driver. Then,
+    this driver simplifies it for the next driver and so on, until it reaches the
+    actual speaker as an encoded group of waves. Another example is an electric signal
+    from a keyboard, which is simplified to be a click on a button using an ID (for
+    example, the *r* button). Then, it is passed to a keyboard driver, which understands
+    that this is the letter *r* and passes it to the next one. This continues until
+    it reaches, say, a text editor, such as Notepad, to write the letter *r*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: So, how does all of this relate to rootkits? Well, a rootkit that is present
+    in a chain of drivers that processes IRP request packets can change the input
+    or the output, thus manipulating the outcome. For example, when a malicious file
+    is looked for by a researcher or an antivirus product, the driver can make it
+    invisible. This is the only legitimate way that Windows allows developers to hook
+    any request from user mode and modify its input and output.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now, let's learn how it will look in assembly.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Devices and major functions
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: For any driver to be able to receive and handle IRP requests, it is necessary
+    to create a device object. This device can be attached to a chain of device drivers
+    that process a specific type of IRP request. For example, if the attackers want
+    to hook filesystem requests, they need to create a device and attach it to the
+    chain of filesystem devices. After this, it becomes possible to start receiving
+    IRP requests associated with this filesystem (such as opening a file or querying
+    a directory).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Creating a device object is simple: the driver can simply call the `IoCreateDevice`
+    API and provide the flags that correspond to the device it wants to attach to.
+    For malware analysis, these flags could help you understand the goal of this device,
+    such as the `FILE_DEVICE_DISK_FILE_SYSTEM` flag.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The driver also needs to set up all the dispatch functions (following the `DRIVER_DISPATCH`
+    structure) that will receive and handle these requests. Each IRP request has a
+    major function code in `IRP_MJ_XXX` format. This code helps us understand what
+    this IRP request is about, such as `IRP_MJ_CREATE` (this could be used for creating
+    a file or opening a file) or `IRP_MJ_DIRECTORY_CONTROL` (this could be used for
+    querying a directory). The initialization is done by placing a pointer to the
+    dispatch function in the right place in the `MajorFunction` array of `DriverObject`
+    (following the `_DRIVER_OBJECT` structure), where `IPR_MJ_XXX` codes serve as
+    indexes. Here is an example of the code implementing this setup:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 7.11 – Setting up the major functions'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_7.11_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 7.11 – Setting up the major functions
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In each of these functions, the driver can get the parameters of this request
+    from what is known as the IRP stack. The IRP stack contains all the necessary
+    information related to this request, and the driver can add, modify, or remove
+    them along the way. To get the pointer to this stack, the driver calls the `IoGetCurrentIrpStackLocation`
+    API and provides the address of the IRP of interest. The following is an example
+    of a major function that filters files with the `_root_` name:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 7.12 – A major function creates a ﬁlter to process ﬁles with the "_root_"
+    name'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_7.12_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 7.12 – A major function creates a ﬁlter to process ﬁles with the "_root_"
+    name
+  prefs: []
+  type: TYPE_NORMAL
+- en: After the rootkit has created its device(s) and set up its major functions,
+    it can hook the corresponding requests by attaching itself to the device that
+    receives the requests of the rootkit's interest.
+  prefs: []
+  type: TYPE_NORMAL
+- en: From the user-mode side, software can also send custom requests to drivers by
+    utilizing `DeviceIoControl` API. Calling this function will create an `IRP_MJ_DEVICE_CONTROL`
+    request. Some IOCTLs are public in that they are system-defined and documented
+    by Microsoft, while some are private in that they are unique to a particular piece
+    of software, including malware. It is also worth mentioning that upper-level drivers
+    can send IOCTL codes to lower-level drivers using the `IRP_MJ_DEVICE_CONTROL`
+    and `IRP_MJ_INTERNAL_DEVICE_CONTROL` requests. The drivers process them the same
+    way as any other IRPs – by registering dedicated `DRIVER_DISPATCH` callback functions
+    in the driver object.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Attaching to a device
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'For the rootkit to attach to a named device (for example, `\\FileSystem\\fastfat`,
+    to receive filesystem requests), it needs to get the device object for that named
+    device. There are multiple ways to do this, and one of them is to use the undocumented
+    `ObReferenceObjectByName` API. Once the device object is found, the rootkit can
+    use the `IoAttachDeviceToDeviceStack` API to attach to its chain of drivers and
+    receive the IRP requests that are sent to it. The code for this could be as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 7.13 – Attaching to the FastFat ﬁlesystem'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_7.13_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 7.13 – Attaching to the FastFat ﬁlesystem
+  prefs: []
+  type: TYPE_NORMAL
+- en: After executing the `IoAttachDeviceToDeviceStack` API, the driver will be added
+    to the top of the chain, which means that the rootkit driver will be the first
+    driver to receive the IRP requests. Then, it can pass requests along to the next
+    driver using the `IoCallDriver` API. Additionally, the rootkit would be the last
+    driver to modify the response of the IRP request after setting a completion routine.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Modifying the IRP response and setting a completion routine
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Completion routines cover situations where more processing is required after
+    the request is processed by the last driver. For a rootkit, completion routines
+    allow it to modify the output of the request; for example, deleting a filename
+    from a list of files in a specific directory. Setting up a completion routine
+    requires it to copy the request parameters to the lower driver in the chain. To
+    copy these parameters to the next driver's stack, the rootkit can use the `IoCopyCurrentIrpStackLocationToNext`
+    API.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Once all the parameters have been copied for the next driver, the malware can
+    set the completion routine using `IoSetCompletionRoutine`, and then pass this
+    request to the next driver using `IoCallDriver`. An example from the Microsoft
+    documentation is as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: Once the last driver in the chain executes the `IoCompleteRequest` API, the
+    completion routines will be executed one by one, starting from the lowest driver's
+    completion routine to the highest. If the rootkit is the last driver attached
+    to this device, it will have its completion routine executed last.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now, let's learn about another technique that's commonly used by rootkits to
+    hide malicious activity.
+  prefs: []
+  type: TYPE_NORMAL
+- en: DKOM
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'DKOM is one of the most common techniques used by rootkits to hide malicious
+    user-mode processes. This technique relies on how the OS represents processes
+    and threads. To understand this technique, you need to learn more about the objects
+    that are being manipulated by the rootkit: `EPROCESS` and `ETHREAD`.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The kernel objects – EPROCESS and ETHREAD
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Windows creates an object called `EPROCESS` for each process that''s created
+    in the system. This object includes all the important information about this process,
+    such as its `ActiveProcessLinks`, which connects all `EPROCESS` objects of all
+    processes. Each `EPROCESS` includes an address to the next `EPROCESS` object (which
+    represents the next process) called `FLink` and the address to the previous `EPROCESS`
+    object (which is associated with the previous process) called `BLink`. Both addresses
+    are stored in `ActiveProcessLinks`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 7.14 – The EPROCESS structure'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_7.14_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 7.14 – The EPROCESS structure
+  prefs: []
+  type: TYPE_NORMAL
+- en: The exact structure of `EPROCESS` changes from one version of the OS to another.
+    That is, some fields get added, some get removed, and, sometimes, rearrangements
+    happen. Rootkits have to keep up with these changes if they want to manipulate
+    these structures.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Before we dive into the object manipulation strategies, there''s another object
+    that you need to know about: `ETHREAD`. `ETHREAD`, and its core, `KTHREAD`, includes
+    all the information related to a specific thread, including its context, status,
+    and the address of the corresponding process object (`EPROCESS`):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 7.15 – The ETHREAD structure'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_7.15_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 7.15 – The ETHREAD structure
+  prefs: []
+  type: TYPE_NORMAL
+- en: When Windows switches between threads, it follows the links between them in
+    the `ETHREAD` structure (that is, the linked list that connects all `ETHREAD`
+    objects). From this object, it loads the thread's process (following its `EPROCESS`
+    address) and then loads the thread context to execute it. This process of loading
+    each thread is not directly connected to the linked list that connects all processes
+    (particularly, their `EPROCESS` representations), and this is what makes the DKOM
+    so effective.
+  prefs: []
+  type: TYPE_NORMAL
+- en: How do rootkits perform an object manipulation attack?
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'For a rootkit to hide a process, it is enough to modify `ActiveProcessLink`
+    in the previous and the following `EPROCESS` objects (relative to malware) to
+    skip the `EPROCESS` address of the process it wants to hide. The steps are simple
+    and are given as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Get the current process's `EPROCESS` using the `PsLookupProcessByProcessId`
+    API.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Follow the ActiveProcessLinks to find the `EPROCESS` object of the process that
+    needs to be hidden.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Change the `FLink` property of the previous `EPROCESS` so that it doesn't point
+    to this `EPROCESS` but the next one instead.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Change the `BLink` property of the next process so that it doesn't point to
+    this `EPROCESS` but the previous one instead.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 'The challenging part in this process is to reliably find the `ActiveProcessLinks`
+    with all the changes that Windows introduces from one version to another. There
+    are multiple techniques for dealing with the offset of `ActiveProcessLinks` (and
+    the process ID as well), as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Get the OS version and, based on that version, choose the right offset from
+    the precalculated offsets for each version of the OS.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Search for the process ID (you can get it from `PsGetCurrentProcessId`) and
+    find the `ActiveProcessLinks` offset from the process ID.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 'Here is an example of the second technique:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 7.16 – Finding the process ID from the EPROCESS object'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_7.16_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 7.16 – Finding the process ID from the EPROCESS object
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Once the rootkit can find the process ID (`pids`) inside the `EPROCESS` object
+    (`epocs`), it can use the offset between `ActiveProcessLinks` and the process
+    ID (this is usually precalculated and is the next field in the structure). The
+    last step is to remove the links between the processes, as shown in the following
+    screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 7.17 – Removing the process links to perform a DKOM attack'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_7.17_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 7.17 – Removing the process links to perform a DKOM attack
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'This is what the result will look like:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 7.18 – DKOM attack – the process in the middle is skipped during traversal'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_7.18_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 7.18 – DKOM attack – the process in the middle is skipped during traversal
+  prefs: []
+  type: TYPE_NORMAL
+- en: The most popular technique for detecting DKOM attacks is to loop through all
+    the running threads and follow their link to `EPROCESS`, before comparing the
+    results with the data obtained by following `ActiveProcessLinks`. If there's a
+    missing `EPROCESS` object in `ActiveProcessLink` that appeared as an `EPROCESS`
+    for an active thread, it implies that a DKOM attack is being performed by a rootkit
+    to hide this process and its `EPROCESS` object.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now, let's talk about how malware can perform process injection from kernel
+    mode.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Process injection in kernel mode
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Process injection in kernel mode is a popular technique used by multiple malware
+    families, including **Stuxnet** (with its **MRxCls** rootkit), to create another
+    way of maintaining persistence and disguising malware activities under a legitimate
+    process name. For a device driver to be able to read and write memory inside a
+    process, it needs to attach itself to this process's memory space.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Once the driver is attached to this process''s memory space, it can see this
+    process''s virtual memory, and it becomes possible to read and write directly
+    to it. For example, if the process executable''s ImageBase is `0x00400000`, then
+    the driver can access it normally, as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'For a driver to be able to attach to the process memory, it needs to get its
+    `EPROCESS` using the `PsLookupProcessByProcessId` API and then use the `KeStackAttachProcess`
+    API to attach to this process''s memory space. In disassembly, the code will be
+    as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 7.19 – Getting the EPROCESS object using its PID (from the Stuxnet
+    rootkit, MRxCls)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_7.19_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 7.19 – Getting the EPROCESS object using its PID (from the Stuxnet rootkit,
+    MRxCls)
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Then, to attach to that process''s memory space, you can use the following
+    code:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 7.20 – Attaching to the process''s memory space'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_7.20_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 7.20 – Attaching to the process's memory space
+  prefs: []
+  type: TYPE_NORMAL
+- en: Once the driver is attached, it can read and write to its memory space, as well
+    as allocate memory using the `ZwAllocateVirtualMemory` API, providing the process
+    handle using the `ZwOpenProcess` API (which is equivalent to `OpenProcess` in
+    user mode).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'For a driver to detach from the process memory, it can execute the `KeUnstackDetachProcess`
+    API, as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: There are other techniques as well, but this technique is the most common way
+    for any driver to easily access the virtual memory of any process as its own memory.
+    Now, let's take a look at how it can execute code inside that process.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Executing the inject code using APC queuing
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: An `SleepEx`, `SignalObjectAndWait`, `MsgWaitForMultipleObjectsEx`, `WaitForMultipleObjectsEx`,
+    or `WaitForSingleObjectEx` APIs) and before it gets resumed, all the queued user-mode
+    and kernel-mode APC functions are executed in the context of that thread, allowing
+    the malware to execute user-mode code inside that process before returning control
+    to it.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'For a malware sample to queue an APC function, it needs to perform the following
+    steps:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Get the `ETHREAD` object of the thread it wants to queue an APC function by
+    providing its `PsLookupThreadByThreadId` API.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Attach the user-mode function to this thread using the `KeInitializeApc` API.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Add this function to the queue of the APC functions to be executed in this
+    thread using the `KeInsertQueueApc` API, as shown in the following screenshot:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '![Figure 7.21 – APC queuing to execute a user-mode function (from the winSRDF
+    project)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_7.21_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 7.21 – APC queuing to execute a user-mode function (from the winSRDF
+    project)
+  prefs: []
+  type: TYPE_NORMAL
+- en: In this example, the `KeInitializeApc` API will execute a kernel-mode function
+    called `ApcKernelRoutine` and a user-mode function called `Entrypoint` once the
+    thread returns from its alertable state.
+  prefs: []
+  type: TYPE_NORMAL
+- en: If the thread didn't execute any of the previously mentioned APIs and never
+    enters an alertable state until it is terminated, none of the queued APC functions
+    will be executed. Therefore, some malware families tend to attach their APC thread
+    to multiple running threads in the application.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Other rootkits, such as MRxCls (from Stuxnet), modify the entry point of the
+    application before it gets executed. This allows the malicious code to be executed
+    in the context of the main thread before the application runs and without using
+    any APC queuing functionality.
+  prefs: []
+  type: TYPE_NORMAL
+- en: At this stage, we have learned enough about how rootkits generally work, so
+    let's talk about what protection mechanisms have been developed to fight them.
+  prefs: []
+  type: TYPE_NORMAL
+- en: KPP in x64 systems (PatchGuard)
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In x64 systems, Microsoft has introduced new protection against kernel-mode
+    hooking and patching called **KPP**, or **PatchGuard**. This protection disables
+    any patching of the SSDT and the core kernel code. It doesn't allow the usage
+    of kernel stacks beyond what was allocated by the kernel itself.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Additionally, Microsoft allows only signed drivers to be loaded in the x64 systems,
+    except for situations when the system is running in test mode or driver signature
+    enforcement is disabled.
+  prefs: []
+  type: TYPE_NORMAL
+- en: KPP received lots of criticism from antivirus and firewall vendors when it was
+    first introduced because SSDT hooking and other hooking types were heavily used
+    in multiple security products. Microsoft has created a new API to help antivirus
+    products replace their hooking methods.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Although several ways of bypassing PatchGuard have been documented, for the
+    last several years, Microsoft has released only a few major updates to deal with
+    these techniques. In addition, the PatchGuard code is changing its position in
+    kernel mode from one update to another, making it a moving target and breaking
+    all the previous malware families that had been able to bypass it in the previous
+    versions.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now, let's take a look at different bypassing techniques that were introduced
+    in some of the previous malware families.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Bypassing driver signature enforcement
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Apart from the ability to use stolen certificates to sign the malicious driver
+    (an example of this could be Stuxnet drivers), it''s also possible to disable
+    the driver signature enforcement option using the Command Prompt, as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'In this case, the system will start allowing drivers to be signed with certificates
+    that are not issued by Microsoft. This command requires administrator privileges
+    and the machine to be restarted afterward. However, with the help of social engineering,
+    it''s possible to trick the user into making it. Another option that used to be
+    available was the following command:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: However, at the time of writing, this option is ignored on major modern versions
+    of Windows.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Additionally, some malware families abuse vulnerable signed drivers of legitimate
+    products, which either have code execution vulnerabilities or vulnerabilities
+    that allow the arbitrary memory inside the kernel to be modified. An example of
+    this is Turla malware (which is believed to be state-sponsored APT malware). It
+    loads a VirtualBox driver and uses it to amend the `g_CiEnabled` kernel variable
+    and, by doing so, disable driver signature enforcement on the fly (without the
+    need to restart the system).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Bypassing PatchGuard – the Turla example
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Turla was also able to bypass PatchGuard by disabling its ability to show the
+    blue screen of death when the system integrity check fails. After PatchGuard detects
+    the unauthorized patching of the system kernel or its important tables (such as
+    SSDT or IDT), it calls the `KeBugCheckEx` API to show the blue screen of death.
+    Turla malware hooks this API and continues its execution normally.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'A later version of PatchGuard was cloning this API on-the-fly to ensure that
+    the verification was enforced and caused the system to shut down. However, Turla
+    was able to hook an early subroutine in the `KeBugCheckEx` API to make sure it
+    was able to resume the execution of the system normally after the integrity check
+    failed. The following code is a snippet of the `KeBugCheckEx` API:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: As you can see, it executes a function called `RtlCaptureContext`, which is
+    what Turla malware decided to hook to bypass this update.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Bypassing PatchGuard – GhostHook
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: This technique was introduced by the CyberArk research team in 2017\. It abuses
+    a new feature that was introduced by Intel called **Intel Processor Trace** (**Intel
+    PT**). This technology allows debugging software to trace single processes, user-mode
+    and kernel-mode execution, or perform instruction pointer tracing. This Intel
+    PT technology was designed for performance monitoring, diagnostic code coverage,
+    debugging, fuzzing, malware analysis, and exploit detection.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Intel processors and their `callback` routine to handle the memory space issue.
+    This `callback` function (that is, the PMI handler) is a function that is targeted
+    by the malware as it gets executed in the context of the running thread that is
+    being monitored.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Under specific circumstances and by using a very small buffer, malware can force
+    the execution of its PMI handler after each `sysenter` call and perform another
+    technique, known as `sysenter` hooking, without alerting the PatchGuard protection
+    and without the need to do API hooking.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now, we will take a look at how to analyze rootkits and, in particular, how
+    to dynamically analyze rootkits.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Static and dynamic analysis in kernel mode
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Once we know how rootkits work, it becomes possible to analyze them. The first
+    thing worth mentioning is that not all kernel-mode malware families just hide
+    the presence of actual payloads – some of them can perform malicious actions on
+    their own as well. In this section, we will familiarize ourselves with tools that
+    can facilitate rootkit analysis to understand malware functionalities and learn
+    some particular usage-related nuances.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Static analysis
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: It always makes sense to start from static analysis, especially if the debugging
+    setup is not available straight away. In some cases, it is possible to perform
+    both static and dynamic analysis using the same tools.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Rootkit file structure
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Rootkit samples are usually drivers that implement the traditional MZ-PE structure
+    with the `IMAGE_SUBSYSTEM_NATIVE` value specified in the subsystem field of the
+    `IMAGE_OPTIONAL_HEADER32` structure. They use the usual x86 or x64 instructions
+    that we are already familiar with. Thus, any tool (excluding user-mode debuggers
+    such as OllyDbg) that supports them should handle rootkits without any major problems.
+    Examples of them include tools such as IDA, radare2, and many others. Additionally,
+    IDA plugins such as **win_driver_plugin** and **DriverBuddy** can be very useful
+    for auxiliary operations, such as decoding the IOCTL codes involved.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Analysis workflow
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'Once the sample is open, the first step is to track down `DriverObject`, which
+    is provided as the first argument of the main function (through the stack for
+    32-bit systems and the `rcx` register for 64-bit systems). In this way, we can
+    monitor whether any of the major functions are defined by malware. This object
+    implements the `_DRIVER_OBJECT` structure with a list of major functions located
+    at the end of it. The corresponding structure member is as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: In assembly, they will likely be accessed by offsets and can easily be mapped
+    by applying this structure.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Additionally, it is worth checking whether any completion routine is specified
+    using the `IoSetCompletionRoutine` API.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Then, we need to search for the presence of instructions that allow us to disable
+    security measures such as the previously mentioned write protection, which involves
+    using the `CR0` register. In this way, it becomes possible to easily identify
+    the exact location in the code where this functionality is implemented.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Following this, we need to keep track of the crucial import functions we've
+    already discussed, which are most commonly used by rootkits, and check the corresponding
+    argument strings to learn their purpose. Are there any devices malware attaches
+    to? Is there any process or filename mentioned there? Once all these questions
+    have been answered, it becomes possible to figure out the rootkit's goal.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Finally, if import functions are resolved dynamically, it makes sense to restore
+    them before continuing the analysis. Generally, this can be done either by scripting
+    or with the help of dynamic analysis.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Dynamic and behavioral analysis
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: The dynamic analysis of kernel-mode threats is a trickier part here because
+    it is performed on a low level, and any mistake may result in a system crash.
+    Therefore, it is highly recommended to perform it on **virtual machines** (**VMs**)
+    so that the debugging state can be quickly restored to the previous state. Another
+    option is to use a separate machine that is attached using a serial port. However,
+    in this case, it generally takes more effort to restore the previous debugging
+    state.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Debuggers
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'When we talk about dynamic analysis, the main group of tools we are referring
+    to is debuggers. The most popular debuggers are as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`.`"), and extension commands (the ones that start with "`!`"). Here are some
+    of the most common commands that are used when performing rootkit analysis:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`?`: This is used to display regular commands.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`.help`: This is used to display meta-commands.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`.hh`: This is used to open the documentation for the specified command.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`bp`, `bu`, and `ba`: These are used to set breakpoints, including the usual
+    breakpoint, the unresolved breakpoint (this is activated once the module is loaded),
+    and the breakpoint on access.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`bl`, `bd`, `be`, and `bc`: These are used to list, disable, enable, and clear
+    breakpoints, respectively.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`g`, `p`, and `t`: These commands refer to go (continue execution), single
+    step, and single trace, respectively.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`d` and `u`: These commands display memory and disassembled instructions, respectively.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`e`: This is used to enter specified values into memory (that is, edit memory).'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`dt`: This is used to parse and describe data types. For example, `dt ntdll!_PEB`
+    will display the PEB structure with offsets, field names, and data types.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`r`: This allows you to display or modify registers. Here, `r eip=<val>` can
+    be used to change the instruction pointer.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`x`: This is used to list symbols that match the pattern; for example, `x ntdll!*`
+    will list all symbols from `ntdll`.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`lm`: This is used to list modules; it works by displaying a list of loaded
+    drivers and their corresponding memory ranges.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`!dh`: This is a dump header command; it can be used to parse and display the
+    MZ-PE header by ImageBase.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`!process`: This displays various pieces of information about the specified
+    process, including the PEB address. For example, `!process 0 0 lsass.exe` will
+    display basic information about `lsass.exe`, and the 7 flag can be used to display
+    full details, including TEB structures.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`.process`: This command sets the process context. For example, `.process /i
+    <PROCESS>` (where the `<PROCESS>` value can be taken from the output of the `!process`
+    command that was previously mentioned) followed by `g` and `.reload /user` allows
+    you to switch to the debugging of the specified process.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`!peb`: This parses and displays the PEB structure of the specified process.
+    This command can help you switch to the process context using the `.process` command
+    first.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`!teb`: This parses and displays the specified TEB structure.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`.shell`: This allows you to use Windows console commands from WinDbg. For
+    example, `.shell -ci "<windbg_command>" findstr <value>` will allow you to parse
+    the output of executed commands.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`.writemem`: This dumps memory to a file.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**IDA**: While unable to debug kernel-mode code on its own, this can be used
+    as a UI for WinDbg. In this way, it can allow you to store all markup from the
+    static analysis and debug code in the same place.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**radare2**: Same as IDA, this tool can be used on top of WinDbg with a dedicated
+    plugin.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**SoftICE (obsolete)**: This was once one of the most popular tools for performing
+    low-level dynamic analysis on Windows. At the time of writing, the tool is obsolete
+    and doesn''t support new systems.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Apart from this, there are several other kernel-mode debuggers, such as **Syser**,
+    **Rasta Ring 0 Debugger** (**RR0D**), **HyperDbg**, and **BugChecker**, that don't
+    appear to be maintained anymore.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Monitors
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'These tools are supposed to give us insight into various objects and events
+    associated with kernel mode:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**DriverView**: This is a tool developed by NirSoft; it allows you to quickly
+    get a list of loaded drivers and their location in memory.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**DebugView**: This is a Sysinternals tool that allows you to monitor the debugging
+    output from both user and kernel mode.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**WinObj**: This is another useful tool from Sysinternals that can present
+    a list of various system objects relevant to kernel-mode debugging, such as devices
+    and drivers.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Using them may give you a quick insight into the current global state of the
+    system.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Rootkit detectors
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'This group of tools checks for the presence of techniques commonly used by
+    rootkits in the system and provides detailed information. They are very useful
+    for behavioral analysis to confirm that the sample has been loaded properly. Additionally,
+    they can be used to determine the functionality of the sample relatively quickly.
+    Some of the most popular tools are as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**GMER**: This powerful tool supports multiple rootkit patterns and provides
+    relatively detailed technical information. It can search for various hidden artifacts,
+    such as processes, services, files, registry keys, and more. Additionally, it
+    features the rootkit removal tool.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**RootkitRevealer**: This is another advanced rootkit detection tool, this
+    time from Sysinternals. Unlike GMER, its output is less technical, and it hasn''t
+    been updated for a while.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Other rootkit detection tools (now discontinued) include **Rootkit Unhooker**,
+    **DarkSpy**, and **IceSword**.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Apart from these, multiple rootkit removal tools are being developed by antivirus
+    vendors; however, they generally don't provide enough information to technically
+    analyze the threat.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Setting up a testing environment
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'There are several options available for performing kernel-mode debugging:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**The debugger client is running on the target machine**: An example of such
+    a setup is WinDbg or the KD debugger, utilizing local kernel debugging or working
+    together with the **LiveKd** tool. This approach doesn''t require an engineer
+    to set up a remote connection, but not all the commands will be available in this
+    case.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**The debugger client is running on the host machine**: Here, the virtual or
+    another physical machine is used to execute a sample, and all the debugging tools
+    with the result of your work in the form of markup are stored outside of it. This
+    approach may take slightly more time to set up, but it is generally recommended
+    as it will save lots of time and effort later.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**The debugger client is running on the remote machine**: This setup is not
+    commonly used; the idea here is that the host machine is running a debugging server
+    that can interact with the target machine, and the engineer connects to this server
+    remotely from a third machine. This technique is called remote debugging by Microsoft.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'The exact way to set up a connection between host and target machines may vary,
+    depending on the engineer''s preferences. Generally, this is done either through
+    a network or through cables. For VMs, it is commonly done by mapping a serial
+    port to the pipe; for example, if the **COM1** port is being used, you would follow
+    these steps:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: In VMWare, go to `\\.\pipe\<any_pipe_name>`. In the remaining options, choose
+    **This end is the server** and **The other end is an application**, and then tick
+    the **Yield CPU on poll** checkbox.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 'In VirtualBox, open the VM''s settings and go to the `\\.\pipe\<any_pipe_name>`:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '![Figure 7.22 – VirtualBox setup for kernel-mode debugging over the COM port'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_7.22_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 7.22 – VirtualBox setup for kernel-mode debugging over the COM port
+  prefs: []
+  type: TYPE_NORMAL
+- en: Remote debugging via a network is also possible, but in this case, the guest
+    and the host machines should share a network connection, which may not always
+    be desirable.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Apart from this, to be able to perform kernel-mode debugging, it should also
+    be explicitly allowed by the target system. Perform the following steps to do
+    so:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'On a modern Windows OS, run a standard `bcdedit` tool as an administrator and
+    type the following command:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE11]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: 'If local kernel debugging is being used, execute the following command:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE12]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: 'Alternatively, if a serial port is being used, execute the following command
+    instead (for COM1):'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE13]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: 'If you want to keep the original boot settings as well, you can create a separate
+    entry, as follows:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE14]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: 'Then, you can take the generated `<guid>` value and use it to apply the required
+    settings to the new entry:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE15]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: 'On an older OS, such as Windows XP, it is possible to enable kernel-mode debugging
+    by duplicating the default boot entry in the `boot.ini` file with a new display
+    name and adding the `/debug` argument. It can also be combined with setting up
+    a debug port by adding the `/debugport=com1 /baudrate=115200` argument. The resulting
+    entry will be as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE16]'
+  prefs: []
+  type: TYPE_PRE
+- en: Make sure that the system location specified matches the one used in the original
+    entry.
+  prefs: []
+  type: TYPE_NORMAL
+- en: After this, it is necessary to restart the machine and choose the newly added
+    option during the bootup process. This step can also be done later, after disabling
+    the security checks.
+  prefs: []
+  type: TYPE_NORMAL
+- en: If it is necessary to set up network debugging or use Hyper-V machines, always
+    follow the most recent official Microsoft documentation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Setting up the debugger
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Now, we can run the debugger and check that everything works as expected. If
+    local debugging is being used, it can be done by executing WinDbg as an administrator
+    using the following command line:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE17]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'For debugging over a serial port, it is possible to specify the port and the
+    baud rate using the `_NT_DEBUG_PORT` and `_NT_DEBUG_BAUD_RATE` environment variables
+    or using the right command-line arguments. For the COM port, this will look as
+    follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE18]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'It is also possible to do this from the GUI using **File** | **Kernel Debug...**:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 7.23 – Kernel-mode debugging with VirtualBox and WinDbg over the COM
+    port'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_7.23_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 7.23 – Kernel-mode debugging with VirtualBox and WinDbg over the COM
+    port
+  prefs: []
+  type: TYPE_NORMAL
+- en: Don't forget to restart the guest machine afterward.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Another option here is to use a separate **VirtualKD** project, which is aimed
+    at improving kernel debugging performance if VMWare or VirtualBox VMs are being
+    used. Follow the official installation documentation to make sure it is working
+    as expected.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'If you are using a combination of IDA and WinDbg, then it can be set up in
+    the following way:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: It is better to make sure that the correct path to WinDbg is specified in the
+    `PATH` environment variable or the `%IDA%\cfg\ida.cfg` file (the `DBGTOOLS` variable).
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: For kernel-mode debugging, it is often recommended to use the 32-bit version
+    of WinDbg; double-check which version is being used in IDA's **Output** window.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Open the IDA instance, don't open any files, but select the **Go** quick start
+    option.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 'Go to **Debugger** | **Attach** | **Windbg debugger** and specify the following
+    connection string, with the pipe name matching the one used in the VM:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE19]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: Then, in the same dialog window, go to **Debug options** | **Set specific options**
+    and select the **Kernel mode debugging with reconnect and initial break** option
+    (reconnect is optional, but it should match the value specified in the connection
+    string).
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 'Once confirmed, the following dialog window will appear:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 7.24 – The IDA attaching to the Windows kernel on a target machine'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_7.24_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 7.24 – The IDA attaching to the Windows kernel on a target machine
+  prefs: []
+  type: TYPE_NORMAL
+- en: Press **OK**. The debugger will break in the kernel and the WINDBG command line
+    will become available at the bottom of the window.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Add the kernel mode-related type libraries (usually, they have `ddk` or `wdk`
+    in their names) in **View** | **Open subviews** | **Type libraries** (you can
+    also use the *Shift* + *F11* keyboard shortcut) to get access to multiple standard
+    enums and structures.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 'Once we''ve made sure that the debugger executes successfully, it is necessary
+    to set up symbol information so that standard Windows names can be used in various
+    WinDbg commands. To do this, execute the following command in the WinDbg console:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE20]'
+  prefs: []
+  type: TYPE_PRE
+- en: In the WinDbg GUI, this can be specified in the `-y` command-line argument.
+    Additionally, it is possible to set it in the `_NT_SYMBOL_PATH` environment variable.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'If the target and host machines don''t have internet access, then symbols can
+    also be downloaded from another computer using a symbol manifest file created
+    on the target machine. To do this, perform the following steps:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'On the target machine, execute the following command:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE21]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: The `ntkrnlpa.exe` can be used instead of `ntoskrnl.exe`. The last argument,
+    `/s`, aims to avoid name resolution delays.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Important Note
+  prefs: []
+  type: TYPE_NORMAL
+- en: Some WinDbg versions have a bug that results in the output file being empty.
+    In this case, try a different version of it.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Move the created `manifest.txt` file to the machine that has internet access.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 'Run the following command:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE22]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: 'Once this is done, the downloaded symbols can be moved to the host machine
+    and used for debugging purposes:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE23]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: Keep in mind that if you update the target machine, the symbols may become invalid,
+    and the process should be repeated.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Stopping at the driver's entry point
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Now, we should set up a debugger to intercept the moment the driver code gets
+    executed so that we can get control over it immediately once it starts. In most
+    cases, we don''t have symbol information for the analyzed sample, so we can''t
+    use common WinDbg commands such as `bp <driver_name>!DriverEntry` to stop at the
+    driver''s entry point. There are several other ways this can be done, as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**By setting unresolved breakpoints**: The following command can be used to
+    set a breakpoint that will trigger once the module is loaded:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[PRE24]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: Even though the debugger doesn't stop exactly at the entry point here, it is
+    possible to reach it manually after the first stop. To do this, take the base
+    of the driver from the console output window, add the entry point's offset to
+    it, and then set a breakpoint for the result address. Then, remove or disable
+    the previous breakpoint and continue execution.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**By breaking on the module load**: The following command allows you to intercept
+    all new modules being loaded (a colon or space can be used):'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[PRE25]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: 'Here is how it will look in the debugger:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 7.25 – Breaking when a particular module is loading'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_7.25_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 7.25 – Breaking when a particular module is loading
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Once the debugger breaks, it is possible to set a breakpoint on the driver''s
+    entry point and continue to make the execution stop there:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 7.26 – Setting a breakpoint on the driver''s entry point'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_7.26_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 7.26 – Setting a breakpoint on the driver's entry point
+  prefs: []
+  type: TYPE_NORMAL
+- en: In IDA, when working with WinDbg, this can be achieved globally for all modules
+    by going to **Debugger** | **Debugger options...** and enabling the **Suspend
+    on library load/unload** option.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`IopLoadDriver` API transfers control to the driver. It will be slightly different
+    for different versions of Windows, and it can be found using the following commands:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[PRE26]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: 'Once the offset has been found (it will look like `nt!IopLoadDriver+N`), it
+    is possible to set a breakpoint at this address and intercept all moments when
+    the system transfers control to the newly loaded drivers. The good thing is that
+    it can be reused multiple times until the system receives an update changing it:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 7.27 – Intercepting the moment when the system transfers control to
+    the loaded driver'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_7.27_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 7.27 – Intercepting the moment when the system transfers control to the
+    loaded driver
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`int 3` instruction representing a software breakpoint), recalculate the checksum
+    field in its header (in the **Hiew** editor, this can be done by selecting this
+    field in the header, pressing *F3* once to recalculate it, and then *F9* to save
+    the changes), and load it. The debugger will break at this instruction, so it
+    becomes possible to restore the modified value to the original one. Usually, the
+    modified instruction won''t be executed after patching. This means that it is
+    necessary to do a single step, make sure that it didn''t work, return the IP register
+    to the changed instruction, and only then continue the analysis as usual.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: This approach generally takes more time and will also break the driver's signature,
+    but it can still be used if necessary.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Loading the driver
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: You aren't allowed to load unsigned drivers on modern 64-bit Windows systems
+    or 32-bit systems with Secure Boot turned on. If the sample driver is not signed,
+    it generally makes sense to figure out the way it is being executed in the wild
+    (for example, by abusing other legitimate drivers) and reproduce it. In this way,
+    we can guarantee that malware will behave exactly as expected.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Alternatively, it is possible to disable system security mechanisms. The most
+    reliable way to temporarily disable it is by going to the advanced options for
+    the booting process and selecting the `bcdedit.exe /set testsigning on` command
+    is not recommended for analysis as it still requires the driver to be correctly
+    signed by some certificate.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Now, it is time to load the analyzed driver. This can also be done straight
+    from the Windows console using the standard `sc` functionality:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE27]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'An example of the preceding code block is as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 7.28 – Loading a custom driver using the sc tool'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_7.28_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 7.28 – Loading a custom driver using the sc tool
+  prefs: []
+  type: TYPE_NORMAL
+- en: Notice the spaces after the `type=` and `binpath=` arguments; they are important
+    to make things work as expected.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Restoring the debugging state
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'If IDA is being used, the problem that many engineers face when they load the
+    driver again is that its base address changes in memory, so IDA can''t apply existing
+    markup to it. One option here is to save the markup in IDC files and create a
+    script that will remap all the addresses according to the new locations. However,
+    there is a better way to organize this: it is recommended to make VM snapshots
+    with debugging states and then reconnect to them with IDA when necessary. In this
+    way, all the addresses are guaranteed to be the same, so the same IDC files can
+    be applied without any changes being required.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Summary
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In this chapter, we familiarized ourselves with Windows kernel mode and learned
+    how requests are passed from user mode to kernel mode and back again. Then, we
+    discussed rootkits, what parts of this process may be targeted by them, and for
+    what reason. We also covered various techniques that are implemented in modern
+    rootkits, including how existing security mechanisms can be bypassed by malware.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Finally, we explored the tools that are available to perform static and dynamic
+    analysis of kernel-mode threats, learned how to set up a testing environment,
+    and summarized generic guidelines that can be followed when performing the analysis.
+    By completing this chapter, you should have a strong understanding of how advanced
+    kernel-mode threats work and how they can be analyzed using various tools and
+    approaches.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In [*Chapter 8*](B18500_08.xhtml#_idTextAnchor811), *Handling Exploits and Shellcode*,
+    we will explore the various types of exploits and learn how legitimate software
+    can be abused to let attackers perform malicious actions.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Part 3 Examining Cross-Platform and Bytecode-Based Malware
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Being able to support multiple platforms using the same source code is always
+    preferred by both attackers looking to infect as many users as possible and those
+    specializing in targeted attacks. Consequently, multiple cross-platform malware
+    families have appeared over the last several years, creating a need for engineers
+    who know how to analyze them. By going through this section, you will learn about
+    the specifics of cross-platform malware and will get a hands-on understanding
+    of how to deal with them.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In this section are the following chapters:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[*Chapter 8*](B18500_08.xhtml#_idTextAnchor811)*, Handling Exploits and Shellcode*'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[*Chapter 9*](B18500_09.xhtml#_idTextAnchor946)*, Reversing Bytecode Languages
+    – .NET, Java, and More*'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[*Chapter 10*](B18500_10.xhtml#_idTextAnchor1106)*, Scripts and Macros – Reversing,
+    Deobfuscation, and Debugging*'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL

@@ -1,0 +1,1105 @@
+- en: Parsing Text Files
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Text files, usually sourced from application or service logs, are common sources
+    for artifacts in digital investigations. Log files can be quite large or contain
+    data that makes human review difficult. A manual examination can devolve into
+    a series of grep searches, which may or may not be fruitful; additionally, prebuilt
+    tools may not have support for a specific log file format. For these instances,
+    we will need to develop our own solution to properly parse and extract the relevant
+    information. In this chapter, we will analyze the `setupapi.dev.log` file, which
+    records device information on Windows machines. This log file is commonly examined,
+    as it can extract the first connection time of USB devices on the system.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We will step through several iterations of the same code through this chapter.
+    Though redundant, we encourage writing out each iteration for yourself. By rewriting
+    the code, we will progress through the material together and find a more fitting
+    solution, learn about bug handling, and implement efficiency measures. Please
+    rewrite the code for yourself and test each iteration to see the changes in the
+    output and code handling.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In this chapter, we will be covering the following topics:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Identifying repetitive patterns in this log file for USB device entries
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Extracting and processing artifacts from text files
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Iteratively improving our script design and features
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Enhancing the presentation of data in a deduplicated and readable manner
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The code for this chapter is developed and tested using Python 2.7.15 and Python
+    3.7.1.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Setup API
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The `setupapi.dev.log` file is a Windows log file that tracks connection information
+    for a variety of devices, including USB devices. Since USB device information
+    generally plays an important role in many investigations, our script will help
+    identify the earliest installation time of a USB device on a machine. This log
+    is system-wide, not user-specific, and therefore provides only the installation
+    time of a USB device's first connection to the system. In addition to logging
+    this timestamp, the log contains the **vendor ID** (**VID**), **product ID** (**PID**),
+    and the serial number of the device. With this information, we can paint a better
+    picture of removable storage activity. On Windows XP, this file can be found at
+    `C:\Windows\setupapi.log`; on Windows 7 through 10, this file can be found at
+    `C:\Windows\inf\setupapi.dev.log`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Introducing our script
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In this section, we will build our `setupapi_parser.py` to parse the `setupapi.dev.log`
+    file on Windows 7\. Equipped with only modules from the standard library, we will
+    open and read a `setupapi.log` file, identify and parse relevant USB information,
+    and display it to the user in the console. As mentioned in the introduction, we
+    will use an iterative build process to mimic a natural development cycle. Each
+    iteration will build upon the previous while we explore new features and methods.
+    We encourage the development of additional iterations, and there are challenges
+    at the end of this chapter to compliment this.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Overview
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Before developing any code, let''s identify the requirements and features our
+    script must possess to accomplish the desired task. We will need to execute the
+    following steps:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Open the log file and read all lines
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: In each line, check for indicators of a USB device entry
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Parse responsive lines for timestamp and device information
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Output the result to the user
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 'Now, let''s examine the log file of interest to determine repetitive structures
+    that we can use as footholds in our script to parse the relevant data. In the
+    following sample USB entry, we can see the device information on line 1 following
+    the text `Device Install (Hardware initiated)`. This device information contains
+    the VID, PID, device revision, and the unique ID of the device. Each of these
+    elements is separated by either a `&` or `_` character and may contain some additional
+    inconsequential characters. The installation time is recorded on line 2, following
+    the `Section start` text. For our purposes, we are only interested in these two
+    lines. All other surrounding lines will be ignored, as they relate to operating
+    system driver information:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: Our first iteration – setupapi_parser_v1.py
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The goal of our first iteration is to develop a functional prototype that we
+    will improve upon in later iterations. We will continue to see the following code
+    block in all our scripts, which provides basic documentation about the script
+    and support for printing information (line 2) and opening files (line 3) in both
+    version 2 and 3 of Python. The following is the licensing information and basic
+    script descriptors that can be found in all of our scripts:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Our script involves three functions, which are outlined as follows. The `main()`
+    function kicks off the script by calling the `parse_setupapi()` function. This
+    function reads the `setupapi.dev.log` file and extracts the USB device and first
+    installation date information. After processing, the `print_output()` function
+    is called with the extracted information. The `print_output()` function takes
+    the extracted information and prints it to the user in the console. These three
+    functions work together to allow us to segment our code based on operations:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: To run this script, we need to provide some code that calls the `main()` function.
+    The following code block shows a Python feature that we will use in almost every
+    one of our scripts throughout this book. This section of code will become more
+    complex throughout this chapter, as we will be adding the ability to allow users
+    to control input, output, and provide optional arguments.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Line 82 is simply an `if` statement that checks to see if this script is called
+    from the command line. In more detail, the `__name__` attribute allows Python
+    to tell us what function called the code. When `__name__` is equivalent to the
+    `__main__` string, it indicates that it is the top-level script, and is therefore
+    likely to be executed at the command line. This feature is especially important
+    when designing code that may be called by another script. Someone else may import
+    your functions into their code, and without this condition, it will likely result
+    in our script immediately running when imported. We have the following code:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'As we can see in the following flowchart, the trunk function (our script as
+    a whole) calls the `main()` function, which in turn calls `parse_setupapi()`,
+    which finally calls the `print_output()` function:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/7f8802db-8038-41d3-9d2e-1100d3445b8b.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Designing the main() function
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The `main()` function, defined on line 39, is fairly straightforward in this
+    scenario. This function handles initial variable assignments and setup before
+    calling `parse_setup()`. In the following code block, we create a docstring, surrounded
+    with three double quotes where we document the purpose of the function, along
+    with the data returned by it, as shown on lines 40 through 43\. Pretty sparse,
+    right? We''ll enhance our documentation as we proceed as things might change drastically
+    this early in development:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'After the docstring, we hardcode the path to the `setupapi.dev.log` file on
+    line 45\. This means that our script can only function correctly if a log file
+    with this name is located in the same directory as our script:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'On lines 48 through 50, we print our script information, including name and
+    version, to the console, which notifies the user that the script is running. In
+    addition, we print out 22 equal signs to provide a visual distinction between
+    the setup information and any other output from the script:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Finally, on line 51, we call our next function to parse the input file. This
+    function expects a `str` object that represents the path to the `setupapi.dev.log`.
+    Though it may seem to defeat the purpose of a `main()` function, we will place
+    the majority of the functionality in a separate function. This allows us to reuse
+    code that''s dedicated to the primary functionality in other scripts and for the
+    `main()` function to act more as a primary controller. An example of this will
+    be shown in the final iteration of this code. See the following line of code:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: Crafting the parse_setupapi() function
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The `parse_setupapi()` function, defined on line 54, takes a string input that
+    represents the full path to the Windows 7 `setupapi.dev.log` file, as detailed
+    by the docstring on lines 55 through 59\. On line 60, we open the file path provided
+    by the `main()` function and read the data into a variable named `in_file`. This
+    open statement didn''t specify any parameters, so it uses default settings that
+    open the file in read-only mode. This mode prevents us from accidentally writing
+    to the file. In fact, trying to `write()` to a file that''s been opened in read-only
+    mode results in the following error and message:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: Although it does not allow writing to the file, working off a copy of the source
+    evidence or the use of write-blocking technology should be used when handling
+    digital evidence.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'If there is any confusion regarding files and their modes, refer to [Chapter
+    1](8764f55f-76ef-4890-afbd-2fd1b6d39210.xhtml), *Now for Something Completely*
+    *Different*, for additional information. See the following code:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'On line 61, we read each line from the `in_file` variable into a new variable
+    named `data` using the file object''s `readlines()` method. This method returns
+    a list where each element represents a single line in the file. Each element in
+    the list is the string of text from the file delimited by the newline (`\n` or
+    `\r\n`) character. At this newline character, the data is broken into a new element
+    and fed as a new entry into the data list:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'With the content of the file stored in the variable data, we begin a `for`
+    loop to walk through each individual line. This loop uses the `enumerate()` function,
+    which wraps our iterator with a counter that keeps track of the number of iterations.
+    This is desirable because we want to check for the pattern that identifies a USB
+    device entry, then read the following line to get our date value. By keeping track
+    of what element we are currently processing, we can easily pull out the next line
+    we need to process with *data [n + 1]*, where *n* is the enumerated count of the
+    current line being processed:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE11]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Once inside the loop, on line 64, we evaluate whether the current line contains
+    the string `device install (hardware initiated)`. To ensure that we don''t miss
+    valuable data, we will make the current line case insensitive by using the `.lower()`
+    method to convert all characters in the string to lower case. If responsive, we
+    execute lines 65 through 67\. On line 65, we use the current iteration count variable,
+    `i`, to access the responsive line within the data object:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE12]'
+  prefs: []
+  type: TYPE_PRE
+- en: After accessing the value, we call the `.split()` method on the string to split
+    the values on the dash (`-`) character. After splitting, we access the second
+    value in the split list and feed that string into the `strip()` function. The
+    `.strip()` function, without any provided values, will strip whitespace characters
+    on the left and right ends of the string. We process the responsive line so that
+    it only contains USB identifying information.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The following is a log entry prior to processing with line 65:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE13]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The following is the log entry after processing:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE14]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'After converting the first line from the `setupapi.dev.log` USB entry, we then
+    access the data variable on line 66 to obtain the date information from the following
+    line. Since we know the date value sits on the line after the device information
+    data, we can add one to the iteration count variable, `i`, to access that next
+    line and get the line that contains the date. Similarly to device line parsing,
+    we call the `.split()` function on the `start` string and extract the second element
+    from the split that represents the date. Before saving the value, we need to call
+    `.strip()` to remove whitespaces on both ends of the string:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE15]'
+  prefs: []
+  type: TYPE_PRE
+- en: This process removes any other characters besides the date.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The following is a log entry prior to processing with line 66:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE16]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The following is the log entry after processing:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE17]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'On line 67, we pass our extracted `device_name` and `date` values to the `print_output()`
+    function. This function is called repeatedly for any responsive lines found in
+    the loop. After the loop completes, the code on line 68 executes, which closes
+    the `setupapi.dev.log` file that we initially opened, releasing the file from
+    Python''s use:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE18]'
+  prefs: []
+  type: TYPE_PRE
+- en: Developing the print_output() function
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The `print_output()` function defined on line 71 allows us to control how the
+    data is displayed to the user. This function requires two strings as input that
+    represent the USB name and date, as defined by the docstring. On line 78 and 79,
+    we print the USB data using the `.format()` method. As discussed in [Chapter 1](8764f55f-76ef-4890-afbd-2fd1b6d39210.xhtml),
+    *Now for Something Completely Different*, this function replaces the curly brackets
+    (`{}`) with the data provided in the method call. A simple example like this doesn''t
+    show off the full power of the `.format()` method. However, this function can
+    allow us to perform complex string formatting with ease. After printing the input,
+    execution returns to the called function where the script continues the next iteration
+    of the loop, as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE19]'
+  prefs: []
+  type: TYPE_PRE
+- en: Running the script
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'We now have a script that takes a `setupapi.dev.log` file, as found on Windows
+    7, and outputs USB entries with their associated timestamps. The following screenshot
+    shows how we can execute the script with a sample `setupapi.dev.log` file, which
+    has been provided in the code bundle. Your output may vary depending on the `setupapi.dev.log`
+    file you use the script on:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/fd0d7ec0-c1ba-472c-b53b-cfb780f8fa95.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Since `setupapi.dev.log` has numerous entries, we have pulled out two additional
+    snippets from our command''s output that focus on USB and USBSTOR devices:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/e0a7af39-e28b-49c8-9e83-af8c7cdd65cf.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Our second snippet shows some details from the USBSTOR entries:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/9f38a21a-037f-423c-b936-0f6172b92655.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Our current iteration seems to generate some false positives by extracting responsive
+    lines that do not pertain solely to USB devices; let's see how we can address
+    that.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Our second iteration – setupapi_parser_v2.py
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: With a functioning prototype, we now have some cleanup work to do. The first
+    iteration was a proof of concept to illustrate how a `setupapi.dev.log` file can
+    be parsed for forensic artifacts. With our second revision, we will clean up and
+    restructure the code so that it will be easier to use in the future. In addition,
+    we will integrate a more robust command-line interface, validate any user-supplied
+    inputs, improve processing efficiency, and display any results in a better format.
+  prefs: []
+  type: TYPE_NORMAL
+- en: On lines 2 through 6, we import the libraries that we will need for these improvements,
+    alongside familiar cross-version support libraries. `argparse` is a library that
+    we discussed at length in [Chapter 2](b09a5e87-9ada-41cb-ba04-bd61c744bf99.xhtml),
+    *Python Fundamentals*, and is used to implement and structure arguments from the
+    user. Next, we import `os`, a library we will use in this script to check the
+    existence of input files before continuing. This will prevent us from trying to
+    process a file that does not exist. The `os` module is used to access common operating
+    system functionality in an operating system agnostic manner. That is to say, these
+    functions, which may be handled differently on other operating systems, are treated
+    the same and share the same module. We can use the `os` module to recursively
+    walk through a directory, create new directories, and change the permissions of
+    an object.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Finally, we import `sys`, which we will use to exit the script in case an error
+    occurs to prevent faulty or improper output. After our imports, we have kept our
+    licensing and documentation variables from before, modifying them to provide details
+    about the second iteration:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE20]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The functions defined in our previous script are still present here. However,
+    these functions contain new code that allows for improved handling and flows logically
+    in a different manner. Designing our code in a modularized manner allows us to
+    repurpose functions in new or updated scripts, limiting the need for a major overhaul.
+    This segmentation also allows for easier debugging when reviewing an error that''s
+    raised within a function:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE21]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The `if` statement serves the same purpose as the prior iteration. The additional
+    code shown within this conditional allows the user to provide input to modify
+    the script''s behavior. In line 106, we create an `ArgumentParser` object with
+    a description, default help formatting, and `epilog` containing author, version,
+    and date information. This, in conjunction with the argument options, allows us
+    to display information about the script that might be helpful to the user when
+    running the `-h` switch. See the following code:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE22]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'After defining the `ArgumentParser` object as `parser`, we add the `IN_FILE`
+    parameter on line 113 to allow the user to specify which file to use for input.
+    Already, this increases the usability of our script by adding flexibility in the
+    input file path rather than hard coding the path. At line 115, we parse any provided
+    arguments and store them in the `args` variable. Finally, we call the `main()`
+    function on line 118, passing a string representing the file location of `setupapi.dev.log` to
+    the function, as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE23]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Note the difference in our flowchart. Our script is no longer very linear.
+    The `main()` function calls and accepts returned data from the `parse_setupapi()`
+    method (indicated by the dashed arrow). The `print_output()` method is called
+    to print the parsed data to the console:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/e552b031-1dd2-4f20-b4d4-e7760da8efbf.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Improving the main() function
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'On line 42, we define the `main()` function that now accepts a new argument
+    that we will call `in_file`. This argument, as defined by the docstring, is a
+    string path to the `setupapi.dev.log` file to be analyzed:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE24]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'On line 48, we perform a validation of the input file to ensure that the file
+    path and file exists using the `os.path.isfile()` function, which will return
+    `true` if it is a file that''s accessible by the script. As an aside, the `os.path.isdir()`
+    function can be used to perform the same style of validation for directories.
+    These functions work well with string inputs that represent either absolute or
+    relative paths:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE25]'
+  prefs: []
+  type: TYPE_PRE
+- en: If the file path is valid, we print the version of the script. This time, we
+    use the `.format()` method to create our desired string. Let's look at the formatters
+    we've used on lines 49 and 51, starting with a colon to define our specified format.
+    The caret (`^`) symbol indicates that we want to center the supplied object and
+    have the padding to a minimum of 22 characters, using equal signs as padding. For
+    example, the string `Hello World!` would be sandwiched between five equal signs
+    on both sides. In the case of our script, we supply an empty string as the object
+    to format because we only want 22 equal signs to create visual separation from
+    the output.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note that it is simpler to implement the `"=" * 22` logic from the prior iteration
+    and that we have used the `format()` method to provide a demonstration of available
+    features.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'On line 50, the `.format()` method is used to print the script name and version
+    strings, as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE26]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'On line 52, we call the `parse_setupapi()` function and pass the `setupapi.dev.log`
+    file, which we know is available. This function returns a list of USB entries,
+    with one entry per discovered device. Each entry in `device_information` consists
+    of two elements, that is, the device name, and the associated date value. On line
+    53, we iterate through this list using a `for` loop and feed each entry to the
+    `print_output()` function on line 54:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE27]'
+  prefs: []
+  type: TYPE_PRE
+- en: On line 55, we handle the case where the provided file is not valid. This is
+    a common way to handle errors that have been generated from invalid paths. Within
+    this condition, we print on line 56 that the input is not a valid file.
+  prefs: []
+  type: TYPE_NORMAL
+- en: If we wanted to use a built-in Python `Exception` class, we could raise an IOError
+    and provide a message that the input file is not available at the specified path.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'On line 57, we call `sys.exit()` to quit the program with an error of one.
+    You may place any number here; however, since we defined this as one, we will
+    know where the error was raised at exit:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE28]'
+  prefs: []
+  type: TYPE_PRE
+- en: Tuning the parse_setupapi() function
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The `parse_setupapi()` function accepts the path of the `setupapi.dev.log`
+    file as its only input. Before opening the file, we must initialize the `device_list`
+    variable on line 68 so that we can store extracted device records in a list:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE29]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Starting on line 69, we open the input file in a novel manner; the `with` statement
+    opens the file as `in_file` and allows us to manipulate data within the file without
+    having to worry about closing the file afterward. Inside this `with` loop is a
+    `for` loop that iterates across each line, which provides superior memory management.
+    In the previous iteration, we used the `.readlines()` method to read the entire
+    file into a list by line; though not very noticeable on smaller files, the `.readlines()`
+    method on a larger file would cause performance issues on systems with limited
+    resources:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE30]'
+  prefs: []
+  type: TYPE_PRE
+- en: Within the `for` loop, we leverage similar logic to determine whether the line
+    contains our device installation indicators. If responsive, we extract the device
+    information using the same manner as discussed previously.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'By defining the `lower_line` variable on line 74, we can truncate the remaining
+    code by preventing continuous calls to the `.lower()` method. Please note that
+    lines 73 through 75 reflect one line of wrapped code:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: On line 73, the backslash (`\`) character indicates to Python that it should
+    ignore the newline character and continue reading on the next line. Then, at the
+    end of line 74, we can return to anywhere without the need for the backslash,
+    as our conditional is within parenthesis.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE31]'
+  prefs: []
+  type: TYPE_PRE
+- en: As noted in the first iteration, a fair number of false positives were displayed
+    in our output. That's because this log contains information related to many types
+    of hardware devices, including those interfacing with PCI, and not just USB devices.
+    To remove the noise, we will check to see what type of device it is.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We can split on the backslash character, as shown on lines 78 and 79, to access
+    the first split element of the `device_name` variable and see if it contains the
+    `usb` string. As mentioned in [Chapter 1](8764f55f-76ef-4890-afbd-2fd1b6d39210.xhtml),
+    *Now for Something Completely Different*, we need to escape a single backslash
+    with another backslash so that Python knows to treat it as a literal backslash
+    character. This will respond for devices labeled as USB and USBSTOR in the file.
+    Some false positives will still exist, since mice, keyboards, and hubs will likely
+    display as USB devices; however, we do not want to over-filter and miss relevant
+    artifacts. If we discover that the entry does not contain the `usb` string, we
+    execute the continue statement, telling Python to step through the next iteration
+    of the `for` loop:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE32]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'To retrieve the date, we need to use a different procedure to get the next
+    line since we have not invoked the `enumerate()` function. To solve this challenge,
+    we use the `next()` function on line 87 to step into the next line in the file.
+    We then process this line in the same fashion as we discussed previously:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE33]'
+  prefs: []
+  type: TYPE_PRE
+- en: With the device's name and date processed, we append it to the `device_list`
+    as a tuple, where the device's name is the first value and the date is the second.
+    We need the double parenthesis, in this case, to ensure that our data is appended
+    properly. The outer set is used by the `.append()` function. The inner parentheses
+    allow us to build a tuple and append it as one value. If we did not have the inner
+    parentheses, we would be passing the two elements as separate arguments to the
+    `append()` function instead of a single tuple element. Once all of the lines have
+    been processed in the `for` loop, the `with` loop will end and close the file.
+    On line 90, the `device_list` is returned and the function exits.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE34]'
+  prefs: []
+  type: TYPE_PRE
+- en: Modifying the print_output() function
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'This function is identical to the previous iteration, with the exception of
+    the addition of the newline character `\n` on line 101\. This helps separate entries
+    in the console''s output with an extra space. When iterating through the code,
+    we will find that not all functions need updating to improve the user experience,
+    accuracy, or efficiency of the code. Only by modifying an existing function will
+    some sort of benefit be achieved:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE35]'
+  prefs: []
+  type: TYPE_PRE
+- en: Running the script
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'In this iteration, we address several issues from the proof of concept. These
+    changes include the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The improvement of resource management by iterating through a file rather than
+    reading the entire file into a variable
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The addition of an argument to allow the user to provide the `setupapi.dev.log`
+    file to parse
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The validation of the input file from the user
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The filtering of responsive hits to reduce noise in the output
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Improved formatting of our output for ease of review
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'The following screenshot shows a snippet of the output of our script upon execution:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/a337f4de-28e6-4496-81c2-38c50ec4236b.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Last but not least, we achieved considerable performance improvements over
+    our previous design. The following screenshots display the impact on the machine''s
+    memory utilization. The first iteration is displayed on the left and the second
+    is displayed on the right. The red lines highlight the start and finish time of
+    our script. As we can see, we have reduced our resource utilization by iterating
+    across the lines of the file with the `for` loop over the `readlines()` method.
+    This is a small-scale example of resource management, but a larger input file
+    would have a more dramatic impact on the system:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/c36616f5-d81b-4767-be29-f2a1515bbe22.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Our final iteration – setupapi_parser.py
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In our final iteration, we will continue to improve the script by adding deduplication
+    of processed entries and improving upon the output. Although the second iteration
+    introduced the logic for filtering out non-USB devices, it does not deduplicate
+    the responsive hits. We will deduplicate on the device name to ensure that there
+    is only a single entry per device. In addition, we will integrate our `usb_lookup.py`
+    script from [Chapter 2](b09a5e87-9ada-41cb-ba04-bd61c744bf99.xhtml), *Python Fundamentals*,
+    to improve the utility of our script by displaying USB VIDs and PIDs for known
+    devices.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We had to modify the code in the `usb_lookup.py` script to properly integrate
+    it with the `setupapi` script. The differences between the two versions are subtle
+    and are focused on reducing the number of function calls and improving the quality
+    of the returned data. Throughout this iteration, we will discuss how we have implemented
+    our custom USB VID/PID lookup library to resolve USB device names. On line 4,
+    we import the `usb_lookup` script, as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE36]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'As we can see in the following code block, we have added three new functions.
+    Our prior functions have undergone minor modifications to accommodate new features.
+    The majority of the modifications are in our new functions:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The `parse_device_info()` function is responsible for splitting out the necessary
+    information to look up the VID/PID values online and format the raw strings into
+    a standard format for comparison
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The next function, `prep_usb_lookup()`, prepares and parses the database into
+    a format that supports querying
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The `get_device_names()` function correlates matching device information with
+    the database
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'With these new functions, we provide additional context for our investigators:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE37]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'We will add one argument to our parser before calling the `main()` function.
+    The `--local` argument defined on lines 198 and 199 allow us to specify a local
+    `usb.ids` file that we can use for parsing in an offline environment. The following
+    code block shows our implementation of the arguments, spaced out over several
+    lines to make it easier to read:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE38]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'As with our prior iterations, we have generated a flow chart to map the logical
+    course of our script. Please note that it uses the same legend as our other flow
+    charts, though we omitted the legend due to the width of the graphic. Our `main()`
+    function is executed and makes direct calls to five other functions. This layout
+    builds upon the nonlinear design from the second iteration. In each iteration,
+    we are continuing to add more control within the `main()` function. This function
+    leans on others to perform tasks and return data rather than doing the work itself.
+    This offers a form of high-level organization within our script and helps keep
+    things simple by executing one function after another in a linear fashion:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/5b1debc7-d4f9-4cbd-9fe3-531711b89505.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Extending the main() function
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The `main()` function has remained mostly intact, only adding changes to look
+    up the USB VID and PID information and present a superior output for the end user.
+    One way we are facilitating this lookup is by providing a file path as the `local_usb_ids`
+    parameter, which allows us to use an offline file for our VID/PID lookup database.
+    To cut down on clutter in our output, we have elected to remove the script name
+    and version printing. On line 51, a new function call to `prep_usb_info()` is
+    made to initiate the setup of the VID/PID lookups. Our loop on line 52 has been
+    reconfigured to hand each processed device entry to the `parse_device_info()`
+    function on line 53\. This new function is responsible for reading the raw string
+    from the log file and attempts to split the VID and PID values for lookup:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE39]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The `if` statement on line 54 checks the value of the `parsed_info` variable
+    to ensure that it was parsed correctly and can be compared against our known values.
+    In the case that it is not prepared for this, the information is not queried or
+    printed. See the following code:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE40]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Additional logic on line 57 checks to see whether the `parsed_info` value is
+    not equivalent to `None`. A `None` value is assigned to `parsed_info` if the `parse_device_info()`
+    function discovered that the device was not recorded as a USB, eliminating false
+    positives:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE41]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Finally, on line 59, we print to the console that we have completed parsing
+    the log file. On lines 62 through 65, we address the situation where the `setupapi.dev.log`
+    is not valid or accessible by our script and notify the user of the situation
+    before exiting. The message that is printed before exiting the script is more
+    detailed than in previous iterations. The more details we can provide to our users,
+    especially regarding potential bugs, will improve their capability to determine
+    the error and correct it on their own:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE42]'
+  prefs: []
+  type: TYPE_PRE
+- en: Adding to the parse_setup_api() function
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'This function has minor modifications that are focused on storing unique entries
+    from the log file. We created a new variable named `unique_list` that is a `set`
+    data type on line 76\. Recall that a `set` must consist of hashable and unique
+    elements, making it a perfect fit for this solution. Though it seems duplicative
+    to have a list and set holding similar data, for simplicity of comparison and
+    demonstration, we have created the second variable:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE43]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'On line 79, we convert the line into lowercase to ensure that our comparisons
+    are case-insensitive. At this point, we use the same logic to process the `device_name`
+    and `date` values on lines 83 through 84\. We have moved the code from the second
+    iteration, which verified the device type, into our new `parse_device_info()`
+    function:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE44]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Before we store the `device_name` and `date` information in our `device_list`,
+    we check to ensure that the `device_name` does not already exist in our `unique_list`.
+    If it doesn''t, we add the tuple on line 86, which contains the `device_name`
+    and `date`. Afterward, we prevent that same device from being processed again
+    by adding the entry to our `unique_list`. On line 89, we return our built list
+    of tuples for the next stage of processing:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE45]'
+  prefs: []
+  type: TYPE_PRE
+- en: Creating the parse_device_info() function
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'This function interprets the raw string from the `setupapi.dev.log` and converts
+    it into a dictionary with VID, PID, revision, unique ID, and date values. This
+    is described in the docstring on lines 94 through 98\. After the documentation,
+    we initialize the variables we will use in this function on lines 101 through
+    104\. This initialization provides default placeholder values, which will prevent
+    future issues with the dictionary in scenarios where we cannot assign a value
+    to these variables:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE46]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'After initialization, we split the `device_info` value, which is passed from
+    the `parse_setup_api()` function into segments, using a single backslash as the
+    delimiter. We need to escape this backslash with another to interpret it as a
+    literal backslash character. This split on line 107 separates the device type
+    segment from the string containing the VID and PID information. Following this
+    split, we check to ensure that the device type entry reflects a USB device. If
+    the device is not a USB, we return `None` to ensure that it is not processed further
+    by this function and that we do not attempt to resolve VIDs or PIDs for this device.
+    By adding this logic, we save ourselves from spending additional time and resources
+    processing irrelevant entries:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE47]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Next, we access the second element of the `segments` list, which contains the
+    VID, PID, and revision data, delimited by an ampersand. Using `.split()`, we can
+    access each of these values independently through the `for` loop on line 114\.
+    We convert the line to lower case to allow us to search in a case-insensitive
+    fashion, through a series of conditionals, to determine what each item represents.
+    On line 116, we check each item to see if it contains the keywords `ven` or `vid`.
+    If the line does contain one of these indicators, we split only on the first underscore
+    character (specified by the integer `1` as the second parameter). This allows
+    us to extract the VID from the raw string. Note how we use `lower_item` for our
+    comparisons and the `item` variable for storing values, preserving the original
+    case of our data. This behavior is repeated for the `pid` variable, using the
+    `dev`, `prod`, and `pid` indicators, and the `rev` variable, using the `rev` or
+    `mi` indicators on lines 118 through 122, as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE48]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'After parsing the VID, PID, and revision information, we attempt to extract
+    the unique ID from the segments variable, which is normally the last element in
+    the string. Because the entire line is wrapped in brackets, we strip the closing
+    bracket from the rightmost entry in the segment on line 125\. This removes the
+    bracket, so it will not be included in our unique ID string:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE49]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'On line 127, we use an `if` statement to determine whether the `vid` or `pid`
+    received a value after initialization, and build a dictionary if we collected
+    new information on lines 128 through 132\. If these values were not filled out,
+    we return the original string to allow the output of the entry without the additional
+    formatting, as seen on line 134, to ensure that we are not missing any data due
+    to a formatting error:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE50]'
+  prefs: []
+  type: TYPE_PRE
+- en: Forming the prep_usb_lookup() function
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'In this function, we call out to the `usb_lookup.py` script''s `.get_usb_file()`
+    function. Using the `local_usb_ids` parameter that''s provided, we can confirm
+    whether there is a known `usb.ids` file path that we should use for this lookup,
+    or whether we should reach out to the online resource at [http://linux-usb.org/usb.ids](http://linux-usb.org/usb.ids)
+    to read the known USB information into the `usb_file` variable on line 147\. This
+    database is an open source project that hosts the VID/PID lookup database, allowing
+    users to reference and expand on the database:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE51]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'After downloading or using a local copy, we pass the file object to the `.parse_file()`
+    function to process and then return the USB VID/PID data as a Python dictionary.
+    Instead of creating a new variable for this functionality, we can just place the
+    `return` keyword in front of the function call to immediately pass the value back,
+    as shown on line 148:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE52]'
+  prefs: []
+  type: TYPE_PRE
+- en: Constructing the get_device_names() function
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'This function''s purpose is to pass the VID and PID information into the `usb_lookup`
+    library and return resolved USB names. As defined by the docstring mentioned later,
+    this function takes two dictionaries—the first contains the database of known
+    devices from `prep_usb_lookup()`, and the second contains the extracted device
+    entries from `parse_device_info()`. With this provided data, we will return a
+    dictionary, updated with resolved vendor and product names:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE53]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'This function calls the `usb_lookup.search_key()` function, passing the processed
+    online USB dictionary and a two-element list containing the device''s VID and
+    PID as the first and second element, respectively. The `.search_key()` function
+    returns either a responsive match or the `Unknown` string if no matches are discovered.
+    This data is returned as a tuple and assigned to the `device_name` variable on
+    line 161\. We then split the two resolved values into new keys of our `device_info`
+    dictionary on lines 165 and 166\. Once we have expanded `device_info`, we can
+    return it so that it can be printed to the console. See the following lines:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE54]'
+  prefs: []
+  type: TYPE_PRE
+- en: Enhancing the print_output() function
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'In this function, we have made some adjustments to improve the output to the
+    console. With the addition of the separator defined on 178, we now have a line
+    of 15 dashes visually breaking each entry from the output. As we can see, we have
+    borrowed the same format string from the first iteration to add this break:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE55]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'We have also modified the code to allow additional output for flexible fields.
+    In this function, we need to handle two different data types, tuples and dictionaries,
+    since some entries do not have a resolved vendor or product name. To handle this
+    divide in formats, we must use the `isinstance()` function on line 180 to test
+    the `usb_information` variable data type. If the value is a dictionary, we will
+    print each of the keys and values to the console to display one key-value pair
+    per line on line 182\. This is possible through the combination of the `for` loop
+    on line 181, which uses the `items()` method on a dictionary. This method returns
+    a list of tuples, where the first tuple element is the key and the second is the
+    value. Using this method, we can quickly extract the key-value pairs, as shown
+    on lines 181 and 182:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE56]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'If we need to print a tuple, we use two `print` statements, similar to the
+    output from the prior iteration. Because this data is from a device that could
+    not be parsed, it has a fixed format that is the same as our previous iteration.
+    See the following lines:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE57]'
+  prefs: []
+  type: TYPE_PRE
+- en: Running the script
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'We have come a long way since our first script, as this version now does the
+    following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Provides us with USB device information about the first installation time of
+    a device on Windows 7
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Resolves additional device information using VID and PID data
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Prints output to the console in a format that is legible and informative
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'The following is an example execution of the script and illustration of the
+    output:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/4b5156b8-1b52-4e1c-9d20-b362ab37cdf3.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'The following screenshot has been included to highlight some of our storage
+    devices further down the output:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/47a584bc-cd0b-48bf-bb76-c05874f0d5a5.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Challenge
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: For this chapter, we propose adding support for the Windows XP format of the
+    `setupapi.log`. The user can supply a switch at the command line to indicate which
+    type of log will be processed. For a more difficult task, our script could automatically
+    identify the type of log file by fingerprinting unique structures found only in
+    Windows XP versus the Windows 7 version.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Improving the deduplication process we used in this chapter would be a welcome
+    addition. As we identified, some entries have UID values embedded in the device
+    entry. This value is generally assigned by the manufacturer and could be used
+    to deduplicate the entries. As you may note in the output, the UID can contain
+    extra ampersand characters that may or may not be crucial to the UID structure
+    and suggest their source. By applying some simple logic, possibly in a new function,
+    we can improve deduplication based on UIDs.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Lastly, we can consider our output format. While it is useful to display things
+    in a console-friendly format, we should consider adding support for a CSV or other
+    report. This may be a good feature to revisit after working through the rest of
+    the chapters of this book.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Summary
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In this chapter, you learned how to parse a plain text file using Python. This
+    process can be implemented for other log files, including those from firewalls,
+    web servers, or other applications and services. Following these steps, we can
+    identify repetitive data structures that lend themselves to scripts, process their
+    data, and output results to the user. With our iterative build process, we implemented
+    a test-then-code approach where we built a working prototype and then continually
+    enhanced it into a viable and reliable forensic tool.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In addition to the text format we explored here, some files have a more concrete
+    structure and are stored in a serialized format. Other files, such as HTML, XML,
+    and JSON, file structure data in a manner that can be readily converted into a
+    series of Python objects. The code for this project can be downloaded from GitHub
+    or Packt, as described in the *Preface*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the next chapter, we will explore the methods in Python that we can use to
+    parse, manipulate, and interact with these structured formats.
+  prefs: []
+  type: TYPE_NORMAL

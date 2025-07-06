@@ -1,0 +1,1120 @@
+- en: Uncovering Time
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Timestamps are stored in a wide variety of formats unique to the operating system
+    or application responsible for their generation. In forensics, converting these
+    timestamps can be an important aspect of an investigation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: As an example, we may aggregate converted timestamps and create a combined timeline
+    of events to determine a sequence of actions across mediums. This evaluation of
+    time can help us establish whether actions are within a defined scope and provide
+    insights into the relationship between two events.
+  prefs: []
+  type: TYPE_NORMAL
+- en: To decipher these formatted timestamps, we can use tools to interpret the raw
+    values and convert them into human-readable time. Most forensic tools perform
+    this operation silently as they parse known artifact structures (similarly to
+    how our scripts often parse Unix timestamps).
+  prefs: []
+  type: TYPE_NORMAL
+- en: In some cases, we don't have tools that properly or uniformly handle specific
+    timestamps and will have to rely on our ingenuity to decipher the time value.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We'll use common libraries to interpret timestamps from user input and transform
+    them into the desired formats. Using the TkInter library, we'll design a **Graphical
+    User Interface** (**GUI**) that the user will interface with to display date information.
+    We'll use a Python class to better organize our GUI and handle events such as
+    when a user clicks a button on the GUI.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In this chapter, we''ll build a graphic interface that converts timestamps
+    between machine- and human-readable formats with the help of the following topics:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The creation of cross-platform GUIs in Python
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The conversion of common raw timestamp values between machine- and human-readable
+    formats
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The basics of Python class design and implementation, allowing the flexible
+    addition of more time formats
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The code for this chapter was developed and tested using Python 2.7.15 and Python
+    3.7.1
+  prefs: []
+  type: TYPE_NORMAL
+- en: About timestamps
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Timestamp formats often boil down to two components: a reference point and
+    a convention or algorithm used to represent the amount of time that has passed
+    from the said reference point. Documentation exists for most timestamps and can
+    help us to determine the best means to convert raw time data into a human-readable
+    timestamp.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: As mentioned in the introduction, there is a wide array of timestamp formats,
+    some of which we've already encountered, such as Unix time and Windows FILETIME.
+    This makes the conversion process more difficult as the forensic scripts we develop
+    may need to be prepared to process multiple time formats.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Python has several standard libraries bundled in the distribution that can help
+    us convert timestamps. We've used the `datetime` module before to properly handle
+    time values and store them within a Python object. We'll introduce two new libraries—`time`,
+    which is part of the standard library, and the third-party `dateutil` module.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We can download and install `dateutil` (version 2.7.5) by running `pip install
+    python-dateutil==2.7.5`. This library will be used to parse strings into `datetime`
+    objects. The `parser()` method from the `dateutil` library takes a string as input
+    and attempts to automatically convert it into a `datetime` object. Unlike the
+    `strptime()` method, which requires explicit declaration of the format of the
+    timestamp, the `dateutil.parser` converts timestamps of varying formats without
+    requiring input from the developer.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'An example string could be `Tuesday December 8th, 2015 at 6:04 PM` or `12/08/2015
+    18:04`, and both would be converted by the `parser()` method into the same `datetime`
+    object. The following code block demonstrates this functionality, and works in
+    both Python 2.7.15 and Python 3.7.1:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: On the first line of the code block, we import the `dateutil` parser and create
+    an alias, `duparser`, as the function name parser is a generic term that could
+    possibly collide with another variable or function. We then call the `parse()`
+    method and pass a string representing a timestamp. Assigning this parsed value
+    to the variable, `d`, we view its ISO format using the `isoformat()` function.
+    We repeat these steps with a second timestamp in a different format and observe
+    the same end result.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Please refer to the documentation for additional details on the `parse()` method
+    at [http://dateutil.readthedocs.org/en/latest/parser.html](http://dateutil.readthedocs.org/en/latest/parser.html).
+  prefs: []
+  type: TYPE_NORMAL
+- en: What's an epoch?
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: An *epoch* is a point in time, marked as the origin of time for a given time
+    format, and is usually used as a reference point to track movement through time.
+    While we'll omit any philosophical discussion associated with measuring time,
+    we'll use and reference an epoch as the starting point for a given time format
+    in this chapter.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'There''re two major epoch times associated with most timestamps: `1970-01-01
+    00:00:00` and `1601-01-01 00:00:00`. The first, starting in 1970, is traditionally
+    referred to as POSIX time as it''s a common timestamp in Unix and Unix-like systems.
+    In most Unix systems, timestamps are measured as seconds elapsed since POSIX time.
+    This carries over to some applications as well, and variations exist that use
+    milliseconds since the same epoch.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The second noted epoch, based in 1601, is commonly found on Windows-based systems
+    and is used because it was the start of the first 400-year cycle of the Gregorian
+    calendar to include leap years. The 400-year cycle starting in 1601 is the first
+    cycle where digital files existed, and so this value became another common epoch.
+    It's common to see Windows system timestamps as a count of 100-nanosecond segments
+    since that epoch. This value will often be stored in hex or as an integer.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The next code block describes the process used to convert timestamps of different
+    epochs. As we've seen in previous chapters, we can use the `datetime` module's
+    `fromtimestamp()` method to convert Unix timestamps because it uses the 1970 epoch.
+    For 1601-based timestamps, we'll need to convert them before using the `fromtimestamp()`
+    function.
+  prefs: []
+  type: TYPE_NORMAL
+- en: To make this conversion easier, let's calculate the constant between these dates
+    and use that constant to convert between the two epochs. On the first line, we
+    import the `datetime` library. Next, we subtract the two timestamps to determine
+    the time delta between `1970-01-01` and `1601-01-01`. This statement produces
+    a `datetime.timedelta` object, which stores the difference in time as a count
+    of days, seconds, and microseconds between the two values.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In this instance, the difference between the 1970 and 1601 timestamps is exactly
+    134,774 days. We need to convert this into a microsecond timestamp to be able
+    to accurately leverage it in our conversions. Therefore, in the third line, we
+    convert the count of days (`time_diff.days`) into microseconds by multiplying
+    it by `86400000000` (the product of *24 hours x 60 minutes x 60 seconds x 1,000,000
+    microseconds*) and print the constant value of `11644473600000000`. Take a look
+    at the following code:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: With this value, we can convert timestamps between both epochs and properly
+    ingest 1601-based epoch timestamps.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Using a GUI
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In this chapter, we'll use a GUI to convert timestamps between raw and human-readable
+    formats. Timestamp conversion is a useful excuse to explore programming GUIs as
+    it offers a solution to a common investigative activity. By using a GUI, we greatly
+    increase the usability of our script among those deterred by the Command Prompt,
+    with all of its arguments and switches.
+  prefs: []
+  type: TYPE_NORMAL
+- en: There are many options for GUI development in Python, though, in this chapter,
+    we'll focus on TkInter. The TkInter library is a cross-platform GUI development
+    library for Python that hooks into the operating system's `Tcl`/`Tk` library found
+    on Windows, macOS, and several Linux platforms.
+  prefs: []
+  type: TYPE_NORMAL
+- en: This cross-platform framework allows us to build a common interface that's platform-independent.
+    Although TkInter GUIs may not look the most modern, they allow us to rapidly build
+    a functional interface to interact with, in a relatively simple manner.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We'll only be covering the basics of GUI development with TkInter here. Further
+    information can be found online or in books dedicated to the topic that cover
+    the development process and specific features related to developing with TkInter
+    in more detail. The [https://www.python.org/](https://www.python.org/) website
+    has an extensive list of resources for learning and using TkInter at [https://wiki.python.org/moin/TkInter](https://wiki.python.org/moin/TkInter).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Basics of TkInter objects
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'We''ll use a few different features of TkInter to display our GUI. The first
+    item every TkInter GUI needs is a root window, also known as the master, which
+    acts as the top-level parent to any other items we add to the GUI. Within this
+    window, we''ll combine several objects that allow the user to interact with our
+    interface, such as the `Label`, `Entry`, and `Button` items:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The `Label` object allows us to place text labels that cannot be edited on the
+    interface. This allows us to add titles or provide a description for objects that
+    indicate what should be written to or displayed in the field.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The `Entry` object allows the user to enter a single line of text as input to
+    the application.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The `Button` object allows us to execute commands when pressed. In our case,
+    the button will call the appropriate function to convert a timestamp of the specific
+    format and update the interface with the returned value.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Using these three features, we've already introduced all of the GUI elements
+    needed for our interface. There're many more objects available for use and they
+    can be found in greater detail in the TkInter documentation at [https://docs.python.org/3/library/tkinter.html](https://docs.python.org/3/library/tkinter.html).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We''ll be writing our code in a way that works with both Python 2 and Python
+    3\. For this reason, in Python 2 (for example, version 2.7.15), we''ll import
+    `Tkinter` as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'For Python 3, for example, version 3.7.1, we''ll instead import it as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'To condense this, we can instead use the `sys` module to detect the Python
+    version and import the proper module, as shown here:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: Implementing the TkInter GUI
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: This section illustrates a simple example of creating a TkInter GUI. In the
+    first seven lines, we import the two modules we'll need to create our interface.
+    This import method, while complex, allows us to import these two modules in a
+    Python 2- or Python 3-specific way.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The first module imports all of the default objects needed for the TkInter GUI
+    design. The `ttk` module imports the themed TkInter pack, which applies additional
+    formatting to the interface depending on the host operating system and is a simple
+    way to improve the overall look of our interface. In the last line, we create
+    our root window.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'When typed into a Python interpreter, the execution of the last line should
+    display a blank 200 pixel × 200 pixel square window in the top-left of your screen.
+    The dimensions and location are a default setting that can be modified. See the
+    following code block:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The following screenshot displays a TkInter root window created when executing
+    the code block on a macOS system:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/a0086a92-5426-4b23-b56e-a362f2462909.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'With the root window created, we can begin to add items to the interface. A
+    good first item is a label. In the code block mentioned later, we add a label
+    from the themed `ttk` pack to the window:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The `Label` parameter requires two arguments: the parent window it should be
+    displayed on and the text to display. Additional attributes can be assigned to
+    the label such as fonts and text size.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note that, after executing the first line of the code block, the window doesn't
+    update. Instead, we must specify how we want to display the object within the
+    window with one of the available geometry managers.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'TkInter uses geometry managers to determine the placement of objects within
+    the window. There''re three common managers: `grid`, `pack`, and `place`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The `grid` geometry manager places elements based on a row and column specification
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The `pack` geometry manager is simpler and will place elements next to each
+    other, either vertically or horizontally depending on a specified configuration
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Finally, the `place` geometry manager uses *x* and *y* coordinates to place
+    elements and requires the most effort to maintain and design
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'For this example, we chose to use the `pack` method as seen on the second line
+    of the code block. Once we describe which geometry manager to use, our interface
+    is updated with the label:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The following screenshot reflects the addition of the label to our GUI:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/56703f87-63e8-455d-9545-db2801e8fd93.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: As seen in the preceding screenshot, the root window has shrunk to fit the size
+    of its elements. At this point, we can resize the window by dragging the edges
+    to shrink or grow the size of the main window.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Let's add some space around our `Label` object. We can accomplish this by using
+    two different techniques. The first adds padding around the `Label` object, using
+    the `.config()` method. To add padding, we must provide a tuple of padding, in
+    pixels, for the *x* and *y* axis.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In the example, we add a 10-pixel padding on both the *x* and *y *axes. When
+    the following line is executed, it''ll automatically update in the GUI since the
+    geometry manager is already configured:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The padding is shown in the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/4f642c0a-eec7-4b71-9fe7-1580d538c3a2.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: This only adds padding around the label itself and not the entirety of the root
+    window. To change the dimensions of the root window, we need to call the `geometry()`
+    method and provide the width, height, position from the left of the screen, and
+    position from the top of the screen.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In the following example, we''ll set the dimensions to 200 pixels wide by 100
+    pixels high with an offset 30 pixels from the left of the screen and 60 pixels
+    from the top of the screen:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The new resolution of the GUI is displayed in the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/5eb7c94c-cbb8-4383-a1bb-fda167e633bc.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Depending on your operating system, the default colors within the GUI may vary
+    due to the available theme packs.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let''s introduce the other two GUI elements we''ll use, `Entry` and `Button`.
+    We''ll now initialize the `Entry` object, which will allow a user to enter text
+    that we can capture and use in the program. In the first line, we initialize a
+    `StringVar()` variable, which we''ll use with the `Entry` object. Unlike prior
+    scripts, we need to set up special variables that can respond to the event-driven
+    nature of GUI interfaces:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'TkInter supports a variety of special variables such as the `StringVar()` function
+    for strings, `BooleanVar()` for Booleans, `DoubleVar()` for floats, and `IntVar()`
+    for integers. Each of these objects allows for values to be set using the `set()`
+    method and retrieved using the `get()` method. The preceding code shows the initialization
+    of the `StringVar()`, setting it to a default value, assigning it to a created
+    `Entry` element, and packing it into the root window. Finally, we can gather the
+    input from the user via the `get()` method:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE11]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The following two consecutive screenshots show the updates to the GUI with
+    the new code block we''ve implemented:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/b04742d7-c0c7-40c1-a53e-af9e54bc8f45.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'The preceding screenshot shows the default text in the `Entry` box, whereas
+    the following screenshot shows what it looks like with modified values:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/a7d2b484-88fd-4073-8c3f-bfe05ce16828.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Please note that we wrote `Hello World!` into the `Entry` object before executing
+    the `text.get()` method.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The `Button` object is used to initiate an event when the button is clicked.
+    To set an action into motion, we need a function to call.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In the next example, we define the `clicked()` function, which prints a string
+    as seen in the following code block. After this function, we define the button
+    using the `ttk` theme pack, setting the button text to `Go` and the `command`
+    parameter of the function name. After packing the button into the root window,
+    we can click on it and see the statement printed in the Terminal, as seen on the
+    last line of our following code block. Although this functionality isn''t very
+    useful, it demonstrates how a button calls an action. Our script will demonstrate
+    further uses for the `Button` object and its command parameter:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE12]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The addition of this button is shown in the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/f2fb6d53-b7d4-447c-b330-e65f5996d548.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Using frame objects
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: TkInter provides another object we'll use named `frame`. Frames are containers
+    we can place information in and that and provide additional organization. We'll
+    have two frames in our final interface. The first is an input frame containing
+    all of the objects that a user will interact with, and the second is our output
+    frame that will display all of the information processed by the script. In the
+    final code of this chapter, the two `frame` objects will be children to the root
+    window and act as parents to the `Label`, `Entry`, and/or `Button` objects within
+    them.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Another benefit of the `frame` object is that each one can use its own geometry
+    manager. Since each parent object can use only a single geometry manager, this
+    allows us to leverage several different managers within our overall GUI.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In our script, we'll use the `pack()` manager to organize the frames in the
+    root window and the `grid()` manager to organize elements within each frame.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Using classes in TkInter
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: We're yet to directly use classes in this book; however, it's the preferred
+    way to design a GUI. A class allows us to build an object that can hold functions
+    and attributes. In fact, we've often used classes without knowing it. Objects
+    we're familiar with, such as `datetime` objects, are classes that contain functions
+    and attributes available to them.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Classes, despite not being featured heavily in this book, may confuse new developers
+    but are recommended for more advanced scripts. We'll briefly cover classes in
+    this chapter and recommend further research into classes as your understanding
+    of Python grows. The items we cover with classes are specific to the GUI example
+    in this chapter.
+  prefs: []
+  type: TYPE_NORMAL
+- en: A class is defined with a similar syntax to a function, where we use the `class`
+    keyword in lieu of `def`. Once defined, we nest functions inside the `constructor`
+    class to make these functions callable from a `class` object. These nested functions
+    are called methods and are synonymous with the methods we have called from libraries.
+    A method allows us to execute code just like a function. We have primarily, up
+    to this point, used the terms method and function interchangeably. We apologize;
+    this was done so as to not bore you and ourselves with the same word over and
+    over again.
+  prefs: []
+  type: TYPE_NORMAL
+- en: So far, classes sound like nothing more than a collection of functions. So what
+    gives? The true value of a class is that we can create multiple instances of the
+    same class and assign separate values to each instance. To further extend this,
+    we can run our predefined methods on each instance separately. Say, for example,
+    we have a time class where each time has an associated `datetime` variable. Some
+    of these we may decide to convert into UTC while leaving others in their current
+    time zone. This isolation is what makes designing code within a class valuable.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Classes are great for GUI design because they allow us to pass values across
+    functions without additional duplicative arguments. This is accomplished with
+    the `self` keyword, which allows us to specify values within a class that're portable
+    within the class instance and all of its methods.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the next example, we create a class, named `SampleClass`, which inherits
+    from the object. This is the basic setup for a class definition, and while there
+    are more parameters available, we'll focus on the basics for this chapter. On
+    line 2, we define our first method named, `__init__()`, which is a special function.
+    You may notice that it has double leading and trailing underscores like the `if
+    __name__ == '__main__'` statements we have created in our scripts. If an `__init__()`
+    method exists within a class, it'll be executed at the initialization of the class.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In the example, we define the `__init__()` method, passing `self` and `init_cost`
+    as arguments. The `self` argument must be the first argument of any method and
+    allows us to reference the values stored under the keyword, `self`. Following
+    this, `init_cost` is a variable that must be set when the class is first called
+    by the user. On line 3, we assign the value of the user-provided `init_cost` to
+    `self.cost`. It''s a convention to assign arguments (besides `self`) for class
+    instantiation into class variables. On line 4, we define the second method, `number_of_nickels()`,
+    and pass the `self` value as its only argument. On line 5, we complete the class
+    by returning an integer of `self.cost * 20`, as shown:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE13]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Next, we initialize `s1` as an instance of our `SampleClass` class with the
+    initial value of `24.60`. Then, we call its value by using the `s1.cost` attribute.
+    The `s1` variable refers to an instance of `SampleClass` and grants us access
+    to the methods and values within the class. We call the `number_of_nickels()`
+    method on `s1` and change its stored value to `15`, which updates the results
+    of the `number_of_nickels()` method. Next, we define `s2` and assign a different
+    value to it. Even though we run the same methods, we''re only able to view the
+    data in relation to the specific class instance:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE14]'
+  prefs: []
+  type: TYPE_PRE
+- en: Developing the date decoder GUI – date_decoder.py
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'This script was tested in both Python 2.7.15 and 3.7.1 and uses the python-dateutil
+    (version 2.7.5) third-party library which can be installed with `pip` like so:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`pip install python-dateutil==2.7.5`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: After this introduction to timestamps, GUI development, and Python classes,
+    let's begin developing our `date_decoder.py` script. We'll design a GUI with two
+    primary functionalities that the end user will interact with.
+  prefs: []
+  type: TYPE_NORMAL
+- en: First, the GUI allows the user to enter a timestamp from an artifact in native
+    format and convert it into a human-readable time. The second feature allows the
+    user to enter a human-readable timestamp and select an option to convert it into
+    the respective machine time. To build this, we'll use an entry box, several labels,
+    and different types of button for the user to interact with the interface.
+  prefs: []
+  type: TYPE_NORMAL
+- en: All dates processed with this code assume local machine time for the time zone.
+    Please ensure you convert all timestamp sources into a uniform time zone to simplify
+    the analysis.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'As with our other scripts, this code starts with our import statements followed
+    by authorship details. After importing `datetime` and `logging`, we import TkInter and
+    theme resource modules using our Python 2 and Python 3 conditional. We then import
+    `dateutil`, which, as discussed, will handle date interpretation and conversion
+    operations. We then set up our script license, documentation, and logging values:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE15]'
+  prefs: []
+  type: TYPE_PRE
+- en: We begin by defining the properties of our GUI, such as the dimensions, background,
+    and title of the window, and create the root window. After configuring the base
+    of the GUI, we populate our GUI with the desired widgets we've discussed. Once
+    we've designed the interface, we create methods to handle events, such as converting
+    timestamps and showing the results in the GUI. Instead of our typical `main()`
+    functions, we instead create an instance of this class that'll launch the GUI
+    window when executed.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Our code starts with the declaration of our `DateDecoder` class and its `__init__()`
+    method. This method doesn''t require any parameters to be passed by the user since
+    we''ll be accepting all of our input values and settings through the GUI. The
+    next function we define will be our `run()` controller on line 74\. This controller
+    calls functions that design the GUI and then launches the said GUI:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE16]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'To display the GUI in a structured manner, we need to divide our GUI into functional
+    units. With the methods on lines 84 and 119, we create our input and output frames
+    that make up our GUI. These frames contain widgets pertinent to their action and
+    are governed by their own geometry:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE17]'
+  prefs: []
+  type: TYPE_PRE
+- en: With the design of our interface established, we can focus on the functions
+    that handle logic operations and events when buttons are clicked. The `convert()`
+    method is used to call timestamp converters to interpret the value as a date.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'These converters are specific to each of the supported timestamps and are defined
+    on lines 175, 203, and 239\. Our last class method, `output()`, is used to update
+    the interface. This may be misleading as the previous `output()` functions in
+    our scripts have generally created some kind of report. In this case, we''ll be
+    using our output function to update the GUI with our results, to display the information
+    to the user in an organized and helpful manner:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE18]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Unlike in previous chapters, this function has no need to handle command-line
+    arguments. We do, however, still set up logging and then instantiate and run our
+    GUI. In addition, starting on line 202, we initialize a logger using our basic
+    logging convention. We hard-code the path to the log file as no command-line arguments
+    are passed to this script. On lines 211 and 212, the class is initialized and
+    then the `run()` method is called in order for our GUI to be created and displayed
+    to the user, as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE19]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'We''ve split our flowchart into two screenshots, due to its width. The first
+    screenshot shows the flow for setting up the `DateDecoder` class and the initial
+    `run()` call, which creates our frames:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/8c62754e-4882-4165-86cb-6b51cd050f3b.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'The second screenshot displays the flow for the operational code, where our
+    converter function calls the specific time-converting function and then our `output()`
+    function to display it to the user:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/c1d70252-399a-49d3-b824-6e25463917ac.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: The DateDecoder class setup and __init__() method
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'We initialize our class using the `class` keyword, followed by the class name,
+    and passing the `object` argument as seen on line 49\. It''s best practice to
+    name classes using the camelCase convention and methods with underscores to prevent
+    confusion. On line 50, we define the `__init__()` special method described earlier
+    with only the `self` parameter. This class doesn''t require any user input at
+    initialization, so we don''t need to concern ourselves with adding additional
+    arguments. Take a look at the following code:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE20]'
+  prefs: []
+  type: TYPE_PRE
+- en: On line 60, we create the root window of the GUI and assign it to a value within
+    the `self` object. This allows us to reference it and any other object created
+    with `self` in other methods within the class without needing to pass it as an
+    argument, since the `self` parameter stores values for use throughout the class
+    instance. On line 61, we define the size of the window as 500 pixels wide, 180
+    pixels high, and offset by 40 pixels on both the top and left sides of the screen.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To improve the look of the interface, we''ve added the background color to
+    reflect the theme shown on macOS, though this can be set to any hexadecimal color
+    as seen on line 62\. Finally, we modify the title property of the root, giving
+    it a name that displays on top of the GUI''s window:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE21]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'After the initial GUI definition, we need to set the base values for important
+    variables. While this isn''t required, it''s often best practice to create shared
+    values in the `__init__()` method and define them with default values. After we
+    define three class variables that will store our processed time values, we also
+    define the epoch constants for 1601- and 1970-based timestamps. The code is as
+    follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE22]'
+  prefs: []
+  type: TYPE_PRE
+- en: The `__init__()` method should be used to initialize of class attributes. In
+    some situations, you may want this class to also run the primary operations of
+    the class, but we'll not be implementing that functionality in our code. We separate
+    the runtime operations into a new method named `run()` to allow us to start operations
+    specific to running the main code. This allows users to change class configuration
+    information before launching GUI.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Executing the run() method
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The following method is very short, consisting of function calls to other methods
+    we''ll discuss shortly. This includes building the input and output frames for
+    the GUI and starting the main event listener loop. Because the class has already
+    initialized the variables found in the `__init__()` method, we can reference these
+    objects in a safe manner as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE23]'
+  prefs: []
+  type: TYPE_PRE
+- en: Implementing the build_input_frame() method
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The `build_input_frame()` method is the first instance of the `frame` widget
+    and is defined on lines 90 through 92\. In a similar manner to how we defined
+    this element in an earlier example, we call the themed `frame` widget and pass
+    the `self.root` object as the parent window for this frame. On line 91, we add
+    `30` pixels of padding along the *x *axis around the frame before using the `pack()`
+    geometry manager on line 92\. Because we can only use one geometry manager per
+    window or frame, we must now use the `pack()` manager on any additional frames
+    or widgets added to the `root` object:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE24]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'After creating the frame, we begin to add widgets to the frame for the user
+    input. On line 95, we create a label using the new `input_frame` as the parent,
+    with the text, `Enter Time Value`. This label is placed on the first row and column
+    of the grid. With the grid manager, the first location will be the top-left location
+    and all other elements will fit around it. Because we don''t have any need to
+    call this label at a later point, we don''t assign it to a variable and can call
+    the `.grid()` method immediately to add it to our GUI:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE25]'
+  prefs: []
+  type: TYPE_PRE
+- en: On line 98, we initialize `StringVar()`, which we use to store the input from
+    the user as a string. We'll need to reference this object and information throughout
+    our code, so we'll want this to be assigned to the object, `self.input_time`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'On line 99 we create another widget, this time `Entry`, and once again will
+    not assign it to a variable since we''ll not need to manipulate this element after
+    creation. The information we''ll need from this element will be stored in the
+    `self.input_time` variable. To instruct the `Entry` object to store the values
+    in this object, we must pass the object name as the `textvariable` parameter.
+    We also specify the width of the field as 25 characters, add it to the GUI with
+    the `grid()` call, and place it one column over from the label:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE26]'
+  prefs: []
+  type: TYPE_PRE
+- en: Following the creation of the input area, we must provide the user with options
+    for specifying the input type. This allows the user to select whether the source
+    is a machine-readable or human-readable format. We create another `StringVar()`
+    variable to hold the value of the user's selection.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Since we want the default action to convert raw timestamps into formatted ones,
+    we call the `set()` method on the `self.time_type` variable on line 104 to auto-select
+    the `raw` radio button created on line 106.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'On line 106, we create the first radio button, passing the input frame as the
+    parent, the radio button label set to `Raw Value`, and the variable that''ll reflect
+    whether the user has selected the radio button or not to `self.time_type`. Finally,
+    we display this button using the grid manager. On line 110, we create the second
+    radio button whose text and value are set to reflect the formatted timestamp input.
+    In addition, we place this radio button on the same row in the adjacent column
+    as the first radio button. Take a look at the following code:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE27]'
+  prefs: []
+  type: TYPE_PRE
+- en: Finally, we build the button used to submit the data from the `Entry` field
+    for processing. This button setup is similar to the other widgets with the addition
+    of the command keyword, which, when clicked, executes the specified method. We
+    then assign the `convert()` method as the button click action.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'This method is started without any additional arguments supplied, as they''re
+    stored within the `self` property. We add this element to the interface via the
+    grid manager, using the `columnspan` attribute to have the information spread
+    across two or more columns. We also use the `pady` (pad *y*) attribute to provide
+    some vertical space between the input field and the button:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE28]'
+  prefs: []
+  type: TYPE_PRE
+- en: Creating the build_output_frame() method
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The output frame design is similar to that of the input frame. One difference
+    is that we''ll need to save the widgets to variables to ensure that we can update
+    them as we process date values. After the definition of the method and docstring,
+    we create `output_frame` and configure the height and width of the frame. Because
+    we used the `pack()` manager for the root, we must continue to use it to add this
+    frame to the root windows of the GUI:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE29]'
+  prefs: []
+  type: TYPE_PRE
+- en: After initialization, we add various widgets to `output_frame`. All of the output
+    widgets are labels as they allow us to easily display a string value to the user
+    without additional overhead. Another method for accomplishing this task would
+    be to place the output in text entry boxes and mark them as read-only. Alternatively,
+    we could create a single large text area for easy copying by the user. Both of
+    these are challenges specified at the end of this chapter for additional experimentation
+    on your own GUI implementation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The first label element is titled `Conversion Results`, and is centered using
+    the `pack(fill=X)` method on line 134\. This fills the area along the *x *axis
+    and stacks all packed sibling elements vertically. After creating the label on
+    line 131, we configure the font size using the `config()` method and pass a tuple
+    to the `font` keyword. This argument expects the first element to be a font name
+    and the second a font size. By omitting the font name, we leave it as the default
+    and modify only the size:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE30]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The following three labels represent the results for each of the supported
+    timestamps. All three use the output frame as their parent window and set their
+    text to reflect the timestamp type and the default `N/A` value. Finally, each
+    of the labels calls the `pack(fill=X)` method to properly center and stack the
+    values within the frame. We must assign these three labels to variables so we
+    can update their values to reflect the converted timestamps after processing.
+    The labels are set here:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE31]'
+  prefs: []
+  type: TYPE_PRE
+- en: Building the convert() method
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Once the user clicks on the button in the input frame, the `convert()` method
+    is called. This method is responsible for validating the input, calling the converters,
+    and writing the results to the labels built in the previous section. This method,
+    if you will, replaces what would usually be our `main()` method. After the initial
+    definition and docstring, we log the timestamp and format (raw or formatted) provided
+    by the user. This helps keep track of any activity and troubleshoot any errors
+    that may occur:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE32]'
+  prefs: []
+  type: TYPE_PRE
+- en: First, on lines 163 through 165, we reset the values of the three timestamp
+    variables to `N/A` to clear any residual values when the application is run again.
+    We then call the three methods that handle the timestamp conversion on lines 168
+    through 170\. These methods are independent and will update the values for the
+    three timestamp parameters without us needing to return any values or pass arguments.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'As you can see, the `self` keyword really helps to make classes simple by providing
+    access to shared class variables. On line 173, we call the `output()` method to
+    write the newly converted formats to the GUI:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE33]'
+  prefs: []
+  type: TYPE_PRE
+- en: Defining the convert_unix_seconds() method
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The Unix timestamp is the most straightforward of the three timestamps that
+    we'll convert in this chapter. On lines 175 through 179, we define the method
+    and its docstrings before stepping into an `if` statement. The `if` statement
+    on line 180 evaluates whether the value of the radio button described earlier
+    is equal to the `raw` string or `formatted`. If it's set to `raw`, we'll parse
+    the timestamp as a count of seconds since `1970-01-01 00:00:00.0000000`. This
+    is relatively simple because this is the epoch used by the `datetime.datetime.fromtimestamp()`
+    method. In this case, we only have to convert the input into a float as seen on
+    lines 182 and 183 before conversion.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Afterward, on lines 183 and 184, we format the newly formed `datetime` object
+    as a string in the `YYYY-MM-DD HH:MM:SS` format. The logic on line 182 is wrapped
+    in a try-except statement to catch any bugs and report them to the log file and
+    to the user interface in a simplified form. This allows us to test each formula
+    when a date is entered. Line 188 outlines that the conversion error will be displayed
+    when we are unsuccessful in converting the timestamp. This will alert the user
+    that there was an error and allow them to determine whether it''s anticipated
+    or not:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE34]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'If the timestamp is a formatted value, we need to first parse the input before
+    attempting to convert it into a Unix timestamp, as it may not follow the intended
+    format. Once converted by `dateutil.parser`, we can use the predefined epoch object
+    to calculate the delta in seconds between the timestamp and epoch on lines 195
+    through 197\. If an error occurs, it will be caught as in the prior `if` statement,
+    logged, and displayed to the user, as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE35]'
+  prefs: []
+  type: TYPE_PRE
+- en: Conversion using the convert_win_filetime_64() method
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The conversion of Microsoft Windows FILETIME values is a little more complicated
+    as it uses the `1601-01-01 00:00:00` value for epoch and counts time since then
+    in 100-nanosecond blocks. To properly convert this timestamp, we have to take
+    a few extra steps over the previous section.
+  prefs: []
+  type: TYPE_NORMAL
+- en: This method starts the same as the last, including the `if`-`else` syntax to
+    identify the timestamp type. If it's a raw format, we must convert the input from
+    a hexadecimal string into a base 10 decimal using the `int(value, 16)` typecast
+    seen on lines 210 and 211\. This allows us to tell `int()` to convert a base 16
+    value into decimal (base 10). Base 16 values are often referred to as hexadecimal
+    values.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Once converted, the integer is a count of 100-nanosecond groups since the epoch
+    so all we have to do is convert the microseconds into a `datetime` value then
+    add the epoch `datetime` object. On lines 212 through 214, we use the `datetime.timedelta()`
+    method to generate an object that can be used to add to the epoch `datetime`.
+    Once the conversion is complete, we need to format the `datetime` object as a
+    time string and assign it to the corresponding label. The error handling is the
+    same as the prior converter and will display conversion errors as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE36]'
+  prefs: []
+  type: TYPE_PRE
+- en: If the input timestamp is a formatted value, we need to reverse this conversion.
+    We were able to take some shortcuts before on line 212 using the `datetime.timedelta()`
+    method. When moving in the other direction, we need to manually calculate the
+    microseconds count before converting it into hex.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'First, on line 225, we convert the data from a string into a `datetime` object
+    so we can begin to process the values. From here, we subtract the epoch value
+    from the converted time. After subtraction, we convert the `datetime.timedelta`
+    object into microsecond values from the three stored values. We need to multiply
+    the seconds by one million and the days by 86.4 billion to convert each value
+    into microseconds. Finally, on lines 229 through 231, we''re almost ready to convert
+    our timestamp after adding all three values together:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE37]'
+  prefs: []
+  type: TYPE_PRE
+- en: On lines 232 and 233, we perform the conversion, by casting the innermost layer,
+    `calculated_time`, into an integer. In the integer state, it's multiplied by 10
+    to convert into a count of groups of 100 nanoseconds before conversion into hex
+    with the `hex()` typecast. Since the code requires the output to be a string,
+    we cast the hex value to a string as seen in the outside wrap on line 232 before
+    assigning it to the `self.processed_windows_filetime_64` variable.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Similar to the other conversion functions, we add in error handling to the
+    converter on lines 234 through 237:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE38]'
+  prefs: []
+  type: TYPE_PRE
+- en: Converting with the convert_chrome_time() method
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The last of our showcased timestamps is the Google Chrome timestamp, which is
+    similar to both of the previously mentioned timestamps. This timestamp is the
+    number of microseconds since the `1601-01-01 00:00:00` epoch. We'll leverage the
+    earlier-defined `self.unix_epcoh_offset` value to help in conversion. On line
+    248, we begin to convert the raw timestamp through a series of functions.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'First, we convert the timestamp into a float and subtract the 1601 epoch constant.
+    Next, we divide the value by one million to convert the value from microseconds
+    into seconds so that the `datetime.datetime.fromtimestamp()` method can interpret
+    the value properly. Finally, on line 251, we format `converted_time` to a string
+    using the `strftime()` function. On lines 253 through 255, we handle exceptions
+    that may occur from invalid values as seen in previous sections, as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE39]'
+  prefs: []
+  type: TYPE_PRE
+- en: When a formatted value is passed as an input, we must reverse the process. As
+    in our other functions, we convert the input to a `datetime` object from a string
+    using the `duparser.parse()` method. Once converted, we calculate the number of
+    seconds by adding the 1601 epoch constant to the `total_seconds()` method.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'This count of seconds is multiplied by one million to convert it into microseconds.
+    Once calculated, we can cast this integer value into a string that will be displayed
+    in our GUI. In the event that any errors arise, we catch them on line 264 through
+    266 in the same way as with previous methods:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE40]'
+  prefs: []
+  type: TYPE_PRE
+- en: Designing the output method
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The last method of the class is the `output()` method, and it updates the labels
+    found on the bottom frame of the GUI. This simple construct allows us to evaluate
+    processed values and display them if they're string values. As seen on line 273,
+    following the definition of the method and docstring, we check whether the `self.processed_unix_seconds`
+    value is of the string type.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'If it is, then we update the label by calling the `text` attribute as a dictionary
+    key as seen on lines 274 and 275\. This could also be accomplished via the use
+    of the `config()` method, though in this instance it''s simpler to define it in
+    this manner. When this property is changed, the label is immediately updated as
+    the element has already been set by a geometry manager. This behavior is repeated
+    for each label to be updated, as seen on lines 277 through 283:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE41]'
+  prefs: []
+  type: TYPE_PRE
+- en: Running the script
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'With the complete code, we can execute the GUI and begin to convert dates from
+    machine- to human-readable and vice versa. As seen in the following screenshot,
+    the finished GUI reflects our design goal and allows the user to easily interact
+    and process dates:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/dffb48b8-0436-4ba8-9d3a-fcf1d08e40e8.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'The preceding screenshot also shows us entering a formatted time value and
+    getting all three converted raw timestamps back from our functions. Next, we provide
+    a raw input in the Unix seconds format and can see that our Unix seconds parser
+    returned the correct date:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/87c3f71c-7585-412f-a8d3-56396478b67b.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Additional challenges
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: This script introduced GUIs and some of the methods available to us via the
+    TkInter module for converting timestamps. This script can be extended in many
+    ways. We recommend the following challenges for those wishing to gain a better
+    understanding of GUI development in Python.
+  prefs: []
+  type: TYPE_NORMAL
+- en: As mentioned in this chapter, we only specify the conversion of three formats
+    that're commonly seen in forensics and use several different methods to provide
+    conversion. Try to add support for the FAT directory timestamp entry into the
+    script, providing conversion into and from the raw format. This script is designed
+    such that adding additional formatters is as simple as defining raw and formatted
+    handlers, adding the labels to our output frame, and appending the method name
+    to `convert()`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In addition, consider replacing the output labels with entry fields so the user
+    can copy and paste the results. A hint for this challenge is to look at the `set()`
+    and `read-only` properties of the `Entry` widget.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The last challenge we present allows the user to specify a time zone, either
+    from the command-line or the GUI interface. The `pytz` library may be of great
+    use for this task.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Summary
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In this chapter, we covered how to convert between machine- and human-readable
+    timestamps and display that information in GUI. The primary goal of a forensic
+    developer is to be capable of facilitating rapid design and deployment of tools
+    that provide insight into investigations.
+  prefs: []
+  type: TYPE_NORMAL
+- en: However, in this chapter, we focused a bit more on the end user by spending
+    a little extra time on building a nice interface for the user to operate and interact
+    with. The code for this project can be downloaded from GitHub or Packt, as described
+    in the *Preface*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the next chapter, we'll explore triaging systems and how to collect essential
+    live and volatile data from a system using Python.
+  prefs: []
+  type: TYPE_NORMAL

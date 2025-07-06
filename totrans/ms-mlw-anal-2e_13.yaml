@@ -1,0 +1,2245 @@
+- en: '13'
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Analyzing Android Malware Samples
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: With the rise of mobile devices, the name Android has become well-known to most
+    people, even to those far from the IT world. It was originally developed by Android
+    Inc. and later acquired by Google in 2005\. The Android name is derived from the
+    nickname of the founder of the company, Andy Rubin. This open source operating
+    system is based on a modified version of the Linux kernel and there are several
+    variants of it, such as Wear OS for wearable devices, and Android TV, which can
+    be found on multiple smart TVs.
+  prefs: []
+  type: TYPE_NORMAL
+- en: As mobile devices store and can provide access to more and more sensitive information,
+    it’s no surprise that mobile platforms are increasingly becoming targets for attackers
+    who are exploring ways to leverage their power for malicious purposes. In this
+    chapter, we are going to dive into the internals of the most popular mobile operating
+    system in the world, explore existing and potential attack vectors, and provide
+    detailed guidelines on how to analyze malware targeting Android users.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To facilitate learning, this chapter is divided into the following main sections:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: (Ab)using the Android internals
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Understanding Dalvik and ART
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: File formats and APIs
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Malware behavior patterns
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Static and dynamic analysis of threats
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Let’s get started!
+  prefs: []
+  type: TYPE_NORMAL
+- en: (Ab)using the Android internals
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Before analyzing the actual malware, let’s become familiar with the system itself
+    first and understand the principles it is based on. This knowledge is vital when
+    performing analysis, as it allows the engineer to better understand the logic
+    behind malicious code and not miss any important part of its functionality.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The file hierarchy
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: As Android is based on the modified Linux kernel, its file structure resembles
+    the one that can be found in various Linux distributions. The file hierarchy is
+    a single tree, with the top of it called the root directory or root (generally
+    specified with the `/` symbol), and multiple standard Linux directories, such
+    as `/proc`, `/sbin`, and others. The Android kernel is shipped with multiple supported
+    filesystems; the exact selection varies depending on the version of the OS and
+    the device’s manufacturer. It has used EXT4 as the default main filesystem since
+    Android 2.3, but prior to that, YAFFS was used. External storage and SD cards
+    are usually formatted using FAT32 to maintain compatibility with Windows.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In terms of the specifics of the directory structure, the official Android
+    documentation defines the following data storage options:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`/data/data/` directory and its symlink, the `/data/user/0` directory.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Its main purpose is to securely store files privately from apps. What this means
+    is that no other apps, or even the user, have direct access to them. Each app
+    gets its own folder, and if the user uninstalls the application, all its content
+    will be deleted. Thus, the usual applications don’t store anything that should
+    persist independently of them here (for example, photos taken by a user with an
+    app’s help). Later, we will see what the corresponding behavior of malicious apps
+    is.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`/storage/emulated/0` path. In this case, `/storage/self/primary` is a main
+    symlink to it, which, in turn, has `/sdcard` and `/mnt/sdcard` symlinks pointing
+    to it. `/mnt/user/0/primary` is another common symlink pointing to `/storage/emulated/0`.
+    This space is shared across all apps and is world-readable, including for the
+    end user. This is where users see well-known folders such as `Downloads` or `DCIM`.
+    For the apps themselves, its presence is not actually guaranteed, so its availability
+    should be checked each time that it is accessed. In addition, apps have the option
+    to have their own app-specific directory (in case they need more space), which
+    will be deleted with the app once it is uninstalled. The main location for this
+    data on modern forms of Android is `/storage/emulated/0/Android/data/<app_name>`.
+    Again, this location is world-accessible.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: In addition, the documentation describes shared preferences and databases, which
+    are outside the scope of this book.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'There may be a considerable level of confusion here in terms of naming, as
+    many file-manager apps call the external file storage internal when they want
+    to distinguish it from SD cards (which are treated by the OS in pretty much the
+    same way as the embedded phone’s external storage). The truth is, unless the device
+    is rooted, the internal storage can’t be accessed and therefore won’t be visible
+    to a normal user:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 13.1 – The file manager referring to external storage as internal'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_13.1_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 13.1 – The file manager referring to external storage as internal
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Apart from this, here are some of the other important file paths unique to
+    Android:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`/data/app` and its modern symlink, `/factory`: Contains APK and ODEX files
+    for installed apps.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`/data/dalvik-cache`: The optimized bytecode for installed apps.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`/system`: This is the location of the operating system itself. It contains
+    directories that are normally found in the root directory.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`/vendor`: A symbolic link to `/system/vendor`. This path contains vendor-specific
+    files.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`/system/app/`: Contains pre-installed Android system apps, for example, to
+    interact with the camera or messages.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`/data/local/tmp/`: A directory where temporary files can be stored.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '![Figure 13.2 – Android’s root directory'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_13.2_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 13.2 – Android’s root directory
+  prefs: []
+  type: TYPE_NORMAL
+- en: Later, we will see which paths malware generally uses during the deployment.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The Android security model
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: There are multiple mechanisms implemented in Android in order to complicate
+    the lives of attackers. The system has evolved gradually over time and the latest
+    versions differ quite significantly from the earlier editions in terms of security.
+    In addition, modern Android systems are based on the newer Linux kernel 4.x+ starting
+    from version 7.0\. Let’s talk about some of the most important aspects of them.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Process management
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Android implements **Mandatory Access Control** (**MAC**) over all processes
+    and uses the **Security-Enhanced Linux** (**SELinux**) model to enforce it. SELinux
+    is based on the deny-by-default principle, where everything that is not explicitly
+    allowed is forbidden. Its implementation has evolved over different versions of
+    Android; the enforcing mode was enabled in Android 5.0.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'On Android, each app runs as an individual process and its own user is created.
+    This is how process sandboxing is implemented: to ensure that no process can access
+    the data of another one. An example of the generated username in this case is
+    `u2_a84`, where `2` is the actual user ID, with the offset `100000` (the actual
+    value will be `100002`), and `84` is the app ID, with the offset `10000` (which
+    means the value itself is `10084`). The mappings between apps and their corresponding
+    user IDs can be found in the `/data/system/packages.xml` file (see the `userId`
+    XML attribute), as well as in the matching, more concise `packages.list` file.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In addition to actual users, Android has many system accounts with predefined
+    IDs. Apart from `AID_ROOT` (0), which is used to run some native daemons, here
+    are some other examples:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`AID_SYSTEM` (1000): This is a regular user account with special permissions
+    to interact with system services.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`AID_VPN` (1016): This is associated with the **Virtual Private Network** (**VPN**)
+    system.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`AID_SHELL` (2000): This is the account the user gets when they use the `adb`
+    tool with the `shell` argument.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`AID_INET` (3003): This can create `AF_INET` or `AF_INET6` sockets.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: A full, up-to-date list of these can be found in the `android_filesystem_config.h`
+    file in the Android source code, which is easily accessible online.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In order to support **Inter-Process Communication** (**IPC**), a dedicated **Binder**
+    mechanism has been introduced. It provides a remote method invocation functionality,
+    where all the communication between client and server apps passes through a dedicated
+    device driver. Later, we will discuss how a single vulnerability in it allows
+    attackers to elevate privileges in order to root the corresponding devices.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The filesystem
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: As we now know, all generic user data and shared app data is stored in `/storage/emulated/0`.
+    It is available for read and write access but setting executable permissions for
+    files located there is not allowed. The idea here is that the user won’t be able
+    to simply write to a disk and then execute a custom binary directly, even by mistake
+    or as the result of a social engineering attack.
+  prefs: []
+  type: TYPE_NORMAL
+- en: By contrast, each installed app has full access to its own directory in `/data/data`,
+    but not to the directories of other apps unless they explicitly allow it. This
+    is done so that one app won’t be able to affect the work of another one or get
+    access to sensitive data.
+  prefs: []
+  type: TYPE_NORMAL
+- en: App permissions
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: The main purpose of app permissions is to protect user privacy by giving them
+    control over what data and system functionalities can be accessed by each application.
+    By default, no app can affect the work of another app, unless it is explicitly
+    allowed to do so; the same applies to accessing sensitive user data. Depending
+    on the version of Android and the settings, some permissions may be granted automatically,
+    while others will require manual user approval.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The default behavior when requesting user consent depends on the Android version
+    and the SDK version used to build the app. For Android 6.0+ and SDK version >=
+    23, the user is not notified about it at installation time. Instead, the app has
+    to ask permission at runtime using a standard system dialog window. For older
+    Android and SDK versions, all permissions were requested at installation time.
+    The user is presented with groups of permissions rather than individual entries;
+    otherwise, it might be overwhelming to go through all of them.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Each app has to announce what permissions it requires in its embedded `manifest`
+    file. For this purpose, dedicated `<uses-permission>` tags can be used. Permissions
+    are split into three protection levels:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`ACCESS_NETWORK_STATE`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`BLUETOOTH`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`NFC`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`VIBRATE`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`BIND_AUTOFILL_SERVICE`*   `BIND_VPN_SERVICE`*   `WRITE_VOICEMAIL`*   `READ_CONTACTS`*   `WRITE_CONTACTS`*   `GET_ACCOUNTS`*   Location:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`ACCESS_FINE_LOCATION`'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`ACCESS_COARSE_LOCATION`'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'An example of the permissions requested by a sample in its manifest file can
+    be seen in the following figure:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 13.3 – An example of the permissions requested by malware in the manifest
+    ﬁle'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_13.3_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 13.3 – An example of the permissions requested by malware in the manifest
+    ﬁle
+  prefs: []
+  type: TYPE_NORMAL
+- en: It is worth mentioning that the list of permissions evolved over time, with
+    multiple new permissions being enforced eventually, making the system more secure.
+    The exact API version in which a particular permission was added (or deprecated)
+    can be found in the most recent official Android documentation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Apart from this, there are also so-called special permissions that are distinct
+    from normal or dangerous ones. They are particularly important, so an app should
+    ask for user authorization, in addition to declaring them in the manifest file.
+    Examples of such permissions are `SYSTEM_ALERT_WINDOW` and `WRITE_SETTINGS`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: As different devices may have different hardware features, another manifest
+    tag, `<uses-feature>`, was introduced. In this case, if the `android:required`
+    attribute is set to `True`, then Google Play won’t allow that app to be installed
+    on the device without the feature being supported by it.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Security services
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'Multiple services have been introduced on the Android platform in order to
+    improve the overall security structure:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**Android updates**: As long as vulnerabilities are being identified and fixed,
+    users receive updates to improve reliability and security.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Google Play**: Introduces several security features, such as application
+    security scanning that aims to prevent malicious authors from uploading and promoting
+    malicious software.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Google Play Protect**: A system that runs safety checks on apps downloaded
+    from Google Play and checks the device for potentially malicious apps coming from
+    other sources.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**SafetyNet**: Provides several APIs, aiming to give apps that process sensitive
+    data extra security-related information (for example, whether the current device
+    is protected against known threats and whether the provided URL is safe).'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The console
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'By default, the console is not available on the device itself (`adb` is supposed
+    to be used from another connected device). Thus, in order to get the ability to
+    execute basic commands, users have to install third-party apps such as **Termux**
+    or **Terminal Emulator**. The interface would look as follows on the mobile device:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 13.4 – Listing the ﬁles in a root directory using the Terminal Emulator
+    app'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_13.4_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 13.4 – Listing the ﬁles in a root directory using the Terminal Emulator
+    app
+  prefs: []
+  type: TYPE_NORMAL
+- en: In this case, advanced commands can be used only on the rooted device with **BusyBox**
+    or similar sets of tools installed separately.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now, let’s talk about rooting in greater detail.
+  prefs: []
+  type: TYPE_NORMAL
+- en: To root or not to root?
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Every once in a while, users may encounter applications that require their device
+    to be rooted. What exactly does this mean and how does this process actually work?
+    In this section, we will explore the security mechanisms implemented within different
+    Android versions and how they can be bypassed.
+  prefs: []
+  type: TYPE_NORMAL
+- en: If the user requires some functionality not supported by standard system APIs
+    (for example, removing certain pre-installed applications or carrier applications,
+    overclocking the CPU, or completely replacing the OS), the only option they have
+    – apart from creating a feature request – is to obtain root access through a known
+    vulnerability. As a result, the user gets elevated privileges and full control
+    over the system. The legality of this process varies depending on the country,
+    but generally, it is either unclear (which means it falls into a gray area), acceptable
+    for non-copyright-related activity, or regulated by some dedicated exemptions.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Sometimes, the rooting process is used interchangeably with jailbreaking, generally
+    applied to iOS devices. However, these are different procedures in terms of scope.
+    Jailbreaking is the process of bypassing several different types of end-user restrictions;
+    the main ones are listed here:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The ability to modify and replace the operating system (controlled by the locked
+    bootloader technology on iOS)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Installing non-official applications (sideloading)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Obtaining elevated privileges (what is usually known as rooting)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Unlike iOS, on Android, it is possible to officially enable sideloading, and
+    many devices are shipped with bootloaders unlocked, so only rooting remains an
+    issue.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Each time a new rooting-related vulnerability becomes known, the developers
+    are expected to fix it and either release a security patch or make the next version
+    of the OS more secure. Thus, researchers have to come up with a new vulnerability
+    to exploit in order to make rooting possible. Some rooting methods involve using
+    `adb`, while others can be executed with the help of the usual user interface.
+    Here are some of the most well-known privilege escalation exploits for Android
+    OS:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/Table_13.1_B18500.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Rooting is accompanied by security risks for end users, as in this case, they
+    are no longer protected by system-embedded security mechanisms and restrictions.
+    A common way to get root privileges is to place a standard Linux `su` utility,
+    which can grant the required privileges to custom files, in an accessible location
+    and use it on demand. Malware can check whether this tool is already available
+    on the compromised device and misuse it at its discretion without any extra work
+    being required.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Many Android malware families are also bundled with rooting software in order
+    to elevate privileges on their own. There are multiple reasons why root access
+    is beneficial to malware authors; particularly, it allows them to obtain the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Access to crucial data
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Improved persistence capabilities
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Hiding capabilities
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Examples of these kinds of malware families include:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**Dvmap**: Uses root privileges to modify system libraries for persistence
+    and privilege escalation'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Zeahache**: Escalates privileges and opens a back door for other modules
+    to enter the compromised system'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Guerrilla**: Here, root privileges are required to access a user’s Google
+    Play tokens and credentials and gain the ability to interact with the store directly,
+    installing and promoting other apps'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Ztorg**: Escalates privileges, mainly to achieve better stealth and aggressively
+    display ads'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**CopyCat**: Infects Android’s **Zygote** process (a template for other processes)
+    and loads itself into other processes to access and alter sensitive information'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Tordow**: Steals sensitive information such as credentials from browsers'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: It is worth mentioning that not all malware families implement rooting, as it
+    also increases the probability of being detected by antivirus solutions or damaging
+    the device. In the end, it is up to the authors whether the advantages associated
+    with it outweigh the risks, all depending on the purpose of malware.
+  prefs: []
+  type: TYPE_NORMAL
+- en: As we now have some basic understanding of how Android works, it’s time to dive
+    deeper into its internals.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Understanding Dalvik and ART
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The Android OS has evolved drastically over the past several years in order
+    to address user and industry feedback, making it more stable, fast, and reliable.
+    In this section, we will explore how the file execution process was implemented
+    and progressed. In addition, we will dig into various original and newer file
+    formats and learn how the Android executables are actually working.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Dalvik VM (DVM)
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: The **Dalvik VM** (**DVM**) was an open source process virtual machine used
+    in Android up to version 4.4 (KitKat). It got its name from the village Dalvík
+    in Iceland. The DVM implemented register-based architecture, which differs from
+    stack-based architecture VMs such as Java VMs. The difference here is that stack-based
+    machines use instructions to load and manipulate data on the stack and generally
+    require more instructions than register machines in order to implement the same
+    high-level code. By contrast, analogous register machine instructions must often
+    define the register values used (which is not the case for stack-based machines,
+    as the order of values on the stack is always known and the operands can be addressed
+    implicitly by the stack pointer), so they tend to be bigger.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Usually, Dalvik programs are written in the `dx` is used, which converts Java
+    class files into the **Dalvik Executable** (**DEX**) format. It is worth mentioning
+    that multiple class files can be converted into a single DEX file.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Once DEX files are created, they can be combined together with resources and
+    code native to the `dexopt` tool, producing the **Optimized DEX** (**ODEX**) file,
+    which is interpreted by the DVM.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Starting from Android 2.2, the **Just-In-Time** (**JIT**) compiler was introduced
+    for Dalvik. The way it works is that it continually profiles applications on every
+    run and dynamically compiles the most used blocks of bytecode into native machine
+    code. However, independent benchmark tests have shown that stack-based the Java
+    HotSpot VM was on average two to three times faster than the DVM (with enabled
+    JIT) on the same device, with the Dalvik code not taking up less space either.
+    In order to improve the overall performance and introduce more features, **Android
+    Runtime** (**ART**) was created.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Android runtime (ART)
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: ART was first introduced as an alternative runtime environment in Android 4.4
+    (KitKat) and completely replaced Dalvik in the subsequent major release of Android
+    5.0 (Lollipop).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In order to explore the relationship between Dalvik and ART, let’s take a look
+    at this diagram:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 13.5 – A diagram depicting the diﬀerences between Dalvik and ART (origin:
+    Wikimedia Commons)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_13.5_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Figure 13.5 – A diagram depicting the diﬀerences between Dalvik and ART (origin:
+    Wikimedia Commons)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: As you can see, both Dalvik and ART share the same logic at the beginning, and
+    operate with the same DEX and APK files to maintain backward compatibility. The
+    major differences lie in how the files are actually processed and executed. Instead
+    of interpreting DEX bytecode, ART translates it to machine code instructions in
+    order to achieve better performance results. This way, instead of generating ODEX
+    files at install time, ART compiles apps using the `dex2oat` tool to generate
+    ELF files (already covered in the previous chapters) that contain native code.
+    Originally, they also contained DEX code, but on modern Android systems, the DEX
+    code is stored in dedicated **VDEX** files rather than inside the **OAT** files.
+    This process is known as **Ahead-Of-Time** (**AOT**) compilation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Starting from Android 7.0 (Nougat), a JIT compiler complements AOT compilation
+    and optimizes the code execution on the fly based on the profiler output. While
+    JIT and AOT use the same compiler, the former is able to incorporate runtime information
+    in order to achieve better results generally, for example, via improved inlining.
+    The following is a diagram depicting the relationship between JIT and AOT:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 13.6 – The process of compiling and executing ﬁles in ART (origin:
+    source.android.com)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_13.6_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Figure 13.6 – The process of compiling and executing ﬁles in ART (origin: source.android.com)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: As you can see, if the AOT binary is available (which is not always the case),
+    they are executed straight away, either from the JIT code cache (if it is JIT-compiled)
+    or in the usual way. Otherwise, they are interpreted and optionally compiled by
+    JIT, depending on how it is used throughout the system, in particular, whether
+    it is used by other applications and whether it has a meaningful profile (profile
+    files are recorded and created during the sample execution). The AOT compilation
+    daemon also runs periodically and utilizes this information to (re)compile highly
+    used files.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now, let’s dive deeper into Dalvik’s bytecode instruction set.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The bytecode set
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: As we now know, Dalvik is a register-based machine, which defines the syntax
+    of bytecode. There are multiple instructions operating with registers in order
+    to access and manipulate data. The total size of any instruction is a multiple
+    of 2 bytes. All instructions are type-agnostic, which means that they don’t differentiate
+    between the values of different data types as long as their sizes are the same.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Here are some examples of how they look in the official documentation. We’ll
+    split them into several categories for easier navigation. The explanation of how
+    to interpret the first column can be found after this table:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**Data access and movement**:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '![](img/Table_13.2(a)_B18500.jpg)![](img/Table_13.2(b)_B18500.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: '**Arithmetic operations**:![](img/Table_13.3(a)_B18500.jpg)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '![](img/Table_13.3(b)_B18500.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: '**Branching and calls**: As all instructions are multiples of 2 bytes, all
+    branching instructions operate with words:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '![](img/Table_13.4(a)_B18500.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: '![](img/Table_13.4(b)_B18500.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: It is worth mentioning that some sets of instructions (for example, for optimized
+    code) can be marked as unused in the official documentation, and it is quite unlikely
+    they will be found in malware aiming to achieve the maximum coverage possible.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now, let’s examine the format notation used in the first column.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The first byte is the opcode of the instruction (Dalvik utilizes only one-byte
+    values (00-0xFF) to encode the instructions themselves). In the official documentation,
+    some similar instructions are grouped into one row with the `range` they belong
+    (“`..`” is used to define the range) specified in the first column and the mappings
+    for the corresponding instructions provided in the second column.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Supported instruction formats are described using a special format ID notation
+    in the official documentation. Format IDs mostly consist of three characters –
+    two digits and a letter:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The first digit indicates the number of two-byte code units in the resulting
+    bytecode (see the *Examples* column).
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The second digit specifies the maximum number of registers used (as some instructions
+    support a variable number of them).
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'The final letter indicates the type of any extra data encoded by the format.
+    Here is the official table describing these mnemonics:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '![](img/Table_13.5_B18500.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Let’s use the first row of the first table as an example. Here, a `01 12x`
+    value describing the `move v0, v1` instruction encoded using 2 bytes, `0110`,
+    means the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`01` – the byte encoding the actual instruction (`0x01`).'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`12x` should be interpreted as three individual values:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`1` – the size of the instruction (one word, 2 bytes in total: `0x01` and `0x10`)'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`2` – the number of registers (two in total, `v0` and `v1`)'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`x` – no extra data used here'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'As for the prefixes for arguments used in the second column of the first table,
+    this is what they mean:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The `v` symbol is used to mark the arguments that the name registers.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The `#+` prefix specifies arguments indicating a literal value.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The `+` symbol is used for arguments that indicate a relative instruction address
+    offset.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The `kind@` prefix indicates a constant pool kind (string, type, field, and
+    so on).
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: A separate official document describes all the possible variants of format.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Here is an example of how a sequence of Dalvik bytecode looks:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 13.7 – An example of disassembled Dalvik bytecode'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_13.7_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 13.7 – An example of disassembled Dalvik bytecode
+  prefs: []
+  type: TYPE_NORMAL
+- en: Overall, the related Android documentation is very detailed and easily accessible,
+    so in case of doubt, it always makes sense to consult it.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now that we know how Android works, it’s time to go one level deeper and understand
+    the main file formats used in its apps.
+  prefs: []
+  type: TYPE_NORMAL
+- en: File formats and APIs
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Here are the most important file formats associated with applications written
+    for different versions of Android.
+  prefs: []
+  type: TYPE_NORMAL
+- en: DEX
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'The DEX format holds a set of class definitions and associated data. The file
+    layout is as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/Table_13.6(a)_B18500.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: '![](img/Table_13.6(b)_B18500.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'The rest of the fields define the sizes and offset of other data blocks:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 13.8 – A DEX header with the fields described in detail'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_13.8_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 13.8 – A DEX header with the fields described in detail
+  prefs: []
+  type: TYPE_NORMAL
+- en: The header starts with an 8-byte `DEX_FILE_MAGIC` value that consists of a `dex`
+    string (`\x64\x65\x78`) followed by the newline symbol (`\x0a`), the 3 bytes defining
+    the format version, and finally a zero byte (`\x00`). This format aims to provide
+    a way to identify DEX files and the corresponding layout used, and to prevent
+    basic data corruption.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ODEX
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Actively used before the appearance of ART, ODEX files are the result of the
+    optimizations made to DEX on the device in order to improve performance and decrease
+    the result size. ODEX files consist of the already described DEX layout, wrapped
+    with a short ODEX header:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: The header `magic` value is the same as for DEX but features a slightly different
+    first 3-byte signature, `dey` (`\x64\x65\x79`), rather than `dex`. This format
+    is defined in the `DexFile.h` source code file.
+  prefs: []
+  type: TYPE_NORMAL
+- en: OAT
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: OAT files aimed to replace ODEX in the newer ART environment. To begin with,
+    file extensions shouldn’t be trusted when dealing with Android executables. In
+    particular, on recent Android systems, files with the `.dex`, `.odex,` and `.oat`
+    extensions may actually implement the OAT format. It is not very well-documented
+    and varies for different versions of Android, but the most important thing here
+    is that the result data is wrapped in ELF shared objects. Starting from Android
+    Oreo, OAT files don’t store DEX code, leaving it to VDEX files, and are used mainly
+    to store mapping information and the native code.
+  prefs: []
+  type: TYPE_NORMAL
+- en: VDEX
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: These files were introduced in newer versions of Android (starting from Android
+    Oreo) and are created by the `dex2oat` tool. The idea here is to store DEX code
+    independently, not inside the OAT structure, with some additional metadata to
+    speed up verification. As with OAT, the file format is not documented and changes
+    between different versions of Android. Its description can be found in Android’s
+    `vdex_file.h` source code file.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Apart from this, a new internal ART format called `cdex`. The most up-to-date
+    description can be found in the `compact_dex_file.h` source code file.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ART
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: These files contain internal representations of certain strings and classes
+    listed in the APK for ART and are used to speed up the application start. The
+    common file extension used in this case is `.art`. As in the previous case, this
+    file format is not documented and changes between different versions of Android.
+    As it is generally not used by malware, we won’t go into greater detail here.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ELF
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: In addition to Android-specific file formats, it is also possible to execute
+    general ELF files compiled for the corresponding architecture. Unlike Linux systems,
+    which mostly rely on **glibc**, Android uses its own **Bionic C** library due
+    to licensing issues. At the moment, x86 and ARM (both 32-bit and 64-bit) architectures
+    are supported. Besides this, as has just been mentioned, it is also used to store
+    OAT data blocks for optimized Android executables.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The ELF format has already been covered in great detail in [*Chapter 11*](B18500_11.xhtml#_idTextAnchor1188),
+    *Dissecting Linux and IoT Malware*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: APK
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: APK files are archive files based on the JAR format, which, as we know from
+    [*Chapter 9*](B18500_09.xhtml#_idTextAnchor946)*, Reversing Bytecode Languages
+    – .NET, Java, and More*, implements the ZIP format. What this means is that APK
+    files can be unpacked using any software supporting ZIP-compressed files.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Usually, APK files contain the following files:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`res`: This directory contains various resource files (such as XMLs and pictures).'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`META-INF`: Stores metadata files associated with the package, mainly the following
+    ones:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`MANIFEST.MF`: A `manifest` file containing names and SHA1/SHA2 digests of
+    files inside the APK'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`<name>.RSA`: Contains the application’s signature and certificate'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`<name>.SF`: Contains SHA1 or SHA2 digests of the corresponding lines in the
+    `MANIFEST.MF` and the list of associated resources'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`AndroidManifest.xml`: The main `manifest` file defining various important
+    app-related values for the system and Google Play. It is stored in human-unreadable
+    format inside the APK. One of the easiest ways to decode it is by using **apktool**
+    for extraction.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`classes.dex`: A compiled file containing the app’s DEX bytecode; there can
+    be several of them with numbers added following this format: `classes<num>.dex`.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`resources.arsc`: This compiled file contains metadata associated with resources
+    used by the app.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: At the moment, Android doesn’t perform CA verification for application certificates,
+    so self-signed certificates are allowed. Apart from this, other directories such
+    as assets and files can also be commonly found inside APK files.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Regarding `AndroidManifest.xml`, only the `<manifest>` and `<application>`
+    elements are required to be present. Generally, the following data can be specified
+    there:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Basic app information (such as the package name)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: App components and the corresponding types (activity, service, broadcast receiver,
+    or content provider)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Required permissions (see the corresponding section, *The Android security model*)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Hardware and software features that the app needs
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Information about the supported Android SDK
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Unlike programs on many other systems, generally speaking, Android apps don’t
+    necessarily have a single entry point, which means there is no main function.
+    The sample’s main activities can be found by looking at the app’s `AndroidManifest.xml`
+    file and searching for the components with the `android.intent.action.MAIN` value
+    specified. Also check that if there is a class name mentioned in the `android:name`
+    attribute of the `<application>` element (this name should represent a subclass
+    of the `Application` class), it gets control first. Once found, search for the
+    `onCreate` methods in these components – here is how they will look in disassembly:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 13.9 – The onCreate method in the disassembled Android sample'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_13.9_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 13.9 – The onCreate method in the disassembled Android sample
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now that we have become familiar with the most common file formats used in Android,
+    let’s talk about its APIs.
+  prefs: []
+  type: TYPE_NORMAL
+- en: APIs
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Most of the code for the Android platform is written in Java, so the whole
+    infrastructure is built on it. However, Android implements its own APIs in order
+    to let programs interact with the OS to achieve their goals. While some classes
+    might be quite similar to Java (for example, the `System` class), there are also
+    a significant number of differences, such as the different meanings of certain
+    properties (or properties that have lost their meaning). In addition, some introduced
+    classes and APIs are new and aim to provide access to the unique features implemented
+    in Android. An example is the `DexClassLoader` class, which loads classes from
+    JAR and APK files and can be used to execute code that wasn’t part of an application.
+    Here are some other examples of APIs and their classes, with self-explanatory
+    names that can be commonly seen in malware:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`SmsManager`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`sendTextMessage`'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`ActivityManager`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`GetRunningServices`'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`getRunningAppProcesses`'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`PackageManager`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`GetInstalledApplications`'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`getInstalledPackages`'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`DevicePolicyManager`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`LockNow`'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`reboot`'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`Camera`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`TakePicture`'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`DownloadManager`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`enqueue`'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`DownloadManager.Request`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`setDestinationUri`'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Some functionality can also be accessed through the use of a combination of
+    the `Intent` class, with a particular argument describing the requested action,
+    and the `Activity` class, to actually perform an action, generally using the `startActivityForResult`
+    method.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Regarding the downloading-related functionality, many malware families obviously
+    prefer to avoid using the standard download manager, as it tends to be more visible
+    to the user, and instead implement it using Java classes such as `java.net.URL`
+    and `java.net.URLConnection`. And, of course, as we know, some APIs require particular
+    permissions to be requested prior to use. In this case, it should be at least
+    `android.permission.INTERNET`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now that we have learned how the files are structured as well as what APIs we
+    need to pay attention to, it is time to focus on particular patterns commonly
+    found in malware as well as the logic behind them.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Malware behavior patterns
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Generally speaking, even though malware for mobile devices has its own nuances
+    caused by the different environment and use cases of the targeted systems, many
+    motivation patterns behind attacks stays the same as for PC platforms. In this
+    section, we are going to dive deeper into various examples of mobile malware functionality
+    and learn what methods it uses in order to achieve malevolent goals.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now that we know how things are supposed to work, let’s take a look at how malware
+    authors leverage them. Here, we will go through various attack stages common for
+    the vast majority of malware, which will enable us to see these patterns in the
+    analyzed samples and understand their purpose.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Initial access
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'The most common ways malware gets access to devices are the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Google Play
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Third-party markets and sideloading
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Malicious ads and exploits
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'In the first two cases, malware authors generally rely on social engineering,
+    tricking users into installing a potentially useful app. There are many techniques
+    used to make this possible, such as the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**Similar design**: The app may look similar and have a similar name to some
+    other well-known, legal application.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Fake reviews**: To make the app look authentic and not suspicious.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Anti-detection techniques**: To bypass automatic malware scanners and prolong
+    the hosting.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Malicious update**: The original application uploaded to the store is clean,
+    but its update contains hidden malicious functionality.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Luring description**: Promises free or forbidden content, easy money, and
+    so on.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The app itself may be mostly legitimate but also contain hidden malicious functionality.
+    There are multiple ways the user may come across them – by clicking fraudulent
+    links received via messengers, texts, emails, or left on forums, or encountering
+    it during searches for particular apps due to illegal **Search Engine Optimization**
+    (**SEO**) techniques.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Use of malicious ads involves delivering malicious code through the advertisement
+    network with the help of exploits. An example could be **lbxslt**, an exploit
+    leaked from HackingTeam and used by attackers to spread ransomware in 2017\. In
+    addition, exploits may also be used for high-profile attacks targeting particular
+    individuals.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Privilege escalation
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: The next stage is to obtain all required permissions. Apart from the rooting
+    options already discussed, it is possible for malware to abuse so-called administrative
+    permissions.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Originally designed for enterprise use cases to remotely administrate the mobile
+    devices of employees, they can offer malware powerful capabilities, including
+    the ability to wipe important data. Usually, the easiest way to get permissions
+    is to keep asking the user and don’t stop until they are granted.
+  prefs: []
+  type: TYPE_NORMAL
+- en: As long as all the required privileges are obtained, malware generally attempts
+    to deploy its modules somewhere on a device. At this stage, extra modules can
+    be downloaded after contacting the command and control server.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Persistence
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'The most common places where malware installs itself once it gets executed
+    are the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`/data/data`: Standard paths intended to be used for all Android applications.
+    This approach poses a threat to attackers, as it is relatively easy to remediate
+    such threats.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`/system/(app|priv-app|lib|bin|xbin|etc)`: These paths require malware to use
+    rooting exploits to get access to them. This makes it harder for the user to identify
+    and delete the threat.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Persistence in this case can be achieved using the standard Android `BroadcastReceiver`
+    functionality common to all apps using the `BOOT_COMPLETED` action. The `RECEIVE_BOOT_COMPLETED`
+    permission is required in this case.
+  prefs: []
+  type: TYPE_NORMAL
+- en: While many mass malware families follow similar patterns in order to achieve
+    their goals, there is also a much smaller – but at the same time, often a more
+    highly significant – set of examples implementing advanced techniques in order
+    to achieve more specific goals. An example is APT groups performing high-profile
+    espionage tasks and therefore having much higher requirements in terms of stealth
+    and effectiveness. An example of the relevant malware family patching system libraries
+    is `libdvm.so` and `libandroid_runtime.so`), injecting its code there. The libraries
+    are supposed to execute a standard system executable with system privileges, which
+    is replaced by the attackers to achieve persistence and escalate privileges at
+    the same time.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Impact
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'As long as the malware completed its installation, it can switch to the main
+    purpose it was created for. The exact implementation will vary drastically depending
+    on that. Here are some of the most common behaviors found in mass malware:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**Premium SMS senders**: Probably the easiest way to make money straight away
+    in mobile malware in certain countries is to send paid SMS messages to premium
+    numbers (including the ones related to in-app purchases) or subscribing to paid
+    services. Each of them will cost a certain amount of money, or an automatic subscription
+    payment will be taken regularly, which eventually leads to draining the victim’s
+    balance. In order to bypass CAPTCHA protection, existing anti-CAPTCHA services
+    may be used.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Clickers**: A more generic group of threats that uses mobile devices to make
+    money in multiple different ways:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Ad clickers**: Simulates clicks on advertising websites without the user’s
+    interaction, eventually draining money from advertising companies.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**WAP clickers**: This group is similar to SMS senders in the way that it uses
+    another form of mobile payment, this time, by simulating clicks on WAP-billing
+    web pages. The charge will be applied to the victim’s phone balance.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Clickers that increase traffic to websites for illegal SEO purposes; for example,
+    to promote malicious apps.
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Clickers that leave fake reviews or change ratings of some apps and services.
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Clickers that buy expensive apps on Google Play, for example, using accessibility
+    services to emulate user taps or implementing their own clients to interact with
+    the store directly.
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Adware**: These threats aim to monetize custom advertisements shown to users,
+    often in an excessive and abusive way.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Infostealers**: As mobile devices often contain sensitive information, including
+    saved credentials, photos, and private messages, it is also possible for malware
+    authors to make money from stealing it, for example, by selling it on the underground
+    market or extorting users. Another possible option here is cyber espionage.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Banking trojans**: Sometimes also named infostealers, this malware aims to
+    steal users’ banking information to get access to their bank accounts, or manipulate
+    payments. The most common ways to do this are by displaying fake windows simulating
+    a real banking or popular booking app on top of the real one and letting the user
+    enter their credentials there, or by using accessibility services to make the
+    real app perform illegitimate transactions. Access to SMS messages on a device
+    can be used to bypass the two-factor authentication introduced by some banks.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Ransomware**: As in the PC world, some malware families try to block access
+    to certain files or a whole device to illegally push the users into paying a ransom
+    in order to restore access. Quite often, this behavior is accompanied by statements
+    that the affected user did something wrong (for example, watched illegal content),
+    and demanding them to pay a fine, otherwise, the information will become public.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**DDoS**: Multiple infected mobile devices can generate enough traffic to cause
+    significant load for the targeted websites.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Proxy**: Quite rarely used alone, this functionality allows malicious actors
+    to use infected devices as a free proxy to get access to particular resources
+    and increase anonymity. An example of such a family is **Sockbot**.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Cryptocurrency miners**: This group abuses a device’s calculation power in
+    order to mine cryptocurrencies. While the CPU of each device might be not very
+    powerful, a large amount of affected devices when put together can generate significant
+    profit for attackers. For the affected user, it results in increased traffic usage,
+    and the device slows down drastically and excessively heats up, which eventually
+    may cause damage.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Some trojans prefer to implement **backdoor** or **RAT** functionality and then
+    deliver customizable modules in order to achieve flexibility in extending malware
+    functionality.
+  prefs: []
+  type: TYPE_NORMAL
+- en: It is worth mentioning that not all malware families get their unique names
+    based on the actual functionality. Quite often, a shared name describing its propagation
+    method is used, for example, **Fakeapp**.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In terms of propagation, as malware can easily access a victim’s contacts, usually,
+    the spreading mechanism involves sending links or samples to people the user knows
+    via text, messengers, and email.
+  prefs: []
+  type: TYPE_NORMAL
+- en: As for getting the actual money, at first, malware authors preferred to get
+    it via premium SMS messages and local payment kiosks. Later, with the rise of
+    cryptocurrencies, alternative options became an obvious choice for malicious authors
+    due to anonymity and an easier setup process, providing users with detailed instructions
+    on how to make a payment.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Collection
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Pure keylogging without screen capturing is not very common for Android malware.
+    There are several reasons for this, starting with the fact that, in most cases,
+    it is just not needed, and also because of the peculiarities of data input on
+    mobile devices. Sometimes high-profile spying malware implements it in a pretty
+    creative way. For example, it is possible to keep track of screen touches and
+    match them against a pre-defined map of coordinates to deduce the keys pressed.
+  prefs: []
+  type: TYPE_NORMAL
+- en: An example of a family implementing it is **BusyGasper**, which is backdoor
+    malware.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Defence evasion
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'There are multiple anti-analysis techniques that mobile malware can incorporate
+    in order to protect itself, including the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**An inaccessible location**: A previously mentioned technique where malware
+    uses rooting exploits to allow it to deploy itself in locations that are not accessible
+    with standard user privileges. Another option is to overwrite existing system
+    apps.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Detecting privilege revocation**: Multiple techniques are used to scare the
+    user when permissions are revoked in an attempt to prevent it.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Detecting antivirus solutions**: In this case, malware keeps looking for
+    files associated with known antivirus products and once detected, may display
+    a nag window asking for its uninstallation. These kinds of messages are shown
+    in a loop and prevent the victim from using the device properly until the requested
+    action is taken.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Emulator and sandbox detection**: Here, the malware checks whether it is
+    being executed on the emulated environment or not. There are multiple ways it
+    can be done: by checking the presence of certain system files or values inside
+    them, such as IMEI and IMSI, build information, various product-related values,
+    as well as the phone numbers used. In this case, malware behaves differently depending
+    on the result to tamper with automatic and manual analysis. Another popular simple
+    technique used to bypass basic sandboxes with an execution time limit is to sleep
+    or perform benign actions for a certain period of time.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Icon hiding**: The idea here is that the user can’t easily uninstall the
+    app using an icon. For example, a transparent image with no visible app name can
+    be used.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Multiple copies**: Malware can install itself in various locations in the
+    hope that some of them will be missed. In addition, infecting the Zygote process
+    allows malware to create multiple copies in the memory.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Code packing or obfuscation**: As many Android programs are written in Java,
+    the same code protection solutions can also be used here. Multiple commercial
+    options are available on the market at the moment. This topic has already been
+    covered in [*Chapter 9*](B18500_09.xhtml#_idTextAnchor946), *Reversing Bytecode
+    Languages – .NET, Java, and More*.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: In previous chapters, we covered state-of-the-art malware that aims to get more
+    control over the operating system in order to perform more advanced tasks, such
+    as hiding files and processes from monitoring software and amending data at a
+    lower level. These approaches can be applied to mobile operating systems as well.
+    While still not actively used by malware due to deployment complexity, there are
+    several open source projects proving that it is possible.
+  prefs: []
+  type: TYPE_NORMAL
+- en: One of them is the `sys_call_table`. The final goal here is to hide the presence
+    of a sample at a low level.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now, it’s time to summarize everything we have learned so far and apply it to
+    practice to be able to understand the functionality of Android malware samples.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Static and dynamic analysis of threats
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: At this stage, we have enough knowledge to start analyzing actual malware. For
+    static analysis, the process and tools used will be mostly the same for different
+    versions of the Android OS (regardless of whether it is based on the old DVM or
+    new ART technology); the differences will be in the dynamic analysis techniques
+    used. Now, it is time to get our hands dirty and become familiar with the tools
+    that can facilitate this process.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Static analysis
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Generally, static analysis of bytecode malware involves either disassembling
+    it and digging into the bytecode instructions or decompiling to the original language
+    and exploring the source code. In many cases, the latter approach is preferable
+    wherever possible, as reading the human-friendly code reduces the time the analysis
+    takes. The former approach is often used when decompiling doesn’t work for whatever
+    reason, such as a lack of up-to-date tools or because of anti-reverse-engineering
+    techniques implemented in the sample.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Here are some of the most commonly used tools for static analysis of Android
+    malware.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Disassembling and data extraction
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'These tools aim to restore Dalvik assembly from the compiled bytecode:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`.smali` file extensions.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: There were a handful of changes to the format between version 1 and 2 of SMALI
+    files. To convert existing SMALI files to the new format, you can assemble the
+    old ones with the latest Smali tool, version 1, and then disassemble them with
+    the latest Baksmali tool, version 2.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**Apktool**: A wrapper around the Smali tool; it provides the functionality
+    to easily process APK files. Its interface looks as follows:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '![Figure 13.10 – The interface of the Apktool'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_13.10_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 13.10 – The interface of the Apktool
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Apart from these, there are other online and desktop solutions built on top
+    of these two, providing convenient UIs and extra features, for example, **APK
+    Studio**:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`aapt dump badging <path_to_apk>`, and to parse `AndroidManifest.xml`, use
+    `aapt dump xmltree <path_to_apk> AndroidManifest.xml`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**oat2dex** (part of **SmaliEx**): A very useful tool for extracting DEX bytecode
+    from older ELF files, storing it as part of the OAT data so that it can be analyzed
+    as usual.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**vdexExtractor**: This tool can be used to extract DEX bytecode from VDEX
+    files, as modern OAT files don’t store it anymore.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**LIEF**: This cross-platform library provides plenty of functionality to parse
+    and modify Android files of various formats.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Androguard**: A versatile toolset combining multiple tools to perform various
+    types of operations, including disassembling, parsing, and decoding of various
+    files.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: While bytecode assembly can definitely be used for static analysis purposes
+    on its own, many engineers prefer to work with decompiled code instead to save
+    time. In this case, decompiling tools are extremely useful.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Decompiling
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'Instead of restoring the assembly instructions, this set of tools restores
+    the source code, which is usually a more human-friendly option:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**JADX**: A DEX to Java decompiler that provides both a command-line and a
+    GUI tool to obtain something close to the original source code in the Java language.
+    In addition, it provides a basic deobfuscation functionality. Here is how its
+    interface looks:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '![Figure 13.11 – A decompiled Android sample in JADX'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_13.11_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 13.11 – A decompiled Android sample in JADX
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**AndroChef**: This commercial decompiler supports both Java and Android files
+    and provides a handy GUI to go through the results.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**JEB decompiler**: Another powerful commercial disassembling and decompiling
+    solution, this supports both Dalvik and machine code.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**dex2jar**: While not exactly a decompiler, this tool allows engineers to
+    convert DEX files to JARs. After that, it becomes possible to use multiple Java
+    decompilers to obtain Java source code, as already discussed in [*Chapter 9*](B18500_09.xhtml#_idTextAnchor946),
+    *Reversing Bytecode Languages – .NET, Java, and More*.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Ghidra**: In addition to native executables, this powerful toolset also supports
+    Android apps by converting them into JARs and can be used to facilitate static
+    analysis for this platform.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Once obtained, the source code can be analyzed in any IDE or text editor with
+    syntax highlighting that supports it.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now, it is time to explore the options engineers have to perform dynamic analysis.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Dynamic analysis
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Effective dynamic analysis requires either some sort of emulation or remote
+    debugging, as many mobile devices tend to have relatively small native screens
+    and basic input capabilities.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Android Debug Bridge
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: '**Android Debug Bridge** (**ADB**) is a versatile command-line tool that lets
+    users interact with mobile devices from the PC, providing a variety of actions.
+    It is a part of Android SDK Platform Tools and consists of three parts:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: A client running on the PC, providing an interface to enter commands.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: A daemon (**adbd**) executing entered commands on the mobile device. It runs
+    as a background process on all devices.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: A server running on the PC that manages communication between the client and
+    the daemon.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: On the physical devices, ADB can be allowed by enabling the **USB Debugging**
+    option under **Developer options** in **Settings**. On a modern Android OS, this
+    option is hidden by default and can become visible by tapping the **Build number**
+    option (usually, can be found in **Settings** | **About phone**) multiple times
+    and then returning to the previous screen. In addition to real devices, ADB can
+    also recognize and work with an Android emulator without any changes required.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In addition to accessing the device via USB, wireless interaction via Wi-Fi
+    is also possible by first issuing the `adb tcpip <port>` command via USB, disconnecting
+    the device, and using the `adb connect <ip_address>:<port>` command.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Here are some examples of other command-line options available:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`adb devices`: Lists the attached devices.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '![Figure 13.12 – Adb seeing an emulated device'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_13.12_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 13.12 – Adb seeing an emulated device
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`adb kill-server`: Resets the adb host'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`adb install <path_to_apk>`: Sideloads the app using its APK file'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`adb pull` or `adb push`: Moves files between the mobile device and the PC'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`adb root` or `adb unroot`: Restarts the `adbd` daemon with or without root
+    permissions (not intended to be used in production builds)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`adb forward`: Forwards the specified port from the host to the device:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Example: `adb forward tcp:1234 tcp:5678` – forwards the host’s port `1234`
+    to the device’s port `5678`'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`adb shell [<command>]`: Creates a remote interactive shell or runs a command
+    within the shell'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Apart from traditional Linux commands, such as `ls` or `cat`, the Android shell
+    supports multiple custom commands. Here are some examples:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`screencap <filepath>`: Takes a screenshot and save the result on the device.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '![Figure 13.13 – Using the screencap command'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_13.13_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 13.13 – Using the screencap command
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`screenrecord <filepath>`: Performs screen video recording until *Ctrl + C*
+    is pressed.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`monkey <package_name>`: Originally designed to perform random activities and
+    this way, stress-test applications, it can also be used to launch desired apps
+    by using the `adb shell monkey -p <package_name> 1` syntax.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`input keyevent <num>`: Initiates the specified key event. Here are a few examples
+    of them and the corresponding numbers:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`3` – presses the `4` – presses the `64` – opens a browser'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`207` – opens contacts'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The complete up-to-date list can be found by looking at the `KeyEvent` class
+    in the official Android documentation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Important note
+  prefs: []
+  type: TYPE_NORMAL
+- en: To pass arguments requiring quotes as part of the command, you will have to
+    surround the quoted string with a pair of different quotes (either single or double).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In addition, ADB can be used to issue commands to additional modules:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`adb shell pm list packages` – lists the names of all packages. Use the `–f`
+    option to also get the paths of the corresponding APKs. Third-party apps can be
+    filtered out using the `–3` argument.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`adb shell am start -a android.intent.action.MAIN -n <package_name>/<main_activity>`
+    – launches the main activity of an app. The most reliable way to specify the main
+    activity is to provide the full path to it within the package (such as `adb shell
+    am start -a android.intent.action.MAIN -n com.google.android.calendar/com.android.calendar.LaunchActivity`).*   `adb
+    shell dpm set-active-admin -user current <component>` – sets the specified component
+    as an active admin, usually to enforce security policies.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: All the commands can be found in the comprehensive official documentation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Emulators
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'As with any other platform, emulators aim to facilitate dynamic analysis by
+    emulating the executed instructions without the need to use real devices. There
+    are several third-party solutions aiming to provide easier access to Android apps
+    and games, for example, BlueStacks. However, for reverse-engineering purposes,
+    solutions that are more focused on giving developers the ability to create and
+    debug apps generally provide better options. They include the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**Android Emulator**: The official Android Emulator can be installed as part
+    of the official **Android Studio** or using the command-line **SDK Manager**.
+    It provides almost all the capabilities of real physical devices and comes with
+    predefined sets of configurations aiming to simulate various mobile devices (whether
+    a phone, tablet, and wearable) on the PC.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'To install the emulator without Android Studio (using only the command line),
+    follow these steps:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: If you have never installed the Android SDK before, create an empty directory
+    somewhere where you would like the whole Android SDK to be located and create
+    an environment variable, `ANDROID_HOME`, to point to this directory.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Download the Android command-line tools, unzip them, and move the whole extracted
+    directory, `cmdline-tools`, (not its content!) to the Android SDK folder.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Inside `$ANDROID_HOME/cmdline-tools`, create a directory called `latest`, and
+    move the whole content of `cmdline-tools` there.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'In the `$ANDROID_HOME/cmdline-tools/latest/bin` directory, you can find the
+    `sdkmanager` tool. Use this method to get the emulator and platform tools, including
+    `adb`:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: 'You can list all the available Android system images by running the following
+    command:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: 'For example, we decided to emulate Android 12, corresponding to the API level
+    of `31`. Use the following command to download a system image that will be emulated
+    on an x86-64 machine, together with the corresponding packages:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: Important note
+  prefs: []
+  type: TYPE_NORMAL
+- en: Using `google_apis_playstore` images will enable access to Google Play but the
+    `adb root` command will not work on them!
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Use the following command to create a virtual device linked to the chosen system
+    image (no need to create a custom hardware profile). In this case, the name used
+    is `avd_31_noplay`, but it can be any other name:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: 'Now, everything is ready to run the emulator, located in the `$ANDROID_HOME/emulator`
+    directory, using the following command:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: Important note
+  prefs: []
+  type: TYPE_NORMAL
+- en: When running an emulator on the VM, you may be prompted about hardware acceleration
+    – to address it, enable support for Intel VT-x in the VM’s settings.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Here is how the result will look:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 13.14 – Running the Android Emulator on a VM'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_13.14_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 13.14 – Running the Android Emulator on a VM
+  prefs: []
+  type: TYPE_NORMAL
+- en: The Emulator also allows us to create and restore snapshots containing the entire
+    state of the emulated device.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**VMWare, VirtualBox, or QEMU**: These versatile solutions can be used to run
+    an **Android-x86** image and perform dynamic analysis in a similar way to what
+    would be done on the Linux VM. Keep in mind that Android-x86 is usually a few
+    versions behind the latest Android release:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '![Figure 13.15 – Running Android-x86 on a VM'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_13.15_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 13.15 – Running Android-x86 on a VM
+  prefs: []
+  type: TYPE_NORMAL
+- en: Other ways to get access to Android systems include cloud-based **Genymotion**
+    and container-based **anbox** solutions.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Once we have the environment to run Android programs, we need debuggers to do
+    it in a controlled way.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Debuggers
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Once the app of interest is decompiled back to Java code, parts of it can be
+    debugged as with usual source code in the IDE supporting it, for example, Android
+    Studio. If you are using a physical device instead of an emulator, don’t forget
+    to enable USB debugging. In addition, the code should include the `debuggable
+    true` option in its build configuration.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Sometimes, it is required to debug the native Dalvik instructions or whole apps.
+    Luckily, there are tools that can facilitate this process. One that deserves particular
+    attention is **smalidea**. It is a plugin for IntelliJ IDEA (or Android Studio,
+    which is based on it) allowing for step-by-step execution of the analyzed code.
+    This project belongs to the Smali authors and can be found with the corresponding
+    assembler and disassembler tools.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In addition, Android also provides tools to debug native code. Here are the
+    instructions on how to attach at the start:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: First, obtain the Android NDK to get `lldb-server` prebuilt, as well as the
+    `lldb` tools (in the past, the `gdbserver` and `gdb` tools were used)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Then, push the `lldb-server` executable to the device, for example, to the
+    `/data/local/tmp` directory, and make it executable:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: 'Set up port forwarding:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: 'Now, we have two options: either to use `lldb-server` in `gdbserver` or the
+    `platform` mode. Let’s provide examples for both.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Using the `gdbserver` mode involves the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Start the debugger server on the Android device – the sample of interest should
+    be copied there as well:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: 'Launch `lldb` on the host and connect to the debugger server running on the
+    device via the forwarded port:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: 'Using the `platform` mode involves the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Start the debugger server on the Android device – no need to copy the sample
+    there:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: Important note
+  prefs: []
+  type: TYPE_NORMAL
+- en: Here, we have to provide the `--gdbserver-port` argument, otherwise, `lldb`
+    won’t be able to copy a sample from the host machine to the Android device later.
+    An additional `adb forward` command is required to forward this auxiliary port.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Launch `lldb` on the host, connect to the debugger server via the forwarded
+    port, and launch the sample – it will be copied to the Android device automatically:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[PRE11]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: 'Here is how the successful connection will look on the debugger server side:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 13.16 – A successful connection to the debugger server running on
+    the Android emulator'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_13.16_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 13.16 – A successful connection to the debugger server running on the
+    Android emulator
+  prefs: []
+  type: TYPE_NORMAL
+- en: Apart from that, IDA is shipped with a set of proprietary debugger servers for
+    Android supporting both 32- and 64-bit versions of x86 and ARM platforms (`android_server`
+    or `android_server64`).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'App startup can be debugged in the following way:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Go to `jdb` debugger to be attached.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Start the app from the launcher or using the console, wait for it to load.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Attach a debugger such as `lldb`, set the required breakpoints, and continue
+    the execution.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 'Attach the `jdb` debugger to let the app run:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE12]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: Now, let’s talk about behavioral analysis.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Behavioral analysis and tracing
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'As with many other platforms, the **fsmon** tool can be used to monitor file
+    operations on Android. Here is an example of it being used to detect the creation
+    of a new file:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 13.17 – Testing fsmon on the Android Emulator by recording test file
+    creation'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_13.17_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 13.17 – Testing fsmon on the Android Emulator by recording test file
+    creation
+  prefs: []
+  type: TYPE_NORMAL
+- en: In terms of APIs, an **AppMon** solution includes a set of components to intercept
+    and manipulate API calls. It is based on the **Frida** project, which also provides
+    its own versatile tools, such as **frida-trace** (working together with **frida-server**).
+    One more tool based on Frida is **Objection**, which provides access to multiple
+    options including various memory-related tasks, heap manipulation, and the execution
+    of custom scripts.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'For native programs, the standard `strace` tool can also be used to monitor
+    system calls. As you can see in the following screenshot, its interface is identical
+    to the one found on Linux systems:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 13.18 – Using strace for behavioral analysis on the Android Emulator'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_13.18_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 13.18 – Using strace for behavioral analysis on the Android Emulator
+  prefs: []
+  type: TYPE_NORMAL
+- en: Speaking about recording network traffic, the standard `tcpdump` tool can run
+    on the device for this purpose and is generally the easiest-to-use solution. Wireshark
+    creators also supply a tool called **androiddump** to provide interfaces to capture
+    on Android devices (which generally needs to be built separately). In addition,
+    as long as the malicious sample is decompiled, it also becomes possible to embed
+    various libraries intercepting API calls, for example, **AndroidSnooper** to intercept
+    HTTP traffic.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Once we know which tools can be used for the analysis, let’s summarize the analysis
+    workflow.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The analysis workflow
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Here is an example of the workflow, describing how the Android sample analysis
+    can be performed:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`boot.oat` file.'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '`Application`’s subclass from the `android:name` attribute of the `<application>`
+    element (if present)'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '**Decompilation or disassembling**: It always makes sense to try to get the
+    decompiled source code, as it is usually much easier to read it and perform dynamic
+    analysis, including alteration if necessary. If decompilation doesn’t work and
+    some anti-reverse-engineering technique is expected, then the code can be disassembled
+    so that the tampering logic can be amended. Native code in ELF binaries can be
+    processed in the same way as described in [*Chapter 11*](B18500_11.xhtml#_idTextAnchor1188),
+    *Dissecting Linux and IoT Malware*.'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '`onCreate` methods of the main activities, and the previously mentioned optional
+    `Application`’s subclass specified in the manifest, as the app execution starts
+    there.'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '**Deobfuscation and decryption**: If it has been confirmed that the sample
+    is obfuscated, at first, it’s worth trying to figure out whether it is a known
+    Java solution and whether any ready deobfuscators exist. If not, then generic
+    method renaming will be helpful. There are multiple tools that can do this; refer
+    to [*Chapter 9*](B18500_09.xhtml#_idTextAnchor946), *Reversing Bytecode Languages
+    – .NET, Java, and More*.'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '**Behavioral analysis**: It may make sense to execute a sample in the emulator
+    with your behavioral analysis tools of choice enabled to quickly get an idea of
+    the potential functionality. If an emulator detection technique is implemented,
+    it’s usually pretty straightforward to identify it in the code and amend the sample
+    to exclude these checks.'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '**Debugging**: Sometimes, it’s hard to understand certain blocks of functionality,
+    particularly ones where malware heavily interacts with the operating system. In
+    this case, proper step-by-step debugging may be required to speed up the analysis.
+    Always use emulators supporting snapshot creation, so that it is possible to go
+    back and quickly reproduce the same situation as many times as necessary.'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Obviously, each case is unique, and depending on circumstances, the selection
+    of actions and their order may vary. Malware analysis is also an art and often
+    requires a certain amount of creativity in order to achieve results in a prompt
+    way.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Summary
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In this chapter, we learned about the most important aspects of Android’s internals,
+    covering various runtime environments implemented in different versions of it.
+    In addition, we became familiar with the associated file formats and went through
+    the syntax of the bytecode instructions.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Then, we dove deeper into the world of modern mobile malware, familiarizing
+    ourselves with its different types and the associated behavior. We also learned
+    how attackers can bypass Android security mechanisms in order to achieve their
+    goals. Finally, we learned about various reverse-engineering tools aiming to facilitate
+    static and dynamic analysis, and established guidelines on how and when they can
+    be used.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Equipped with this knowledge, you can better track threat actors that are trying
+    to penetrate Android devices and promptly mitigate the risks. In addition, the
+    set of skills obtained can be used during the incident response process to properly
+    understand the logic of the attacks to improve the overall security posture.
+  prefs: []
+  type: TYPE_NORMAL
+- en: This is the last chapter of this book – we hope you enjoyed it! As a next step,
+    we recommend putting your new knowledge into action by practicing analyzing various
+    types of malware and sharing your results with the community. Malware analysis
+    is a never-ending journey. We really hope this book will help many novice and
+    experienced engineers to analyze modern and future threats more efficiently and
+    eventually make the world a safer place.
+  prefs: []
+  type: TYPE_NORMAL

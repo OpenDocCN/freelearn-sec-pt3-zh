@@ -1,0 +1,515 @@
+- en: Memory Addressing Modes
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Thus far, we have gained some acquaintance with certain basic aspects of Assembly
+    programming. We have covered the Intel Architecture basics, setting up the development
+    environment of your choice, and the **instruction set architecture** (**ISA**).
+  prefs: []
+  type: TYPE_NORMAL
+- en: We know what operations we are able to perform over different types of data,
+    but all this is of very little value as long as we don't know how to retrieve
+    and store data. Of course, we are familiar with the `mov` instruction, but without
+    knowing how to address the data in memory, this instruction is quite useless.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Fortunately for us, Intel provides a very flexible mechanism for addressing
+    data or code in memory. In this chapter, we will cover the following modes of
+    memory addressing:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Sequential addressing
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Direct addressing
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Via an immediate address
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Via an address stored in a register
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Indirect addressing
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Via an address pointed by immediate
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Via an address pointed by a register
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Base relative addressing
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Base + index
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Base + index * scale
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: IP/RIP-based addressing
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Far pointers
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The preceding categorization has nothing to do with the way Intel categorizes
+    addressing modes as we are not paying attention to address encoding within an
+    instruction. Knowing the ways to address memory and being able to use them appropriately
+    is what we are after. It is worth mentioning that the preceding list represents
+    addressing modes for both data and code. Additionally, we will use 64-bit examples
+    in this chapter in order to be able to cover all of the modes listed here.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Addressing code
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: When we say "addressing code," we mean the way CPU interprets the address of
+    the next instruction to be executed, and that depends on the logic of the code
+    itself, which tells the processor whether it should execute instructions sequentially
+    or jump to another location.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Sequential addressing
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The default addressing mode for code is **sequential addressing**, when the
+    **instruction pointer** (**IP**) register (IP for 32-bit systems and RIP for 64-bit)
+    contains the address of the instruction following the one being currently executed.
+    There is nothing we need to do in order to put processor into this mode. The instruction
+    pointer is set to the next instruction automatically by the CPU.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'For example, when executing the first instruction of the following code, the
+    IP is already set to the address of the next one, labeled as `next_instruction`.
+    As the first instruction is `call`, which, as we know, causes the return address
+    to be pushed onto the stack--which, in this particular case, is also the address
+    of `next_instruction`--the second one (the `pop` instruction) retrieves the value
+    of the return address from the stack:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: The preceding example (or its variations) could be met in the code of different
+    packers and protectors very often and is also used by shellcode writers as a mean
+    of creation of position-independent code, where addresses of procedures and variables
+    can be calculated by adding their offsets from `next_instruction` to the address
+    of `next_instruction`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Direct addressing
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The term *direct addressing* implies the address to be directly included in
+    the instruction is an operand. One of the examples may be a *far call/jmp*. Most
+    of Windows, executables are loaded at address 0x00400000 with the first section,
+    which is by default the code section being loaded at address `0x00401000`. For
+    the sake of the example, let us imagine that we have an executable which, we are
+    sure, is loaded at the aforementioned address, with its code section being located
+    at offset 0x1000 from the base address (the address our executable is loaded at),
+    and we have some sort of a special code right in the beginning of the first section.
+    Let it be an error handler that would terminate the execution of our program in
+    the right way. In such a case, we may direct the execution flow to that code by
+    using either a far call or a far jump:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'However, the more common example would be the register call, where the target
+    address is stored in a register:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: In the preceding code, we loaded the RAX register with the address of the `my_proc`
+    procedure that we want to call on the first line, and the second line is the call
+    itself. Such a mode is used, for example, by compilers when translating the `switch`
+    clause to Assembly, when the address of the code corresponding to a specific case
+    is either loaded from the jump table or calculated using some hardcoded base (it
+    may well be relocated at execution time) and an offset taken from the jump table.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Indirect addressing
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The term "indirect addressing" is quite self-explanatory. As the name of the
+    mode suggests, the address is somewhere in there, but is not used directly. Instead,
+    it is referenced by a pointer, which may be a register or certain base address
+    (immediate address). For example, the following code calls the same procedure
+    twice. In the first call, the address is retrieved using a pointer stored in the
+    `rax` register, while in the second call we use a variable that stores the address
+    of the procedure we want to call:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: As we can see, in both cases, the operand of the `call` instruction is a pointer
+    to a location in memory, where the address of the `my_proc` procedure is stored.
+    This addressing mode may be used in order to harden the obfuscation of the execution
+    flow of a code fragment.
+  prefs: []
+  type: TYPE_NORMAL
+- en: RIP based addressing
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: IP or RIP (depending on whether we are on a 32-bit or a 64-bit platform) means
+    addressing relative to the instruction pointer register.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The best example of this addressing mode would be the `call` and `jmp` instructions.
+    For example, consider the following code:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: This will not contain the addresses of `my_proc` or `some_label`. Instead, the
+    `call` instruction would be encoded in such a way that its parameter would be
+    the offset from the following instruction to `my_proc`. As we know, the instruction
+    pointer register contains the address of the following instruction at the time
+    the processor executes the current one; therefore, we may surely say that the
+    target address is calculated relative to the value of the instruction pointer
+    (IP on 32-bit or RIP on 64-bit platform).
+  prefs: []
+  type: TYPE_NORMAL
+- en: The same rule applies to the `jmp` instruction in the preceding example--the
+    target address is calculated relative to the current value of the instruction
+    pointer, which contains the address of the following instruction.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Addressing data
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Data addressing modes are the same as those for code addressing, with the exception
+    of IP-based addressing on 32-bit systems.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Sequential addressing
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Yes, this is not a typo, there is sequential addressing when it comes to addressing
+    data as well, although it does require certain setup.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Remember the RSI/RDI pair (or ESI/EDI for 32-bit systems), which we have mentioned
+    in both [Chapter 1](5d846cc5-9b26-43a8-9350-2a94c790da83.xhtml), *Intel Architecture*,
+    and [Chapter 3](57c5447c-2cc4-4a48-9c46-6825e4a83a9c.xhtml), *Intel Instruction
+    Set Architecture (ISA)*. This pair is a good example of sequential data addressing,
+    where the source and/or target addresses are incremented or decremented (depending
+    on the value of the direction flag) automatically after each instruction that
+    uses these registers (either one of them or both) has been executed.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The following example illustrates this mode by copying a text string from its
+    location in the data section to a buffer allocated on the stack:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: As we see, the RDI register is loaded with the lowest address in the stack frame,
+    the RSI register is loaded with the address of the string, and the RCX register
+    is loaded with the length of the string, including the terminating zero. After
+    that, each time the `rep movsb` line is executed, both the RSI and the RDI are
+    sequentially incremented (the size of increment is dependent, as we remember,
+    on the `movs*` variant--1 for `movsb`, 2 for `movsw`, 4 for `movsd`, and 8 for
+    `movsq` on a 64-bit platform).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Direct addressing
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Just as in the case of code addressing, this mode implies that the address
+    of either the source or destination operand (depending on the instruction and
+    intention) is explicitly specified. However, unlike code addressing, we are able
+    to specify the address itself, except when loading it into a register first. Consider
+    the example of loading the value of a variable into a register or storing it from
+    register to memory:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'In both cases, `name_of_variable` and `name_of_another_variable` are translated
+    by the assembler into the addresses of those variables. Of course, we may also
+    use registers for this purpose. The following example illustrates an `if…else`
+    clause:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: The first line of the code sets the `rax` register to zero, which, when the
+    second line is commented out, causes the code to call `my_proc0`. On the other
+    hand, if we uncomment the `inc rax` instruction, then `my_proc1` would be called
+    instead.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Scale, index, base, and displacement
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'This is a very flexible addressing mode as it allows us to address memory in
+    a manner similar to addressing data within arrays, which we are all familiar with.
+    Despite the fact that this addressing mode is often referred to as scale/index/base
+    (omitting the displacement part), we are not forced to make use of all of its
+    elements at once, and we will further see that the scale/index/base/displacement
+    scheme often gets reduced to base, base + index, or displacement + index. The
+    latter two may come with or without scale. But, first of all, let''s see who is
+    who and which part represents what:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**Displacement**: Technically, this is an integer offset relative to a certain
+    segment base (DS by default).'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Base**: This is a register containing the offset to data relative to the
+    displacement, or the address of the start of the data if no displacement was specified
+    (in fact, when we do not specify displacement, the assembler adds a displacement
+    of zero).'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Index**: This is a register containing the offset into the data relative
+    to base + displacement. This is similar to an index or an array member.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Scale**: The CPU has no concept of type of data; it only understands sizes.
+    Therefore, if we are operating on values larger than 1 byte, we have to scale
+    the index value appropriately. The scale may be 1, 2, 4, or 8 for bytes, words,
+    double words, or quad words, respectively. Obviously, there is no reason to explicitly
+    specify the scale of 1, as it is the default value if no scale is specified.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: It is possible to explicitly specify another segment by prepending the segment
+    prefix to the address (for example, `cs:` for CS, `es:` for ES, and so on).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In order to calculate the final address, the processor takes the segment''s
+    base address (the default is DS), adds displacement, adds base and finalizes the
+    calculation by adding the index times scale:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*segment base address + displacement + base + index * scale*'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In theory, all of this looks nice and easy, so let''s advance toward practice,
+    which is nicer and much easier too. If we take another look at the example code
+    for direct addressing, we may see that it contains a few completely redundant
+    lines. The following would be the first one for us to deal with:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Although it provides a good example of register-based direct addressing, it
+    may be safely removed, and the following instruction (`call`) should then be changed
+    to (remember the indirect call?):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'However, even this line may be omitted just like most of the caller code. Taking
+    a closer look at the problem, we see that there is an array of procedure pointers
+    (in fact, an array of two). In terms of a high-level language, C for example,
+    what the preceding code is intended to do is as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: The Intel architecture provides a similar interface for addressing data/code
+    in an array-like fashion of base + index, yet it introduces another member of
+    the equation--scale. As the assembler and, especially, the processor do not care
+    about types of data we are operating, we have to help them with it ourselves.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'While the base part (whether it is a label or a register holding an address)
+    is treated by the processor as an address in memory, and index is simply a number
+    of bytes to add to that base address, in this particular case, we may, of course,
+    scale the index ourselves, as the algorithm is fairly simple. We only have two
+    possible values for the selector (which is the `rax` register in the preceding
+    Assembly code), `0` and `1`, so we load, for example, the `rbx` register with
+    the address of `my_proc_address`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE11]'
+  prefs: []
+  type: TYPE_PRE
+- en: Then, we shift the `rax` register three times left (doing this is equivalent
+    to multiplying by 8 as we are on 64-bit and addresses are 8 bytes long, and as
+    we would point into the second byte of address of `my_proc0` otherwise) and add
+    the result to the `rbx` register. This may be good for a single iteration, but
+    not very convenient for a code that gets executed very frequently. Even if we
+    use an additional register to store the sum of `rbx` and `rax`--what if we need
+    that other register for something else?
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'This is where the scale part comes into play. Rewriting the calling code from
+    the Assembly example would result in the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE12]'
+  prefs: []
+  type: TYPE_PRE
+- en: Of course, the base/index/scale mode may be used for addressing any type of
+    array, not necessarily an array of function pointers.
+  prefs: []
+  type: TYPE_NORMAL
+- en: RIP addressing
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: RIP-based (instruction pointer register on a 64-bit platform) addressing of
+    data was introduced with the 64-bit architecture and allows generation of a more
+    compact code. This addressing mode follows the same idea as the base/index/scale
+    mode, while the instruction pointer is used as the base.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'For example, if want to load a certain register with the address of a variable,
+    we would write the following line in Assembly:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE13]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The assembler would then do all the adjustments automatically, and the result
+    encoding of the instruction would be equivalent to this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE14]'
+  prefs: []
+  type: TYPE_PRE
+- en: Loading the `rbx` register with the value of the `rip` register (the address
+    of the following instruction) plus the offset in bytes of a variable from the
+    address of the following instruction.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Far pointers
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: It may be relatively safe to say that far pointers belong to the past when it
+    comes to the application development level; however, it would not be right not
+    to mention them here, as, after all, there are a few useful things we can do with
+    it. Putting it simply, a far pointer combines a segment selector and an offset
+    into the segment. Originating in the era of 16-bit modes of operation, surviving
+    the 32-bit protected mode, far pointers have made it to the long mode, although
+    they are hardly relevant, as, especially in long mode, all memory is considered
+    to be a flat array and we are hardly going to use them.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The instructions used (some are obsolete) for loading a far pointer into the
+    segment register: general-purpose register pairs are as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**LDS**: This loads the selector part of the far pointer into the DS'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**LSS**: This loads the selector part of the far pointer into the SS'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**LES**: This loads the selector part of the far pointer into the ES'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**LFS**: This loads the selector part of the far pointer into the FS'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**LGS**: This loads the selector part of the far pointer into the GS'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'However, let''s see how we can make use of them anyway. For the sake of simplicity,
+    we will consider a short 32-bit example for Windows, where we are obtaining the
+    address of the **Process Environment Block** (**PEB**):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE15]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'As you may see, the code in this example is quite redundant as we already have
+    the proper selector loaded into the FS register, but it still illustrates the
+    mechanism. In the real world, no one would''ve gone this way in order to obtain
+    the address of PEB; instead, the following instruction would have been issued:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE16]'
+  prefs: []
+  type: TYPE_PRE
+- en: This would have loaded the `eax` register with the address of the PEB, as `fs:0x00000000`
+    is already the far pointer pointing to TIB.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The instructions LDS and LES (for use with the DS and ES registers, respectively)
+    are obsolete.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Summary
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In this chapter, we had a brief introduction to addressing modes on the modern
+    Intel CPU. Some resources define more addressing modes, but, let me reiterate
+    that as a huge fan of Occam's Razor, I do not see any reason to multiply things
+    without need, as most of those additional modes are just variations of the modes
+    already explained above.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Thus far, we saw how both code and data may be addressed, which is mostly the
+    essence of programming in the Assembly language. As you will witness while reading
+    this book and trying the code yourself, at least 90% of writing a program in Assembly
+    is writing how you want some data to be moved, where from and where to (the remaining
+    10% are actual operations on data).
+  prefs: []
+  type: TYPE_NORMAL
+- en: By getting this far, we are ready to dive deeper into Assembly programming and
+    try to actually write working programs, rather than typing a few lines into a
+    template and watching registers change in the debugger.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The next section of this book, the *Practical Assembly* section, begins with
+    a chapter dedicated to parallel data processing. Then, you will learn the basics
+    of macros and get acquainted with data structures manipulation mechanisms, and
+    we will see how our Assembly code can interact with the surrounding operating
+    system, which is quite important.
+  prefs: []
+  type: TYPE_NORMAL

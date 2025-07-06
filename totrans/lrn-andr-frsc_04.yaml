@@ -1,0 +1,1691 @@
+- en: Extracting Data Logically from Android Devices
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: This chapter will cover logical data extraction, using free and open source
+    tools wherever possible. The majority of the material covered in this chapter
+    will use the **Android Debug Bridge** (**ADB**) methods previously discussed in
+    [Chapter 2](b81853c6-388b-4e15-b8dd-deb5c1b5b36d.xhtml),* Setting Up the Android
+    Forensic Environment*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'By the end of this chapter, the reader should be familiar with the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Logical extraction overview
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Manual ADB data extraction
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: ADB backup extractions
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: ADB dumpsys
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Bypassing Android lock screens
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Android SIM card extractions
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Logical extraction overview
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In digital forensics, the term logical extraction is typically used to refer
+    to extractions that don't recover deleted data or do not include a full bit-by-bit
+    copy of the evidence. However, a more correct definition of logical extraction,
+    also defined in [Chapter 1](1e7a3a23-96c6-4085-9981-44b579bb2a7f.xhtml), *Introducing
+    Android Forensics*, is any method that requires communication with the base operating
+    system. Because of this interaction with the operating system, a forensic examiner
+    cannot be sure that they have recovered all of the data possible; the operating
+    system is choosing which data it allows the examiner to access. In traditional
+    computer forensics, logical extraction is analogous to copying and pasting a folder
+    in order to extract data from a system; this process will only copy files that
+    the user can access and see. If any hidden or deleted files are present in the
+    folder being copied, they won't be in the pasted version of the folder.
+  prefs: []
+  type: TYPE_NORMAL
+- en: As you'll see, however, the line between logical and physical extractions in
+    mobile forensics is somewhat blurrier than in traditional computer forensics.
+    For example, deleted data can routinely be recovered from logical extractions
+    on mobile devices due to the prevalence of SQLite databases being used to store
+    data. Furthermore, almost every mobile extraction will require some form of interaction
+    with the operating Android OS; there's no simple equivalent to pulling a hard
+    drive and imaging it without booting the drive. For our purposes, we will define
+    a logical extraction as the process that obtains data visible to the user, and
+    may include data that has been marked for deletion.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Root access
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: When forensically analyzing an Android device, the limiting factor is often
+    not the type of data being sought, but rather whether or not the examiner has
+    the ability to access the data. Root access has been covered extensively in [Chapter
+    2](b81853c6-388b-4e15-b8dd-deb5c1b5b36d.xhtml), *Setting Up the Android Forensic
+    Environment*, but it is important enough to warrant repetition. All of the data
+    listed previously, when stored on the internal flash memory, is protected and
+    requires root access to read. The exception to this is application data that is
+    stored on the SD card, which will be discussed later in this book.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Without root access, a forensic examiner cannot simply copy information from
+    the `/data` partition. The examiner will have to find some method of escalating
+    privileges in order to gain access to the contacts, call logs, SMS/MMS, and application
+    data. These methods often carry many risks, such as the potential to *destroy*
+    or *brick* the device (making it unable to boot), and may alter data on the device
+    in order to gain permanence.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The methods commonly vary from device to device, and there is no universal,
+    one-click method to gain root access to every device. Commercial mobile forensic
+    tools such as Oxygen Forensic Detective and Cellebrite UFED have built-in capabilities
+    to temporarily and safely root many devices, but do not cover the wide range of
+    all Android devices.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Throughout this chapter, we will make note of where root is required for each
+    technique demonstrated.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The decision to root a device should be in accordance with your local operating
+    procedures and court opinions in your jurisdiction. The legal acceptance of evidence
+    obtained by rooting varies by jurisdiction.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Manual ADB data extraction
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The `adb pull` command can be used to pull single files or entire directories
+    directly from the device to the forensic examiner's computer. This method is especially
+    useful for small, targeted examinations. For example, in an investigation strictly
+    involving SMS messages, the examiner can choose to pull just the relevant files,
+    if possible.
+  prefs: []
+  type: TYPE_NORMAL
+- en: USB Debugging
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Setting up the ADB environment has been previously discussed in this book. However,
+    the device under examination must also be configured properly. USB Debugging is
+    the actual method through which the examiner's computer will communicate with
+    the device. USB Debugging is found under the Developer Options in the Settings
+    menu. However, as of **Android 8.1**, the Developer Options menu is hidden; to
+    reveal it, a user has to go to Settings | System | About Phone, and then tap the
+    Build Number field seven times. Return to the previous screen—you will find that Developer
+    Options are available now; simply open this menu and select Enable USB Debugging.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In addition to USB Debugging, the correct drivers must be installed on the examiner's
+    computer. Generally, they can be found online, either from the manufacturer's
+    website or [www.xda-developers.com](https://www.xda-developers.com/). If commercial
+    forensic tools are installed on the machine, the appropriate drivers may already
+    be installed.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Prior to Android 4.2.2, enabling USB Debugging was the only requirement to
+    communicate with the device over ADB. In Android 4.2.2, Google added **Secure
+    USB Debugging**. Secure USB Debugging adds an additional requirement of selecting
+    to connect to a computer on the device''s screen; this prevents ADB access to
+    locked devices from untrusted computers:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/9d5c70d9-8fea-4583-9a3f-133f1e7f0707.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: RSA fingerprint dialog (Android 8.1)
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Once USB Debugging has been enabled and the **Secure USB Debugging** check
+    passed (depending on Android version), the device is ready for examination. To
+    verify that the device is connected and ready to use ADB, execute the following
+    command:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: If Always allow from this computer is selected, the device will store the computer's
+    RSA key and the prompt will not appear on future connections to that computer,
+    even if the device is locked.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'If the device status is **offline** or **unauthorized**, the Secure Debugging
+    prompt needs to be selected on the screen:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/dd866447-8b15-4375-8a82-cd36ad42782b.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'If everything is running correctly, the **device** status should show device
+    like the following screen:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/87e986c1-fca8-4af6-9d36-263ebf78e32e.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Recovery Mode
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In order to truly be forensically sound, ADB data extractions shouldn't be used
+    against a phone while it is turned on. While the device is running, timestamps
+    can be modified and applications may be running and updating files in the background.
+    To avoid this, an examiner should place the device into a custom Recovery Mode
+    as shown in [Chapter 2](b81853c6-388b-4e15-b8dd-deb5c1b5b36d.xhtml), *Setting
+    Up the Android Forensic Environment*, if possible. ADB access isn't available
+    through the stock Android Recovery Mode. Typically, the first step in the rooting
+    process is to flash a custom Recovery Mode to allow a method for repairing the
+    device if something goes wrong. Rooted devices are far more likely to contain
+    a custom recovery, but it is possible to flash a custom recovery to a non-rooted
+    device. This method also allows the examiner to avoid the Secure USB Debugging
+    prompt on newer versions of Android, although our testing shows that this does
+    not work on Android Lollipop and versions newer than that. Recovery Mode also
+    may not require USB Debugging to be enabled, which makes it an excellent option
+    for bypassing a locked device.
+  prefs: []
+  type: TYPE_NORMAL
+- en: This method won't work on devices with full disk encryption enabled. Booting
+    into Recovery Mode will not decrypt the `/data` partition.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The process to boot into Recovery Mode will vary for each device. Typically,
+    it involves some combination of powering the device off and holding the volume
+    and power keys. Guides for specific models can be easily found online.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The stock Recovery Mode will typically show a picture of an Android being operated
+    on:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/a50ec078-0d64-4665-b9c0-63078baf29d1.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Stock Recovery Mode
+  prefs: []
+  type: TYPE_NORMAL
+- en: It's important to note that stock recoveries will not allow ADB communication;
+    running `adb devices` will simply show no devices.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Custom recovery images for many devices can be found at the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[https://twrp.me/Devices/](https://twrp.me/Devices/)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'If a device is in a custom Recovery Mode and the correct drivers have been
+    installed on the examiner''s computer, the device can be accessed via ADB as if
+    it were live. Note that its status using the `adb devices` command now shows that
+    it is in Recovery Mode:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/7e320edb-7122-4543-a8b9-afd4be72b0d2.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'There is one final step before the examiner can begin extracting data over
+    ADB: the `/data` partition must be mounted in order to access user data. Some
+    custom recoveries may mount this automatically, and others might not. If using
+    **Team Win Recovery Project** images from the URLs shown previously, the `/data`
+    partition can be mounted by selecting Mount and then selecting the `/data` partition
+    as seen in the following steps. The recovery menu is generally either navigated
+    by using the volume keys to move up and down and the power button to select, or
+    may be touch-based depending on the custom recovery image used.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'For a TWRP recovery, follow these steps:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'From the main recovery screen, select Mount:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '![](img/36af8c77-3d34-4516-bd74-8f122f7b6903.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'After choosing Mount, select the partition(s) to be mounted:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '![](img/cbbdc3db-e25f-4fa4-9199-9c7ac080668e.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Once the `/data` partition (and any other partition the examiner wants to investigate)
+    is mounted, the examiner can perform ADB data extractions, as demonstrated earlier
+    in this chapter.
+  prefs: []
+  type: TYPE_NORMAL
+- en: On many devices running Android 6.0 (Marshmallow) or higher, the userdata partition
+    is encrypted by default, so it's impossible to mount and image it using custom
+    recovery.
+  prefs: []
+  type: TYPE_NORMAL
+- en: If the device does not have a custom recovery, the following section will show
+    how to boot into one or flash it.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Booting to a custom recovery image
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Once the bootloader is determined to be unlocked, an examiner will need a custom
+    recovery image from which to boot. An excellent source of recovery images is [https://twrp.me/Devices/](https://twrp.me/Devices/).
+  prefs: []
+  type: TYPE_NORMAL
+- en: It is absolutely critical to select the correct recovery image for the device
+    being examined; they aren't interchangeable and booting from the wrong image may
+    brick the device.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Once a recovery image is selected and downloaded, the device needs to be placed
+    into fastboot mode. This can be accomplished using one of two ways:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: ADB
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Physical device buttons
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'To enter fastboot on a device over ADB, the device must already have USB Debugging
+    enabled. The following is the command to enter fastboot mode over ADB:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: If USB Debugging cannot be enabled or ADB cannot be used, there is also typically
+    a combination of buttons to press while the device is booting, similar to entering
+    Recovery Mode. The exact combination can be found online for each device specifically.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Once the device is in fastboot mode, running the following command will verify
+    the device is connected and ready to communicate:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The following command will load the custom recovery image into RAM and boot
+    the device into Recovery Mode:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: The device should now reboot and enter Recovery Mode. As shown in the Recovery
+    Mode section, the `/data` partition may need to be mounted in order to access
+    user data.
+  prefs: []
+  type: TYPE_NORMAL
+- en: If the fastboot boot command fails, it is a likely indicator that the device's
+    bootloader is locked.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Using adb shell to determine if a device is rooted
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The simplest method to determine if a device is rooted is to use `adb shell`.
+    This will open a shell on the device that will be accessed on the examiner''s
+    computer; this means that any commands run in the shell will be executed on the
+    device. Once USB Debugging is enabled and Secure USB Debugging is bypassed (or
+    from Recovery Mode, as discussed later), open a Terminal on the local computer
+    and run the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The shell will appear in one of two ways, either with `$` or `#`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/43070d85-ac6b-483a-80f3-9975b13170f7.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'On Linux systems, `#` is used to indicate a root user; `$` indicates a non-root
+    user. If the shell returns showing `#`, the shell has root access:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/5ecfd6ee-9ba2-4e8c-a0a1-7dec4eb37705.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'One further step may be required on some rooted devices. If the shell returns
+    `$`, try running the `su` command (as you can see in the previous screenshot):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: If the `su` binary is installed on the device, which is usually a part of the
+    rooting process, this will escalate the shell's permissions to root if it did
+    not open with them.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note that some older devices automatically ran the shell as root; simply opening
+    the `adb shell` may be enough to give an examiner root access.
+  prefs: []
+  type: TYPE_NORMAL
+- en: adb pull
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'As discussed in [Chapter 2](b81853c6-388b-4e15-b8dd-deb5c1b5b36d.xhtml),* Setting
+    Up the Android Forensic Environment*, `adb pull` is used to transfer files from
+    the device to the local workstation. The following show the format for the `adb
+    pull` command:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The optional `–p` flag shows the transfer''s progress, while the optional `–a`
+    flag will copy the file''s timestamp and mode. The `<remote>` parameter is the
+    exact path to the file on the device. The optional `<local>` parameter is the
+    path where the file will be written on the examiner''s workstation. If no local
+    path is specified, the file will be written to the current working directory.
+    An example `adb pull` command may look like the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Let''s look at the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/567160da-b1df-439c-a0df-62edb511d61a.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: This command would pull an image file from the device and write it to a directory
+    of our choice. Again, note that the device must be rooted if you want to pull,
+    for example, the `mmssms.db` database (which contains sent and received SMS and
+    MMS); otherwise, the output would simply show that `0` files were pulled.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The output shows that the file is `599401` bytes in size. As a result of our
+    command, `1.png` now resides in the `Test` folder.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Similarly, if an investigator wishes to pull the files for an entire application,
+    that can be done with `adb pull` also:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/259c3f29-51b5-4682-bb62-70317a639e01.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: This time, the `adb pull` command fetched every file in the `Pictures` directory.
+    As you can see in the preceding screenshot, three files were pulled. The total
+    size of the transfer is shown as `1310468` bytes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'It''s even possible to do the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: This would pull every logical file available from the `/data/data` directory
+    and put them in the examiner's `Test` folder. This is not equivalent to a physical
+    image, as certain files are skipped and deleted files will not be copied, but
+    it is a simple method for pulling the vast majority of a user's application data.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Another advantage of the `adb pull` command is that it is highly useful for
+    scripting purposes. A knowledgeable examiner can maintain a list of paths for
+    common files of interest, and write a script that automatically pulls these files
+    from a device, or even have the script automatically pull the entire `/data/data`
+    directory. The following is a simple example of Python code that will perform
+    this function:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: Note that the code is not very refined; it's only purpose is to illustrate the
+    ease with which `adb` commands can be scripted. At the very least, properly implementing
+    the code should include the option to specify an output directory and handle any
+    errors. However, the six lines shown previously would be sufficient to pull the
+    entire `/data/data` directory logically, assuming USB Debugging is enabled and
+    the device is rooted.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Fastboot mode
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Fastboot is another protocol utility built into the Android Software Development
+    Kit, and is used for interacting directly with a device's bootloader. Essentially,
+    it is a much lower-level version of ADB and is frequently used to flash new images
+    to a device. How can this be helpful to an examiner?
+  prefs: []
+  type: TYPE_NORMAL
+- en: Fastboot can allow an examiner to boot from a custom recovery image and temporarily
+    gain root access on a device, hence gaining access to data that would have been
+    unavailable otherwise. Fastboot does not require USB Debugging to be enabled or
+    root access. The process of loading a custom bootloader onto a device is commonly
+    used by commercial forensic tools to temporarily root a device, but a skilled
+    examiner can also perform the process manually. Using this method, the recovery
+    image is loaded into RAM; no permanent data on the device is altered in any way.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The most important requirement for using fastboot is an unlocked bootloader;
+    locked bootloaders will not allow a device to boot from code that isn't specifically
+    signed by the manufacturer. Unfortunately for forensic purposes, most devices
+    no longer ship with an unlocked bootloader as it is a serious security risk, and
+    manually unlocking a bootloader typically erases the user data. As such, the amount
+    of devices for which this is a feasible method is somewhat limited. But, when
+    it works, it's an absolutely invaluable tool for an examiner to have in their
+    arsenal.
+  prefs: []
+  type: TYPE_NORMAL
+- en: This method will not work on devices with full disk encryption enabled. Booting
+    into Recovery Mode will NOT decrypt the `/data` partition.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Determining bootloader status
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Much like everything involving Android forensics, there is no one guaranteed
+    method to determine whether a bootloader is locked, as it varies by manufacturer.
+    To boot into the bootloader, use the `adb` command:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: The device should boot to a screen that shows information regarding the bootloader.
+    Frequently, this screen will display the bootloader status, as seen in the following
+    screenshot.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The following is a generic, stock fastboot menu from a Nexus 5\. Note that
+    the Lock State indicates that the bootloader is unlocked:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/a082e8a5-f6ec-408f-bd1b-27b20591b880.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'The following is a standard Samsung Odin mode screen; Odin is the Samsung proprietary
+    equivalent to fastboot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/12a786e6-268d-4f00-b862-593292ad668d.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Samsung Odin mode screen
+  prefs: []
+  type: TYPE_NORMAL
+- en: ADB backup extractions
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Google implemented ADB backup functionality beginning in Android 4.0, Ice Cream
+    Sandwich. This allows users (and forensic examiners) to back up application data
+    to a local computer over ADB. This process does not require root and is therefore
+    highly useful for forensic purposes. However, it does not acquire every application
+    installed on the device. When a developer makes a new app, it is set to allow
+    backups by default, but this can be changed by the developer. In practice, it
+    seems the vast majority of developers leave the default setting, which means that
+    backups do capture most third-party applications. Unfortunately, most Google applications
+    disable backups; full application data from apps such as Gmail and Google Maps
+    won't be included. The same can be said about most messengers—its data isn't available
+    in ADB backups.
+  prefs: []
+  type: TYPE_NORMAL
+- en: This method will not be useful against a locked device; user interaction with
+    the screen is required.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Extracting a backup over ADB
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The format of the `adb backup` command is shown in the following command:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE11]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The flags are as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`-f`: Name the path for the output file. If not specified, defaults to `backup.ab`
+    in the present working directory.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`[-apk|noapk]`: Choose whether or not to back up the `.apk` file. Defaults
+    to `–noapk`.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`[-obb|-noobb]`: Choose whether or not to back up `.obb` (APK expansion) files.
+    Defaults to `–noobb`.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`[-shared|-noshared]`: Choose whether or not to back up data from shared storage
+    and the SD card. Defaults to `–noshared`.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`[-all]`: Include all applications for which backups are enabled.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`[-system|-nosystem]`: Choose whether or not to include system applications.
+    Defaults to `–system`.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`[<packages>]`: Explicitly name application packages to be backed up. Not needed
+    if using `–all` or `–shared`.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'An example `adb backup` command to capture all possible application data would
+    be the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE12]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Alternatively, an example `adb backup` command to capture a specific application''s
+    data would be the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE13]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'You should see something like the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/b0ac308c-f817-4cb5-a547-c43130d3cc78.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'When performing a backup, the user must approve the backup on the device; this
+    means that backups can''t be performed without bypassing screen locks:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/02ac4074-080f-4efd-93f2-c742b1abb328.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Depending on the number of applications installed, the backup process may take
+    a significant amount of time.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Parsing ADB backups
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The resulting backup data is stored as a `.ab` file, but is actually a TAR file
+    that has been compressed with the Deflate algorithm. If a password was entered
+    on the device when the backup was created, the file would also be AES encrypted.
+    It should also be mentioned that these files may exist on a suspect's computer
+    and can be analyzed using the same methods.
+  prefs: []
+  type: TYPE_NORMAL
+- en: There are many free utilities to turn the `.ab` backup file into a `.tar` file
+    that can be viewed. One such utility is the Android Backup Extractor found at: [http://sourceforge.net/projects/adbextractor/](http://sourceforge.net/projects/adbextractor/).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To use the Android Backup Extractor, simply extract its files into the directory
+    with the backup. The command to run the utility is shown in the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE14]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The `.tar` file will be at the path specified on the command line, or the current
+    working directory if no path is specified. Decompressing the `.tar` file may be
+    done manually on a Linux command line or with one of the many Windows archive
+    utilities such as WinRAR or 7Zip:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/2d749204-152f-4ac0-81b3-cd415a70c053.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Directories within the backup, seen in 7-Zip
+  prefs: []
+  type: TYPE_NORMAL
+- en: Data locations within ADB backups
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Now that the backup has been converted into a `.tar` file and then extracted,
+    the examiner can view the data contained in the backup. In our example, there
+    are two directories found in the root of the backup:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`apps`: Contains data from `/data/data` for applications that were included
+    in the backup'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`shared`: Contains all data from the SD card; only present if the shared argument
+    was passed at the command line'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Note that the files within the apps directory are stored in directories by
+    their package name (just as seen in `/data/data` from within `adb shell`), and
+    the shared directory is exactly what the user would see if they accessed the SD
+    card by plugging it into a computer. For a benign example of user data that was
+    pulled from the backup, the user''s Pandora activity is shown in the following
+    screenshot. Pandora is a streaming music service with millions of downloads in
+    Google Play Store. Pandora''s application data will be contained in the `apps`
+    folder of the backup, in the folder named `com.pandora.android`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/809d7b2b-f3b8-46a1-aa2a-6a9ed6ef8fe4.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: The Pandora directory from the backup
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'This is a fairly standard layout for an Android application, as discussed in
+    [Chapter 2](b81853c6-388b-4e15-b8dd-deb5c1b5b36d.xhtml), *Setting Up the Android
+    Forensic Environment*. The application''s databases will be in the `db` folder:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/bfe83963-5518-4f97-a84d-09c2c7c6007e.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Files within the db folder of the Pandora backup
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'XML configuration settings will be in the `sp` folder:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/35199ac0-04c4-4cbc-83b4-43665869e176.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Files within the sp folder of the Pandora backup
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Using a database viewer to view `pandora.db` reveals stations that the user
+    has created, as well as the timestamp for when it was created:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/1ac041dc-5ad7-45ce-961a-72672fcae7b2.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Contents of pandora.db from the backup
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Looking in the XML preferences file, the timestamp of the app installation
+    can be found under `firstInstallId`. Note that the exact method for converting
+    the timestamps is shown in [Chapter 7](c0ffe5a3-4668-436d-9f02-e70a67f3e43e.xhtml),
+    *Forensic Analysis of Android Applications*:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/12ce7e66-1696-4fa4-9380-4e66ac218577.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Contents of the XML preferences file
+  prefs: []
+  type: TYPE_NORMAL
+- en: If, for some odd reason, the user's Pandora usage was a major question in the
+    investigation, what could an examiner determine from these two seemingly innocuous
+    files?
+  prefs: []
+  type: TYPE_NORMAL
+- en: Firstly, the `lastTransmission` and `firstInstallID` timestamps are within milliseconds
+    of each other, indicating that the application was never used after it was installed.
+    Furthermore, the creation dates of each station precede the installation of the
+    application, in some cases by years. This would be an indicator that the user
+    has used Pandora on other devices; that may be highly relevant to the investigation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: While Pandora is generally not germane to digital forensic investigations, it
+    is an example of data that can be gleaned from a simple backup over ADB. More
+    detailed application analysis will be presented in [Chapter 7](c0ffe5a3-4668-436d-9f02-e70a67f3e43e.xhtml),* Forensic
+    Analysis of Android Applications*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ADB dumpsys
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Dumpsys is a tool built into the Android OS, generally used for development
+    purposes to show the status of services running on the device. However, it can
+    also contain forensically interesting information. Dumpsys does not require root
+    access, but, like all ADB commands, does require USB Debugging to be enabled on
+    the device and Secure USB Debugging to be bypassed.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The exact services that can be viewed differ across devices and Android versions.
+    To view a list of all possible services that can be dumped, run the following
+    command:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE15]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The output of the command will appear as a list, as shown here:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/e784d64f-0f27-4782-873f-d56c506f405b.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'The service name located before the colon is the argument we will pass to `dumpsys`.
+    A valid `dumpsys` command, using the previously seen service number seven (`iphonesubinfo`),
+    looks like this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE16]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'In the following, we see that the output of the `iphonesubinfo` service includes
+    the device IMEI:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/90db25f5-377b-45ec-a842-eb1b496721f0.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'There are many forensically interesting `dumpsys` services; several examples
+    follow. As the `dumpsys` services may vary by OS version and device, this list
+    is not all-inclusive and is merely intended to show the usefulness of `dumpsys`
+    to a forensic examiner:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`iphonesubinfo`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`batterystats`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`procstats`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`user`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`appops`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`wifi`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`notification`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Dumpsys batterystats
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Batterystats is used to show the usage of running applications. Its output
+    can be very verbose, depending on the number of applications in use; in the following
+    screenshot, the output was redirected to a file because it did not fit in the
+    Windows command line:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/6042281c-036f-4dd6-9c66-faa5769aec16.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: This shows us the network usage of Google Chrome. This information can be used
+    to show that the application had been used recently, and this information will
+    exist even if Chrome was used in Incognito Mode and leaves no forensic evidence
+    elsewhere.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note that the *Wakelock* section can be very useful for detecting malware. A
+    wakelock is a method of keeping the device awake (that is, not entering sleep
+    mode) and is indicative of an application attempting to stay running in the background.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Dumpsys procstats
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Procstats is a service to display the processor usage by running applications.
+    Similar to batterystats, it is another method that can be used to show that an
+    application was recently used on a device:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/588440f4-861d-4312-8e1c-ce21343993ac.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Dumpsys user
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Beginning with Android Jelly Bean, Google added support for multiple users on
+    tablet devices. With the release of Lollipop, Google extended this support to
+    phones. One of the most challenging problems in digital forensics has long been
+    proving who was using a device when incriminating actions were performed, that
+    is: *Who was behind the keyboard?*
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Running `dumpsys` on the user service will show the last login info for all
+    users:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/37c4ea9a-a670-4e92-8cec-78c106e0faf8.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: As only one user can be logged in at a time, looking at the user with the most
+    recent login will identify the account currently in use on the device.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Dumpsys App Ops
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'App Ops may be the most interesting `dumpsys` service. The term App Ops is
+    generally used to refer to permissions accessible by an application. In older
+    versions of Android, it was rumored that Google would include the ability for
+    users to revoke specific permissions from an application. This has never come
+    to fruition, but this service at least remains, and shows the last time an application
+    used each permission that it can access. The following is another example from
+    Google Chrome:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/cb3a903a-3bf8-4ee5-88a1-d45392b0a7f1.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: In the preceding output, we can see that approximately 1 hour and 7 minutes
+    before `appops` was dumped with `dumpsys`, Chrome used the `TAKE_AUDIO_FOCUS`
+    permission, and later used `AUDIO_MEDIA_VOLUME`. This indicates that Chrome was
+    used to listen to something, and when it happened.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'A somewhat more interesting example is the phone application:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/9b8ad528-1e68-43a3-9104-7100fc03fd02.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 44 minutes ago, the user used the phone application and required the `READ_CONTACTS`
+    permission, then immediately also used the `WRITE_CALL_LOG` permission. We can
+    surmise that the user made a phone call 44 minutes ago; even if they had deleted
+    the call from the records afterwards.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Dumpsys Wi-Fi
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The Wi-Fi service will show a list of all SSIDs for which a connection has
+    been saved. This could be useful for showing that a user was in a certain location,
+    for example. More detailed Wi-Fi information is also available on the filesystem,
+    but requires root access to view. Using `dumpsys`, we can access this data without
+    requiring root:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/0993e64f-466c-4b7b-b2b1-c013c49ae333.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Dumpsys notification
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The notification service will provide information about currently active notifications.
+    This can be useful for recording the state of a device when it is seized or identifying
+    which application is displaying a specific notification. Each notification can
+    be rather large and contain a lot of information, only some of which may be of
+    use. The following is an example of an incoming email from the Gmail application,
+    which includes the subject (`This is a test email`) and body (`To see a test notification`):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/3967c31b-71f5-4860-a334-7b7f13dd0c35.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Dumpsys conclusions
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Running the `dumpsys` command with no service name will run `dumpsys` on all
+    available services. However, the output will be very large and should be redirected
+    into a text file. On most platforms, the command to do this would be the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE17]'
+  prefs: []
+  type: TYPE_PRE
+- en: This would write the output to `dumpsys.txt` in the current working directory.
+    The output can then be searched or a parsing script can be run to pull out known
+    relevant fields.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Dumpsys is an extremely powerful tool that can be used to show information that
+    cannot be obtained elsewhere on the device. We recommend running `dumpsys` on
+    every Android device when it is seized, prior to being shut down. This will save
+    a wide variety of information that may be useful later, and does not require root.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Helium backup extractions
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: According to its developers, Helium is the *missing app sync and backup solution
+    for Android*. It doesn't require root access and can be used to extract some data
+    that ADB backup can't; for example, SMS messages and call logs.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Actually, there are two apps that an examiner will need: an Android app and
+    a PC app. The Android app can be downloaded from Google Play:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[https://play.google.com/store/apps/details?id=com.koushikdutta.backup](https://play.google.com/store/apps/details?id=com.koushikdutta.backup).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The desktop version is available here:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[http://www.clockworkmod.com/carbon](http://www.clockworkmod.com/carbon).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let''s follow these steps for extracting the data:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Once you open the Android app, you''ll see the following screen:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '![](img/7ba24af0-9176-4301-b022-88981ffe09a4.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Open the desktop app and enable Helium. You will see a message that says Helium
+    has been enabled on your Android.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 'You can choose the data you want to backup; in our case, it''s messages and
+    call logs:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '![](img/d0b11512-6274-49a4-bf88-2b936e8a14c9.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'As we want to save the backup to our forensic workstation, let''s go to the
+    menu in the upper-right corner and choose the appropriate option, PC Download:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '![](img/7154414c-544f-4758-a926-1443ee16cc51.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Check the IP address and port the Helium Server is running on; in our case,
+    it''s `192.168.1.71` and `5000`:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '![](img/7d5cfe41-0e6e-4fc5-9411-e9632ef0472f.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Access the address from your web browser of choice, choose the applications
+    you want to back up, and click Start Backup:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '![](img/31e7b13b-bcbc-41d7-8e79-baa894fd43ad.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'In your default downloads folder you''ll find a ZIP archive with the following
+    name: `backup.zip`.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'There are three files in the archive:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`backup.json`: It contains information about the backup, such as package name,
+    backup date, and smartphone''s OS version.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`com.android.providers.telephony.ab`: It is a backup itself and contains extracted
+    data, in our case, SMS and call logs.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`com.android.providers.telephony.png`: It backed up the application''s icon.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Again, to extract the contents of `com.android.providers.telephony.ab`, we
+    need to use one of the utilities from Android Backup Toolkit ([https://sourceforge.net/projects/adbextractor/](https://sourceforge.net/projects/adbextractor/)),
+    this time Helium Backup Extractor:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE18]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Now, in the current working directory, there is an `app` folder, where under `apps\com.android.providers.telephony\cb`
+    we can find the `custom.cb` file. This file contains backed up application data
+    in JSON format; here is an example:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE19]'
+  prefs: []
+  type: TYPE_PRE
+- en: The `number` field shows the phone number, the `new` field (if the call is recent
+    or not), `duration` (call duration), `date` (call date in Unix Epoch format—milliseconds),
+    and `type` (type of the call); in our case, it's `1`, incoming.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Of course, this method may not seem to be very forensically sound as we have
+    to install an app on the target mobile device, but sometimes it's the only way
+    to extract valuable digital evidence. What is more, many commercial mobile forensic
+    tools use small applications, so-called **agents**, to extract more data during
+    logical acquisition. You'll learn more about Android forensic tools in [Chapter
+    8](1b4c4086-f708-4bea-9bb4-f2f477b10c85.xhtml), *Android Forensic Tools Overview*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Bypassing Android lock screens
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Lock screens are the most challenging aspect of Android forensic examinations.
+    Frequently, the entire investigation depends on the examiner's ability to gain
+    access to a locked device. While there are methods to bypass them, this can be
+    highly dependent on the OS version, device settings, and technical capabilities
+    of the examiner. There is no magical solution that will work every time on every
+    device. Commercial forensic tools such as Cellebrite and Oxygen have fairly robust
+    bypass capabilities, but are far from infallible. This chapter will show how an
+    examiner can increase their odds of bypassing locked devices with free tools and
+    methods.
+  prefs: []
+  type: TYPE_NORMAL
+- en: An examiner should never attempt to guess a pattern/PIN/password on the device.
+    Many manufacturers implement a setting that will wipe the device after a number
+    of failed attempts. Many also allow the user to lower that number.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Lock screen types
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'There are many methods used to secure a device, and the methods for bypassing
+    each vary:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: None/slide
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Pattern
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: PIN
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Password
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Smart Lock: Trusted Face, Trusted Voice, Trusted Location, Trusted Device,
+    On-body Detection'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Other security options may exist; as Android is open source, the possibilities
+    are only limited by the developer's imagination. These are the options that are
+    available in the stock version of Android Oreo released by Google. Most security
+    options used by vendors generally use one of these stock options as a failsafe
+    in case a user is unable to log in with their unique options. Versions in which
+    the setting was first used also refer to stock Android; various manufacturers
+    may have implemented them sooner.
+  prefs: []
+  type: TYPE_NORMAL
+- en: None/Slide lock screens
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The *Slide to unlock* screen is the default setting of most Android devices.
+    It provides no level of security, and is bypassed by sliding a finger on the screen
+    in the indicated direction.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Pattern lock screens
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Pattern lock screens are the iconic Android security method. Frequently referred
+    to as *swipe codes* or similar names, these require the user to trace a pattern
+    on the device with a finger. A common bypass for this lock is the *smudge attack*,
+    looking for patterns left on the screen by the user's finger.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Password/PIN lock screens
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Users familiar with Apple''s iOS will recognize this option. It requires a
+    user to type a password or PIN in order to unlock the device. These are lumped
+    together because, forensically, they are identical: they store their passwords
+    the same way.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Smart Locks
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Smart Lock is a term introduced in Android Lollipop, although the Face unlock
+    option was previously available. They require a specific condition to unlock the
+    device: a user''s face must be recognized, the user must be in a known location,
+    or a specific other device must be nearby.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Trusted Face
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Face unlock works exactly as it sounds: it uses facial recognition to determine
+    if the user has been previously been set up as a trusted user. Older versions
+    of Face locks were easily fooled by pictures of a trusted user, though newer versions
+    may require the user to blink in order to unlock the device.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Trusted Voice
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The **OK Google** phrase can be used by the user to unlock the phone. This type
+    of lock isn't available on many devices, as the phone has to actively listen for
+    the user's voice while the screen is off, and it drains the battery.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Trusted Location
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Trusted Location is also commonly referred to as **geo-fencing**. If a user
+    is in a location that has been marked as trusted (such as home or work), the device
+    will not lock. There's no input required from the user, but the GPS must be enabled.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Trusted Device
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Trusted Device works via Bluetooth; if a device that has been set up as a trusted
+    device is nearby, the lock screen will be disabled. This may be used with smart
+    watches, vehicles that pair over Bluetooth, Bluetooth headsets, or any other Bluetooth–capable
+    device.
+  prefs: []
+  type: TYPE_NORMAL
+- en: On-body Detection
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: On-body Detection uses phone's motion sensors, for example, the accelerometer
+    and gyroscope, to keep it unlocked while it's in the user's hand, pocket, or bag.
+  prefs: []
+  type: TYPE_NORMAL
+- en: All Smart Lock options require a pattern/PIN/password as a backup security method.
+    This means we only have to learn how to bypass patterns/PINs/passwords in order
+    to crack all of the security options.
+  prefs: []
+  type: TYPE_NORMAL
+- en: General bypass information
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In all cases, bypassing the lock screen will require retrieving a file from
+    the device. Pattern locks are stored as hash values at `/data/system/gesture.key`
+    and PIN/password locks are stored as hash values at `/data/system/password.key`
+    (up to Android 5.0, Lollipop). Additionally, the `password.key` hash is salted;
+    the salt value is stored at `/data/data/com.android.providers.settings/databases/settings.db`
+    prior to Android 4.4, and `/data/system/locksettings.db` on devices running Android
+    4.4 and later.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Android 6.0 (Marshmallow) introduced Gatekeeper password storage—a new level
+    of obfuscation to PIN and pattern locks. Now, the locks are stored in `gatekeeper.pattern.key`
+    and `gatekeeper.password.key` and no longer use hashes. Gatekeeper uses **Hash-based
+    Message Authentication Code** (**HMAC**) with a hardware-backed secret key to
+    manage and verify passwords.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'If the device is locked, how is an examiner supposed to access these files?
+    Again, there is no magic solution that works every time, but some options are
+    as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'ADB:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Requires root
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Requires USB Debugging
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Requires Secure USB Debugging pairing (depending on OS version)
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Booting into a custom Recovery Mode:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Does not require root (root will be given through the recovery image)
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Does not require USB Debugging (accomplished via fastboot)
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Does not require Secure USB Debugging (this is bypassed entirely)
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Requires an unlocked bootloader
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Won't work on devices with encrypted userdata partition
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'JTAG/Chip-off:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Highly advanced
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Does not require any specific device settings or options
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Won't work on devices with encrypted userdata partition
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Removing Android lock screens
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: PIN or password can be bypassed by simply overwriting or deleting the files.
+    However, this is changing the original evidence and may not be forensically valid
+    in your jurisdiction.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Removing PIN/password with ADB
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Depending on the device you are examining and its operating system version,
+    you may need to delete different files. If the device contains `*.key` files under `/data/system/`,
+    you need to remove these files; if there are no such files, you may need to remove
+    `locksettings.db`, if possible, or update some of its records (see the next section).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Here is how to remove the files of interest via ADB:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE20]'
+  prefs: []
+  type: TYPE_PRE
+- en: Now the device should be rebooted. After the reboot, there will be no PIN or
+    password.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Removing PIN/Password with ADB and SQL
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: There are no `*.key` files on recent Android devices, such as those running
+    Oreo or Pie, but there is still the `lockscreen.db` database under `/data/system`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Here is how to remove the PIN or passwords for making changes in this database:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE21]'
+  prefs: []
+  type: TYPE_PRE
+- en: Reboot the device and the screen lock will be removed.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Android SIM card extractions
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Traditionally, SIM cards were used for transferring data between devices. SIM
+    cards in the past were used to store many different types of data, such as the
+    following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: User data
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Contacts
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: SMS messages
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Dialed calls
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Network data
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Integrated Circuit Card Identifier (ICCID)**: Serial number of the SIM'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**International Mobile Subscriber Identity (IMSI)**: Identifier that ties the
+    SIM to a specific user account'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**MSISDN**: Phone number assigned to the SIM'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Location Area Identity (LAI)**: Identifies the cell that a user is in'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Authentication Key (Ki)**: Used to authenticate the mobile network'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Various other network-specific information
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: With the rise in capacity of device storage, SD cards, and cloud backups, the
+    necessity for storing data on a SIM card has decreased. As such, most modern smartphones
+    typically do not store much, if any, user data on the SIM card. All network data
+    listed previously does still reside on the SIM, as a SIM is necessary to connect
+    to all modern (4G) cellular networks.
+  prefs: []
+  type: TYPE_NORMAL
+- en: As with all Android devices, though, there is no concrete stipulation that user
+    data can't be stored on a SIM; it simply doesn't happen by default. Individual
+    device manufacturers can easily decide to write user data to the SIM, and individual
+    users can download applications to provide that functionality. This means that
+    a device's SIM card should always be examined during a forensic examination. It
+    is a very quick process, and should never be overlooked.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Acquiring SIM card data
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The SIM card should always be removed from the device and examined separately.
+    While some tools claim to read the SIM card through the device interface, this
+    may not recover deleted data or all data on the SIM; the only way for an examiner
+    to be certain all data was acquired is to read the SIM through a standalone SIM
+    card reader with a tool that has been tested and verified.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The location of the SIM will vary by device, but is typically either stored
+    beneath the battery or in a tray located on the side of the device. Once the SIM
+    is removed, it should be placed in a SIM card reader. There are hundreds of SIM
+    card readers available in the marketplace, and all major mobile forensics tools
+    come with an included reader that will work with their software. Oftentimes, the
+    forensic tools will also support third-party SIM readers as well.
+  prefs: []
+  type: TYPE_NORMAL
+- en: There is a surprising lack of thorough, free SIM card reading software available.
+    Any software used should always be tested and validated on a SIM card that has
+    been populated with known data prior to being used in an actual forensic investigation.
+    Also, keep in mind that much of the free software available works for older 2G/3G
+    SIMs, but may not work properly on a modern 4G SIM. We used the Mobiledit! Lite,
+    a free version of Mobiledit!, for the following screenshots. It is available at: [http://www.mobiledit.com/downloads](http://www.mobiledit.com/downloads).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The following is a sample 4G SIM card extraction from an Android phone running
+    version 4.4.4; note that nothing that could be considered user data was acquired
+    despite the SIM being used actively for over a year, though fields such as the
+    ICCID, IMSI, and MSISDN (own phone number) could be useful for subpoenas/warrants
+    or other aspects of an investigation:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/75f5fad3-33c1-4c76-ab6a-7435b4aefb0a.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: SIM card extraction overview
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The following screenshot highlights SMS messages on the SIM card:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/612ae554-6024-4fb9-8d06-c6f80491248a.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'The following screenshot highlights the phonebook of the SIM card:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/d83c3405-4054-4d0a-8c8a-91964edea4c9.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'The following screenshot highlights the phone number of the SIM card (also
+    called the MSISDN):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/97fb182c-d225-49d7-9aae-eee2f5db6695.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: SIM Security
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Due to the fact that SIM cards conform to established, international standards,
+    all SIM cards provide the same security functionality: a 4- to 8-digit PIN. Generally,
+    this PIN must be set through a menu on the device. On Android devices, this setting
+    is found at Settings | Security | Set up SIM card lock. The SIM PIN is completely
+    independent of any lock screen security settings and only has to be entered when
+    the device boots. The SIM PIN only protects user data on the SIM; all network
+    information is still recoverable even if the SIM is PIN locked.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The SIM card will allow three attempts to enter the PIN; if one of these attempts
+    are correct, the counter will reset. On the other hand, if all of these attempts
+    are incorrect, the SIM will enter **Personal Unblocking Key** (**PUK**) mode.
+    The PUK is an 8-digit number assigned by the carrier, and is frequently found
+    on documentation when the SIM is purchased. Bypassing a PUK is not possible with
+    any commercial forensic software; because of this, an examiner should never attempt
+    to enter the PIN on the device as the device will not indicate how many attempts
+    remain before the PUK is activated. An examiner could unwittingly PUK lock the
+    SIM and be unable to access the device. Forensic tools, however, will show how
+    many attempts remain before the PUK is activated, as seen in the previous screenshots.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Common carrier defaults for SIM PINs are 0000 and 1234\. If three tries remain
+    before activating the PUK, an examiner may successfully unlock the SIM with one
+    of these defaults.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Carriers frequently retain PUK keys when a SIM is issued. These may be available
+    through a subpoena or warrant issued to the carrier.
+  prefs: []
+  type: TYPE_NORMAL
+- en: SIM cloning
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The SIM PIN itself provides almost no additional security, and can easily be
+    bypassed through SIM cloning. SIM cloning is a feature provided in almost all
+    commercial mobile forensic software, although the term cloning is somewhat misleading.
+    SIM cloning, in the case of mobile forensics, is the process of copying the network
+    data from a locked SIM onto a forensically sterile SIM that does not have the
+    PIN activated. The phone will identify the cloned SIM based on this network data
+    (typically the ICCID and IMSI) and think that it is the same SIM that was inserted
+    previously, but this time there will be no SIM PIN. This cloned SIM will also
+    be unable to access the cellular network, which makes it an effective solution
+    similar to Airplane Mode. Therefore, SIM cloning will allow an examiner to access
+    the device, but the user data on the original SIM is still inaccessible as it
+    remains protected by the PIN.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We are unaware of any free software that performs forensic SIM cloning. It is
+    supported by almost all commercial mobile forensic kits, however. These kits will
+    typically include a SIM card reader, software to perform the clone, as well as
+    multiple blank SIM cards for the cloning process.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Summary
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'This chapter has covered many topics related to logical extractions of Android
+    devices. As a recap, the various methods and their requirements are as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| **Method** | **Requirements** |'
+  prefs: []
+  type: TYPE_TB
+- en: '| ADB pull |'
+  prefs: []
+  type: TYPE_TB
+- en: USB Debugging enabled
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Secure USB Debugging bypassed on 4.2.2+
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Root access to obtain user data
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '|'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| ADB pull from Recovery Mode |'
+  prefs: []
+  type: TYPE_TB
+- en: Must be a custom recovery to enable ADB access
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Root access to obtain user data
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '|'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| Fastboot to boot from custom recovery image |'
+  prefs: []
+  type: TYPE_TB
+- en: Unlocked bootloader
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Boot image for device
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '|'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| ADB backup |'
+  prefs: []
+  type: TYPE_TB
+- en: USB Debugging enabled
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Secure USB Debugging bypassed on 4.2.2+
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Must be done from a running device (not Recovery Mode)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '|'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| ADB Dumpsys |'
+  prefs: []
+  type: TYPE_TB
+- en: USB Debugging enabled
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Secure USB Debugging bypassed on 4.2.2+
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Must be done from a running device (not Recovery Mode)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '|'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| SIM card extraction |'
+  prefs: []
+  type: TYPE_TB
+- en: None, should be done independent of device
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '|'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Additionally, valuable user data can be recovered from the SD card, which will
+    be covered in [Chapter 5](a910938e-1c0b-4f19-baae-509ccaa36c09.xhtml), *Extracting
+    Data Physically from Android* *Devices*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: If a screen is locked, an examiner can remove the key files or remove some records
+    from the `locksettings.db` database using the methods listed previously.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'There is a lot of data in this chapter and to help simplify it somewhat, a
+    suggested *best practices* flowchart is shown as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/4f07a5a6-2220-4b35-8629-a1e6c525399a.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Android Forensics flowchart
+  prefs: []
+  type: TYPE_NORMAL

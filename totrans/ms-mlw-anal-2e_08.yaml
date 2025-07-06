@@ -1,0 +1,2205 @@
+- en: '8'
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Handling Exploits and Shellcode
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: At this stage, we are already aware of the different types of malware. What
+    is common among most of them is that they are standalone and can be executed on
+    their own once they reach the targeted system. However, this is not always the
+    case, and some of them are only designed to work properly with the help of targeted
+    legitimate applications.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In our everyday life, we interact with multiple software products that serve
+    various purposes, from showing us pictures of cats to managing nuclear power plants.
+    Thus, there is a specific category of threats that aim to leverage vulnerabilities
+    hidden in such software to achieve their purposes, whether it is to penetrate
+    the system, escalate privileges, or crash the target application or system to
+    disrupt some important process.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In this chapter, we will be talking about exploits and learning how to analyze
+    them. To that end, we will cover the following topics:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Getting familiar with vulnerabilities and exploits
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Cracking the shellcode
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Exploring bypasses for exploit mitigation technologies
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Analyzing Microsoft Office exploits
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Studying malicious PDFs
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Getting familiar with vulnerabilities and exploits
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In this section, we will cover what major categories of vulnerabilities and
+    exploits exist and how they are related to each other. We will explain how an
+    attacker can take advantage of a bug (or multiple bugs) to take control of the
+    application (or maybe the whole system) by performing unauthorized actions in
+    its context.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Types of vulnerabilities
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: A vulnerability is a bug or weakness inside an application that can be exploited
+    or abused by an attacker to perform unauthorized actions. There are various types
+    of vulnerabilities, most of which are caused by insecure coding practices and
+    mistakes. You should pay attention when processing any input controlled by the
+    end user, including environment variables and dependency modules. In this section,
+    we will explore the most common cases and learn how attackers can leverage them.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The stack overflow vulnerability
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: The **stack overflow** vulnerability is one of the most common vulnerabilities
+    and the one that is generally addressed first by exploit mitigation technologies.
+    Its risk has been reduced in recent years thanks to new improvements such as the
+    introduction of the **Data** **Execution Prevention/No Execute** (**DEP/NX**)
+    technique, which will be covered in greater detail in the *Exploring bypasses
+    for exploit mitigation technologies* section. However, under certain circumstances,
+    it can still be successfully exploited or at least used to perform a **Denial
+    of Service** (**DoS**) attack.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let’s take a look at the following simple application written in C:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'As you know, the space for the `Buffer[80]` variable (as any local variable)
+    is allocated on the stack, followed by the EBP register’s value, which is pushed
+    at the beginning of the function prologue, and the return address:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 8.1 – Local variable representations in the stack'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_8.1_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 8.1 – Local variable representations in the stack
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'So, by simply passing an argument to this application that’s longer than 80
+    bytes, the attacker can overwrite all the buffer space, as well as the EBP and
+    the return address. It can take control of the address from which this application
+    will continue executing after the vulnerable function finishes. The following
+    diagram demonstrates overwriting `Buffer[80]` and the return address with shellcode:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 8.2 – Overwriting Buﬀer[80] and the return address with shellcode'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_8.2_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 8.2 – Overwriting Buﬀer[80] and the return address with shellcode
+  prefs: []
+  type: TYPE_NORMAL
+- en: This is the most basic stack overflow vulnerability. Now, let’s look at other
+    common types of vulnerabilities, such as **heap overflow**.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Heap overflow vulnerabilities
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'In this case, instead of using the stack, the affected variable would be stored
+    in a dynamically allocated space in memory called the `malloc`, `HeapAlloc`, or
+    other similar APIs. Windows supports two types of heaps: the default one and the
+    private (that is, dynamic) one(s); all of them follow the `_HEAP` structure. The
+    default heap’s address is stored in the `PEB` structure in the `ProcessHeap` field
+    and can be obtained by calling the `GetProcessHeap` API; private ones are returned
+    by APIs such as `HeapCreate` when they are created. All heap addresses (including
+    the default one) are stored in a list that’s pointed to by the `ProcessHeaps`
+    field of `PEB`.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Unlike the stack, the heap doesn’t store return addresses to make it easily
+    exploitable, but there are other ways to abuse it. To understand them, first,
+    we need to learn some basics about the heap structure. The data that’s used by
+    the application is stored in `_HEAP_SEGMENT` structure and are pointed to in the
+    `_HEAP` structure. All heap chunks contain a header (the `_HEAP_ENTRY` structure)
+    and the actual data. However, when the chunk is stored as freed, following the
+    `_HEAP_ENTRY` structure, it contains a linked list structure, `_LIST_ENTRY`, that
+    interconnects free chunks. This structure consists of pointers to the previous
+    free chunk (the `BLink` field) and the next free chunk (the `FLink` field); the
+    first and the last free chunks in a list are pointed to by the `FreeList` field
+    of the `_HEAP` structure. When the system needs to remove a freed chunk from this
+    list (for example, when the chunk is allocated again or as part of the chunk consolidation
+    process), **unlinking** will take place. It involves writing the next item’s address
+    in the previous item’s next entry, and the previous item’s address in the next
+    item’s previous entry to remove the chunk from a list. The corresponding code
+    will look like this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 8.3 – Sample code for the unlinking process'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_8.3_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 8.3 – Sample code for the unlinking process
+  prefs: []
+  type: TYPE_NORMAL
+- en: By overflowing the variable stored on the heap, the attacker may be able to
+    overwrite the `FLink` and `BLink` values of the adjacent chunk, which would make
+    it possible to write anything at any address during the unlinking step, as shown
+    in the preceding screenshot. For example, this can be used to overwrite the address
+    of some existing function that’s guaranteed to be executed with an address of
+    the shellcode to achieve its execution.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Multiple mitigations have been introduced over time to combat this technique.
+    Starting from Windows XP SP2, because of additional checks being introduced, attackers
+    had to switch from abusing `FreeList` to the `Lookaside` list for a similar purpose.
+    Starting from Windows Vista, among other changes, the `Lookaside` list was replaced
+    with a `Encoding` field value, forcing attackers to explore different techniques
+    such as overwriting the `_HEAP` structure. In Windows 8, Microsoft engineers introduced
+    additional checks and limitations to fight this approach – and this battle is
+    still ongoing.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The use-after-free vulnerability
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: This type of vulnerability is still widely used, despite all the exploit mitigations
+    that were introduced in the later versions of Windows. These vulnerabilities are
+    common in scripting languages such as JavaScript in browsers or PDF files.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'This vulnerability occurs when an object (a structure in memory, which we will
+    cover in detail in the next chapter) is still being referenced after it has been
+    freed. Imagine that the code looks something like this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: In the preceding code, `Buf` contains the address of the `IsAdmin` function,
+    which was executed later, after the whole `Buf` variable was freed in memory.
+    Do you think `address_to_a_func` will still be pointing to `IsAdmin`? Maybe, but
+    if this area was reallocated in memory with another variable controlled by the
+    attacker, they can set the value of `address_to_a_func` to the address of their
+    choice. As a result, this could allow the attacker to execute their shellcode
+    and take control of the system.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In `vtable` arrays. When a `vtable` array is overwritten and any function inside
+    this table is called, the attackers can redirect the execution to their shellcode.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Integer overflow vulnerabilities
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: As we know, integer values can take 1, 2, 4, or 8 bytes. Regardless of how much
+    size was granted to store them, there are always some numbers that are big enough
+    to not fit there. The integer overflow vulnerability happens when the attacker
+    is allowed to introduce a number outside of the range supported by the data unit
+    intended to store it. An example would be making a byte-sized variable storing
+    an unsigned integer, `256` (`100000000b`), which will result in storing `0` (`00000000b`)
+    as only the last 8 bits would fit into a byte. This may lead to unexpected behavior
+    in the program in favor of the attacker, such as allocating a buffer whose length
+    is 0 and then writing the data outside of its scope.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Logical vulnerabilities
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: A logical vulnerability is a vulnerability that doesn’t require memory corruption
+    to be executed. Instead, it abuses the application logic to perform unintended
+    actions. A good example of this is *CVE-2010-2729 (MS10-061)*, named **Windows
+    Print Spooler Service Vulnerability**, which is used by the Stuxnet malware. Let’s
+    dig deeper into how it works.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Windows printing APIs allow the user to choose the directory that they wish
+    to copy the file to be printed to. So, with an API named `GetSpoolFileHandle`,
+    the attacker can get the file handle of the newly created file on the target machine
+    and then easily write any data there with the `WriteFile` (or similar) API. A
+    vulnerability like this one targets the application logic, which allows the attacker
+    to choose the directory they wish and provides them with a file handle to overwrite
+    this file with any data they want.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Different logical vulnerabilities are possible, and there is no specific format
+    for them. This is why there is no universal mitigation for these types of vulnerabilities.
+    However, they are still relatively rare compared to memory corruption ones as
+    they are harder to find and not all of them lead to arbitrary code execution.
+  prefs: []
+  type: TYPE_NORMAL
+- en: There are other types of vulnerabilities out there, but the types that we have
+    just covered are a cornerstone of other types of vulnerabilities you may witness.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now that we have covered how the attacker can force the application to execute
+    its code, let’s take a look at how this code is written and what challenges the
+    attacker faces when writing it.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Types of exploits
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Generally speaking, an exploit is a piece of code or data that takes advantage
+    of a bug in software to perform an unintended behavior. There are several ways
+    exploits can be classified. First of all, apart from the vulnerability that they
+    target, when we talk about exploits, it is vitally important to figure out the
+    actual result of the action being performed. Here are some of the most common
+    types:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**Denial of Service** (**DoS**): Here, the exploit aims to crash either an
+    application or the whole system to disrupt its normal operation.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Privilege escalation**: In this case, the main purpose of the exploit is
+    to elevate privileges to give the attacker greater abilities, such as access to
+    more sensitive information.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Unauthorized data access**: This group is sometimes merged with the privilege
+    escalation category, from which it differs mainly in scope and vector. Here, the
+    attacker gets access to sensitive information that’s unavailable in a normal situation
+    with permissions set up. Unlike the previous category, the attacker can’t perform
+    arbitrary actions with different privileges, and the privileges that are used
+    are not necessarily higher in this case – they may be associated with a different
+    user of a similar access level.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Arbitrary Code Execution** (**ACE**): Probably the most powerful and dangerous
+    group, it allows the attacker to execute arbitrary code and perform pretty much
+    any action. This code is generally referred to as shellcode and will be covered
+    in greater detail in the next section. When the code is being executed remotely
+    over the network, we are talking about **Remote Code Execution** (**RCE**).'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Depending on the location where the exploit communicates with the targeted
+    software, it is possible to distinguish between the following groups:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**Local exploits**: Here, exploits are executed on the machine, so the attacker
+    should have already established access to it. Common examples include exploits
+    with DoS or privilege escalation functionality.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Remote exploits**: This group of exploits targets remote machines, which
+    means they can be executed without prior access to the targeted system. A common
+    example is RCE exploits granting this access, but remote DoS exploits are also
+    pretty common.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Finally, if the exploit targets a vulnerability that hasn’t been officially
+    addressed and fixed yet, it is known as a **zero-day exploit**.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now, it is time to deep dive into various aspects of shellcode.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Cracking the shellcode
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In this section, we will take a look at the code that gets executed by the attacker
+    during vulnerability exploitation. This code gets executed in very special conditions
+    without headers and known memory addresses. Let’s learn what shellcode is and
+    how it’s written for Linux (Intel and ARM processors) and, later, the Windows
+    operating system.
+  prefs: []
+  type: TYPE_NORMAL
+- en: What’s shellcode?
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Shellcode is a list of carefully crafted instructions that can be executed once
+    code has been injected into a running application. Due to most of the exploit’s
+    circumstances, the shellcode must be position-independent code (which means it
+    doesn’t need to run in a specific place in memory or require a base relocation
+    table to fix its addresses). Shellcode also has to operate without an executable
+    header or a system loader. For some exploits, it can’t include certain bytes (especially
+    null for the overflows of the string-type buffers).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now, let’s take a look at what shellcode looks like in Windows and Linux.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Linux shellcode in x86-64
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Linux shellcode is generally arranged much simpler than Windows shellcode.
+    Once the program counter register is pointing to the shellcode, the shellcode
+    can execute consecutive system calls to spawn a shell, listen on a port, or connect
+    back to the attacker with minimal effort (check out [*Chapter 11*](B18500_11.xhtml#_idTextAnchor1188),
+    *Dissecting Linux and IoT Malware*, for more information about system calls in
+    Linux). The main challenges that attackers face are as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Getting the absolute address of the shellcode (to be able to access data)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Removing any null bytes from the shellcode (optional)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Now, let’s learn how it is possible to overcome these challenges. After this,
+    we will look at different types of shellcode.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Getting the absolute address
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: This is a relatively easy task. Here, the shellcode abuses the `call` instruction,
+    which saves the absolute return address in the stack (which the shellcode can
+    get using the `pop` instruction).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'An example of this is as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'After getting the absolute address, the shellcode can get the address of any
+    data inside the shellcode, like so:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Another common way to get the absolute address is by using the `fstenv` FPU
+    instruction. This instruction saves some parameters related to the FPU for debugging
+    purposes, including the absolute address of the last executed FPU instruction.
+    This instruction can be used like this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: As you can see, the shellcode was able to obtain the absolute address of the
+    last executed FPU instruction, `fldz`, or in this case the address of `_start`,
+    which can help in obtaining the address of any required data or a string in the
+    shellcode.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Null-free shellcode
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Null-free shellcode is a type of shellcode that has to avoid any null byte to
+    be able to fit a null-terminated string buffer. The authors of this shellcode
+    have to change the way they write their code. Let’s take a look at an example.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'For the call/pop approach that we described earlier, they will be assembled
+    into the following bytes:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 8.4 – call/pop in OllyDbg'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_8.4_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 8.4 – call/pop in OllyDbg
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'As you can see, because of the relative addresses the call instruction uses,
+    it produced 4 null bytes. For the shellcode authors to handle this, they need
+    the relative address to be negative. It could work in a case like this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 8.5 – call/pop in OllyDbg with no null bytes'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_8.5_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 8.5 – call/pop in OllyDbg with no null bytes
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Here are some other examples of the changes the malware authors can make to
+    avoid null bytes:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/Table_01.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: As you can see, it’s not very hard to do this in shellcode. You will notice
+    that most of the shellcode from different exploits (or even the shellcode in Metasploit)
+    is null-free by design, even if the exploit doesn’t necessarily require it.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Local shell shellcode
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'Let’s start with a simple example that spawns a shell:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Let’s take a closer look at this code:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: First, it executes the `execve` system call to launch a process, which in this
+    case will be `/bin/sh`. This represents the shell.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 'The `execve` system call’s prototype looks like this:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: It sets the filename in `ebx` with `/bin/sh` by using the call/pop technique
+    to get the absolute address.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: No additional command-line arguments need to be specified in this case, so `ecx`
+    is set to zero (`xor`, `ecx`, and `ecx` to avoid the null byte).
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 'After the shell terminates, the shellcode executes the `exit` system call,
+    which is defined like this:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: It sets the status to zero in `ebx` as the program exits normally.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 'In this example, you have seen how shellcode can give attackers a shell by
+    launching `/bin/sh`. For the x64 version, there are a few differences:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`int 0x80` is replaced by a special Intel instruction, `syscall`.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The `execve` system call ID has changed to 0x3b (59) and `exit` has changed
+    to 0x3c (60). To know what function each ID represents, check out the official
+    Linux system calls table.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: It uses `rdi` for the first parameter, `rsi` for the next, and then `rdx`, `rcx`,
+    `r8`, `r9`, and the rest in the stack.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'The code will look like this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: As you can see, there are no big differences between x86 and x64 when it comes
+    to the shellcode. Now, let’s take a look at more advanced types of shellcode.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Reverse shell shellcode
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'The reverse shell shellcode is one of the most widely used types of shellcode.
+    This shellcode connects to the attacker and provides them with a shell on the
+    remote system to gain full access to the remote machine. For this to happen, the
+    shellcode needs to follow these steps:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`socket`. Here is the definition of this function:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: 'You will usually see it being used like this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Here, `AF_INET` represents most of the known internet protocols, including
+    `IPPROTO_IP` for the IP protocol. `SOCK_STREAM` is used to represent TCP communication.
+    From this system call, you can understand that this shellcode is communicating
+    with the attacker through TCP. The assembly code looks like this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE11]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Here, the shellcode uses the `socketcall` system call (with ID 0x66). This
+    system call represents many system calls, including `socket`, `connect`, `listen`,
+    `bind`, and so on. In `ebx`, the shellcode sets the function it wants to execute
+    from the `socketcall` list. Here is a snippet of the list of functions supported
+    by `socketcall`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE12]'
+  prefs: []
+  type: TYPE_PRE
+- en: The shellcode pushes the arguments to the stack and then sets `ecx` to point
+    to the list of arguments, sets `ebx = 1` (`SYS_SOCKET`), sets the system call
+    ID in `eax` (`socketcall`), and then executes the system call.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`sockaddr_in` with the IP, port, and, again, `AF_INET`. Then, the shellcode
+    executes the `connect` function from the `socketcall` list of functions. The prototype
+    looks like this:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE13]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: 'The assembly code will look as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE14]'
+  prefs: []
+  type: TYPE_PRE
+- en: '`dup2` that overwrites the standard input, output, and error output with the
+    socket one. Here is the assembly code for this step:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE15]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: In the preceding code, the shellcode overwrites `stdin (0)`, `stdout (1)`, and
+    `stderr (2)` with `sockfd` (the socket handle) to redirect any input, output,
+    and errors to the attacker, respectively.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`execve` call with `/bin/sh`, as we saw in the previous section.'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Now that you have seen more advanced shellcode, you can understand most of the
+    well-known shellcode and the methodology behind them. For binding a shell or downloading
+    and executing shellcode, the code is very similar, and it uses similar system
+    calls and maybe one or two extra functions. You will need to check the definition
+    of every system call and what arguments it takes before analyzing the shellcode
+    based on that.
+  prefs: []
+  type: TYPE_NORMAL
+- en: That’s it for x86 (both 32-bit and 64-bit). Now, let’s take a quick look at
+    ARM shellcoding and the differences between it and x86.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Linux shellcode for ARM
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'The shellcode on ARM systems is very similar to the shellcode that uses the
+    x86 instruction set. It’s even easier for the shellcode authors to write in ARM
+    as they don’t have to use the call/pop technique or `fstenv` to get the absolute
+    address. In ARM assembly language, you can access the program counter register
+    (`pc`) directly from the code, which makes this even simpler. Instead of `int
+    0x80` or `syscall`, the shellcode uses `svc #0` or `svc #1` to execute a system
+    function. An example of ARM shellcode for executing a local shell is as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE16]'
+  prefs: []
+  type: TYPE_PRE
+- en: In the preceding code, the shellcode sets `r0` with the program counter (pc)
+    + 12 to point to the `/bin/sh` string. Then, it sets the remaining arguments for
+    the `execve` system call and calls the `svc` instruction to execute the code.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Null-free shellcode
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: ARM instructions are usually 32-bit instructions. However, many shellcodes switch
+    to Thumb Mode, which sets the instructions to be 16 bits only and reduces the
+    chances of having null bytes. For the shellcode to switch to Thumb Mode, it is
+    common to use the `BX` or `BLX` instructions.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'After executing it, all instructions switch to the 16-bit mode, which reduces
+    null bytes significantly. By using `svc #1` instead of `svc #0` and avoiding immediate
+    null values and instructions that include null bytes, the shellcode can reach
+    the null-free goal.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: When analyzing ARM shellcode, make sure that you disassemble all the instructions
+    after the mode switches to 16-bit rather than 32-bit.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now that we have covered Linux shellcode for Intel and ARM processors, let’s
+    take a look at Windows shellcode.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Windows shellcode
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Windows shellcode is more complicated than its Linux counterpart. In Windows,
+    you can’t directly use `sysenter` or interrupts like in Linux as the system function
+    IDs change from one version to another. Windows provides interfaces to access
+    their functionality in libraries, such as `kernel32.dll`. Windows shellcode has
+    to find the base address of `kernel32.dll` and go through its export table to
+    get the required APIs to implement their functionality. In terms of socket APIs,
+    attackers may need to load additional DLLs using `LoadLibraryA`/`LoadLibraryExA`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Windows shellcode follows these steps to achieve its target:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Get the absolute address (we covered this in the previous section).
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Get the base address of `kernel32.dll`.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Get the required APIs from `kernel32.dll`.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Execute the payload.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Now that we’ve covered how shellcode gets its absolute address, let’s look at
+    how it gets the base address of `kernel32.dll`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Getting the base address of kernel32.dll
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: '`kernel32.dll` is the main DLL that’s used by shellcode. It has APIs such as
+    `LoadLibrary`, which allows you to load other libraries, and `GetProcAddress`,
+    which gets the address of any API inside a library that’s loaded in memory.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To access any API inside any DLL, the shellcode must get the address of `kernel32.dll`
+    and parse its export table.When an application is being loaded into memory, the
+    Windows OS loads its core libraries, such as `kernel32.dll` and `ntdll.dll`, and
+    saves the addresses and other information about these libraries inside the `kernel32.dll`
+    from the PEB as follows (for 32-bit systems):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE17]'
+  prefs: []
+  type: TYPE_PRE
+- en: The first line gets the PEB address from the FS segment register (in x64, it
+    will be the GS register and a different offset). Then, the second and the third
+    lines get `PEB->LoaderData->InInitializationOrderModuleList`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`InInitializationOrderModuleList` is a DLL that contains information about
+    all the loaded modules (PE files) in memory (such as `kernel32.dll`, `ntdll.dll`,
+    and the application itself), along with the base address, the filename, and other
+    information.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The first entry that you will see in `InInitializationOrderModuleList` is `ntdll.dll`.
+    To get `kernel32.dll`, the shellcode must go to the next item in the list. So,
+    in the fourth line, the shellcode gets the next item while following the forward
+    link (`ListEntry->FLink`). It gets the base address from the available information
+    about the DLL in the fifth line.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Getting the required APIs from kernel32.dll
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'For the shellcode to be able to access the APIs of `kernel32.dll`, it should
+    parse its export table. The export table consists of three arrays. The first array
+    is `AddressOfNames`, which contains the names of the APIs inside the DLL file.
+    The second array is `AddressOfFunctions`, which contains the **relative addresses**
+    (**RVAs**) of all of these APIs:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 8.6 – Export table structure (the numbers are not real and have been
+    provided as an example)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_8.6_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 8.6 – Export table structure (the numbers are not real and have been
+    provided as an example)
+  prefs: []
+  type: TYPE_NORMAL
+- en: However, the issue here is that these two arrays are aligned with a different
+    alignment. For example, `GetProcAddress` could be in the third item in `AddressOfNames`,
+    but it’s in the fifth item in `AddressOfFunctions`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To handle this issue, Windows created a third array named `AddressOfNameOrdinals`.
+    This array has the same alignment as `AddressOfNames` and contains the index of
+    every item in `AddressOfFunctions`. Note that `AddressOfFunctions` and `AddressOfNameOrdinals`
+    have more items than `AddressOfNames` since not all APIs have names. The APIs
+    without equivalent names are accessed using their ID (their index, in `AddressOfNameOrdinals`).
+    The export table will look something like this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 8.7 – Export table parser (the winSRDF project)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_8.7_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 8.7 – Export table parser (the winSRDF project)
+  prefs: []
+  type: TYPE_NORMAL
+- en: For the shellcode to get the addresses of its required APIs, it should search
+    for the required API’s name in `AddressOfNames` and then take the index of it
+    and search for that index in `AddressOfNameOrdinals` to find the equivalent index
+    of this API in `AddressOfFunctions`. By doing this, it will be able to get the
+    relative address of that API. The shellcode adds them to the base address of `kernel32.dll`
+    so that it has the full address to this API. In most cases, instead of matching
+    the API names against strings that it would need to hardcode within itself, the
+    shellcode generally uses its hashes (more information can be found in [*Chapter
+    6*](B18500_06.xhtml#_idTextAnchor554), *Bypassing Anti-Reverse Engineering Techniques*).
+  prefs: []
+  type: TYPE_NORMAL
+- en: The download and execute shellcode
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'This shellcode uses an API located in `urlmon.dll` called `URLDownloadToFileA`.
+    As its name suggests, it downloads a file from a given URL and saves it to the
+    hard disk when it’s provided with the required path. The definition of this API
+    is as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE18]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Only `szURL` and `szFilename` are required. The remaining arguments are mostly
+    set to null. After the file is downloaded, the shellcode executes this file using
+    `CreateProcessA`, `WinExec`, or `ShellExecute`. The C code for this may look as
+    follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE19]'
+  prefs: []
+  type: TYPE_PRE
+- en: As you can see, the payload is very simple and yet very effective in executing
+    the second stage of the attack, which could be the backdoor that maintains persistence
+    and can communicate to the attacker and exfiltrate valuable information.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Static and dynamic analysis of exploits
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Now that we have learned about what exploits look like and how they work, let’s
+    summarize some practical tips and tricks for their analysis.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Analysis workflow
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'Firstly, you need to carefully collect any prior knowledge: what environment
+    the exploit was found in, whether it is already known what software was targeted
+    and its version, and whether the exploit triggered successfully there. All this
+    information will allow you to properly emulate the testing environment and successfully
+    reproduce the expected behavior, which is very helpful for dynamic analysis.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Secondly, it is important to confirm how it interacts with the targeted application.
+    Usually, exploits are delivered through the expected input channel (whether it
+    is a listening socket, a web form or URI, or maybe a malformed document, a configuration
+    file, or a JavaScript script), but other overlooked options are also possible
+    (for example, environment variables and dependency modules). The next step here
+    is to use this information to successfully reproduce the exploitation process
+    and identify the indicators that can confirm it. Examples include the target application
+    crashing in a particular way or performing particular actions that can be seen
+    using suitable system monitors (for example, the ones that keep track of file,
+    registry, or network operations or accessed APIs). If shellcode is involved, its
+    analysis may give valuable information about the expected after-exploitation behavior.
+  prefs: []
+  type: TYPE_NORMAL
+- en: After this, you need to identify the targeted vulnerability. The MITRE Corporation
+    maintains a list of all publicly known vulnerabilities by assigning the corresponding
+    **Common Vulnerabilities and Exposures** (**CVE**) identifiers to them so that
+    they can easily be referenced (for example, CVE-2018-9206). Sometimes, it may
+    be already known from antivirus detection or publications, but it is always advisable
+    to confirm it in any case.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Check for unique strings first as they may give you a clue about the parts of
+    the targeted software it interacts with. Unlike most other types of malware, static
+    analysis may not be enough in this case. Since exploits work closely with the
+    targeted software, they should be analyzed in their context, which in many cases
+    requires dynamic analysis.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Here, you need to intercept the moment the exploit is delivered but hasn’t been
+    processed yet using a debugger of preference. After this, there are multiple ways
+    the analysis can be continued. One approach is to carefully go through the functions
+    that are responsible for it being processed at a high level (without stepping
+    into each function) and monitor the moment when it triggers. Once this happens,
+    it becomes possible to narrow down the searching area and focus on the sub-functions
+    of the identified function. Then, the engineer can repeat this process up until
+    the moment the bug is found.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Another way to do this is to search for suspicious entries in the exploit itself
+    first (such as corrupted fields, big binary blocks with high entropy, long lines
+    with hex symbols, and so on) and monitor how the targeted software processes them.
+    If shellcode is involved, it is possible to patch it with either breakpoint or
+    infinite loop instructions at its beginning `(\xCC` and `\xEB\xFE`, respectively),
+    then perform steps to reproduce the exploitation, wait until the inserted instructions
+    get executed, and check the stack trace to see what functions have been called
+    to reach this point.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Overall, it is generally recommended to stick to the virtualized environment
+    or emulation for dynamic analysis since in the case of exploits, it is much more
+    probable that something may go wrong, and execution control will be lost. Therefore,
+    it is convenient to be able to restore the previous debugging and environmental
+    state.
+  prefs: []
+  type: TYPE_NORMAL
+- en: These techniques are universal and can be applied to pretty much any type of
+    exploit. Regardless of whether the engineer has to analyze browser exploits (often
+    written in JavaScript) or some local privilege escalation code, the difference
+    will mainly be in the setup for the testing environment.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Shellcode analysis
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: If you need to analyze the binary shellcode, you can use a debugger for the
+    targeted architecture and platform (such as OllyDbg for 32-bit Windows) by copying
+    the hexadecimal representation of the shellcode and using the binary paste option.
+    It is also possible to use tools such as **unicorn**, **libemu** (a small emulator
+    library for x86 instructions), or the **Pokas x86 Emulator**, which is a part
+    of the **pySRDF** project, to emulate shellcode. Other great tools useful for
+    dynamic analysis are **scdbg** and **qltool** (part of the **qiling** framework).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Another popular solution is to convert it into an executable file. After this,
+    you can analyze it both statically and dynamically, just like any usual malware
+    sample. One option would be to use the `shellcode2exe.py` script, but unfortunately,
+    one of its core dependencies is no longer supported, so it may be hard to set
+    it up. Another option would be to compile the executable manually by copying and
+    pasting the shellcode into the corresponding template:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE20]'
+  prefs: []
+  type: TYPE_PRE
+- en: The execution flag may need to be added to the data section to make the shellcode
+    executable.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Finally, it is possible to just open any executable in the debugger and copy
+    and paste the shellcode over the existing code. For example, in x64dbg, it can
+    be done by right-clicking and going to **Binary** | **Paste (Ignore Size)**.
+  prefs: []
+  type: TYPE_NORMAL
+- en: For the ROP chain to be analyzed, you need to get access to the targeted application
+    and the system so that the actual instructions can be resolved dynamically there.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Exploring bypasses for exploit mitigation technologies
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Since the same types of vulnerabilities kept appearing, despite all the awareness
+    and training for software developers on secure coding, new ways to reduce their
+    impact and make them unusable for remote code execution have been introduced.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In particular, multiple exploit mitigation technologies were developed at various
+    levels to make it hard to impossible for the attackers to successfully execute
+    their shellcode. Let’s take a look at the most well-known mitigations that have
+    been created for this purpose.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Data execution prevention (DEP/NX)
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Data execution prevention is one of the earliest techniques that was introduced
+    to protect against exploits and shellcode. The idea behind it is to stop the execution
+    inside any memory page that doesn’t have `EXECUTE` permission. This technique
+    can be supported by hardware that raises an exception once shellcode gets executed
+    in the stack or in the heap (or any place in memory that doesn’t have this permission).
+  prefs: []
+  type: TYPE_NORMAL
+- en: This technology didn’t completely stop the attackers from executing their payload
+    and taking advantage of memory corruption vulnerabilities. They invented a new
+    technique to bypass DEP/NX called **return-oriented programming** (**ROP**).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Return-oriented programming
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'The main idea behind ROP is that rather than setting the return address so
+    that it points to the shellcode, attackers can set the return address to redirect
+    the execution to some existing code inside the program or any of its modules and
+    chain instructions to reproduce a shellcode. The small snippets of misused code
+    will look like this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE21]'
+  prefs: []
+  type: TYPE_PRE
+- en: For example, on Windows, the attacker can try to redirect the execution to the
+    `VirtualProtect` API to change permissions for the part of the stack (or heap)
+    that the shellcode is in and execute the shellcode. Alternatively, it is possible
+    to use combinations such as `VirtualAlloc` and `memcpy` or `WriteProcessMemory`,
+    `HeapAlloc` and any memory copy API, or the `SetProcessDEPPolicy` and `NtSetInformationProcess`
+    APIs to disable DEP.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The trick here is to use the **Import Address Table** (**IAT**) of a module
+    to get the address of any of these APIs so that the attacker can redirect the
+    execution to the beginning of this API. In the ROP chain, the attacker places
+    all the arguments that are required for each of these APIs, followed by a return
+    to the API they want to execute. An example of this is as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 8.8 – The ROP chain for the CVE-2018-6892 exploit'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_8.8_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 8.8 – The ROP chain for the CVE-2018-6892 exploit
+  prefs: []
+  type: TYPE_NORMAL
+- en: Some ROP chains can execute the required payload without the need to return
+    to the shellcode. There are automated tools that help the attacker search for
+    these small code gadgets and construct the valid ROP chain. One of these tools
+    is `mona.py`, which is a plugin for the Immunity Debugger.
+  prefs: []
+  type: TYPE_NORMAL
+- en: As you can see, DEP alone doesn’t stop the attackers from executing their shellcode.
+    However, along with **address space layout randomization** (**ASLR**), these two
+    mitigation techniques make it hard for the attacker to successfully execute the
+    payload. Let’s take a look at how ASLR works.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Address space layout randomization
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: ASLR is a mitigation technique that is used by multiple operating systems, including
+    Windows and Linux. The idea behind it is to randomize addresses where the application
+    and the DLLs are loaded in the process memory. Instead of using predefined `ImageBase`
+    values as base addresses, the system uses random addresses to make it very hard
+    for the attackers to construct their ROP chains, which generally rely on the static
+    addresses of instructions that comprise it.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now, let’s take a look at some common ways to bypass it.
+  prefs: []
+  type: TYPE_NORMAL
+- en: DEP and partial ASLR
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: For ASLR to be effective, it is required to have the application and all its
+    libraries compiled with an ASLR enabling flag, such as `-fstack-protector` or
+    `-pie -fPIE` for the GCC compiler, which isn’t always possible. If there is at
+    least one module that doesn’t support ASLR, it becomes possible for the attacker
+    to find the required ROP gadgets there. This is especially true for tools that
+    have lots of plugins written by third parties or applications that use lots of
+    different libraries. While the base address of `kernel32.dll` is still randomized
+    (so that the attacker can’t directly return to an API inside), it can easily be
+    accessed from the import table of the loaded non-ASLR module(s).
+  prefs: []
+  type: TYPE_NORMAL
+- en: DEP and full ASLR – partial ROP and chaining multiple vulnerabilities
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: In cases where all the libraries support ASLR, writing an exploit is much harder.
+    The known technique for this is chaining multiple vulnerabilities. For example,
+    one vulnerability will be responsible for information disclosure and another for
+    memory corruption. The information disclosure vulnerability could leak an address
+    of a module that helps reconstruct the ROP chain based on that address. The exploit
+    could contain an ROP chain comprised of just RVAs (relative addresses without
+    the base address values) and exploit the information disclosure vulnerability
+    on the fly to leak the address and reconstruct the ROP chain to execute the shellcode.
+    This type of exploit is more common in scripting languages, for example, targeting
+    vulnerabilities that are exploited using JavaScript. Using the power of this scripting
+    language, the attacker can construct the ROP chain on the target machine.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'An example of this could be the local privilege escalation vulnerability known
+    as *CVE-2019-0859* in `win32k.sys`. The attacker uses a known technique for modern
+    versions of Windows (this works on Windows 7, 8, and 10) called the `HMValidateHandle`
+    technique. It uses an `HMValidateHandle` function that’s called by the `IsMenu`
+    API, which is implemented in `user32.dll`. Given a handle of a window that has
+    been created, this function returns the address of its memory object in the kernel
+    memory, resulting in an information disclosure that could help in designing the
+    exploit, as shown in the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 8.9 – Kernel memory address leak using the HMValidateHandle technique'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_8.9_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 8.9 – Kernel memory address leak using the HMValidateHandle technique
+  prefs: []
+  type: TYPE_NORMAL
+- en: This technique works pretty well with stack-based overflow vulnerabilities.
+    But for heap overflows or use-after-free, a new problem arises, which is that
+    the location of the shellcode in the memory is unknown. In stack-based overflows,
+    the shellcode resides in the stack, and it’s pointed to by the `esp` register,
+    but in heap overflows, it is harder to predict where the shellcode will be. In
+    this case, another technique called **heap spraying** is commonly used.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Full ASLR – the heap spraying technique
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'The idea behind this technique is to make multiple addresses lead to the shellcode
+    by filling the memory of the application with lots of copies of it, which will
+    lead to it being executed with a very high probability. The main problem here
+    is guaranteeing that these addresses point to the start of it and not to the middle.
+    This can be achieved by using some sort of shellcode padding. The most famous
+    example involves having a huge amount of `nop` bytes (called **nop slide**, **nop
+    sled**, or **nop ramp**), or any instructions that don’t have any major effect
+    before the shellcode:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 8.10 – The heap spray technique'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_8.10_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 8.10 – The heap spray technique
+  prefs: []
+  type: TYPE_NORMAL
+- en: As you can see, the attacker used the `0x0a0a0a0a` address to point to its shellcode.
+    Because of the heap spraying technique, this address, which has a relatively high
+    probability, may point to the `nop` instructions in one of the shellcode blocks,
+    which will later lead to the shellcode starting.
+  prefs: []
+  type: TYPE_NORMAL
+- en: DEP and full ASLR – JIT spraying
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: This technique is very similar to heap spraying, with the only difference being
+    that block allocation is caused by abusing a `EXECUTE` permissions as they are
+    supposed to store generated assembly instructions. This way, DEP can be bypassed
+    together with ASLR.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Other mitigation technologies
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Several other mitigation techniques have been introduced to protect against
+    exploitation. We will just mention a few of them:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`ret` instruction. This technique makes it harder for the attackers to use
+    stack overflow vulnerabilities to modify the return address as this value is unknown
+    to them. However, there are multiple bypasses for it, and one of them is overwriting
+    the SEH address and forcing an exception to happen before the GS cookie is checked.
+    Overwriting the SEH address is very effective and led to other mitigations being
+    introduced for it.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Structured Exception Handling Overwrite Protection** (**SEHOP**): This mitigation
+    technique performs additional security checks to make sure that the SEH chain
+    hasn’t been corrupted.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**SafeSEH**: This mitigation directly protects the applications from memory
+    corruptions that overwrite SEH addresses. In this case, the SEH addresses are
+    no longer stored in the stack and instead are referenced in the PE header in a
+    separate data directory that includes all the SEH addresses for all the application’s
+    functions.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: That’s it for the most common mitigations. Now, let’s talk about other types
+    of exploits.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Analyzing Microsoft Office exploits
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: While Microsoft Office is mainly associated with Windows by many people, it
+    has also supported the macOS operating system for several decades. In addition,
+    the file formats used by it are also understood by various other suites, such
+    as Apache OpenOffice and LibreOffice. In this section, we will look at vulnerabilities
+    that can be exploited by malformed documents to perform malicious actions and
+    learn how to analyze them.
+  prefs: []
+  type: TYPE_NORMAL
+- en: File structures
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: The first thing that should be clear when analyzing any exploit is how the files
+    associated with them are structured. Let’s take a look at the most common file
+    formats associated with Microsoft Office that are used by attackers to store and
+    execute malicious code.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Compound file binary format
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: This is probably the most well-known file format that can be found in documents
+    associated with various older and newer Microsoft Office products, such as `.doc`
+    (Microsoft Word), `.xls` (Microsoft Excel), `.ppt` (Microsoft PowerPoint), and
+    others. Once completely proprietary, it was later released to the public and now,
+    its specification can be found online. Let’s go through some of the most important
+    parts of it in terms of malware analysis.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The **Compound File Binary** (**CFB**) format, also known as **OLE2**, provides
+    a filesystem-like structure for storing application-specific streams of data in
+    sectors:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 8.11 – OLE2 header parsed'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_8.11_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 8.11 – OLE2 header parsed
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Here is the structure of its header, which is stored at the beginning of the
+    first sector:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1` (where the first 4 bytes in hex format resemble
+    a `DOCFILE` string)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Header CLSID** (**16 bytes**): Unused class ID; must be zero'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Minor version** (**2 bytes**): Always 0x003E for major versions 3 and 4 of
+    this format'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Major version** (**2 bytes**): Main version number, can be either 0x0003
+    or 0x0004'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Byte order** (**2 bytes**): Always 0xFFFE and represents little-endian order'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Sector shift** (**2 bytes**): The sector size as a power of 2, 0x0009 for
+    major version 3 (2^9 = 512 bytes) or 0x000C for major version 4 (2^12 = 4,096
+    bytes)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Mini sector shift** (**2 bytes**): Always 0x0006 and represents the sector
+    size of the mini stream (2^6 = 64 bytes)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Reserved** (**6 bytes**): Must be set to zero'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Number of directory sectors** (**4 bytes**): Represents the number of **Directory**
+    sectors, always zero for major version 3 (not supported)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Number of FAT sectors** (**4 bytes**): Number of FAT sectors'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**First directory sector location** (**4 bytes**): Represents the starting
+    sector number for the directory stream'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Transaction signature number** (**4 bytes**): Stores a sequence number for
+    the transactions in files supporting them or zero otherwise'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Mini stream cutoff size** (**4 bytes**): Always 0x00001000, this represents
+    the maximum size of the user-defined data stream associated with the MiniFAT data'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**First MiniFAT sector location** (**4 bytes**): Stores the starting sector
+    number for the MiniFAT sectors'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Number of MiniFAT sectors** (**4 bytes**): Is used to store several MiniFAT
+    sectors'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**First DIFAT sector location** (**4 bytes**): Starting sector number for the
+    DIFAT data'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Number of DIFAT sectors** (**4 bytes**): Stores several DIFAT sectors'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**DIFAT** (**436 bytes**): An array of integers (4 bytes each) representing
+    the first 109 locations of FAT sectors:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '![Figure 8.12 – DIFAT array mentioning only one FAT sector with an ID of 0x2D'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_8.12_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 8.12 – DIFAT array mentioning only one FAT sector with an ID of 0x2D
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'As you can see, it is possible to allocate memory using the usual sectors and
+    mini stream that operates with sectors of smaller sizes:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**File Allocation Table** (**FAT**): This is the main space allocator. Each
+    stream is represented by a sector chain, where each entry contains the ID of the
+    next sector up until the chain terminator. This chain information is stored in
+    dedicated **FAT sectors**:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '![Figure 8.13 – FAT sector storing information about sector chains'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_8.13_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 8.13 – FAT sector storing information about sector chains
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**MiniFAT**: This is the allocator for the mini stream and small user-defined
+    data:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '![Figure 8.14 – MiniFAT sectors storing information about mini stream chains'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_8.14_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 8.14 – MiniFAT sectors storing information about mini stream chains
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'As we mentioned previously, for each sector in a chain, the ID of the next
+    sector is stored up until the last one that contains the `ENDOFCHAIN` (`0xFFFFFFFE`)
+    value, and the header takes up a single usual sector with its values padded according
+    to the sector’s size if necessary:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 8.15 – Example of the sector chain following the header'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_8.15_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 8.15 – Example of the sector chain following the header
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'There are several other auxiliary storage types, including the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**Double-Indirect File Allocation Table** (**DIFAT**): Stores the locations
+    of FAT sectors (explained previously)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Directory**: Stores metadata for storage and stream objects'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Here, stream and storage objects are used in a similar way to files and directories
+    in typical filesystems:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 8.16 – Multiple streams within a single storage object'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_8.16_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 8.16 – Multiple streams within a single storage object
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The root directory will be the first entry in the first sector of the directory
+    chain; it behaves as both a stream and a storage object. It contains a pointer
+    to the first sector that stores the mini stream:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 8.17 – Root directory'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_8.17_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 8.17 – Root directory
+  prefs: []
+  type: TYPE_NORMAL
+- en: In `.xls` files, the main `Workbook` stream follows the `.doc` files, the `WordDocument`
+    stream should start with the **FIB** structure.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Knowing how the files are structured allows reverse engineers to identify anomalies
+    that can lead to unexpected behavior.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now, let’s focus on **Rich Text Format** (**RTF**) documents.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Rich Text Format
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: RTF is another proprietary Microsoft format with a published specification that
+    can be used to create documents. Originally, its syntax was influenced by the
+    **TeX** language, which was mostly developed by Donald Knuth as it was intended
+    to be cross-platform. The first reader and writer were released with the Microsoft
+    Word product for Macintosh computers. Unlike the other document formats we’ve
+    described, it is human-readable in usual text editors, without any preprocessing
+    required.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Apart from the actual text, all RTF documents are implemented using the following
+    elements:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`\rtfN`: The starting control word that can be found at the beginning of any
+    RTF document, where `N` represents the major format version (currently, this is
+    1).'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Important Note
+  prefs: []
+  type: TYPE_NORMAL
+- en: It is worth mentioning that if the `fN` part of it is not enforced, the RTF
+    document will be considered valid by MS Office, even if it is absent or replaced
+    with something else.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`\ansi`: One of the supported character sets that follows `\rtfN`.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`\fonttbl`: The control word for introducing the font table group.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`\pard`: Resets to the default paragraph properties.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`\par`: Specifies the new paragraph (or the end of the current paragraph).'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Delimiters**: Marks the end of an RTF control word. There are three types
+    of delimiters in total:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Spaces**: Treated as part of the control word'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Non-alphanumeric symbols**: Terminates the control word, but is not part
+    of it'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**A digit with an optional hyphen (to specify minus)**: Indicates the numeric
+    parameter; either positive or negative'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Control symbols**: These symbols include a backslash, followed by a non-alphabetic
+    character. These are treated in the same way as control words.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Groups**: Groups consist of text and control words or symbols that specify
+    the associated attributes, all surrounded by curly brackets.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'The embedded executable payloads are commonly stored in the following areas:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The `\objdata` argument of the `\object` control word. The data can be of various
+    data formats and specified using the `\objclass` control word. The following are
+    some example formats:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: OLE2 (for example, Word.Document.8)
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: OOXML
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: PDF
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The `\datastore` block’s content.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'The document’s overlay (the area after the markdown):'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '![Figure 8.18 – Malicious executable stored in the document’s overlay'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_8.18_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 8.18 – Malicious executable stored in the document’s overlay
+  prefs: []
+  type: TYPE_NORMAL
+- en: Apart from that, the remote malicious payload can be accessed using the `\objautlink`
+    control word. In addition, `\objupdate` is commonly used to reload the object
+    without the user’s interaction to achieve code execution.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In terms of obfuscation, multiple techniques exist for this, as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Inserting `{\object}` entries in the middle of the data
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Inserting multiple excessive `\bin[num]` entries
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Adding spaces between digits in the objects’ data:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '![Figure 8.19 – Malware using excessive \bin control words'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_8.19_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 8.19 – Malware using excessive \bin control words
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now, let’s talk about threats that follow the **Office Open XML** (**OOXML**)
+    format.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Office Open XML format
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: OOXML format is associated with newer Microsoft Office products and is implemented
+    in files with extensions that end with *x*, such as `.docx`, `.xlsx`, and `.pptx`.
+    At the time of writing, this is the default format used by modern versions of
+    Office.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In this case, all information is stored in **Open Packaging Convention** (**OPC**)
+    packages, which are ZIP archives that follow a particular structure and store
+    XML and other data, as well as the relationships between them.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Here is its basic structure:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`[Content_Types].xml`: This file can be found in any document and stores MIME-type
+    information for various parts of the package.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`_rels`: This directory contains relationships between files within the package.
+    All files that have relationships will have a file here with the same name and
+    a `.rels` extension appended to it. In addition, it also contains a separate `.rels`
+    XML file for storing package relationships.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`docProps`: This contains several XML files describing certain properties associated
+    with the document – for example, `core.xml` for core properties (such as the creator
+    or various dates) and `app.xml` for the number of pages, characters, and so on.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`<document_type_specific_directory>`: This directory contains the actual document
+    data. Its name depends on the target application. The following are some examples:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`word` for Microsoft Word: The main information is stored in the `document.xml`
+    file.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`xl` for Microsoft Excel: In this case, the main file will be `workbook.xml`.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`ppt` for Microsoft PowerPoint: Here, the main information is located in the
+    `presentation.xml` file.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Now that we’ve become familiar with the common document formats, it is time
+    to learn how to analyze malware that utilizes them.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Static and dynamic analysis of MS Office exploits
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: In this section, we are going to learn how malicious Microsoft Office documents
+    can be analyzed. Here, we will focus on malware-exploiting vulnerabilities. Macro
+    threats will be covered in [*Chapter 10*](B18500_10.xhtml#_idTextAnchor1106),
+    *Scripts and Macros – Reversing, Deobfuscation, and Debugging,* as they aren’t
+    classed as exploits from a technical standpoint.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Static analysis
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'There are quite a few tools that allow analysts to look inside original Microsoft
+    Office formats, as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**oletools**: A unique set of several powerful tools that allow an analyst
+    to analyze all common documents associated with Microsoft Office products. The
+    following are some examples:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**olebrowse**: A pretty basic GUI tool that allows you to browse CFB documents'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**oledir**: Displays directory entries within CFB files'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**olemap**: Shows all sectors present in the document, including the header'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**oleobj**: Allows you to extract embedded objects from CFB files'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**rtfobj**: Pretty much the same functionality as in case of oleobj, but this
+    time for RTF documents'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**oledump**: This powerful tool gives valuable insight into streams that are
+    present in the document and features dumping and decompression options as well.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**rtfdump**: Another tool by the same author, this time aiming to facilitate
+    the analysis of RTF documents.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**OfficeMalScanner**: Features several heuristics to search for and analyze
+    shellcode entries, as well as encrypted MZ-PE files. For RTF files, it has a dedicated
+    **RTFScan** tool.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Regarding the newer Open XML-based files (such as `.docx`, `.xlsx`, and `.pptx`),
+    **officedissector**, a parser library written in Python that was designed for
+    securely analyzing OOXML files, can be used to automate certain tasks. But overall,
+    once unzipped, they can always be analyzed in your favorite text editor with XML
+    highlighting. Similarly, as we have already mentioned, RTF files don’t necessarily
+    require any specific software and can be analyzed in pretty much any text editor.
+  prefs: []
+  type: TYPE_NORMAL
+- en: When performing static analysis, it generally makes sense to extract macros
+    first if they’re present, as well as check for the presence of other non-exploit-related
+    techniques, such as DDE or PowerPoint actions (their analysis will be covered
+    in [*Chapter 10*](B18500_10.xhtml#_idTextAnchor1106), *Scripts and Macros – Reversing,
+    Deobfuscation, and Debugging*). Then, you need to check whether any URLs or high-entropy
+    blobs are present as they may indicate the presence of shellcode. Only after this
+    does it make sense to dig into anomalies in the document structure that may indicate
+    the presence of an exploit.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Dynamic analysis
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'Dynamic analysis of these types of exploits can be performed in two stages:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**High-level**: At this stage, you must reproduce, and thus confirm, the malicious
+    behavior. Usually, it involves the following steps:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Figure out the actual exploit payload**: Generally, this part can be done
+    during the static analysis stage. Otherwise, it is possible to set up various
+    behavioral analysis tools (filesystem, registry, process, and network monitors)
+    and search for suspicious entries once the exploit is supposed to trigger during
+    the next step.'
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '**Identify the product version(s) vulnerable to it**: If the vulnerability
+    has been publicly disclosed, in most cases, it contains confirmed versions of
+    targeted products. Otherwise, it is possible to install multiple versions of it
+    in separate VM snapshots so that you can find at least one that allows you to
+    reliably reproduce the exploit being triggered.'
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '**Low-level**: In many cases, this stage is not required as we already know
+    what the exploit is supposed to do and what products are affected. However, if
+    we need to verify the vulnerability’s CVE number or handle zero-day vulnerabilities,
+    it may be required to figure out exactly what bug has been exploited.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Once we can reliably reproduce the exploit being triggered, we can attach it
+    to the targeted module of the corresponding Microsoft Office product and keep
+    debugging it until we see the payload being triggered. Then, we can intercept
+    this moment and dive deep into how it works.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Studying malicious PDFs
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The **Portable Document Format** (**PDF**) was developed by Adobe in the 90s
+    for uniformly presenting documents, regardless of the application software or
+    operating system used. Originally proprietary, it was released as an open standard
+    in 2008\. Unfortunately, due to its popularity, multiple attackers misuse it to
+    deliver their malicious payloads. Let’s see how they work and how they can be
+    analyzed.
+  prefs: []
+  type: TYPE_NORMAL
+- en: File structure
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'A PDF is a tree file that consists of objects that implement one of eight data
+    types:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`Null object`: Represents a lack of data.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`Boolean values`: Classic true/false values.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`Numbers`: Both integer and real values.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`Names`: These values can be recognized by a forward slash at the beginning.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`Strings`: Surrounded by parentheses.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`Arrays`: Enclosed within square brackets.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`Dictionaries`: In this case, double curly brackets are used.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`Streams`: These are the main data storage blocks, and they support binary
+    data. Streams can be compressed to reduce the size of the associated data.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Apart from this, it is possible to use comments with the help of the percentage
+    (`%`) sign.
+  prefs: []
+  type: TYPE_NORMAL
+- en: All complex data objects (such as images or JavaScript entries) are stored using
+    basic data types. In many cases, objects will have the corresponding dictionary
+    mentioning the data type with the actual data stored in a stream.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'PDF documents generally start with the `%PDF` signature, followed by the format
+    version number (for example, 1.7) separated by a dash. However, because the PDF
+    documents are read from the end, this is not guaranteed, and different PDF viewers
+    allow a different number of arbitrary bytes to be placed in front of this signature
+    (in most cases, at least `1000`):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 8.20 – Arbitrary bytes in front of the %PDF signature of a valid document'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_8.20_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 8.20 – Arbitrary bytes in front of the %PDF signature of a valid document
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Multiple keywords can define the boundaries and types of the data objects,
+    as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`%PDF` signature):'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '![Figure 8.21 – The xref table in the PDF document'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_8.21_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 8.21 – The xref table in the PDF document
+  prefs: []
+  type: TYPE_NORMAL
+- en: Another less common option is a **cross-reference stream**, which serves the
+    same purpose.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`obj` keyword is prepended by the object number and its generation number (this
+    can be increased when the file is updated later), all separated by spaces:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '![Figure 8.22 – Example of the object in PDF document'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_8.22_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 8.22 – Example of the object in PDF document
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**stream/endstream**: This can be used to define the streams that store the
+    actual data.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`startxref` keyword specifying the offset of the index table and the *%%EOF*
+    marker.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'The following are the most common entries that might be of interest to analysts
+    when they’re analyzing malicious PDFs:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`/Type`: This defines the type of the associated object data, The following
+    are some examples:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`/ObjStm`: The object stream is a complex data type that can be used to store
+    multiple objects. Usually, it is accompanied by several other entries, such as
+    `/N` for defining the number of embedded objects and `/First` for defining the
+    offset of the first object inside it. The first line of the stream defines the
+    numbers and offsets of embedded objects, all separated by spaces.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`/Action`: This describes the action to perform. There are different types,
+    as follows:'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`/Launch`: Defines the launch action to execute an application specified using
+    the `/F` value and its parameters using the `/P` value.'
+  prefs:
+  - PREF_IND
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`/URI`: Defines the URI action to resolve the specified URI.'
+  prefs:
+  - PREF_IND
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`/JavaScript`: Executes a specified piece of JavaScript, `/JS`, which defines
+    a text string or a stream containing a JavaScript block that should be executed
+    once the action (rendition or JavaScript) triggers.'
+  prefs:
+  - PREF_IND
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`/Rendition`: Can be used to execute JavaScript as well. The same `/JS` name
+    can be used to specify it.'
+  prefs:
+  - PREF_IND
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`/SubmitForm`: Sends data to the specified address. The URL is provided in
+    the `/F` entry and might be used in phishing documents.'
+  prefs:
+  - PREF_IND
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`/EmbeddedFiles`: This can be used to store an auxiliary file, such as a malicious
+    payload.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`/Catalog`: This is the root of the object hierarchy. It defines references
+    to other objects, as follows:'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`/Names`: An optional document name dictionary. It allows you to refer to some
+    objects by names rather than by references – for example, using `/JavaScript`
+    or `/EmbeddedFiles` mappings.'
+  prefs:
+  - PREF_IND
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`/OpenAction`: This specifies the destination to display (generally, this isn’t
+    relevant for malware analysis purposes) or an action to perform once the document
+    has been opened (see the previous list).'
+  prefs:
+  - PREF_IND
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`/AA`: This specifies additional actions associated with trigger events.'
+  prefs:
+  - PREF_IND
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`/XF`: This specifies an XML-based form. It can contain embedded JavaScript
+    code.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`/Filter`: This entry defines the decoding filter(s) to be applied to the associated
+    stream so that the data becomes readable. `/FFilter` can be used in the stream’s
+    external file. For some of them, optional parameters can be specified using `/DecodeParms`
+    (or `/FDecodeParms`, respectively). Multiple filters can be cascaded if necessary.
+    There are two main categories of filters: compression filters and ASCII filters.
+    Here are some examples that are commonly used in malware:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`/FlateDecode`: Probably the most common way to compress text and binary data,
+    this utilizes the `zlib/deflate` algorithm:'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '![Figure 8.23 – The /FlateDecode filter used in a PDF document'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_8.23_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 8.23 – The /FlateDecode filter used in a PDF document
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`/LZWDecode`: In this case, the LZW compression algorithm is used instead.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`/RunLengthDecode`: Here, the data is encoded using the **Run-Length Encoding**
+    (**RLE**) algorithm.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`/ASCIIHexDecode`: Data is encoded using hexadecimal representation in ASCII.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`/ASCII85Decode`: Another way to encode binary data, in this case using ASCII85
+    (also known as Base85) encoding.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`/Encrypt`: An entry in the file trailer dictionary that specifies that this
+    document is password protected. The entries in the corresponding object specify
+    the way this is done:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`/O`: This entry defines the owner-encrypted document. Generally, it is used
+    for DRM purposes.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`/U`: This is associated with the so-called user-encrypted document and it
+    is usually used for confidentiality. Malware authors may use it to bypass security
+    checks and then give the victim a password to open it.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: It is worth mentioning that in the modern specification, it is possible to replace
+    parts of these names (or even the whole name) with `#XX` hexadecimal representations.
+    So, `/URI` can become `/#55RI` or even `/#55#52#49`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Some entries may reference other objects using the letter *R*. For example,
+    `/Length 15 0 R` means that the actual length value is stored in a separate object,
+    15, in generation 0\. When the file is updated, a new object with the incremented
+    generation number is added.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Static and dynamic analysis of PDF files
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Now, it is time to learn how malicious PDF files can be analyzed. In this section,
+    we will cover various tools that can assist with the analysis and give some guidelines
+    on when and how they should be used.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Static analysis
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'In many cases, static analysis can answer pretty much any question that an
+    engineer has when analyzing these types of samples. Multiple dedicated open source
+    tools can make this process pretty straightforward. Let’s explore some of the
+    most popular ones:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`-a`: Displays stats for the PDF sample'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`-O`: Parses `/ObjStm` objects'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`-k`: Searches for the name of interest'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`-d`: Dumps the object specified using the `-o` argument'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`-w`: Raw output'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`-f`: Passes an object through decoders'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**peepdf**: Another tool in the arsenal of malware analysts, this provides
+    various useful commands that aim to identify, extract, decode, and beautify extracted
+    data.*   **PDFStreamDumper**: This Windows tool combines multiple features into
+    one comprehensive GUI and provides rich functionality that’s required when analyzing
+    malicious PDF documents. It is strongly focused on extracting and processing various
+    types of payload hidden in streams and supports multiple encoding algorithms,
+    including less common ones:![Figure 8.24 – The PDFStreamDumper tool'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '](img/Figure_8.24_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 8.24 – The PDFStreamDumper tool
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**malpdfobj**: The authors of this tool took a slightly different approach
+    in that the tool generates a JSON containing all the extracted and decoded information
+    from the malicious PDF to make it more visible. This way it can be easily parsed
+    using a scripting language of preference if necessary.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Apart from these, multiple tools and libraries can facilitate analysis by parsing
+    a PDF’s structure, decrypting documents, or decoding streams. This includes **qpdf**,
+    **PyPDF2**, and **origami**.
+  prefs: []
+  type: TYPE_NORMAL
+- en: When performing static analysis for malicious PDF files, it usually makes sense
+    to start by listing the actions as well as the different types of objects. Pay
+    particular attention to the suspicious entries we listed previously. Decode all
+    the encoded streams to see what’s inside as they may contain malicious modules.
+  prefs: []
+  type: TYPE_NORMAL
+- en: If the JavaScript object has been extracted, follow the recommendations for
+    both static and dynamic analysis that have been provided in [*Chapter 10*](B18500_10.xhtml#_idTextAnchor1106),
+    *Scripts and Macros – Reversing, Deobfuscation, and Debugging*. In many cases,
+    the exploit functionality is implemented using this language. ActionScript is
+    much less common nowadays as Flash Player has been discontinued.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Dynamic analysis
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'In terms of dynamic analysis, the same steps that were taken for Microsoft
+    Office exploits can be followed:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure out which payload has been exploited.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Identify the product version(s) vulnerable to it.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Open the document using the candidate product and use behavior analysis tools
+    to confirm that it triggers.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Find a place in the code of the vulnerable product where you can trigger the
+    exploit.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: If the actual exploit body is written in some other language (such as JavaScript),
+    it might be more convenient to debug parts of it separately while emulating the
+    environment that’s required for the exploit to work. This will also be covered
+    in [*Chapter 10*](B18500_10.xhtml#_idTextAnchor1106), *Scripts and Macros – Reversing,
+    Deobfuscation, and Debugging*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Summary
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In this chapter, we became familiar with various types of vulnerabilities, the
+    exploits that target them, and different techniques that aim to battle them. Then,
+    we learned about shellcode, how it is different for different platforms, and how
+    it can be analyzed.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Finally, we covered other common types of exploits that are used nowadays in
+    the wild – that is, malicious PDF and Microsoft Office documents – and explained
+    how to examine them. With this knowledge, you can gauge the attacker’s mindset
+    and understand the logic behind various techniques that can be used to compromise
+    the target system.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In [*Chapter 9*](B18500_09.xhtml#_idTextAnchor946), *Reversing Bytecode Languages
+    – .NET, Java, and More*, we will learn how to handle malware that’s been written
+    using bytecode languages, what challenges the engineer may face during the analysis,
+    and how to deal with them.
+  prefs: []
+  type: TYPE_NORMAL

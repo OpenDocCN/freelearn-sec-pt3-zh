@@ -1,0 +1,758 @@
+- en: Patching Legacy Code
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: A few years ago, I had an opportunity to work on an interesting project--I was
+    contacted by a business owner who was left with an unusable executable, locked
+    by a disgraceful developer who took the money and disappeared. Having no source
+    code, the only option was to patch the executable in order to change the execution
+    flow and bypass the lock.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Unfortunately, this is not an isolated case. It happens quite often that an
+    old tool, which has been around for years (if not decades), needs to be slightly
+    changed and then... well, then there are at least two options:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The source code has been lost and there is no way to rebuild the executable
+    after applying changes.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The source code is there, but it appears to be so old that it cannot even be
+    compiled with modern compilers without rewriting it almost from scratch. In this
+    case, even if rewriting is not a big issue, the possibility of libraries used
+    with the software being incompatible with modern compilers or their output, which
+    would make the whole project significantly more complicated, is still there.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Depending on the complexity of changes that are needed to be applied, simply
+    patching the binary executable file with new code may be a sufficient option as
+    it is definitely simpler to put a few bytes in a hex editor rather than reverse-engineer
+    a tool (either its binary form or old source code, which may no longer be supported
+    by compilers) and rewrite it from scratch.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In this chapter, we will consider a very simplistic example of an executable
+    that needs a security fix. We will create the executable ourselves for both Windows
+    and Linux, and we'll, first of all, examine the options and then apply a binary
+    patch. As we will be targeting two platforms, we will address the formats of PE
+    and ELF files where needed.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The executable
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'As was mentioned earlier, we have to create the executable first. It appeared
+    to be a relatively hard task to find a real-life example simple enough to fit
+    the chapter, so the decision was made to take a real-life problem and wrap it
+    with simplistic code. We will write the code for our executable in C and compile
+    with Visual Studio 2017 when on Windows and GCC when on Linux. The code will be
+    as simple as this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/a728544b-33d1-406a-b721-52d8b4d9b39f.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: As we may see, the only thing this code is capable of is reading user input
+    as a string into a 128-byte buffer, allocating an internal buffer specifically
+    for the input string, copying the input string there, and printing it from the
+    internal buffer.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Create a new solution in Visual Studio 2017, name it `Legacy`, and fill the
+    preceding illustrated code to its `main.cpp` file. Personally, I prefer to use
+    the `.c` extension when writing in C and set the Compile As option (which can
+    be found by navigating to Configuration Properties | C/C++ | Advanced in the project
+    properties window) to C.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The process of building the executable out of the preceding code is quite straightforward,
+    except for one detail with Visual Studio 2017\. As we are attempting to fake a
+    `Legacy` executable, we need to disable Linker''s Dynamic Base option. While in
+    Visual Studio, right-click on the project and select Properties. The following
+    screenshot illustrates where the Dynamic Base option may be found:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/60ce97b7-f1f3-4ab5-b224-c724373126f4.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Once this option has been disabled, simply click on Build or Build All.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'On Linux, however, we may simply build the executable the usual way by entering
+    one of the following commands in the terminal (ignore the warning for now):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: In this chapter, we will begin by patching the Windows executable first, then
+    we will proceed to the Linux executable and see how the problem may be solved
+    in the case of ELF. Oh, and most importantly; forget about the C sources and pretend
+    that we do not have them.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The issue
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Whether we try to run our executables on Windows or on Linux, we would hardly
+    notice any problem, as the program asks for our name and then prints it back.
+    This will keep working in a stable manner as long as the program does not encounter
+    a name longer than 127 ASCII characters (the 128^(th) character is the terminating
+    `NULL` value) and such names exist. Let''s try to run this executable (we are
+    referring to the one built for Windows, but the same idea applies to the Linux
+    executable too) and feed it with a long line of text, much longer than 127 characters.
+    This is what will happen:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/a2459d93-d1f0-4f4b-8f48-7024aae02352.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: The reason for this message is the `gets()` function. If C is not your language
+    of choice, you may be unaware of the fact that this function does not check the
+    length of the input, which may lead to stack corruption in the best case (just
+    like what caused the preceding message to appear) and is a vulnerability inviting
+    specially crafted exploits in the worst case. Luckily, the solution for the `gets()`
+    problem is quite simple; the call to `gets()` has to be replaced by a call to
+    the `fgets()` function. Should we have sources, this would be a one minute fix,
+    but we don't (at least we are pretending we don't have them).
+  prefs: []
+  type: TYPE_NORMAL
+- en: However, the solution we will shortly implement is not complex. All we need
+    is a disassembler (preferably IDA Pro), a hex editor, and, of course, Flat Assembler.
+  prefs: []
+  type: TYPE_NORMAL
+- en: PE files
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In order to successfully implement a patch, we need to understand the PE file
+    format (PE stands for portable executable). While a detailed specification may
+    be obtained at this URL, [http://www.microsoft.com/whdc/system/platform/firmware/PECOFF.mspx](http://www.microsoft.com/whdc/system/platform/firmware/PECOFF.mspx),
+    we only need to understand a few things about the format and be able to manually
+    parse its basic structure.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Headers
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: A PE file contains several headers and the first one we encounter is the DOS
+    header, which only contains two things that are interesting for us; the first
+    is the `MZ` signature and the second is the offset of the file header, also known
+    as the PE header (as it is preceded by the `PE\x0\x0` signature). The file header
+    contains basic information about the file such as, for example, the number of
+    sections.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Following the PE header is the optional header, which, in turn, contains even
+    more interesting information such as `ImageBase`, --the address at which the image
+    (file) should preferably be loaded, --and `NumberOfRvaAndSizes`, and the latter
+    is of special interest for us. The `NumberOfRvaAndSizes` field denotes the number
+    of entries in the array of `IMAGE_DATA_DIRECTORY` entries immediately following
+    the optional header. The `IMAGE_DATA_DIRECTORY` structure is defined as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: Each of these structures describes certain areas of the PE file. For example,
+    `Import IMAGE_DATA_DIRECTORY`, the one we are particularly interested in, refers
+    to information about functions not present in this file, but imported from dynamic
+    link libraries.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The next would be an array of `IMAGE_SECTION_HEADER` structures, where each
+    of the PE sections is described (we are given a section's file offset and size
+    as well as its virtual address and virtual size, the size in memory, which may
+    and most likely will be different from its size in the file).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'While I strongly encourage you to read the official specification, I would
+    also suggest downloading and installing the best hex editor I have ever seen,
+    --010 Editor (available at [https://www.sweetscape.com/010Editor/](https://www.sweetscape.com/010Editor/)).
+    This powerful application, in addition to having builds for Windows, mac OS X,
+    and Linux, supports templates for easier parsing of different binary formats and
+    has a template for parsing of PE files. Take a look at the template''s output;
+    --it makes understanding the PE format much easier. Here is how a PE file is displayed
+    in 010 Editor:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/58b086a5-924f-4a78-a8c1-2acc74bc137a.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Imports
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The `gets()` function we are hunting for is dynamically linked from the `ucrtbased.dll`
+    file, therefore we should check the import table for it. Using the 010 Editor
+    to find and parse the import table, as we see in the following screenshot, is
+    not difficult:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/329cdb1a-6870-4543-8866-f36f789b6bee.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Although it may be (and in fact is) an interesting process to manually parse
+    a PE executable, it is much more convenient and easy to use one of the tools available
+    out there. For example, IDA Pro would do all the dirty work for us.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Gathering information
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Load the `Legacy.exe` file into IDA Pro or any other disassembler of your choice
+    as we will now start gathering information about what we have to do in order to
+    patch the `Legacy.exe` file and force it to use `fgets()` instead of `gets()`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Locating calls to gets()
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'We are lucky, in our case, that there is only one call to `gets()`, and we
+    know that it should be somewhere around the call to `printf`, which prints the
+    `Enter your name:` string. However, let''s take a look at the Strings window in
+    IDA Pro:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/d3ee48f7-163f-475d-a788-f9d125d60767.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Finding the string of interest takes a second in the worst case, and once found,
+    we simply double-click on it and get to the `.rdata` section of the executable
+    where we see the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/27fae41b-f98f-488b-aa63-c3bd8ac18a12.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Double-clicking on `DATA XREF:` takes us to the place in the code where the
+    string is being accessed from:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/77b20cb6-90d1-4516-9320-0fe55c872f3a.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Going down just five lines, we see the call to `j_gets`... Why `j_gets`, you
+    may ask; aren''t we looking for the `gets()` function''s address and not for jumps
+    to it? Of course we are looking for `gets()`; however, since there may have been
+    more than one call to `gets()`, the compiler created a single "call hub" for this
+    function so that any other code calling `gets()` would, in fact, call `j_gets`
+    and then be directed to the real `gets()` function''s address in the import table.
+    And this is what we see at the address of `j_gets`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/f8690e74-895c-4fec-aa43-64b10ad66eae.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: For now, we only have to take note of the address of the `call j_gets` instruction,
+    which is `0x4117Ec`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Preparing for the patch
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Unfortunately, we cannot simply redirect the call to `fgets()` instead of `j_gets`,
+    because we do not have `fgets()` imported at all (as we are not using it in our
+    C source) as well as due to the fact that `gets()` takes only one argument (as
+    we see at the address `0x4117EB`-`cdecl` passing of a parameter), while `fgets()`
+    expects three. Trying to patch the code in place so that it would pass three parameters
+    is not possible without damaging the executable and rendering it unusable. This
+    means that we need to find a place for shim code, which would add the two additional
+    parameters and actually call `fgets()` (once we add it as an imported function).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Fortunately for us, PE sections in memory (and, in fact, in files too) occupy
+    much more space than their actual content. This is true in our case as well and
+    we need to find where the content of the `.text` section ends; for this reason
+    we, first of all, look at where the next section begins, as shown in the following
+    screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/9deda949-ed11-4c95-83d0-18446fb3ff11.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'As we see in the preceding screenshot, the next section is `.rdata` and the
+    beginning of its content is highlighted. Once we are there, we begin to scroll
+    up, till we see content other than zeros or `0xcc` bytes, as shown in the following
+    screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/740aef78-6103-4a43-ad33-3c35f3dee7ed.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'We see that as the actual content''s last byte is at file offset `0x4196`,
+    we have some spare space beginning with the file offset `0x4197`; however, it
+    does not seem right to begin a procedure at an unaligned address, so let''s begin
+    with the file offset `0x4198`. Just to be sure that we are at the right place,
+    let''s compare the bytes with what we see in IDA Pro:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/11c13b61-c204-421c-9046-1d1e728659c5.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Eventually, we see that the bytes are the same and we may use the file offset
+    `0x4198` (virtual address `0x414d98`) for our shim code.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Importing fgets()
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Before we begin the implementation of our patch, we still need to make the
+    executable import `fgets()` instead of `gets()`. This appears to be quite easy.
+    Let''s take a look at the content of the import table where the `gets()` function
+    is imported:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/d1216e6a-1de8-4929-845a-7ab5d11f8ffb.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Having located the string, we may safely overwrite it with `fgets`. The explanation,
+    looking at the following screenshot, makes it clear why such overwriting is safe
+    in this specific case:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/3b66c681-22e8-4684-9980-4d62a3515c26.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: The preceding screenshot shows `gets` being replaced by `fgets` already. We
+    are lucky once more here because the `gets` string, which started at the file
+    offset `0x7EF0`, did not end on an even boundary, so we had an extra zero at `0x7EF5`,
+    thus leaving us enough space to overwrite `gets` with `fgets` and have the terminating
+    `NULL` intact.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Patching calls
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The next step would be patching calls to `gets()` and redirecting them to our
+    shim. As we only have a single call to `gets()` (which is now a call to `fgets()`
+    with an invalid number of parameters), we will patch the call itself. If we had
+    multiple calls to `fgets()`, we would then patch the `jmp fgets` instruction rather
+    than patching each and every call.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'As we have already seen, the call is relative to `EIP`, so we have to calculate
+    a new offset for the call so that it would call our shim code located at `0x414d98`.
+    The formula is rather simple:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*new_offset = 0x414d98 - 0x4117EC - 5*'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Here, `0x4117EC` is the address of the call instruction and `5` is its length
+    in bytes. We need to use this length of the call instruction as, at the time it
+    is executed, the `EIP` already points at the instruction immediately following
+    the call. The resulting offset would be `0x35A7`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'However, before we can apply this patch, we have to find the right place in
+    the hex editor and we use a few bytes representing this call instruction and a
+    few bytes that follow as shown in the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/fefdff4a-98f9-42bc-a858-9dbc13dc2092.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'We used the `0xe8 0xf3 0xfa 0xff 0xff 0x83 0xc4 0x04` bytes for our search.
+    Doing this, one has to make sure such a sequence of bytes appears only once in
+    the search result. Here the `0xe8` is the call instruction and the `0xf3 0xfa
+    0xff 0xff` bytes are the offset from the next instruction --`0xfffffaf3`. The
+    following screenshot shows the offset patch being applied:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/4e30e86b-3c38-462d-8190-99555366649b.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: The offset is overwritten with `0x000035a7`. Now, the instruction at `0x4117ec`
+    would call our shim code. But we still have to implement the shim code.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Shim code
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The code we are about to write will look a tiny bit different from the code
+    we are used to as we are not expecting an executable file to be generated out
+    of it; instead, we will generate a binary file containing a 32-bit procedure assumed
+    to be loaded at a specific address, and that is what we are going to tell the
+    compiler in the first two lines of our `patch.asm` source file:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Then we will define two labels pointing at addresses outside our procedure.
+    Fortunately, Flat Assembler allows us to define a label at an arbitrary address,
+    like this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'After this, we are ready to begin our implementation of the actual shim code
+    as a regular `cdecl` procedure:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The implementation of the standard C library on Windows provides us with a
+    function for determining pointers to streams based on their number. The function
+    is `__iob_func(int)`. Luckily for us, our victim executable is importing this
+    function from `ucrtbased.dll` as we can see in the Imports tab of IDA Pro (or
+    in the 010 Editor too):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/b9427232-540b-4faf-826d-374c7df66034.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Although the name differs a bit (prepended with `__acrt_`), this is the function
+    we are interested in and it is located at the virtual address `0x41b180`. This
+    is why we added the `__acrt_iob_func` label a few moments ago. Visiting that address,
+    we may see that the address of the real `__acrt_iob_func` would be placed there
+    after dynamic linking:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/4534f6dd-9bb0-43d9-a087-8d3cd26c585a.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'In order to call this external function for getting the pointer to the `stdin`
+    stream, we must remember that the `stdin` number is `0` and that imported functions
+    are called indirectly:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Now, we are ready to forward the execution flow to `fgets()` and we do that
+    in the following way:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The code for the patch is ready. As simple as that (in this particular case).
+    Compiling this code would generate a 35-bytes binary file containing raw binary
+    code. This is the code seen in the hex editor:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/bde1ad36-c088-42f4-a7f0-5c66579d291e.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Applying the patch
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'In the *Preparing for the patch* subsection of this chapter, we have already
+    located the place where the patch should be applied in the hex editor, which is
+    at the file offset `0x4198`. The application of the patch is rather simple --we
+    copy the bytes from the `patch.bin` file into the executable at the aforementioned
+    location and get the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/17f5709e-cdd6-448c-b3a1-251ebef2cac9.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Now save the file and we are done. The executable has been patched and would
+    use `fgets()` instead of `gets()` from now on. We may check this by running the
+    executable and feeding a very long string instead of a name:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/2618a77d-2ead-479c-9916-08b62152c221.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: As we see, such input no longer causes any error as with `fgets()` at most 127
+    characters are read, thus keeping our stack safe, and we see the result in the
+    preceding screenshot; --the output is truncated.
+  prefs: []
+  type: TYPE_NORMAL
+- en: A complex scenario
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: We have just gone through a simplistic scenario of patching a PE executable;
+    alas, real-life situations are rarely that simple and modifications are usually
+    much more complex than simply importing a different function. Is there a way to
+    statically patch executables in such cases? Of course there is. In fact, there
+    are more than one. For example, one may patch a certain procedure within the file,
+    thus altering the algorithm it implements. This is, however, only possible when
+    the existing procedure occupies enough space for the new code. Another option
+    is to add an executable section to a PE file, which is rather simple and deserves
+    being examined here. The whole process contains five easy steps (six, --if modifying
+    the `patch.asm` file counts) and we are going to cover them one by one.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Preparing the patch
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: This is the easiest step as we hardly have to do anything here. We already have
+    a working patch code and the only important difference from the Assembly point
+    of view is where the code is going to be placed in memory. We will be adding a
+    new section right at the end of the victim executable, thus the loading address
+    for the code (the `Virtual Address`) is calculated by the summation of `Virtual
+    Address` and `Virtual Size` of the currently last section and rounding it up to
+    the nearest multiple of `SectionAlignment`, which, in our case, would be `0x1D000
+    + 0x43C = 0x1d43C`, rounded up to `0x1e000`. However, despite being called a virtual
+    address, this value is in fact an offset from `ImageBase`, which is `0x400000`,
+    thus the real virtual address would be `0x41e000`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: To put it simply, we only have to modify one line of `patch.asm`, --line number
+    2, so that `org 0x414d98` would become `org 0x41e000`. The rest of the code remains
+    the same.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Adjusting file headers
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Since we are about to append the section to an executable file, we need to make
+    some changes to its headers so that they reflect the new reality. Let's open the
+    `Legacy.exe` file in either the 010 Editor or any other hex editor you prefer
+    and go through all its headers making modifications where necessary.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Before we proceed to update the file, we have to decide what would be the size
+    of the new section in file (`SizeOfRawData`) and in memory (`VirtualSize`) in
+    accordance with the `FileAlignment` and `SectionAlignment` values, respectively.
+    Checking this values in the `IMAGE_OPTIONAL_HEADER32` structure, we see that the
+    `FileAlignment` value is `0x200` and `SectionAlignment` is `0x1000`. Since the
+    code we want to insert into the new section is tiny (only 35 bytes), we may proceed
+    with minimum sizes, making the section's `SizeOfRawData = 0x200` and `VirtualSize
+    = 0x1000`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'However, let''s proceed step by step and, as the first modification, adjust
+    the `NumberOfSections` field of `IMAGE_FILE_HEADER` under `IMAGE_NT_HEADERS`,
+    as shown in the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/f345c8ca-b191-4a4a-be96-f1f5843b4b72.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Originally, the file had seven sections and, as we are going to add another
+    section, we change the `WORD NumberOfSections` value to `8h`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Once the `NumberOfSections` field has been updated, we proceed with updating
+    the `SizeOfImage` field (which is the size of the executable image in memory)
+    of the `IMAGE_OPTIONAL_HEADER32` header. The original value of the `SizeOfImage`
+    field is `0x1E000` and, as our new section should occupy `0x1000` bytes in memory,
+    we simply set `SizeOfImage` to `0x1F000`, as shown in the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/50ad8ec5-4b97-4f8e-9f3b-508e9f2640bb.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Now comes a rather more interesting part --adding a section header. Section
+    headers are located right after the array of `IMAGE_DATA_DIRECTORY` entries, which,
+    in our case, is at the file offset of `0x1F0`. The last section header (for the
+    `.rsrc` section) is located at the file offset `0x2E0` and we are going to insert
+    our header right after starting at file offset `0x308`. In the case of this executable,
+    we have plenty of spare bytes, so we may safely proceed.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The first eight bytes of the section header contain the section's name and we
+    will name our section `.patch`. The interesting fact about the section name field
+    is that the name does not have to end with 0 (the `NULL` string terminator) and
+    may occupy all eight bytes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The next four byte are integers describing the virtual size of a section (how
+    many bytes it would occupy in memory), which, as we have previously decided, is
+    `0x1000` bytes (another interesting fact--we may set this field to 0 and it would
+    still work well).
+  prefs: []
+  type: TYPE_NORMAL
+- en: The next field is a four bytes integer describing the `VirtualAddress` field
+    of a section (where the section should be loaded at). The value for this field
+    is the previous value of the `SizeOfImage` field, which was `0x1E000`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Following the `VirtualAddress` field, there is the `SizeOfRawData` field (4
+    bytes as well), which we set to `0x200`, --the size of the new section in the
+    file, --and
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`PointerToRawData`, which we set to the previous size of the file --`0x8E00`.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The remaining fields are filled with zeros, except the last field, `Characteristics`,
+    which we set to `0x60000020`, denoting the section as containing code and being
+    executable.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The section header you added should look like the one shown in the following
+    screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/e72d4d5b-359b-4be9-bd6d-8b4d49116ef8.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Appending a new section
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: There are just two more steps to take and the first of them would be appending
+    the actual section data to the file. Scrolling the file to the end in a hex editor,
+    we will see that the first available file offset to add bytes to is `0x8e00`,
+    which is exactly the value we set the `PointerToRawData` field to.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We should append `0x200` bytes to the file, thus setting its size to `0x9000`,
+    and fill the first 35 bytes of those `0x200` bytes with our code, as shown on
+    the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/61105c12-0e5b-4fff-a20c-f23eadabdf62.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Just one more step to take before we can actually run the executable, so let's
+    not hesitate.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Fixing the call instruction
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'All that is left to do is to fix the `call gets()` instruction so that it would
+    point to our new code. We use the same binary string `0xE8 0xF3 0xFA 0xFF 0xFF
+    0x83 0xC4 0x04` in order to locate the call we are interested in and replace the
+    `0xF3 0xFA 0xFF 0xFF` bytes with `0x0F 0xC8 0x00 0x00`, which is the exact offset
+    from the instruction following the call to our new section. The following screenshot
+    illustrates precisely this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/c7328faa-8728-43ee-8a9f-3d6cc71380cc.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: At last, save the file and try to launch it. If the patching has been done correctly,
+    then you will see the same result as with the previous approach.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ELF executables
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Patching ELF executables is a bit more difficult than patching their PE counterparts
+    as ELF files tend to have no spare space in their sections, thus leaving no other
+    choice but to either add a section, which is not as simple as with PE files, or
+    inject a shared object.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Adding a section requires a good knowledge of the ELF format (specifications
+    can be found at [http://www.skyfree.org/linux/references/ELF_Format.pdf](http://www.skyfree.org/linux/references/ELF_Format.pdf)),
+    which, although quite interesting, resides, in its fullness, outside the scope
+    of this book. The most noticeable problem is in the way sections and headers are
+    arranged within an ELF executable and in the way an ELF structure is treated by
+    Linux, which makes it hard to append data as we did in the case of PE patching.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Injection of a shared object, on the other hand, is much simpler to implement
+    and easy to use, so let's proceed this way.
+  prefs: []
+  type: TYPE_NORMAL
+- en: LD_PRELOAD
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The `LD_PRELOAD` environment variable is used by the Linux dynamic linker/loader
+    `ld.so` and, if set, contains a list of shared objects to be loaded with the executable
+    before any other shared object is loaded, including `libc.so`. This means that
+    we may create a shared object, which would export a symbol named `gets`, and specify
+    this shared object in `LD_PRELOAD`, which would guarantee, that if the executable
+    we are attempting to run imports a symbol with the same name, our implementation
+    of `gets` would be linked instead of the one from `libc.so`, which would be loaded
+    afterward.
+  prefs: []
+  type: TYPE_NORMAL
+- en: A shared object
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Right now, we are going to implement our own `gets()` procedure, which would,
+    in fact, forward calls to `fgets()` just as our PE patch did. Unfortunately, Flat
+    Assembler's support for ELF does not allow us to create shared objects in a simple
+    way yet; therefore, we will create an object file and later link it with GCC as
+    a shared object for a 32-bit system.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The source code is, as usual, quite simple and intuitive:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Save the preceding code as `fgets_patch.asm` and compile it with `fasm` or
+    `fasm.x64`; this will result in the `fgets_patch.o` object file. Building a shared
+    object out of this object file is as simple as running one of the following commands
+    in the terminal:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Let''s now test and run the legacy executable without the patch and feed it
+    with a long string (140 bytes). Here is the result:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/ca0ad6e2-02f2-4ed3-af77-c18f0c3acddb.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'As we can see, the stack was corrupted, which caused a segmentation fault (invalid
+    memory access). Now we may try to run the same executable but set the `LD_PRELOAD`
+    environment variable to `"./fgets_patch.so"`, thus forcing our shared object to
+    be loaded before anything else when launching the `legacy` executable. The command
+    line would then be as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'This time, we get the output just as expected, --truncated to 127 characters,
+    --meaning that our implementation of `gets()` was linked by the dynamic linking
+    process:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/2326a414-067b-4d3a-9f35-0d05734a1091.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Summary
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Modification of existing executable code and/or running processes is a rather
+    broad theme, which is very difficult to fit into a single chapter as it may itself
+    deserve a separate book. It is, however, much more relevant to programming techniques,
+    and operating systems in general, while we were trying to concentrate on the Assembly
+    language.
+  prefs: []
+  type: TYPE_NORMAL
+- en: This chapter hardly covers the tip of the iceberg called modification of binary
+    code (known as patching). The purpose was to demonstrate how easy and interesting
+    the process may be, rather then covering each and every method in much detail.
+    We have, however, acquired a general indication of where to go to when it comes
+    to modification of code that cannot be simply rebuilt.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The method of code analysis was covered very superficially just to provide you
+    with the general idea, just as the most part of the process of patching an application
+    too, as the emphasis was on the implementation of patches themselves. My personal
+    suggestion is --go and get acquainted with the format specs for both Windows PE
+    executables and object files and Linux ELF. Even if you would never have to patch
+    a single executable, you would then understand what happens on lower levels when
+    you are coding in a higher-level languages.
+  prefs: []
+  type: TYPE_NORMAL

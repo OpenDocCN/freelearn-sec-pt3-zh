@@ -1,0 +1,2208 @@
+- en: '11'
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Dissecting Linux and IoT Malware
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Many reverse engineers working in antivirus companies spend most of their time
+    analyzing 32-bit malware for Windows, and even the idea of analyzing something
+    beyond that may be daunting at first. However, as we will see in this chapter,
+    the ideas behind file formats and malware behavior have so many similarities that,
+    once you become familiar with one of them, it becomes easier and easier to analyze
+    all the subsequent ones.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In this chapter, we will mainly focus on malware for Linux and Unix-like systems.
+    We will cover file formats that are used on these systems, go through various
+    tools for static and dynamic analysis, including disassemblers, debuggers, and
+    monitors, and explain the malware’s behavior on **Mirai**.
+  prefs: []
+  type: TYPE_NORMAL
+- en: By the end of this chapter, you will know how to start analyzing samples not
+    only for the x86 architecture but also for various **Reduced Instruction Set Computer**
+    (**RISC**) platforms that are widely used in the **Internet of Things** (**IoT**)
+    space.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To that end, this chapter is divided into the following sections:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Explaining ELF files
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Exploring common behavioral patterns
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Static and dynamic analysis of x86 (32- and 64-bit) samples
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Learning about Mirai, its clones, and more
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Static and dynamic analysis of RISC samples
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Handling other architectures
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Explaining ELF files
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Many engineers think that the `.so`, `.ko`, `.o`, and `.mod`. It might also
+    be a surprise for analysts who mainly work with Windows systems and are used to
+    `.exe` files that one of the most common file extensions for ELF executables is,
+    in fact, not having any.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ELF files can also be found on multiple embedded systems and game consoles (for
+    example, PlayStation and Wii), as well as mobile phones. For example, in modern
+    Android, as part of **Android Runtime** (**ART**), applications are compiled or
+    translated into ELF files as well.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The ELF structure
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: One of the main advantages of the ELF that contributed to its popularity is
+    that it is extremely flexible and supports multiple address sizes (32 and 64 bit),
+    as well as its endianness, which means that it can work on many different architectures.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Here is a diagram depicting a typical ELF structure:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 11.1 – ELF structures for executable and linkable ﬁles'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_11.1_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 11.1 – ELF structures for executable and linkable ﬁles
+  prefs: []
+  type: TYPE_NORMAL
+- en: As we can see, it differs slightly between linkable and executable files, but
+    in any case, it should start with a file header. It contains the 4-byte `\x7F’ELF’`
+    signature at the beginning (part of the `e_ident` field, which we will cover shortly),
+    followed by several fields mainly specifying the file’s format characteristics,
+    some details of the target system, and information about other structure blocks.
+    The size of this header can be either 52 or 64 bytes for 32- and 64-bit platforms,
+    respectively (as for the 64-bit platforms, three of its fields are 8 bytes long
+    in order to store 64-bit addresses, as opposed to the same three 4-byte fields
+    for the 32-bit platforms).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Here are some of the fields useful for analysis:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`e_ident`: This is a set of bytes responsible for ELF identification. For example,
+    a 1-byte field at the offset `0x07` is supposed to define the target operating
+    system (for example, `0x03` for Linux or `0x09` for FreeBSD), but it is commonly
+    set to zero, so it can only give you a clue about the target OS in some cases.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`e_type`: This 2-byte field at the offset `0x10` defines the type of the file—whether
+    it is an executable, a shared object (`.so`), or maybe something else.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`e_machine`: A 2-byte field at the offset `0x12`, which is generally more useful,
+    as it specifies the target platform (instruction set), for example, `0x03` for
+    x86 or `0x28` for ARM.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`e_entry`: A 4- or 8-byte field (for the 32- or 64-bit platform, respectively)
+    at the offset 0x18, this specifies the entry point of the sample. It points to
+    the first instruction of the program that will be executed once the process is
+    created.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The file header is followed by the program header; its offset is stored in the
+    `e_phoff` field. The main purpose of this block is to give the system enough information
+    to load the file to memory when creating the process. For example, it contains
+    fields describing the type of segment, its offset, virtual address, and size.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Finally, the section header contains information about each section, which includes
+    its name, type, attributes, virtual address, offset, and size. Its offset is stored
+    in the `e_shoff` field of the file header. From a reverse-engineering perspective,
+    it makes sense to pay attention to the code section (usually, this is `.text`),
+    as well as the section containing the strings (such as `.rodata`), as they can
+    give plenty of information about the purposes of malware.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'There are many open source tools that can parse the ELF header and present
+    it in a human-friendly way. Here are some of them:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**readelf**'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**objdump**'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**elfdump**'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Now, let’s talk about syscalls.
+  prefs: []
+  type: TYPE_NORMAL
+- en: System calls
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: '**System calls** (**syscalls**) are the interface between the program and the
+    kernel of the OS it is running on. They allow user-mode software to get access
+    to things such as hardware-related or process management services in a structured
+    and secure way.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Here are some examples of the syscalls that are commonly used by malware.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The filesystem
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'These syscalls provide all the necessary functionality to interact with the
+    **filesystem** (**FS**). Here are some examples:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`open/openat/creat`: Open and possibly create a file.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`read/readv/preadv`: Get data from the file descriptor.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`write/writev/pwritev`: Put data in the file descriptor.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`readdir/getdents`: Read the content of the directory, for example, to search
+    for files of interest.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`access`: Check file permissions, for example, for valuable data or own modules.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`chmod`: Change file permissions.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`chdir/chroot`: Change the current or root directory.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`rename`: Change the name of a file.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`unlink/unlinkat`: Can be used to delete a file, for example, to corrupt the
+    system or hide traces of malware.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`rmdir`: Remove the directory.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Malware can use these for various purposes, including reading and writing other
+    modules and configuration files.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The network
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'Network-related syscalls are built around sockets. So far, there are no syscalls
+    working with high-level protocols such as HTTP. Here are the ones that are commonly
+    used by malware:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`socket`: Create a socket.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`connect`: Connect to the remote server, for example, a command and control
+    server or another malicious peer.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`bind`: Bind an address to the socket, for example, a port to listen on.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`listen`: Listen for connections on a particular socket.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`accept`: Accept a remote connection.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`send/sendto/write/...`: Send data, for example, to steal some information
+    or request new commands.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`sendfile`: Move data between two descriptors. It is optimized in terms of
+    performance compared to using the combination of `read` and `write`.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`recv/recvfrom/read/...`: Receive data, for example, new modules to deploy
+    or new commands.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Network syscalls are commonly used to communicate with C&C, peers, and legitimate
+    services.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Process management
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'These syscalls can be used by malware to either create new processes or search
+    for existing ones. Here are some common examples:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`fork/vfork`: Create a child process, a copy of the current one.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`execve/execveat`: Execute a specified program, for example, another module.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`prctl`: Allows various operations on the process, for example, changing its
+    name.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`kill`: Send a signal to the program, for example, to force it to stop operating.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: There are multiple use cases for them, such as detecting and affecting AV software,
+    reverse-engineering tools, and competitors, or finding a process containing valuable
+    data.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Other
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'Some syscalls can be used by malware for more specific purposes, for example,
+    self-defense:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`signal`: This can be used to set a new handler for a particular signal and
+    then invoke it to disrupt debugging, for example, for `SIGTRAP`, which is commonly
+    used for breakpoints.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`ptrace`: This syscall is commonly used by debugging tools in order to trace
+    executable files, but it can also be used by malware to detect their presence
+    or to prevent them from doing tracing by performing it itself.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Of course, there are many more syscalls, and the sample you’re working on may
+    use several of them in order to operate properly. The selection that’s been provided
+    describes some of the top picks that may be worth paying attention to when trying
+    to understand malware functionality.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Syscalls in assembly
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'When an engineer starts analyzing a sample and opens it in a disassembler,
+    here is how the syscalls will look:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 11.2 – A Mirai clone compiled for the ARM platform using the connect
+    syscall'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_11.2_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 11.2 – A Mirai clone compiled for the ARM platform using the connect
+    syscall
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In the preceding screenshot, we can see that the number `0x90011B` is used
+    in assembly, instead of a more human-friendly `connect` string. Hence, it is required
+    to map these numbers to strings first. The exact approach will vary depending
+    on the tools that are used. For example, in IDA, in order to find the proper syscall
+    mappings for ARM, the engineer needs to do the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: First, they need to add the corresponding type library. Go to `gnulnx_arm` (GNU
+    C++ arm Linux).
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Then, go to the `MACRO_SYS`.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: This enum will contain the list of all the syscalls. It might be easier to present
+    them in the hexadecimal format used in assembly, rather than in the decimal format
+    used by default. In order to do so, select this enum, then right-click | **Edit
+    enum** (using the *Ctrl* + *E* hotkey), and choose the **Hexademical** representation
+    instead of **Decimal**.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 'Now, it becomes easy to find the corresponding syscall, as in the following
+    figure:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '![Figure 11.3 – The ARM syscall mappings in IDA'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_11.3_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 11.3 – The ARM syscall mappings in IDA
+  prefs: []
+  type: TYPE_NORMAL
+- en: In this case, it definitely makes sense to use a script in order to find all
+    the places where syscalls are being used throughout the code and map them to their
+    actual names to speed up the analysis.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now, let’s explore various behavioral patterns commonly found in malware.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Exploring common behavioral patterns
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Generally, all malware of the same type shares similar needs regardless of
+    the platform, mainly the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: It needs to get into the target system.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: In many cases, it may want to achieve persistence in order to survive the reboot.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: It may need to get a higher level of privileges, for example, to achieve system-wide
+    persistence or to get access to valuable data.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'In many cases, it needs to communicate with the remote system (C&C) in order
+    to do some of the following:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Get commands.
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Get new configurations.
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Get self-updates, as well as additional payloads.
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Upload responses, collected information, and files of interest.
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: It needs to actually achieve what it was actually created for.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: In many cases, it may want to protect itself from being detected or analyzed.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Some malware families behave as worms do, aiming to penetrate deeper into reached
+    networks; this behavior is commonly called lateral movement.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The implementation depends on the target systems, given that they may use different
+    default tools and file paths. In this section, we will go through the common attack
+    stages and provide examples of actual implementations.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Initial access and lateral movement
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'There are multiple ways that malware can get into a target system. While some
+    approaches might be similar to those with the Windows platform, others will be
+    different because of the different purposes they serve. Let’s summarize the most
+    common situations:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`root/12345`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`admin/1111`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`guest/guest`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`user/user`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`support/support`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'This is how they look in Mirai’s source code:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 11.4 – Hardcoded encrypted credentials in Mirai’s source code'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_11.4_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 11.4 – Hardcoded encrypted credentials in Mirai’s source code
+  prefs: []
+  type: TYPE_NORMAL
+- en: As you can see, in this case, attackers preferred to store them in the encrypted
+    form, but they still stored the original values as comments for easier maintenance.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**Dynamic passwords**: Some companies tried to avoid this situation by using
+    a so-called password of the day. However, the algorithm is generally easily accessible,
+    as it has to be implemented on the end-user device, and it is too costly for low-end
+    devices to put it inside a dedicated chip or use a unique hardware ID as part
+    of the secret. Eventually, this means that the infamous security through obscurity
+    approach won’t work in this case, and it becomes pretty straightforward for the
+    attacker to generate the correct pairs of credentials every time they are needed.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Exploits**: Generally, the process of updating any system may require user
+    interaction to complete with desired results, which is more troublesome for embedded
+    devices compared to PCs. As a result, many of them are not updated frequently
+    (or ever) and as long as some vulnerability becomes publicly known, the list of
+    devices that it can affect remains huge over a long period of time. The same situation
+    may happen with generic Linux-based servers as well when the owners don’t bother
+    installing any required updates as long as the machine does its job.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '![Figure 11.5 – Multiple exploits embedded into a Mozi malware sample'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_11.5_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 11.5 – Multiple exploits embedded into a Mozi malware sample
+  prefs: []
+  type: TYPE_NORMAL
+- en: For lateral movement, the same approaches are often used. Beyond this, it is
+    also possible to collect credentials on the first system and try to reuse them
+    with nearby devices.
+  prefs: []
+  type: TYPE_NORMAL
+- en: As we can see, there is no easy solution regarding how to fix these issues for
+    already existing devices. Regarding the future, the situation will improve only
+    when the device manufacturers become interested in bringing security to their
+    devices (either because of customer demands so that it is a competitive advantage,
+    or because of specific legislation imposed); it is quite unlikely that the state
+    of affairs will change drastically any time soon.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Persistence
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Persistence mechanisms can vary greatly depending on the target system. In
+    most cases, they rely on the automatic ways of executing code that are already
+    supported by the relevant OS. Here are the most common examples of how this can
+    be achieved:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`crontab`, which periodically attempts to execute (or download and execute)
+    the payload. This approach guarantees that the malware will be executed again
+    after the reboot and, beyond this, it may revive malware if it is killed, either
+    deliberately or accidentally. The easiest way to interact with `cron` is by using
+    the `crontab` utility. It is also possible to do this using `/var/spool/cron/crontabs/`,
+    modifying `/etc/crontab`, or placing a script in `/etc/cron.d/` or `/etc/cron.hourly/`
+    (`.daily/.weekly/.monthly`) manually, but it may require elevated privileges.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`/etc/init.d/` location. After this, it can be invoked by using the symbolic
+    link in the `/etc/rc?.d/` location. It is also possible to add malicious commands
+    to the `/etc/inittab` file by defining commands for different runlevels directly.
+    Another common option is to modify the `/etc/rc.local` file that’s executed after
+    normal system services.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`/etc/init/`.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`/etc/systemd/`.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`˜/.bash_profile` (another option is `~/.bash_login` and the older `sh` file’s
+    `~/.profile`) or `~/.bashrc` files are being misused with some malicious commands
+    added there. The difference between these two is that the former is executed for
+    login shells (that is, when the user logs in, either locally or remotely), while
+    the latter is for interactive non-login shells (for example, when `/bin/bash`
+    is being called, or a new Terminal window is opened). Interactive here means that
+    it won’t be executed if the bash just executes a shell script or is called with
+    the `-c` argument. Other shells have their own profile files, for example, `zsh`
+    uses the `.zprofile` file. This approach requires no elevated privileges. The
+    `/etc/profile` file can be used in the same way but, in this case, elevated privileges
+    are required, as this file is shared across multiple users.*   `.desktop` files
+    are placed in the `~/.config/autostart` location. Another more proprietary location
+    for executing scripts this way is `~/.config/autostart-scripts`.*   **Actual file
+    replacement**: This approach doesn’t touch the configuration files and instead
+    modifies or replaces actual original programs that are run periodically: either
+    scripts or files. It generally requires elevated privileges to replace system
+    files that can be reliably found on multiple systems, but it can also be applied
+    to some specific setup files with normal privileges.*   `find` utility has the
+    SUID permission, it will allow the execution of virtually any command with escalated
+    privileges using the `-exec` argument. Another common option is to modify the
+    scripts that are executed by these kinds of files or change the environment variables
+    that they use so that they execute the attacker’s script placed in some different
+    location.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Other custom options specific to certain operating systems are also possible,
+    but these are some of the most common cases often used by hackers and modern malware.
+  prefs: []
+  type: TYPE_NORMAL
+- en: It is also worth mentioning that some malware families don’t bother with implementing
+    persistence mechanisms at all, as they expect to be able to easily come back to
+    the same device after its reboot through the same channel.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Privilege escalation
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: As we can see, there are multiple ways that malware can achieve persistence
+    with the privileges it obtains immediately after penetration. It comes as no surprise
+    that malware targeting IoT devices will try them first. For example, the VPNFilter
+    malware incorporated `crontab` to achieve persistence, and Torii, incorporating
+    some of Mirai’s code, tries several techniques, one of which is using the local
+    `~/.bashrc` file.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'However, if at any stage the privilege escalation is required, there are several
+    common ways that this can be achieved:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**Exploit**: Privilege escalation exploits are quite common and there is always
+    a chance that the owner of a particular system didn’t patch it in time.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**SUID executables**: As we discussed in the previous section, it is possible
+    to execute commands with elevated privileges in the case of misconfigured SUID
+    files.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`sudo` without even needing to provide a password, this can be easily exploited
+    by attackers. Even if the password is required, it can still be brute-forced by
+    the attackers.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Brute-forcing credentials**: While this approach is unlikely to be applicable
+    to mass infection malware, it is possible to get access to the hash of the required
+    password (for example, the one that belongs to the root), and then either brute-force
+    it or use rainbow tables containing a huge amount of pre-computed pairs of passwords
+    and their hashes in order to find a match.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: There are other creative ways that persistence can be achieved. For example,
+    on older Linux kernels, it is possible to set the current directory of an attacker’s
+    program to `/etc/cron.d`, request the dump’s creation in case of failure, and
+    then deliberately crash it. In this case, the dump, the content of which is controlled
+    by the attacker, will be written to `/etc/cron.d` and then treated as a text file,
+    and therefore its content will be executed with elevated privileges.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now, let’s dive deeper into the various ways that malware may communicate with
+    a remote server controlled by the attackers.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Command and control
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'There are multiple standard system tools found by default on many systems that
+    can be used to interact with remote machines to either download or upload data,
+    depending on their availability:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`wget`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`curl`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`ftpget`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`ftp`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`tftp`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '![Figure 11.6 – IoT malware trying to download payloads using either wget or
+    curl'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_11.6_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 11.6 – IoT malware trying to download payloads using either wget or curl
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'For devices using the `busybox wget` or `busybox ftpget` can be used instead.
+    `nc` (netcat) and `scp` tools can also be used for similar purposes. Another advantage
+    of `nc` is that some versions of it can be used to establish the reverse shell:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'There are many ways this can be achieved – even bash-only (some versions of
+    it) may be enough:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: Pre-installed script languages such as Python or Perl provide plenty of options
+    for communicating with remote servers, including the creation of interactive shells.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'An example of a more advanced way to exfiltrate data bypassing strong firewalls
+    is by using the `ping` utility and storing data in padding bytes (ICMP tunneling)
+    or sending data using third-level (or above) domain names with the `nslookup`
+    utility (DNS tunneling):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: The compiled malware generally uses standard network syscalls to interact with
+    the C&C or peers; see the preceding list of common entries for more information.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Impact
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'The main purposes of malware attacking IoT devices and Linux-based servers
+    are generally as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**DDoS attacks**: These can be monetized in multiple ways: fulfilling orders
+    to organize them, extorting companies, or providing DDoS protection services for
+    affected entities.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Cryptocurrency mining**: Even though each affected device generally has a
+    pretty basic CPU and often no GPU to provide substantial computation power independently,
+    the combination of them can generate quite impressive numbers in the case of proper
+    implementation:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '![Figure 11.7 – Part of the script used by the IoT cryptocurrency mining malware'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_11.7_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 11.7 – Part of the script used by the IoT cryptocurrency mining malware
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**Cyber-espionage and infostealing**: Infected cameras can be a source of valuable
+    information for the attackers, as with smart TVs or smart home devices that often
+    have either a camera or a microphone (or both). Infected routers can also be used
+    to intercept and modify important data. Finally, some web servers may store valuable
+    information stored in their databases.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Denial of service**: Malware can destroy essential infrastructure hardware
+    and make certain systems or data inaccessible.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Ad fraud**: Multiple infected devices can generate good revenue for attackers
+    by performing fraud clicking.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Proxy**: In this case, infected devices provide an anonymous proxy service
+    for attackers.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: As we can see, the focus here is quite different from the traditional Windows
+    malware due to the nature of the targeted systems.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Defense evasion
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Generic anti-reverse-engineering tricks such as detecting breakpoints using
+    checksums or an exact match, stripping symbol information, incorporating data
+    encryption, or using custom exceptions or signal handlers (setting them using
+    the `signal` syscall that we discussed previously) will work perfectly for ELF
+    files, pretty much the same as they do for PE files:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 11.8 – An example of a custom xor-based string decryption algorithm
+    in IoT malware'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_11.8_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 11.8 – An example of a custom xor-based string decryption algorithm in
+    IoT malware
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'There are multiple ways that the malware can take advantage of the ELF structure
+    in order to complicate analysis. The two most popular ways are as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**Make the sample unusual, but still follow the ELF specification**: In this
+    case, the malware complies with the documentation, but there are no compilers
+    that would generate such code. An example of this kind of technique could be a
+    wrong target OS specified in the header (we know that it can actually be 0, which
+    means this value is largely ignored by programs). Another example is a stripped
+    section table, which is, as we saw earlier, actually optional for executable files.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`e_shoff`, `e_shnum` or `e_shstrndx` describing the section header table, bogus
+    `sh_addr` value for particular sections, or mismatching memory protection flags
+    used for segments and sections describing the same memory regions.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'In relation to existing open source packing tools, `upx –d` functionality to
+    unpack them straight away. The most common corruption techniques involve the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Modifying the hardcoded `UPX!` magic value (the `l_magic` field of its `l_info`
+    structure):'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: To circumvent this change, just restore the original `UPX!` magic value back.
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Modifying the sizes (the `p_filesize` and `p_blocksize` fields of the `p_info`
+    structure):'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Here, the original values can be copied from the end of the sample.
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: In addition, attackers may use a not-yet-released development version of the
+    UPX to protect their samples. In this case, the latest release version of the
+    UPX may be not able to process them even with the aforementioned modifications
+    reverted. To circumvent this technique, use packer detection tools such as **DiE**
+    to correctly identify the version of the packer applied and then use the right
+    version of the UPX tool compiling it on your own if necessary.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In terms of syscalls, the most common way to detect debuggers and tools such
+    as `ptrace` with the `PTRACE_TRACEME` or `PTRACE_ATTACH` arguments to either make
+    it harder to attach to the sample using the debugger or detect the debugging that
+    is already happening.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Finally, the `prctl` (with a `PR_SET_NAME` argument) and `chroot` syscalls can
+    be used to change the name of the process and its root directory respectively
+    to avoid detection.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Some malware families go well beyond using classic anti-analysis techniques.
+    An example would be the ZHtrap botnet, which is not only able to figure out whether
+    it is running in a real environment or a honeypot but also to set up its own honeypot
+    on a compromised device to passively build up a list of devices attempting to
+    connect to it.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Another great example is rootkits, which can be used to achieve stealth capabilities,
+    for example, to hide particular files, directories, or processes from the user.
+    These are generally kernel modules that can be installed using the standard `insmod`
+    command. The most common way that hiding can happen in this case is by hooking
+    syscalls. Many rootkit malware families are based on public open source projects
+    such as **Adore-Ng** or **Knark**.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now, let’s talk about which tools can help us analyze IoT threats and how to
+    use them properly.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Static and dynamic analysis of x86 (32- and 64-bit) samples
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: There are multiple tools available to engineers that may facilitate both static
+    and dynamic analysis of Linux malware. In this section, we will cover the most
+    popular solutions and provide basic guidelines on how to start using them efficiently.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Static analysis
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: We have already covered the tools that can present the ELF structure information
+    in a human-friendly way. Beyond this, there are many other categories of tool
+    that will help speed up analysis.
+  prefs: []
+  type: TYPE_NORMAL
+- en: File type detectors
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'The most popular solution, in this case, would be the standard **file** utility.
+    It not only recognizes the type of data but also provides other important information.
+    For example, for ELF files, it will also confirm the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Whether it is a 32- or 64-bit sample
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: What is the target platform
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Whether the symbol information was stripped or not
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Whether it is statically or dynamically linked (as in, whether it is using embedded
+    libraries or external ones)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '![Figure 11.9 – The output of a file tool used against an IoT malware sample'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_11.9_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 11.9 – The output of a file tool used against an IoT malware sample
+  prefs: []
+  type: TYPE_NORMAL
+- en: Its functionality is also incorporated into the **libmagic** library.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Another free for non-commercial use solution is the **TrID** tool, which introduces
+    a nice, expandable database.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Data carving
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'While this term is mainly used in forensics, it is always handy to extract
+    all possible artifacts from the binary before going deeper into analysis. Here
+    are some of the handy tools that are available:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**strings**: This standard tool can be used to quickly extract all the strings
+    of a particular length from the sample, which can give you a quick insight into
+    its functionality, and sometimes can even provide valuable **Indicators of Compromise**
+    (**IoCs**), such as the C&C that was used.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**scalpel**: Mainly used in forensics, it can be used to quickly extract embedded
+    resources.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**foremost**: This is another free, file-carving tool from the forensic world.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Disassemblers
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: These are heavy weapons that can give you the best idea about malware functionality
+    but they may also take the longest time to master and work with. If you are unfamiliar
+    with assembly, it is recommended to go through [*Chapter 2*](B18500_02.xhtml#_idTextAnchor043),
+    *A Crash Course in Assembly and Programming Basics*, first to get an idea of how
+    it works. The list of known players is actually quite big, so let’s split it roughly
+    into two categories – tools and frameworks.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tools
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'Here is a list of common tools that can be used to quickly access the assembly
+    code:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`-D/--disassemble-all` argument. It supports multiple architectures; a list
+    of them can be obtained using the `-i` argument. Generally, it is distributed
+    as part of **binutils** and has to be compiled for the specific target for the
+    disassembler to work.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`objdump`, it shouldn’t be used to disassemble object files.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**ODA**: This is a unique **online disassembler**; it provides basic disassembler
+    functionality, as well as some neat dialog windows, for example, to provide a
+    list of functions or strings. It supports an impressive number of architectures,
+    as we can see in the following figure:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '![Figure 11.10 – A list of architectures supported by ODA'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_11.10_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 11.10 – A list of architectures supported by ODA
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**radare2**: This is a powerful framework combining multiple features to facilitate
+    both static and dynamic analysis, and it also supports multiple architectures.
+    Many engineers treat it as a proper open source alternative to IDA; it even supports
+    FLIRT signatures in addition to its own **zignatures**, which can be used similarly.
+    Apart from the console, it also has two graphics modes, including control flow
+    graphs. While it takes time to master some of the hotkeys that are used, it helps
+    to drastically speed up analysis. We will dive deeper into how to use it within
+    a dedicated section, *A radare2 cheat sheet*, shortly.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**RetDec**: This decompiler supports multiple file formats, platforms, and
+    architectures, and includes multiple other features, such as compiler and packer
+    detection, as well as recognition of statically linked library code.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Snowman**: This is another powerful decompiler that supports multiple file
+    formats and architectures. It can be used in the forms of both plugins and standalone
+    tools.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Ghidra**: A powerful cross-platform, open source reverse-engineering toolkit
+    focused on static analysis – it was released to the public by the NSA in March
+    2019\. It supports an impressive number of architectures and corresponding instruction
+    sets, as well as multiple file formats (in both the disassembler and decompiler).
+    It features a comprehensive GUI with the ability to work on multiple files simultaneously
+    in separate tabs. In addition, it has built-in functionality for creating scripts
+    and collaborative work, as well as program diffing and version tracking:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '![Figure 11.11 – The multiple analysis options in Ghidra'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_11.11_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 11.11 – The multiple analysis options in Ghidra
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**Relyze** (commercial and demo versions available): A relatively new player
+    on the market, it supports both PE and ELF files for x86, x64, and ARM architectures.
+    It has multiple modern features, such as control flow graphs, function analysis
+    and references, and strong visualization functionality.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Binary Ninja** (commercial and demo versions available): This is a strong
+    cross-platform reversing platform that introduced multiple advanced features,
+    such as multi-threaded analysis.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Hopper** (commercial and demo versions available): Originally developed for
+    Mac, it now supports both Windows and Linux systems as well. Among other features,
+    it also provides decompiling capabilities.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**IDA** (commercial – both demo and free versions are available): This is one
+    of the most powerful and, at the same time, easy-to-use solutions available on
+    the market. The number of supported architectures and file formats is daunting,
+    and the rich functionality can be further extended with the help of plugins and
+    scripts. The associated **Hex-Rays Decompiler** runs on multiple platforms and
+    can handle assembly for x86, x64, ARM32, ARM64, and PowerPC processors.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: This is definitely not an exhaustive list, and the number of such tools keeps
+    growing, which gives engineers the ability to find the one that suits their needs
+    best.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Frameworks
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'These libraries are supposed to be used to develop other tools, or to just
+    solve some particular engineering task, using a custom script to call them:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**Capstorm**: This is a lightweight multi-platform disassembly engine that
+    supports multiple architectures, including x86, ARM, MIPS, PowerPC, SPARC, and
+    several others. It provides native support for Windows and multiple *nix systems.
+    It is designed so that other developers can build reverse-engineering tools based
+    on it. Besides the C language, it also provides Python and Java APIs.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**distorm3**: This is a disassembler library for processing x86 or AMD binary
+    streams. Written in C, it also has wrappers in Python, Ruby, and Java.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Vivisect**: This is a Python-based framework for static and dynamic analysis
+    that supports, among others, PE, ELF, Mach-O, and Blob binary formats on various
+    architectures. It has multiple convenient features, such as program flow graphs,
+    syntax highlighting, and support for cross-references.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Miasm**: This is a reverse-engineering framework in Python and it supports
+    several architectures. Among its interesting features are intermediate representations,
+    so-called emulation using **Just-In-Time** (**JIT**) compilation, symbolic execution,
+    and an expression simplifier.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**angr**: This Python library is a binary analysis framework that supports
+    multiple architectures. It has multiple interesting features, including control
+    flow analysis, decompilation capabilities, and its probably most widely used feature:
+    symbolic execution.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Metasm**: This Ruby-based engine is a cross-architecture framework that includes
+    an [dis]assembler, [de]compiler, and file structure manipulation functionality.
+    At the moment, multiple architectures including x86, MIPS, and PowerPC are supported.
+    The original official website looks outdated, but the GitHub project is still
+    alive.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: With a big list of players on this market, the analyst may have an understandable
+    question – which solution is the best? Let’s try to answer this question together.
+  prefs: []
+  type: TYPE_NORMAL
+- en: How to choose
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: A tool should always be chosen according to the relevant task and prior knowledge.
+    If the purpose is to understand the functionality of a small shellcode, then even
+    standard tools such as `objdump` may be good enough. Otherwise, it generally makes
+    sense to master more powerful all-in-one solutions that support either multiple
+    architectures or the main architecture of interest. While the learning curve in
+    this case will be much steeper, this knowledge can later be re-applied to handle
+    new tasks and eventually can save an impressive amount of time. The ability to
+    do both static and dynamic analysis in one place would definitely be an advantage
+    as well.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Open source solutions nowadays provide a pretty decent alternative to the commercial
+    ones, so ultimately, the decision should be made by the engineer. If money doesn’t
+    matter, then it makes sense to try several of them; check which one has the better
+    interface, documentation, and community; and eventually, stick to the most comfortable
+    solution.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Finally, if you are a developer aiming to automate a certain task (for example,
+    building a custom malware monitoring system for IOC extraction), then it makes
+    sense to have a look at open source engines and modules that can drastically speed
+    up the development.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Dynamic analysis
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: It always makes sense to debug malicious code in an isolated safe environment
+    that is easy to reset back to the previous state. For these purposes, engineers
+    generally use **virtual machines** (**VMs**) or dedicated physical machines with
+    software that allows quick restoration.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tracers
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'These tools can be used to monitor malware actions that are performed on the
+    testing system:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`ptrace` call to inspect and manipulate the internal state of the target process.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '![Figure 11.12 – Analyzing malware using a strace tool'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_11.12_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 11.12 – Analyzing malware using a strace tool
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**ltrace**: This is another debugging utility that displays calls that an application
+    makes to libraries and syscalls.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Frida**: This is a dynamic instrumentation toolkit that aims to be used by
+    both security researchers and developers. It allows script injection and the consequent
+    alteration and tracing of target processes, with no source code needed.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: It is always worth keeping in mind that behavioral analysis techniques generally
+    produce limited results and, in most cases, should be carefully used together
+    with static analysis to understand the full picture.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Network monitors
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'These tools intercept network traffic, which can give the analyst valuable
+    insight into malware behavior:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**tcpdump**: A standard tool to dump and analyze the network traffic'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**wireshark or tshark**: A free network protocol analyzer with the ability
+    to record network traffic as well'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The recorded network traffic can be shared between multiple engineers to speed
+    up the analysis if necessary.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Debuggers
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'Debuggers provide more control over the execution process and can also be used
+    to tamper and extract data on the fly:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`gdbinit` syntax highlighter configuration file:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '![Figure 11.13 – Stopping at the entry point in GDB and disassembling the instructions
+    there'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_11.13_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 11.13 – Stopping at the entry point in GDB and disassembling the instructions
+    there
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**IDA**: IDA is shipped with several so-called debugging server utilities that
+    can be executed on the required platform and be used for remote debugging (in
+    this case, the IDA itself can run on a different machine). For Linux samples,
+    IDA supports x86 (32- and 64-bit) and ARM (32-bit) architectures.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`radare2` provides plenty of options for dynamic analysis, and is accompanied
+    by a UI that supports multiple output modes. A project called **Cutter** that
+    provides a more mouse-friendly GUI is based on its fork, called **rizin**.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`vivisect` can be used for both static and dynamic analysis, as well as a framework
+    to automate multiple tasks with the help of scripting.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Now, let’s talk about emulators.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Binary emulators
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'This software can be used to emulate instructions of the samples without actually
+    executing them directly on the testing machine. It can be extremely useful when
+    analyzing malware that’s been compiled for a platform that’s different from the
+    one being used for analysis:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**libemu**: This is a small emulator library that supports the x86 ISA. It’s
+    shipped with a small tool, **sctest**, which prints the emulation state.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`-g` argument can be used to specify the port for running the GDB server with
+    the requested tool. This way, it becomes possible to connect to it using various
+    debuggers (see the following examples).'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Unicorn**: This is a powerful QEMU-based cross-platform CPU emulation engine,
+    and it supports multiple architectures, including x86, ARM, MIPS, SPARC, and PowerPC:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '![Figure 11.14 – An example of the Unicorn-based code used to emulate the shellcode'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_11.14_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 11.14 – An example of the Unicorn-based code used to emulate the shellcode
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**Qiling**: An advanced binary emulation framework supporting tons of architectures
+    and associated executable file formats, based on the Unicorn engine.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Finally, as an example, let’s talk about how to use `radare2` for both static
+    and dynamic analysis.
+  prefs: []
+  type: TYPE_NORMAL
+- en: A radare2 cheat sheet
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Many first-time users struggle with using `radare2` because of the impressive
+    number of commands and hotkeys supported. However, there is no need to use it
+    as an analog for GDB. `radare2` features very convenient graphical interfaces
+    that can be used similarly to IDA or other high-end commercial tools. In addition,
+    multiple third-party UIs are available. To begin with, to enable debugging, the
+    sample should be opened with the `-d` command-line argument, as in the following
+    example:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Here is a list of some of the most common commands supported (all the commands
+    are case-sensitive):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`:` key).'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`?`: Shows the help. Detailed information about some particular command (and
+    all commands with this prefix) can be obtained by entering it followed by the
+    `?` sign, for example, `dc?`.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`?*~...`: This allows easy interactive navigation through all the help commands.
+    The last three dots should be typed as they are, not replaced with anything.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`ie`: Lists the available entry points.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`iS`: Lists sections.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`aa/aaa/aaaa`: Analyzes functions with various levels of detail.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`afl`: Lists functions (requires the `aa` command to be executed first).'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`iz/izz`: List the strings in data sections (usually, the `.rodata` section)
+    and in the whole binary (which often produces lots of garbage), respectively.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`ii`: Lists the imports that are available.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`is`: Lists symbols.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`dc`: Continues execution.*   `dcr`, `dcs`, or `dcf`: Continues execution up
+    until `ret`, `syscall`, or `fork`, respectively.*   `ds` or `dso`: Steps in or
+    over.*   `dsi`: Continues until a condition matches, for example, `dsi eax==5,ebx>0`.*   `db`:
+    Lists the breakpoints (without an argument) or sets a breakpoint (with an address
+    as an argument).*   `db-`, `dbd`, or `dbe`: Removes, disables, and enables the
+    breakpoint, respectively.*   `dbi`, `dbid`, or `dbie`: Lists, disables, and enables
+    breakpoints, but using their indices in a list this time; this saves time, as
+    it is no longer required to type the corresponding addresses.*   `drx`: Modifies
+    hardware breakpoints.*   `dr`: Displays registers or changes the value of a specified
+    one.*   `/`, `/w`, `/x`, `/e`, or `/a`: Searches for a specified string, wide
+    string, `hex` string, regular expression, or assembly opcode, respectively (check
+    `/?` for more options).*   `px` or `pd`: Prints a `hexdump` or a disassembly,
+    respectively, for example, `pd 5 @eip` to print five disassembly lines at the
+    current program counter.*   `w` or `wa`: Writes a string or an opcode, respectively,
+    to the address specified with the `@` prefix.*   `afn`: Renames a function.*   `afvn`:
+    Renames the argument or local variable.*   `CC`: Lists or edits comments.*   `;`:
+    A separator for commands that allows you to chain them to sequences.*   `|`: Pipes
+    the command output to shell commands.*   `~`: Uses `grep`, for example, `f~abc`
+    and `f|grep abc` will pretty much do the same job![Figure 11.15 – An example of
+    the commands supported by radare2'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '](img/Figure_11.15_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 11.15 – An example of the commands supported by radare2
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`V` command:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`?`: Help.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`V`: Enters graph mode (especially useful for those used to it in IDA).'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`!`: Enters visual panel mode. It only supports a limited set of hotkeys.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`q`: Returns to the previous visual mode or shell.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`p/P`: Switches forward and backward between print modes, such as *hex*, *disasm*,
+    or *debug*.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`/`: Highlights specified values.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`:`: Enters a generic command.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`.`: Seeks to the program counter (current instruction).*   `1-9`: Follows
+    the jump or call with the corresponding shortcut number in a comment (the numbering
+    always starts from the top of the displayed area).*   `c`: Enables or disables
+    cursor mode, which allows more detailed navigation. In the debug print mode, it
+    is possible to move the cursor between windows using the `Tab` key.*   `Enter`:
+    Follows the jump or call, either on the top-displayed instruction or at the current
+    location of the cursor.*   `o`: Seeks to the specified offset. Recent versions
+    of `radare2` use the `g` key instead.*   `u` or `U`: Undoes or redoes the seek.*   `x`
+    or `X`: Searches for cross-references and references, respectively, and optionally
+    seeks there.*   `b`: Displays lists of entries such as functions, comments, symbols,
+    xrefs, flags (strings, sections, imports), and navigates to particular values
+    using the `Enter` key.*   `F2` or `FB`: Sets a breakpoint*   `F7` or `Fs`: Takes
+    a single step*   `F8` or `FS`: Steps over*   `F9`: Continues execution*   `SHIFT`
+    + `h/j/k/l` or `arrows`: Selects the block (in the cursor mode) and then does
+    one of the following:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`y`: Copies the selected block'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`Y`: Pastes the copied block'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`i`: Changes the block to the hex data specified'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`a` or `A`: Changes the block to the assembly instruction(s) specified*   `F`
+    or `f-`: Sets or unsets flags (names for selected addresses).*   `d`: This supports
+    multiple operations, such as renaming functions, and defining the block as data,
+    code, and functions.*   `;`: Sets a comment.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Here is how debugging using `radare2`’s visual mode will look:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 11.16 – Staying at the entry point of malware in radare2 using its
+    visual mode'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_11.16_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 11.16 – Staying at the entry point of malware in radare2 using its visual
+    mode
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Many engineers prefer to start the debugging process by running the `aaa` command
+    (or using the `–A` command-line option) in order to analyze functions and then
+    switch to visual mode and continue working there, but it depends on personal preference:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 11.17 – Running an aaa command in radare2 before starting the actual
+    analysis'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_11.17_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 11.17 – Running an aaa command in radare2 before starting the actual
+    analysis
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now, it is time to apply all this knowledge and dive deep into the internals
+    of one of the most notorious IoT malware families – Mirai.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Learning about Mirai, its clones, and more
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: For many years, the Windows platform was the main target of attackers because
+    it was the most common desktop OS. This means that many beginner malware developers
+    had it at home to experiment with, and many organizations used it on the desktops
+    of non-IT personnel, for example, accountants that had access to financial transactions,
+    or maybe diplomats that had access to some high-profile confidential information.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'As far as this is concerned, the Mirai (meaning *future* in Japanese) malware
+    fully deserved its notoriety, as it opened a door to a new, previously largely
+    unexplored area for malware – the IoT. While it wasn’t the first malware to leverage
+    it (other botnets, such as Qbot, were known a long time before), the scale of
+    its activity clearly showed everybody how hardcoded credentials such as *root/123456*
+    on largely ignored smart devices could now represent a really serious threat when
+    thousands of compromised appliances suddenly start DDoS attacks against benign
+    organizations across the world. To make things worse, the author of Mirai released
+    its source code to the public, which led to the appearance of multiple clones
+    in a short time. Here is the structure of the released project:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 11.18 – An example of the Mirai source code available on GitHub'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_11.18_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 11.18 – An example of the Mirai source code available on GitHub
+  prefs: []
+  type: TYPE_NORMAL
+- en: In this section, we will put our obtained knowledge into practice and become
+    familiar with behavioral patterns used by this malware.
+  prefs: []
+  type: TYPE_NORMAL
+- en: High-level functionality
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Luckily for reverse engineers, the malware author provided a good description
+    of the malware functionality, accompanied by the source code, and even corrected
+    some mistakes that were made by the engineers who previously analyzed it.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Propagation
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'The bot scans IP addresses, which are selected pseudo-randomly with certain
+    ranges excluded, asynchronously using TCP SYN packets, in order to find target
+    candidates with open default Telnet ports first. Here is how it looks in the source
+    code:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 11.19 – Mirai malware excluding several IP ranges from scanning'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_11.19_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 11.19 – Mirai malware excluding several IP ranges from scanning
+  prefs: []
+  type: TYPE_NORMAL
+- en: Then, malware brute-forces access to the found candidate machines using pairs
+    of hardcoded credentials. The successful results are passed to the server to balance
+    the load, and all data is stored in a database. The server then activates a loader
+    module that verifies the system and delivers the bot payload using either the
+    `wget` or `tftp` tool if available; otherwise, it uses a tiny embedded downloader.
+    The malware has several pre-compiled binary payloads for several different architectures
+    (ARM, MIPS, SPARC, SuperH, PowerPC, and m68k). After this, the cycle repeats,
+    and the just-deployed bots continue searching for new victims.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Weaponry
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'The main purpose of this malware is to organize DDoS attacks on demand. Several
+    types of attacking techniques are supported, including the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: A UDP flood
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: A SYN flood
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: An ACK flood
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: A GRE flood
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: An HTTP flood
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: A DNS flood
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Here is a snippet of Mirai’s source code mentioning them:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 11.20 – The diﬀerent attack vectors of Mirai malware'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_11.20_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 11.20 – The diﬀerent attack vectors of Mirai malware
+  prefs: []
+  type: TYPE_NORMAL
+- en: As we can see here, the authors implemented multiple options so that they could
+    select the most efficient attack against a particular victim.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Self-defense
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: The original Mirai doesn’t survive the reboot. Instead, the malware kills the
+    software associated with Telnet, SSH, and HTTP ports in order to prevent other
+    malware from entering the same way, as well as to block legitimate remote administration
+    activity. Doing this complicates the remediation procedure. It also tries to kill
+    rival bots such as Qbot and Wifatch if found on the same device.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Beyond this, the malware hides its process name using the `prctl` system call
+    with the `PR_SET_NAME` argument, and uses `chroot` to change the root directory
+    and avoid detection by this artifact. In addition, both hardcoded credentials
+    and the actual C&C address are encrypted, so they won’t appear in plain text among
+    the strings that were used.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Later derivatives
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: At first, it is worth noting that not all Mirai modifications end up with a
+    publicly known unique name; often, many of them fall under the same generic Mirai
+    category. An example would be the Mirai variant that, in November 2016, propagated
+    using the RCE attack against DSL modems via TCP port `7547` (`TR-069/CWMP`).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Here are some other examples of known botnets that borrowed parts of the Mirai
+    source code:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**Satori** (meaning *comprehension* or *understanding* in Japanese): This exploits
+    vulnerabilities for propagation, for example, CVE-2018-10562 to target GPON routers
+    or CVE-2018-10088 to target Xiongmai software.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Masuta or PureMasuta** (meaning *master* in Japanese): This exploits a bug
+    in the D-Link HNAP, apparently linked to the Satori creator(s).'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Okiru** (meaning *to get up* in Japanese): This uses its own configurations
+    and exploits for propagation (CVE-2014-8361 targeting a Realtek SDK and CVE-2017-17215
+    targeting Huawei routers). It has added support for ARC processors.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Owari** and **Sora** (meaning *the end* and *the sky* in Japanese, respectively):
+    These are two projects that were linked to the same author, known under the nickname
+    Wicked. Originally used for credential brute-forcing for propagation, Owari was
+    later upgraded with several exploits, for example, CVE-2017-17215.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Other botnets exist, and often some independent malware also uses pieces of
+    Mirai source code, which can mix up the attribution. There are multiple modifications
+    that different actors incorporate into their clones, including the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**Improved IP ranges to skip**: Some malware families ignore IP ranges belonging
+    to big VPS providers where many researchers host their honeypots.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Extended lists of hardcoded credentials**: Attackers keep exploring new devices
+    and adding extracted credentials to their lists, or even make them updatable.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**More targeted protocols**: Apart from Telnet, modern Mirai clones also target
+    many other services, such as TR-069, and don’t mind using exploits.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**New attack vectors**: The list of payloads has been extended over time as
+    well.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Added persistence mechanisms**: Some clones added persistence techniques
+    to survive both the usual reboot and basic remediation procedures.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Now, let’s talk about other famous IoT malware families.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Other widespread families
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: While Mirai became extremely famous due to the scale of the attacks performed,
+    multiple other independent projects existed before and after it. Some of them
+    incorporated pieces of Mirai’s code later in order to extend their functionality.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Here are some of the most notorious IoT malware families and the approximate
+    years when they became known to the general public. All of them can be roughly
+    split into two categories.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The following category consists of malware that actually aims to harm:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**TheMoon** (~2014): Originally propagated through vulnerabilities in Linksys
+    routers, it later extended support to other devices, for example, ASUS through
+    CVE-2014-9583\. Starting as a DDoS botnet, it was extended with new modules. For
+    example, it later started providing proxy functionality.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Lightaidra** (~2014): It propagates by brute-forcing credentials, communicates
+    with the C&C via IRC, and performs DDoS attacks. The source code is publicly available.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Qbot/BASHLITE/Gafgyt/LizardStresser/Torlus** (~2014): The original version
+    appeared in 2014, was propagated via Shellshock vulnerability, and aimed to be
+    used for DDoS attacks. The source code was leaked in 2015, which led to the creation
+    of multiple clones.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Tsunami/Kaiten** (evolved drastically over the years): This is one more DDoS
+    malware family with a Japanese name (*kaiten* meaning *rotation*) that also uses
+    the no-longer-so-popular IRC protocol to communicate with the C&C. Apart from
+    hardcoded credentials, it also actively explores new propagation methods, including
+    exploits.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**LuaBot** (~2016): This is a DDoS botnet written in Lua and it propagates
+    mainly using known vulnerabilities.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Imeij** (~2017): Another DDoS-oriented malware, this propagates through a
+    CGI vulnerability and focuses on AVTech CCTV equipment.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Persirai** (~2017): This mainly focuses on cameras, accessing them via a
+    web interface. It specializes in DDoS attacks.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Reaper/IoTroop** (~2017): This botnet became infamous for exploiting at least
+    nine known vulnerabilities against various devices, and it shares some of its
+    code base with Mirai.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Torii** (~2018): It got its name because the first recorded hits were coming
+    from Tor nodes. Torii is a Japanese word for the gate at the entrance of a shrine.
+    It allegedly focuses on data exfiltration, incorporating several persistence and
+    anti-reverse-engineering techniques. Since the FTP credentials that were used
+    to communicate with the C&C were hardcoded, researchers immediately got access
+    to its backend, including logs.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Muhstik** (~2018): In addition to DDoS attacks, this botnet is also specializing
+    in cryptocurrency mining.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Echobot** (~2019): Targeting more than 50 different vulnerabilities, this
+    Mirai successor went much further than just using different filenames for the
+    delivered modules commonly found in its clones.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Mozi** (~2019): Based on the DHT protocol for building its own P2P network,
+    this botnet utilizes parts of multiple botnets whose source code was leaked before,
+    coupled with the original code:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '![Figure 11.21 – Some of the public DHT servers misused by Mozi malware'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_11.21_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 11.21 – Some of the public DHT servers misused by Mozi malware
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**Dark Nexus** (~2020): Specializing mainly in DDoS attacks, this botnet features
+    a unique scoring system in an attempt to efficiently kill competitor samples.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Meris** (~2021): This botnet became famous for launching an attack against
+    Brian Krebs’s website that far exceeded the one originally performed by Mirai.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**BotenaGo** (~2021): Unlike many other IoT malware families, this one is written
+    in Go language and is shipped with a few dozen exploits. Similar to Mirai, its
+    source code is now available to the public on Github.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Then, there’s malware whose author’s intent was allegedly to make the world
+    a better place. Examples of such families include the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**Carna** (~2012): The author’s aim was to measure the extent of the internet
+    before it became too complicated with the adoption of the IPv6 protocol.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Wifatch** (~2014): This is an open source malware that attempts to secure
+    devices. Once penetration is successful, it removes known malware and disables
+    Telnet access, leaving a message for the owners to update them.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Hajime** (~2017): Another owner of a Japanese name (meaning *the beginning*),
+    it contains a signed message stating that the author’s aim is to secure devices.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**BrickerBot** (~2017): Surprisingly, according to the author, it was created
+    to destroy insecure devices and this way, get rid of them, eventually making the
+    internet safer.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Now, let’s talk about how to analyze samples compiled for different architectures.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Static and dynamic analysis of RISC samples
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Generally, it is much easier to find tools for more widespread architectures,
+    such as x86\. Still, there are plenty of options available to analyze samples
+    that have been built for other instruction sets. As a rule of thumb, always check
+    whether you can get the same sample compiled for an architecture you have more
+    experience with. This way, you can save lots of time and provide a higher-quality
+    report.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'All basic tools, such as file type detectors, as well as data carving tools,
+    will more than likely process samples associated with most of the architectures
+    that currently exist. `radare2` will also handle the static analysis part in most
+    cases, regardless of the host architecture. If the engineer has access to the
+    physical RISC machine to run the corresponding sample, it is always possible to
+    either debug it there using GDB (or another supported debugger) or to use the
+    **gdbserver** tool to let other debuggers connect to it via the network from the
+    preferred platform:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 11.22 – IDA processing a Mirai clone for a SPARC architecture'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_11.22_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 11.22 – IDA processing a Mirai clone for a SPARC architecture
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Here is how a Mirai-like sample can be analyzed using `radare2`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 11.23 – radare2 processing the same Mirai clone for the PowerPC architecture'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_11.23_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 11.23 – radare2 processing the same Mirai clone for the PowerPC architecture
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now, let’s go through the most popular RISC architectures that are currently
+    targeted by IoT malware in detail.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ARM
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: As time shows, all static analysis tools aiming to support other architectures
+    beyond x86 generally start from the 32-bit ARM, so it is generally easier to find
+    good solutions for it. Since the 64-bit ARM was introduced more recently, support
+    for it is still more limited. Still, besides IDA and `radare2`, tools such as
+    Relyze, Binary Ninja, and Hopper support it as well.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'However, this becomes especially relevant in terms of dynamic analysis. For
+    example, at the moment, IDA only ships the debugging server for the 32-bit version
+    of ARM for Linux. While it may be time-consuming to get and use the physical ARM
+    machine to run a sample, one of the possible solutions here is to use QEMU and
+    run a GDB server on the x86-based machine:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: If the sample is dynamically linked, then additional ARM libraries may need
+    to be installed separately, for example, using the `armel` can be used instead
+    of `armhf` for ARM versions older than 7) for a 32-bit ARM or `/usr/arm-linux-gnueabihf`
+    or `/usr/arm-linux-gnueabi` for 32-bit and `/usr/aarch64-linux-gnu` for 64-bit
+    respectively) can be provided by either using the `-L` argument or setting the
+    `QEMU_LD_PREFIX` environment variable.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Now, it becomes possible to attach to this sample using other debuggers, for
+    example, `radare2` from another Terminal:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'IDA supports the remote GDB debugger for the ARM architecture as well:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 11.24 – Available debuggers for the 32-bit ARM sample in IDA'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_11.24_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 11.24 – Available debuggers for the 32-bit ARM sample in IDA
+  prefs: []
+  type: TYPE_NORMAL
+- en: GDB has to be compiled for the specified target platform before it can be used
+    to connect to this server; the popular solution here is to use a universal **gdb-multiarch**
+    tool.
+  prefs: []
+  type: TYPE_NORMAL
+- en: MIPS
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: The MIPS architecture remains popular nowadays, so it is no surprise that the
+    number of tools supporting it is growing as well. While Hopper and Relyze don’t
+    support it at the moment, Binary Ninja mentions it among its supported architectures.
+    And of course, solutions such as IDA or `radare2` can also be used.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The situation becomes more complicated when it comes to dynamic analysis. For
+    example, IDA still doesn’t provide a dedicated debugging server tool for it. Again,
+    in this case, the engineer mainly has to rely on the QEMU emulation, with IDA’s
+    remote GDB debugger, `radare2`, or GDB itself this time.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To connect to the GDB server using GDB itself, the following command needs
+    to be used once it’s been started:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: Once connected, it becomes possible to start analyzing the sample.
+  prefs: []
+  type: TYPE_NORMAL
+- en: PowerPC
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'As with the previous two cases, static analysis is not a big problem here,
+    as multiple tools support PPC architecture, for example, `radare2`, IDA, Binary
+    Ninja, ODA, or Hopper. In terms of dynamic analysis, the combination of QEMU and
+    either IDA or GDB should do the trick:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 11.25 – Debugging Mirai for PowerPC in IDA on Windows via a QEMU GDB
+    server on x86'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_11.25_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 11.25 – Debugging Mirai for PowerPC in IDA on Windows via a QEMU GDB
+    server on x86
+  prefs: []
+  type: TYPE_NORMAL
+- en: As we can see, less prevalent architectures may require a more sophisticated
+    setup to perform comfortable debugging.
+  prefs: []
+  type: TYPE_NORMAL
+- en: SuperH
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'SuperH (also known as Renesas SH) is the collective name of several instruction
+    sets (as in, SH-1, SH-2, SH-2A, etc.), so it makes sense to double-check exactly
+    which one needs to be emulated. Most samples should work just fine on the SH4,
+    as these CPU cores are supposed to be upward-compatible. This architecture is
+    not the top choice for either attackers or reverse engineers, so the range of
+    available tools may be more limited. For static analysis, it makes sense to stick
+    to solutions such as `radare2`, IDA, or ODA. Since IDA doesn’t seem to provide
+    remote GDB debugger functionality for this architecture, dynamic analysis has
+    to be handled through QEMU and either `radare2` or GDB, the same way that we described
+    earlier:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 11.26 – Debugging Mirai for SuperH on the x86 VM using radare2 and
+    QEMU'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_11.26_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 11.26 – Debugging Mirai for SuperH on the x86 VM using radare2 and QEMU
+  prefs: []
+  type: TYPE_NORMAL
+- en: If for some reason, the binary emulation doesn’t work properly, then it may
+    make sense to obtain real hardware and perform debugging either there or remotely
+    using the GDB server functionality.
+  prefs: []
+  type: TYPE_NORMAL
+- en: SPARC
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'The SPARC design was terminated by Oracle in 2017, but there are still lots
+    of devices that implement it. The number of static analysis tools supporting it
+    is quite limited, so it makes sense to mainly use universal solutions such as
+    ODA, `radare2`, Ghidra, and IDA. For dynamic analysis, QEMU can be used with GDB
+    the same way that we described previously, as it looks as though neither `radare2`
+    nor IDA supports a GDB debugger for this architecture at the moment:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 11.27 – Debugging a Mirai sample for SPARC on the x86 VM using GDB
+    with TUI and QEMU'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_11.27_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 11.27 – Debugging a Mirai sample for SPARC on the x86 VM using GDB with
+    TUI and QEMU
+  prefs: []
+  type: TYPE_NORMAL
+- en: Various GDB-syntax-highlighting tools can be used to make the debugging process
+    more enjoyable.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now, you know how to deal with the most common architectures targeted by IoT
+    malware families. In the following section, we will talk about what to do if you
+    have to deal with something not covered here.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Handling other architectures
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: What happens if you have to analyze a sample that doesn’t belong to any of the
+    architectures mentioned at some stage? There are many other options available
+    at the moment and more will very likely appear in the future. As long as there
+    is a meaningful amount of devices (or these devices are of particular potential
+    interest to attackers), and especially if it is pretty straightforward to add
+    support for them, sooner or later, the new malware family exploiting their functionality
+    may appear. In this section, we will provide guidelines on how to handle malware
+    for virtually any architecture.
+  prefs: []
+  type: TYPE_NORMAL
+- en: What to start from
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'At first, identify the exact architecture of the sample; for this purpose,
+    open source tools such as `file` will work perfectly. Next, check whether this
+    architecture is supported by the most popular reverse engineering tools for static
+    and dynamic analysis. IDA, Ghidra, `radare2`, and GDB are probably the best candidates
+    for this task because of an impressive number of architectures supported, very
+    high-quality output, and, in some cases, the ability to perform both static and
+    dynamic analysis in one place:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 11.28 – The radare2 main page describing the argument to specify the
+    architecture'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_11.28_B18500.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 11.28 – The radare2 main page describing the argument to specify the
+    architecture
+  prefs: []
+  type: TYPE_NORMAL
+- en: The ability to debug may drastically speed up the analysis, so it makes sense
+    to check whether it is possible to make the corresponding setup for the required
+    architecture. This may involve running a sample on the physical machine or an
+    emulator such as QEMU and connecting to it locally or remotely. Check for native
+    architecture debugging tools; is it GDB or maybe something else? Some engineers
+    prefer to use more high-end tools such as IDA with GDB together but separately
+    (so, debug only specific blocks using GDB and keep the markup knowledge base in
+    IDA).
+  prefs: []
+  type: TYPE_NORMAL
+- en: When you get access to the disassembly, check which entity currently administrates
+    this architecture. Then, find the official documentation describing the architecture
+    on their website, particularly the parts describing registers, groups, and syntax
+    for the supported instructions. Generally, the more time you have available to
+    familiarize yourself with the nuances, the less time you will spend later on analysis.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Finally, never be ashamed to run a quick search for unique strings that have
+    been extracted from the sample on the internet, as there is always a chance that
+    someone else has already encountered and analyzed it. In addition, the same sample
+    may be available for a more widespread architecture.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Summary
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In this chapter, we became familiar with malware targeting non-Windows systems
+    such as Linux that commonly power IoT devices. Firstly, we went through the basics
+    of the ELF structure and covered syscalls. We described the general malware behavior
+    patterns shared across multiple platforms, went through some of the most prevalent
+    examples, and covered the common tools and techniques used in static and dynamic
+    analysis.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Then, we took a look at the Mirai malware and put our newly obtained knowledge
+    into practice by using it as an example and coming to understand various aspects
+    of its behavior. Finally, we summarized the techniques that are used in static
+    and dynamic analysis for the malware targeting the most common RISC platforms
+    and beyond. By this point, you should have enough fundamental knowledge to start
+    analyzing malware related to virtually any common architecture.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In [*Chapter 12*](B18500_12.xhtml#_idTextAnchor1327), *Introduction to macOS
+    and iOS Threats*, we will cover the malware that targets Apple systems, as this
+    has become increasingly common nowadays.
+  prefs: []
+  type: TYPE_NORMAL

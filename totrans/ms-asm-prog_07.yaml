@@ -1,0 +1,1282 @@
+- en: Data Structures
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: As it has been stated more than once in this book, Assembly is about moving
+    and performing certain basic operations on data, and Assembly programming is about
+    knowing what to move where and which operations to apply to it on the way. Until
+    now, we have primarily dedicated all our attention to operations that we are able
+    to perform on different types of data, and it is now time to talk about the data
+    itself.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The least data item that is accessible on Intel architecture-based processors
+    is bit, and the least addressable item is byte (which is 8 bits on Intel architecture).
+    We already know how to work with such data and even words, double words, and single-precision
+    floating-point values. Data, however, may be much more complex than that, and
+    I do not mean quad words and/or double-precision floating points.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In this chapter, we will see how to declare, define, and manipulate simple and
+    complex data structures and how this may make our lives as Assembly developers
+    much easier. Starting with simple data structures, such as arrays, we will proceed
+    to more complex ones containing different types of data and go through linked
+    lists and trees toward more complex and powerful methods of data arrangement.
+    The intention here, given that you as a developer are familiar with different
+    data structures, is to show how easy it may be to work with them in Assembly,
+    especially using FASM with its powerful features as an assembler.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The following are the data structures (data arrangement schemes) covered in
+    this chapter:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Arrays
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Structures
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Arrays of structures
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Linked lists and special cases thereof
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Binary Search Trees and balancing thereof
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Sparse matrices
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Graphs
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Arrays
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: By now, we have come a long way, dealing primarily with basic data types ranging
+    from bytes to quad words, preparing ourselves for more complex data-related concepts.
+    Let's continue by looking into arrays, which may be characterized as the sequential
+    storage of data of the same type. Theoretically, there is no limitation to the
+    size of array members, but practically we are limited to, for example, the size
+    of a register. However, workarounds exist and we will see that later in this chapter.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Simple byte arrays
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'A good example of a widely used, yet simple, array would be a forward substitution
+    table and/or a reverse substitution table used with the AES algorithm:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'As we may clearly see, all values have a size of 1 byte and are stored sequentially
+    one after the other. Accessing such arrays is very simple and may even be performed
+    with the XLAT instruction. For example, imagine that we are in the middle of an
+    AES-128 calculation and we have a value in which we need to substitute each byte
+    with a byte from the preceding table. Let the following be the value:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The following code would do the substitution:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: The first thing we do is load the base address of the table (of the s-box) into
+    the EBX register, as the XLAT instruction uses exactly this register for addressing
+    the substitution/lookup table. Then, we load the address of the array of values
+    requiring
+  prefs: []
+  type: TYPE_NORMAL
+- en: substitution into the ESI register in order to not bother with index computations,
+    as the ESI register is automatically incremented by the `lodsb` instruction. Duplicate
+    the address into the EDI register, as we will be storing data back.
+  prefs: []
+  type: TYPE_NORMAL
+- en: You may as well process the 16 byte value from the last byte to the first by
+    loading ESI and EDI with `lea esi, [needs_substitution + 0x0f]`, duplicating the
+    address to EDI and setting the direction flag with the `std` instruction. Do not
+    forget to clear the direction flag with the `cld` instruction when done.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We then sequentially read each byte of the value, substitute it with a byte
+    form the s-box with the XLAT instruction, and store the result back. As an alternative
+    to the XLAT instruction (which is limited to 256 byte tables and may only operate
+    on byte values depending on the AL register), we can write the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: However, we would have needed to set the whole EAX register to 0 prior to entering
+    the loop, while XLAT allows the upper 24 bits of the EAX register to remain unchanged
+    throughout the whole operation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Arrays of words, double words, and quad words
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The previous simple example illustrates a trivial byte array and how we can
+    access its members. The same would apply to arrays of words, double words, or
+    quad words with a few additions:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: We cannot use XLAT on arrays bigger than 256 bytes, nor if members of an array
+    are bigger than 8 bits
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: We would need to use SIB addressing (scale index base) in order to access array
+    members bigger than one byte
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: On 32-bit systems we would not be able to read a quad word into a single register
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: For the sake of a simple example, let's consider using a lookup table for the
+    calculation of the factorial for numbers in the range of 0 to 12 (this code is
+    for 32-bit and factorials of larger numbers would not fit into a double word).
+    Although the algorithm of factorial calculation is rather simple, using a lookup
+    table even for such a short range is much more convenient.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'First, put the following into the data section (you may put this into the code
+    section too, as we are not going to change any value here, but let''s keep data
+    with the data):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'This is our lookup table containing 13 values of factorials for numbers in
+    the range of 0 to 12, where each entry is double word (32 bit). Now, let''s write
+    a procedure that would use this table. The procedure will be implemented in accordance
+    with the `stdcall` calling convention; it receives a single parameter, the number
+    for which we need a factorial, and returns a factorial for the given number or
+    0 if the number is not in the allowed range (as 0 cannot be a value of factorial).
+    Put the following code into the code section:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The `virtual` directive lets us virtually define data at a specific address.
+    In the preceding example, we defined a variable that points to the place on the
+    stack where the parameter is stored. Everything we define within the `virtual`
+    block is treated as a legal label by the assembler. In this case, the `arg0` translates
+    to `ebp + 8`. If we had two or even more parameters passed to the procedure on
+    stack, we could write the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`virtual at ebp + 8`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`arg0 dd ?`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`arg1 dd ?`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`; the rest`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`end virtual`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Here, `arg1` would be translated to `ebp+12`, `arg2` (if defined), `ebp+16`,
+    and so on.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The procedure is indeed very simple as all it does is this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Checks whether the parameter fits the range
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Returns `0` if the parameter does not fit the range
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Uses the parameter as an index into the lookup table and returns a value referenced
+    by the base address of the tables plus index (our parameter) times size of entries
+    in the table
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Structures
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: As a developer, I believe you would agree that most of the time we are not working
+    with arrays of uniform data (I am definitely not underestimating the power of
+    a regular array). Since data may be anything, starting with 8-bit numbers and
+    ending with complex structures, we need a way to describe such data for the assembler,
+    and the term *structure* is the key. Flat Assembler, just as any other assembler,
+    lets us declare structures and treat them as additional types of data (similar
+    to the `typedef` struct in C).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let''s declare a simple structure, an entry of a string table, and then see
+    what is what:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: The dot (`.`) preceding the names of members of the struct denotes that they
+    are part of a larger namespace. In this specific case, the name `*.length*` belongs
+    to `strtabentry`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Such a declaration would be equivalent to the following one in C:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'However, while in C, we would have to initialize the variable of the type `strtabentry`,
+    like this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'In Assembly, or to be more precise, when using Flat Assembler, we would initialize
+    such a variable in a simpler way:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Either way, the structure is 32-bytes in size (as the string buffer is statically
+    allocated and is 30 bytes) and has only two members:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`length`: This is the word size integer containing the length of the string,
+    plus 1 for a null terminator'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`string`: This is the actual text'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Addressing structure members
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'A few words need to be said on how individual members of a structure may be
+    addressed. When statically allocated, we may refer to a structure by its label/name,
+    which is translated into its address. For example, if we have a `strtabentry`
+    structure named `se` defined in our data section, and we need to read the *n*th
+    byte from the string, all we have to do would be this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'If, on the other hand, we cannot use a label (for example, we are in a procedure,
+    and a pointer to a structure is its parameter), then we can use the mighty `virtual`
+    directive. As a quick demonstration, here''s a procedure that returns the length
+    of the string, not including the terminating zero:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE11]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Just to keep things fresh in memory, let''s take another look at the lines
+    where we read the pointer from the stack and where we load AX with the length
+    of the string. The first one is as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE12]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The preceding code loads the parameter from the stack. As we remember, declaring
+    a virtual label lets us assign a readable name to the memory locations that cannot
+    be named otherwise, and the stack is one of the examples. In this specific case,
+    `.structPtr` is translated into `ebp + 8`, thus the line itself is equivalent
+    to the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE13]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Similarly, had there be a second parameter, the virtual declaration would look
+    like this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE14]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'In that case, reading the second parameter would be done like this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE15]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Also, it would translate into the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE16]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Here is the second line we are interested in:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE17]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'In this specific case, we are accessing the first member of the structure -
+    `.length`, which means that the line is translated into this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE18]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'However, should we need to access the string itself, for example, if we need
+    to load a register with the address of the string, the code would look like this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE19]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'This would, in turn, translate into the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE20]'
+  prefs: []
+  type: TYPE_PRE
+- en: Arrays of structures
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: By now, we are fine with everything regarding access to structures and members
+    thereof, but what if we have more than one structure of the same type? We would
+    naturally organize them into an array of structures. Looks simple, and partially
+    so, it is.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In order to ease the process of accessing array members, we may use an array
+    of pointers and access each structure in the array through a kind of lookup table.
+    In this scenario, we would simply read a pointer from the lookup table with the
+    following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE21]'
+  prefs: []
+  type: TYPE_PRE
+- en: Having a pointer to the structure of interest, we continue the work as usual.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Our example structure is very convenient due to its size, which is only 32 bytes.
+    Should we arrange many structures of this type into an array, we would be able
+    to painlessly access them in an array of 134,217,727 members (on a 32-bit system),
+    which is 4 GB in terms of occupied memory. While we would hardly need this number
+    of strings with a maximum length of 30 bytes (or such a number of strings at all),
+    the addressing in this specific case is very simple (again, due to the comfortable
+    size of the structure). We still use the index in the array of structures, but,
+    as we cannot use the scale part of SIB addressing to scale the index by 32 bytes,
+    we need to multiply the index itself prior to accessing the array.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let''s define a macro instruction that would create such an array in the first
+    place (building the pointer lookup table for demonstration purposes too):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE22]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The invocation of the preceding macro, with the following parameters, is as
+    follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE23]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'This would result in the following arrangement of data in memory:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/2f21d06a-2d07-4cd2-9739-100c84f67fae.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: As you can see, the `strtabName_ptr` variable contains the number of structures/pointers
+    in the array followed by the array of four pointers. Next, at `strtabName`, (we
+    can choose whatever name we want when invoking the macro as long as it fits the
+    naming restrictions), we have the actual array of four structures.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Now, should we need to retrieve the length of a string in the structure at
+    index 2 (indices are zero based), we would modify the `get_string_length` procedure
+    so that it would accept two parameters (pointer to structure array and index)
+    in the following way:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE24]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The procedure call would be as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE25]'
+  prefs: []
+  type: TYPE_PRE
+- en: Arrays of pointers to structures
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The previous subsection shows us how to approach arrays of uniform structures.
+    As there is no particular reason to have string buffers of fixed size and, therefore,
+    no reason for a fixed size structure, let''s first of all make a tiny correction
+    to the structure declaration:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE26]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'We only removed the `.pad` member of the `strtabentry` structure, thus allowing
+    it to be of variable size. Obviously, we may no longer use the same `get_string_length`
+    procedure as we have no constant step to iterate through the array. But you might
+    have definitely noticed the `strtabName_ptr` structure in the preceding image.
+    This structure is there to help us solve the problem of lack of a fixed step.
+    Let''s rewrite the `get_string_length` procedure so that it would accept a pointer
+    to an array of pointers to structures, rather than a pointer to the array itself
+    and an index of the desired structure. The procedure would then look like this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE27]'
+  prefs: []
+  type: TYPE_PRE
+- en: Voila! We only had to make a few tiny modifications, add a line here and a line
+    there, and now we are able to handle structures of variable sizes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Nothing complicated thus far, nothing complicated to follow. While there are
+    not too many types of data, there are more ways to arrange it. While the structure
+    may be considered both a data type and a method of arrangement for non-uniform
+    data, we will, for convenience, treat it as a type that we are free to define.
+    By now, we have seen how data may be arranged in static memory when the arrangement
+    thereof is not expected to change, but what if we are dealing with dynamic data
+    when the amount of data is not known at the time of writing the code? In such
+    case we should know how to deal with dynamic data. This leads us to the next stage
+    in data arrangement-linked lists and their types.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Linked lists
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Linked lists, as the name suggests, consists, of data items (nodes) that are
+    linked to one another by means of pointers. Basically, there are two types of
+    linked lists:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**Linked list**: This is where each node has a pointer to the following node'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Doubly linked list**: This is where each node has a pointer to the following
+    and previous nodes'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'The following diagram illustrates the difference:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/e9b56891-f667-4363-bfa9-0e555b403f5b.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Linked lists of both types may be addressed in a few ways. Obviously, there
+    is at least a pointer to the first node of the list (called `top`), which is optionally
+    accompanied by a pointer to the last node of the list (called `tail`). There is,
+    of course, no limit to the amount of auxiliary pointers, should there be a need
+    for such. Pointer fields in the nodes are typically referred to as `next` and
+    `previous`. As we can see in the diagram, the last node of a linked list and the
+    first and the last nodes of a doubly linked list have `next`, `previous`, and
+    `next` fields that point nowhere-such pointers are considered terminators denoting
+    the end of the list and are typically populated with null values.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Before proceeding to the sample code, let''s make a tiny change to the structure
+    we''ve been using in this chapter and add the `next` and `previous` pointers.
+    The structure should look like this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE28]'
+  prefs: []
+  type: TYPE_PRE
+- en: We will leave the `make_strtab` macro intact as we still need something to build
+    a set of `strtabentry` structures; however, we will not consider it to be an array
+    of structures any more. Also, we will add a variable (of type double word) to
+    store the `top` pointer. Let's name it `list_top`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Instead or writing a macro instruction that would link the four structures
+    into a doubly linked list, we will write a procedure for adding new nodes to the
+    list. The procedure requires two parameters--a pointer to the `list_top` variable
+    and a pointer to the structure we want to add to the list. If we were writing
+    in C, then the prototype of the corresponding function would be as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE29]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'However, since we are not writing in C, we will put down the following code:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE30]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Now, having the procedure ready, we will call it from our main procedure:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE31]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The first, second, third, and fourth refers to positions of structures in memory,
+    not to positions of nodes in the doubly linked list. Thus, after the last line
+    of the preceding code is executed, we have a doubly linked list of `strtabentry`
+    structures (shown by their position in the linked list) `{0, 2, 3, 1}`. Let''s
+    take a look at the following screenshot for a demonstration of the result:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/9782b7f6-79df-419a-8f6f-20d3ef962d33.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: For the sake of convenience, the structures are named `struct_0`, `struct_1`,
+    `struct_2`, and `struct_3` in accordance with the order of their appearance in
+    memory. The last line is the `top` pointer `list_top`. As we can see, it points
+    to `struct_0`, which was the last we added to the list, and `struct_0`, in turn,
+    only has a pointer to the next structure, while its `previous` pointer has a `NULL`
+    value. The `struct_0` structure's `next` pointer points to `struct_2`, `struct_2`
+    structure's `next` points to `struct_3`, and the previous pointers lead us back
+    in the reverse order.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Obviously, linked lists (those with a single, either forward or backward),
+    link are a bit simpler than doubly linked lists as we only have to take care of
+    a single pointer member of a node. It may be a good idea to implement a separate
+    structure that describes a linked list node (whether simple or doubly linked)
+    and have a set of procedures for the creation/population of linked lists, search
+    of a node, and removal of a node. The following structure would suffice:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE32]'
+  prefs: []
+  type: TYPE_PRE
+- en: If, on the other hand, you are writing code for the long mode (64-bit), the
+    only change you need to make is replacing `dd` (which stands for a 32-bit double
+    word) with `dq` (which stands for a 64-bit quad word) in order to be able to store
+    long mode pointers.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In addition to this, you may also want or need to implement a structure that
+    will describe a linked list, as a whole, having all the required pointers, counters,
+    and so on (in our example, it was the `list_top` variable; not quite a structure,
+    but it did its job well enough). However, when it comes to an array of linked
+    lists, it would be much more convenient to utilize an array of pointers to linked
+    lists, as this would provide easier access to members of the array, thus making
+    your code less error prone, simpler, and faster.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Special cases of linked lists
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: You have, most likely, heard a lot about different types of data structures
+    other than arrays and linked lists in programming lessons, unless you are a self-taught
+    developer, in which case you may still have heard or read about these a lot. By
+    different types of data structures other than arrays and linked lists, I mean
+    stacks, queues, deques, and priority queues. However, being a fan of the principle
+    of Occam's Razor, I believe that we should face the truth and acknowledge that
+    all of these are just special cases of linked lists, unless their implementation
+    is based on arrays (which may sometimes be possible).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Stack
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: A stack is a **LIFO** (**Last In First Out**) arrangement of data. The simplest
+    example would be the process/thread stack. Although such an implementation is
+    rather array based, it fairly illustrates the mechanism.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'However, most of the time, we would not know the size of the required stack
+    in advance, maybe just a rough estimation. Not to mention the fact that we would
+    hardly need to store only double or quad words; we''ll mostly have more complex
+    structures. The most common implementation of a stack would be a singly linked
+    list addressed by a `top` pointer only. Ideally, only three operations are permitted
+    on a stack:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`push`: This is used to add a new member to the list'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`top`: This is used to view/read the last added member of the list'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`pop`: This is used to remove the last added member from the list'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: While the `push` and `pop` operations are equivalent to adding and removing
+    a member from/to a singly linked list, the TOP operation basically means getting
+    the value of the `top` pointer and so obtaining access to the topmost (added last)
+    member of the list.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Queue and deque
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Queues are, exactly as the name states, queues of elements. A linked list is
+    addressed by two pointers-one for the `top` element and one for the `tail` element.
+    By nature, queues are a **FIFO** (**First In First Out**) arrangement of data,
+    meaning that the element that was pushed first is to be popped first, too. It
+    is totally up to you to decide where the queue starts and where it ends-whether
+    `top` is the beginning or the end of a queue, and the same for `tail`. Should
+    we want to convert the example of a linked list we used in this chapter to a queue,
+    we would only need to add a `list_tail` pointer.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Deques are double-ended queues, which means that elements may be pushed into
+    the queue either at the `top` element or at the `tail` element depending on the
+    algorithm. The same is true for popping elements from the queue.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Priority queues
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: A priority queue is a special case of a regular queue. The only difference is
+    that elements added to it each have a certain priority, which is defined by the
+    algorithm and depends on the needs. The idea is that elements with a higher priority
+    are served first, then the elements with lower priorities. If two elements have
+    the same priority, then the order they are served in is in accordance with their
+    position in the queue, so there are at least two possible ways to implement such
+    an arrangement.
+  prefs: []
+  type: TYPE_NORMAL
+- en: One would be the implementation of a sorting algorithm, which would add new
+    elements according to their priority. This merely converts deque into a sorted
+    list.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The other would be combing a deque for elements with the highest priority and
+    serving them first, which makes a deque not much different from a linked list.
+    The only difference, probably, would be that elements may be added only to the
+    `top` element or the `tail` element.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Cyclic linked list
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: A cyclic linked list is probably the easiest to implement following the singly
+    linked list. The only difference between the two is that the last element of the
+    list points to the first element of the list, instead of its `next` pointer having
+    a `NULL` value.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Summary for special cases of linked lists
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: As we can see, the special cases of linked lists shown previously are simply
+    different logical paradigms of the same idea. This is especially true in the case
+    of Assembly, which, unlike higher-level languages (those higher than C), does
+    not have any built-in implementation of the preceding approaches, thus performing
+    the function of Occam's Razor, sweeping away redundant notions and showing how
+    things are in low-level reality.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'However, we''ll consider what Albert Einstein said:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '"Everything should be made as simple as possible, but not simpler."'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Having made the topic of linked lists and their special cases as simple as possible,
+    we need to proceed to more complex, more powerful forms of data arrangement. In
+    the next section of this chapter, we will meet trees-a very powerful and useful
+    method to store data.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Trees
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Sometimes, the data arrangement schemes we have already covered are not ideal
+    for solving certain problems. For example, when having a set of data that is frequently
+    being searched or modified, while having to maintain a sorted nature, we could
+    place it into an array or a sorted linked list, but the search times could be
+    non-satisfactory. In such a case, it would probably be best to arrange the data
+    in the form of a tree. A binary search tree, for instance, is the best way to
+    minimize the search time when searching dynamic (changing) data. In fact, the
+    same applies to static data as well.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'But, first of all, what are trees in computing? When talking about trees, one
+    may imagine a special type of graph (graphs will be briefly covered later in this
+    chapter), consisting of nodes which have a parent node (except the root node,
+    which is called, well, root node) and zero or more child nodes. In Assembly, we
+    would declare a structure for a tree node like this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE33]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'So, we have a structure which has a pointer to the left child node (traditionally,
+    nodes with a lower value), a pointer to the right child node (traditionally, nodes
+    with a higher value), and a pointer to the data represented by the node. In general,
+    it is not a bad idea to add a pointer to the parent node, which may ease the task
+    of balancing a tree; however, we do not need that for the example that we will
+    examine in this part of the chapter. The preceding node structure is sufficient
+    for building a tree like this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/bed40237-dba5-4b61-b8a1-470acbfb6cce.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: This figure demonstrates an ideal case of a balanced binary search tree. In
+    reality, however, this happens not that often and depends on the balancing method.
+    Unfortunately, methodologies of tree balancing slightly fall out of the scope
+    of this book. The main idea, though, is to keep lower values to the left and higher
+    values to the right, which may well involve a certain amount of rotation applied
+    to subtrees, or even the whole tree.
+  prefs: []
+  type: TYPE_NORMAL
+- en: A practical example
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Enough with dry explanations. Being a developer, you are most likely familiar
+    with tree-like structures and methods of balancing thereof, or you must have at
+    least heard of them. Believing in learning by example as one of the most efficient
+    ways of understanding something, I suggest we take a look at the following example.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example - trivial cryptographic virtual machine
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The idea behind this example is widely used and well known-a simple, not to
+    say primitive, virtual machine. Imagine a situation where we have to implement
+    a virtual machine that performs trivial string encryption with an XOR operation
+    using a single byte key.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Virtual machine architecture
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The architecture of the virtual processor is quite simple-it has a few registers
+    that store the current execution state:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| **Register Name** | **Register function** |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `register_a` | An 8-bit general purpose register. The register is accessible
+    to the VM code. |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `register_b` | An 8-bit general purpose register. The register is accessible
+    to the VM code. |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `register_key` | An 8-bit register. This holds the encryption key byte. |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `register_cnt` | An 8-bit register. This holds the counter for `vm_loop`
+    instruction. The register is accessible to VM code. |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `data_base` | A 32-bit (64-bit for the long mode) register. This holds the
+    address of the data to be encrypted. |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `data_length` | A 32-bit register. This holds the length of the data to be
+    encrypted (only 8 bits are used, so the data cannot be longer than 256 bytes).
+    |'
+  prefs: []
+  type: TYPE_TB
+- en: 'The virtual processor has a very limited instruction set, but they are not
+    encoded sequentially:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| **Opcode** | **Mnemonic** | **Meaning** |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 0x00 | `vm_load_key` | This loads the `key` parameter of the VM procedure
+    into the `key` register of the virtual processor. |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 0x01 | `vm_nop` | This is the NOP instruction. No operation is performed.
+    |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 0x02 | `vm_load_data_length` | This loads the length of the string to be
+    encrypted into the `data length` register of the virtual processor. |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 0x10 | `vm_loop target` | This jumps to `target` if the `counter` register
+    is less than the `data length` register. |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 0x11 | `vm_jump target` | This unconditionally jumps to the `target` address.
+    |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 0x12 | `vm_exit` | This notifies the virtual processor that it should stop.
+    |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 0x20 | `vm_encrypt regId` | Performs the XOR operation on the content of
+    `register[regId]` with the content of the key `register`. |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 0x21 | `vm_decrement regId` | This decrements the content of `register[regId]`.
+    |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 0x22 | `vm_increment regId` | This increments the content of `register[regId]`.
+    |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 0x30 | `vm_load_data_byte regId` | Load byte from `data_base_address + counter_register`
+    into `register[regId]`. |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 0x31 | `vm_store_data_byte regId` | Store byte from `register[regId]` to
+    `data_base_address + counter_register`. |'
+  prefs: []
+  type: TYPE_TB
+- en: Adding support for a virtual processor to the Flat Assembler
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'We will skip the declaration of a separate structure for the processor; instead,
+    its state will be stored on a stack. However, we do need to make some preparations.
+    First of all, we need to make the Flat Assembler understand our mnemonics and
+    create a proper binary output. For this purpose, we will create an additional
+    source file and name it `vm_code.asm`. As it will contain declarations of macro
+    instructions and the VM code, which will be treated as data, the inclusion of
+    the file in the main source would be done by adding the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE34]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Add this line somewhere in the data section. The next step-we have to define
+    macro instructions that can be translated into a binary output that our virtual
+    processor can understand. This is a very powerful feature of FASM, as one may
+    add support for almost any architecture with a set of macro instructions (which,
+    by the way, is the exact idea behind the Flat Assembler G):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE35]'
+  prefs: []
+  type: TYPE_PRE
+- en: Virtual code
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Obviously, we did not write all of the preceding code just for fun; we need
+    to write some code for the virtual processor. Since the architecture is very limited
+    and restricted to a specific task, there are not too many options as to what the
+    code may look like:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE36]'
+  prefs: []
+  type: TYPE_PRE
+- en: The virtual processor
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Everything seems to be clear by now, except one thing-what does it all have
+    to do with trees? We are almost there, as we have to implement the virtual processor
+    itself, and that is what we are going to do here.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The easiest and probably the most common implementation of a virtual processor
+    is a `while()` loop, which runs by reading instructions from the VM's memory and
+    selects a proper execution path with the `switch()` statement implemented as the
+    **indirect jump** and **jump table** (the table of jump target addresses). Although
+    our example would probably run best when implemented this way, and the architecture
+    described below would fit better for a complex instruction set, it was intentionally
+    made simple in order to avoid the need to discuss certain aspects that are clearly
+    unrelated to the topic-trees.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Our operation codes, as shown in the instruction/opcode table, are all 1 byte
+    in size, plus a 1-byte or 4-byte operand (for instructions that require operand),
+    and in range from `0x00` to `0x31`, with relatively large gaps. However, the amount
+    of operation code allows us to arrange them in an almost perfect binary search
+    tree:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/f1b36c80-d801-463f-a74d-05bd9090ed15.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: We say "almost" because if there were two child nodes for each of the nodes
+    denoting opcodes `0x11` (`vm_jump`) and `0x20` (`vm_encrypt`), it would be an
+    ideal binary search tree (but who says we cannot add four more instructions?).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Each node on the diagram represents a `tnode` structure containing all the
+    necessary pointers, including a pointer to a small structure, which maps the operation
+    code to real Assembly code in the virtual processor''s loop:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE37]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Thus, the first thing we do is build a table that maps all operation codes
+    to Assembly code. The format of the table is rather simple. Each row contains
+    the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Double word operation code
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: A pointer to the Assembly code (double word for the 32-bit mode or 64-bit for
+    the long mode).
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'The implementation of the table in code is rather simple:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE38]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'At last, we have reached the tree. Let''s skip the tree building and balancing
+    procedure, as the tree is statically allocated and as we are interested particularly
+    in the structure itself. In the following code, we in fact create an array of
+    `tnode` structures which, however, are not addressed by `base+index`, but are
+    linked to a tree. The last line defines a pointer to the root node of the tree,
+    `tree_root`, which refers to `t_exit`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE39]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Once compiled, the data section of the executable would look like this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/007e7922-46b3-4932-b871-2bd66506b1b6.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Searching the tree
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: We need to take care of a procedure that would extract the correct address of
+    the Assembly implementation of the virtual instruction from the tree prior to
+    beginning the implementation of the virtual processor's loop.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The `tree_lookup` procedure requires two parameters:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The address of the `tree_root` variable
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The byte opcode cast to double word
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'When this procedure is called, it "walks" the tree node by node (in accordance
+    with the rule the tree was sorted by) and compares the opcode parameter to the
+    opcode value of the instruction structure referred to by the current node. The
+    procedure returns the address of the Assembly implementation of the operation
+    code, or it returns a zero if no such opcode has been defined:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE40]'
+  prefs: []
+  type: TYPE_PRE
+- en: The loop
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The implementation of the loop is a bit long, and we have many more interesting
+    things to fill the space allocated for this chapter, so refer to the accompanying
+    source code for the full version. Here, however, we will examine certain parts
+    of the implementation:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**Creating a stack frame and parameter markup**: The procedure''s prolog code
+    would be just as usual-we allocate some space on the stack and save registers
+    that we want not to be affected by the procedure, and that means all the registers
+    we use in the procedure:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[PRE41]'
+  prefs: []
+  type: TYPE_PRE
+- en: '**Preparing a virtual processor loop**: The loop itself begins with reading
+    an opcode from the current position in the virtual code, then calls the `tree_lookup`
+    procedure, and either jumps to the address returned by `tree_lookup` or to `.exit`
+    if the procedure returns an error (zero):'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[PRE42]'
+  prefs: []
+  type: TYPE_PRE
+- en: The preceding code is followed by a set of instructions emulating code fragments,
+    as you can see in the accompanying source code.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The last few lines of the `run_vm` procedure are, in fact, the emulation of
+    the `vm_exit` opcode:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE43]'
+  prefs: []
+  type: TYPE_PRE
+- en: Tree balancing
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Now, when we know what a binary search tree looks like on the Assembly programming
+    level, it would not be correct not to return to the question of binary search
+    tree balancing. There are several approaches to this problem, however, we would
+    only consider one-the Day-Stout-Warren algorithm (included in the accompanying
+    code). The algorithm is simple:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Allocate a tree node and make it a "pseudo root" for the tree, making the original
+    root the pseudo root's right child.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Convert the tree into a sorted linked list by means of an in-order traversal
+    (this step also calculates the number of nodes in the original tree). No additional
+    allocations are required, as the step reuses existing pointers in tree nodes.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Convert the list back into a complete binary tree (one in which the bottom layer
+    is populated strictly from left to right).
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Make pseudo root's right child the tree's root.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Dispose of the pseudo root node.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 'Applying this algorithm to our opcode tree will result in the following structure:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/846f7bb7-b3ac-4b3a-b852-f1220d0b30a5.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: The structure remains almost the same-four levels, including the root node,
+    and four nodes at the bottom-most layer. The order of opcodes has changed a bit,
+    but this is not that important in the case of this particular example. However,
+    should we design a more complex system that expects much more load, we could design
+    the encoding of the operation code in such a way that the most frequently used
+    opcodes would be encoded with values from the upper layers and the least frequently
+    used opcodes, with values from the bottom layers.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Sparse matrices
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Sparse matrices are rarely discussed, if at all, due to the relative complexity
+    of implementation and maintenance; however, they may be a very convenient and
+    useful instrument in certain cases. Basically, sparse matrices are conceptually
+    very close to arrays, but they're much more efficient when working with sparse
+    data as they allow memory savings, which in turn allows the processing of much
+    larger amounts of data.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let''s take astrophotography as an example. For those of us not familiar with
+    the subject, amateur astrophotography means plugging your digital camera into
+    a telescope, selecting a region in the night sky, and taking pictures. However,
+    since pictures are taken at night time without a flashlight or any other aid (it
+    would be silly to try to light celestial objects with a flashlight anyway), one
+    has to take dozens of pictures of the same object and then stack the images together
+    using a specific algorithm. In this case, there are two major problems:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Noise reduction
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Image alignment
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Lacking professional equipment (meaning not having a huge telescope with a cooled
+    CCD or CMOS matrix), one faces the problem of noise. The longer the exposition,
+    the more noise in the final image. Of course, there are numerous algorithms for
+    noise reduction, but sometimes, a real celestial object may mistakenly be treated
+    as noise and be removed by the noise reduction algorithm. Therefore, it is a good
+    idea to process each image and detect potential celestial objects. If certain
+    "light", which otherwise may be considered as noise, is present in at least 80%
+    of images (it is hard to believe that any noise would have survived for such a
+    long time without any changes, unless we are talking about dead pixels), then
+    its area needs different treatment.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'However, in order to process an image, we need to make a decision on how to
+    store the result. We, of course, may use an array of structures describing each
+    and every pixel, but that would be too expensive by means of the memory required
+    for such operation. On the other hand, even if we take a picture of the highly
+    populated area of the night sky, the area occupied by celestial objects would
+    be significantly smaller than the "empty" space. Instead, we may divide an image
+    into smaller areas, analyze certain characteristics of those smaller regions,
+    and only take into consideration those that seem to be populated. The following
+    figure presents the idea:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/a3ab2839-e62b-4191-beb4-a390fed31b3f.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: The figure (which shows the Messier 82 object, also known as *Cigar Galaxy*)
+    is divided into 396 smaller regions (a matrix of 22 x 18 regions, 15 x 15 pixels
+    each). Each region may be described by its luminosity, noise ratio, and many other
+    aspects, including its location on the figure, meaning that it may occupy quite
+    a sensible amount of memory. Having this data stored in a two-dimensional array
+    with more than 30 images simultaneously may result in megabytes, of meaningless
+    data. As the image shows, there are only two regions of interest, which together
+    form about 0.5% (which fits the definition of sparse data more than perfectly),
+    meaning that if we choose to use arrays, we waste 99.5% of the used memory.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Utilizing sparse matrices, we may reduce the usage of memory to the minimum
+    required to store important data. In this particular case, we would have a linked
+    list of 22 column header nodes, 18 row header nodes, and only 2 nodes for data.
+    The following is a very rough example of such an arrangement:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/e8ede3a0-c7bf-46b3-a72a-79dc92b1b1d8.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: The preceding example is very rough; in reality, the implementation would contain
+    a few other links. For example, empty column header nodes would have their `down`
+    pointer point to themselves, and empty row headers would have their `right` pointers
+    point to themselves, too. The last data node in a row would have its right pointer
+    pointing to the row header node, and the same applies to the last data node in
+    a column having its `down` pointer pointing to the column header node.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Graphs
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The general definition of a graph states that a graph is a data structure consisting
+    of a set of vertices (V) and edges (E). While the vertex may be anything (anything
+    means any data structure), edge is defined by the two vertices it connects-*v*
+    and *w*. Edges have a direction, meaning that the data flows from vertex *v* to
+    vertex *w*, and *weight*, which indicates how difficult the flow is.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The easiest and probably the most common example of a graph structure is a
+    perceptron-an artificial neural network paradigm:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/d2bf874b-67e5-47f0-8096-48bfbf6f5d6c.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Traditionally, perceptrons are drawn from left to right, so we have three layers:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The input layer (sensors)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The hidden layer (where most of the processing takes place)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The output layer (forms the output of a perceptron)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Although nodes of artificial neural network are called **neurons**, we will
+    refer to them as vertices as we are discussing graphs, not ANNs.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the preceding graph, we see a typical multilayer perceptron layout for an
+    artificial neural network capable of solving the XOR problem.
+  prefs: []
+  type: TYPE_NORMAL
+- en: An XOR problem in artificial neural networks is the problem of making an ANN
+    implementation receiving two inputs in the range *{0, 1}* to produce a result,
+    as if two inputs were XOR'ed. A single layer perceptron (where the hidden layer
+    is also the output layer) is not able to find solutions for this problem, therefore
+    an additional layer is added.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The vertices **S0** and **S1** do not perform any computations and serve as
+    sources of data for vertices **N0** and **N1**. As it has been stated, edges have
+    weights, and in this example, the data from **S0** and **S1** is multiplied with
+    the weights of the edges *[s0, n0]*, *[s0, n1]*, *[s1, n0]*, and *[s1, n1]*. The
+    same applies to data being transferred via *[bias, n0]*, *[bias, n1]*, *[n0, o]*,
+    and *[n1, o]*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: However, graphs may be of any shape and edges may lead data in any direction
+    (even to the same vertex), depending on the problem they intend to solve.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Summary
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In this chapter, we have briefly covered several types of data structures (not
+    to be confused with the Assembly `struc[tures]`) and reviewed a few of their possible
+    applications. However, being very vast, the topic of data structures may require
+    a separate chapter for each of the structures briefly described here, and their
+    variations, which, unfortunately, falls out of the scope of this book.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Beginning with the next chapter ([Chapter 8](22b2b820-0431-48f6-9ed2-8b9e0cded10a.xhtml),
+    *Mixing Modules Written in Assembly and Those Written in High-Level Languages*),
+    we will approach more practical problems and will start applying the knowledge
+    we have gathered thus far in an attempt to find an elegant solution.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the next chapter, we will see how the Assembly code written for both 32-bit
+    and 64-bit Windows and Linux operating systems may be linked with existing libraries
+    written either in Assembly or in a high-level language. We will even cover the
+    topic of interoperability of .NET and Assembly code (on both Linux and Windows).
+  prefs: []
+  type: TYPE_NORMAL

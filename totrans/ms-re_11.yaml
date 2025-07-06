@@ -1,0 +1,842 @@
+- en: Anti-analysis Tricks
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Anti-debugging, anti-virtual-machine (VM), anti-emulation, and anti-dumping
+    are all tricks that attempt to analysis put a halt to an analysis. In this chapter,
+    we will try to show the concepts of these anti-analysis methods. To help us identify
+    these codes, we will explain the concept and show the actual disassembly codes
+    that makes it work. Being able to identify these tricks will help us to avoid
+    them. With initial static analysis, we would be able to skip these codes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In this chapter, we will achieve the following learning outcomes:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Identifying anti-analysis tricks
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Learning how to overcome anti-analysis tricks
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Anti-debugging tricks
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Anti-debugging tricks are meant to ensure that the codes are not working under
+    the influence of a debugger. Say we have a program with an anti-debugging code
+    in it. The behavior of the program is just as if it were running without an anti-debugging
+    code. The story becomes different, however, when the program is being debugged.
+    While debugging, we encounter code that goes straight to exiting the program or
+    jumps into code that doesn''t make sense. This process is illustrated in the following
+    diagram:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/1c7cfacd-b490-4585-885c-fea0b90b2e1a.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Developing anti-debugging code requires understanding the traits of the program
+    and the system, both when normally running and when being debugged. For example,
+    the **Process Environment Block** (**PEB**) contains a flag that is set when a
+    program is being run under a debugger. Another popular trick is to use a **Structured
+    Exception Handler** (**SEH**) to continue code that forces an error exception
+    while debugging. To better understand how these work, let's discuss these tricks
+    in a little more detail.
+  prefs: []
+  type: TYPE_NORMAL
+- en: IsDebuggerPresent
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: '`IsDebuggerPresent` is a `Kernel32` API function that simply tells us whether
+    the program is under a debugger. The result is placed in the `eax` register with
+    a value of either true (`1`) or false (`0`). When used, the code looks something
+    like this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The same concept applies with the `CheckRemoteDebuggerPresent` API. The difference
+    is that it checks whether either another process or its *own* process is being
+    debugged. `CheckRemoteDebuggerPresent` requires two arguments: a handle to a process
+    and an output variable that tells us whether the process is being debugged or
+    not. The following code checks whether its own process is being debugged:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: The `GetCurrentProcess` API is used to retrieve the handle to the running process.
+    This usually returns a `-1` (`0xFFFFFFFF`) value, which is the handle to its own
+    process. The `edi` register should be a variable address where the output of `CheckRemoteDebuggerPresent`
+    will be stored.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Debug flags in the PEB
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: A thread is the basic unit of execution.  The process itself is run as a thread
+    entity that is capable of triggering multiple threads in the same process space.
+    The information about the currently running thread is stored in the the Thread
+    Environment Block (TEB).  The TEB is also called the Thread Information Block
+    (TIB) and contains information such as the thread ID, structured error handling
+    frame, stack base address and limit, and the address pointing to information about
+    the process the thread is running under.  Information about the process is stored
+    in the Process Environment Block (PEB).
+  prefs: []
+  type: TYPE_NORMAL
+- en: The PEB contains information like pointer to tables that lists the loaded modules,
+    command line parameters used to run the process, information taken from the PE
+    header, and if it is being debugged.  The TIB and PEB structures are documented
+    by Microsoft at https://docs.microsoft.com/en-us/windows/desktop/api/winternl/.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`PEB` has fields that can be used to identify whether a process is being debugged:
+    the `BeingDebugged` and `NtGlobalFlag` flags. In `PEB`, these are located at the
+    following locations:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| **Offset** | **Information** |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `0x02` | BeingDebugged (1 for True) - BYTE |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `0x68` | GlobalNTFlag (usually 0x70 when debugged) - DWORD |'
+  prefs: []
+  type: TYPE_TB
+- en: 'Internally, `IsDebuggerPresent` works with this code:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/9c4b23ee-ce65-4df9-9e3c-b62d9eeb7aaa.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Let''s check what is happening with the `IsDebuggerPresent` code:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: The preceding line retrieves the address of the **Thread Environment Block**
+    (**TEB**) from the **Thread Information Block** (**TIB**). The `FS` segment contains
+    `TIB`. `TEB` address is stored at offset `0x18` of `TIB`. `TIB` is stored in the
+    `eax` register.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The following line retrieves `PEB` address and stores it in the `eax` register.
+    The `PEB` address is located at offset `0x30` of `TEB`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The byte at offset `2` of `PEB` contains a Boolean value of `1` or `0`, indicating
+    whether the process is being debugged or not:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'If we wanted to create our own function, but applied this with `GlobalNTFlag`,
+    we can make the code look like this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: The first three lines of the preceding block basically retrieve `GlobalNTFlag`
+    at offset `0x68` of `PEB`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The following `cmp` instruction will set the zero flag to `1` if the value
+    of `eax` is equal to `0x70`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The `setz` instruction will set the `al` register with what `ZF` is, which
+    should either be `0` or `1`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Finally, the `and` instruction will only retain the first bit for the `eax`
+    register, which, as a result, clears the register, but retains a value of either
+    `1` or `0`, for true or false:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: Debugger information from NtQueryInformationProcess
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Querying process information using the `NtQueryInformationProcess` function
+    gives us another way to identify if the process is under a debugger. As sourced
+    from `MSDN`, the `NtQueryInformationProcess` syntax declaration is the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: More information about this function can be found at [https://docs.microsoft.com/en-us/windows/desktop/api/winternl/nf-winternl-ntqueryinformationprocess](https://docs.microsoft.com/en-us/windows/desktop/api/winternl/nf-winternl-ntqueryinformationprocess).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Specific information is returned based on what ID is supplied in the second
+    argument, `PROCESSINFOCLASS`. `PROCESSINFOCLASS` is an enumerated list of IDs
+    that we want to query. The IDs we need in order to determine whether the process
+    is being debugged are the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`ProcessDebugPort (7)`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`ProcessDebugObjectHandle (30)`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`ProcessDebugFlags (31)`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: In essence, if the output result, filled in the `ProcessInformation` from the
+    third argument, gives us a non-zero result, then it means that the process is
+    being debugged.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Timing tricks
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Normally, the time it takes for a program to execute lines of instructions from
+    address `A` to address `B` would only take less than a second. But if these instructions
+    were being debugged, a human would probably take about a second per line. Debugging
+    from address `A` to address `B` would at least take a couple of seconds.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Essentially, the concept works just like a stopwatch. If the time it takes for
+    a few lines of code is too long, the trick assumes that the program is being debugged.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Timing tricks can be applied as an anti-debugging method in any programming
+    language. Setting a stopwatch would only require a function that can read time.
+    Here are some examples of how timing tricks can be implemented in x86 assembly:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: In x86 processors means **Read Time-Stamp Counter **(**RDTSC**). Every time
+    the processor is reset (either by a hard reset or power-on), the timestamp counter
+    is set to 0\. The timestamp counter increments for every processor clock cycle.
+    In the preceding chunk of `RDTSC` code, the result of the first `RDTSC` instruction
+    is stored in the `ebx` register. After a set of `nop` instructions, the value
+    stored in `ebx` is subtracted from the result of the second `RDTSC` instruction.
+    This takes the difference between the first and second `TSC`. If the difference
+    is greater than `0x100000`, the code jumps to exit. If the program were not being
+    step debugged, the difference should be about less than `0x500`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: On the other hand, `GetSystemTime` and `GetLocalTime`, which are API functions
+    that can retrieve time, can also be used to implement timing tricks. To identify
+    these tricks, the code has to contain two time-retrieving functions.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Passing code execution via SEH
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: One of the most popular anti-debugging tricks is to use `SEH` to pass code execution.
+    It is popular trick used in Windows computer viruses.  But before we discuss how
+    this trick is used for anti-debugging, let us discuss how `SEH` works a little.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Exceptions are usually triggered from errors, such as reading bytes from inaccessible
+    memory regions, or by something as simple as division by zero. They can also be
+    triggered by debugger interrupts, `INT 3` and `INT 1`. When an exception occurs,
+    the system jumps right to the exception handler. Normally, the exception handler's
+    job is to do something about the error.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Usually, this job gives an error message notification, leading to a graceful
+    termination of the program. In programming terms, this is try-except or `try-catch`
+    handling. The following is an example of exception handling in Python programming:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE11]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'An `SEH` record contains two elements: the address of the exception handler
+    and the address of the next `SEH` record. The next `SEH` record contains the address
+    of the `SEH` record next to it. Overall, the `SEH` records are chained to each
+    other. This is called the `SEH` chain. If the current handler was not able to
+    handle the exception, then the next handler takes over. A program crash can happen
+    if ever the `SEH` records were exhausted. This process is shown here:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/d9ee4c66-f07f-48a3-a34c-9a4706024131.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: As we can see, the last `SEH` record contains a `-1` (`0xFFFFFFFF` for 32-bit
+    address space) value at the `SEH` record pointer field.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Now that we know how `SEH` works, how can this be abused for anti-debugging?
+    Using our try-except Python code, abusing it would look something like this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE12]'
+  prefs: []
+  type: TYPE_PRE
+- en: What we did was force an error (a division-by-zero error, to be precise) to
+    cause an exception. The exception handler displays the `Hello World!` message.
+    But how does it work in x86 assembly language?
+  prefs: []
+  type: TYPE_NORMAL
+- en: To set up our new `SEH`, we need to first identify where the current `SEH` is.
+    For every process, there is an `SEH` chain set up by the Windows OS. The current
+    `SEH` record can be retrieved from offset `0` of `TIB`, as denoted by the `FS`
+    segment register.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The following assembly code retrieves the address of the current `SEH` record
+    to the `eax` register:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE13]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'To change the handler, we can simply change the address of the current `SEH`
+    record at `FS:[0]` with our `SEH` record. Let''s assume that the handling code''s
+    address will be at `0x00401000`, and that the current SEH record, is located at
+    `0x00200000` has these values in it:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| Next SEH record | `0xFFFFFFFF` |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Current handler address | `0x78000000` |'
+  prefs: []
+  type: TYPE_TB
+- en: 'The next thing to do is build our `SEH` record, which we can store in the stack.
+    With `FS:[0]` returning the `0x00200000` value, and our handler located at `0x00401000`,
+    here''s a way to build the `SEH` record from the stack:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE14]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The stack should look like something like this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| ESP | `0x00200000` |'
+  prefs: []
+  type: TYPE_TB
+- en: '| ESP+4 | `0x00401000` |'
+  prefs: []
+  type: TYPE_TB
+- en: 'All we need to do is update the value of `FS:[0]` to the address of this `SEH`
+    record, which is the register `ESP` register (that is, top of the stack):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE15]'
+  prefs: []
+  type: TYPE_PRE
+- en: The preceding code should add our `SEH` to the `SEH` chain.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Causing exceptions
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The next thing to do is develop a code that forcefully causes an exception.
+    We have a few known ways to do that:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Use debug breakpoints (INT 3 / INT 1)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Access inaccessible memory spaces
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Divide by zero
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The aim of an `SEH` anti-debugging trick is to direct the debug analysis to
+    an error. This makes an analyst try to trace back to what might have caused the
+    error, eventually wasting time. And, if the analyst is familiar with `SEH`, it
+    would be easy to pinpoint where the handler is and set a breakpoint there.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Step debugging works because of `Interrupt 1`, while breakpoints are set using
+    `Interrupt 3`. When the execution of code encounters an `INT 3` instruction, a
+    debug exception occurs. To invoke an `Interrupt 1` exception, the trap flag has
+    to be set first.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'When reading data from inaccessible memory, a read error occurs. There are
+    already known memory regions, such as the kernel space, that are not allowed to
+    be directly accessed from the user-mode process. Most of these regions are protected
+    with a `PAGE_GUARD` flag. The `PAGE_GUARD` flag can be set with a `VirtualAlloc`
+    or `VirtualProtect` function. That means we can produce our own inaccessible memory
+    region. Typically, the region from offset `0` of the process space is not accessible.
+    The following line of code will cause an access violation exception:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE16]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'In mathematics, doing actual division by zero is an infinite task. The system
+    explicitly identifies this kind of error and causes an exception. An example line
+    for this is the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE17]'
+  prefs: []
+  type: TYPE_PRE
+- en: What the preceding code does is set the `eax` register to `1`, set the `cl`
+    register to `0`, and then divides `eax` with `cl`, causing a divide-by-zero exception.
+  prefs: []
+  type: TYPE_NORMAL
+- en: A typical SEH setup
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Based on what we''ve learned, let''s make use of a regular flow of code, then
+    use `SEH` as an anti-debugging trick. The following code will be our original
+    code:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE18]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'After placing the `SEH` anti-debugging trick, the code would look something
+    like this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE19]'
+  prefs: []
+  type: TYPE_PRE
+- en: What we did here was to manually set up the `SEH`. Fortunately, Windows has
+    a feature that can also set up exception handlers called Vectored Exception Handler.
+    The API that registers a new handle is `AddVectoredExceptionHandler`. A C source
+    code that implements this can be found at [https://docs.microsoft.com/en-us/windows/desktop/debug/using-a-vectored-exception-handler](https://docs.microsoft.com/en-us/windows/desktop/debug/using-a-vectored-exception-handler).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Anti-VM tricks
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: This trick's aim is to exit the program when it identifies that it is running
+    in a virtualized environment. The most typical way to identify being in a VM is
+    to check for specific virtualization software artifacts installed in the machine.
+    These artifacts may be located in the registry or a running service. We have listed
+    a few specific artifacts that can be used to identify being run inside a VM.
+  prefs: []
+  type: TYPE_NORMAL
+- en: VM running process names
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The easiest way for a program to determine whether it is in a VM is by identifying
+    known file names of running processes. Here''s a list for each of the most popular
+    pieces of VM software:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| **Virtualbox** | **VMWare** | **QEMU** | **Parallels** | **VirtualPC** |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `vboxtray.exe` `vboxservice.exe`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`vboxcontrol.exe` | `vmtoolsd.exe` `vmwaretray.exe`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`vmwareuser`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`VGAuthService.exe`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`vmacthlp.exe` | `qemu-ga.exe` | `prl_cc.exe` `prl_tools.exe` | `vmsrvc.exe`
+    `vmusrvc.exe` |'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Existence of VM files and directories
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Identifying the existence of at least one of the VM software''s files can tell
+    if the program is running in a virtual machine. The following table contains a
+    list of files that can be used to identify if the program is running in a VirtualBox
+    or VMware guest:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| **Virtualbox** | **VMWare** |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `%programfiles%\oracle\virtualbox guest additions` `system32\drivers\VBoxGuest.sys`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`system32\drivers\VBoxMouse.sys`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`system32\drivers\VBoxSF.sys`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`system32\drivers\VBoxVideo.sys`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`system32\vboxdisp.dll`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`system32\vboxhook.dll`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`system32\vboxmrxnp.dll`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`system32\vboxogl.dll`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`system32\vboxoglarrayspu.dll`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`system32\vboxoglcrutil.dll`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`system32\vboxoglerrorspu.dll`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`system32\vboxoglfeedbackspu.dll`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`system32\vboxoglpackspu.dll`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`system32\vboxoglpassthroughspu.dll` | `%programfiles%\VMWare` `system32\drivers\vm3dmp.sys`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`system32\drivers\vmci.sys`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`system32\drivers\vmhgfs.sys`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`system32\drivers\vmmemctl.sys`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`system32\drivers\vmmouse.sys`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`system32\drivers\vmrawdsk.sys`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`system32\drivers\vmusbmouse.sys` |'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Default MAC address
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The first three hexadecimal numbers of the VM''s default MAC address can also
+    be used. But, of course, if the MAC address were changed, these won''t work:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| **VirtualBox** | **VMWare** | **Parallels** |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `08:00:27` | `00:05:69` `00:0C:29`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`00:1C:14`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`00:50:56` | `00:1C:42` |'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Registry entries made by VMs
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Information and configuration of software are usually done in the registry.
+    This also counts for the VM guest software, which makes registry entries. Here''s
+    a short list of registry entries by VirtualBox:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE20]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Here are registry entries known to be from VMWare:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE21]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'A Linux emulation with Wine has the following registry entry:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE22]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The existence of Microsoft''s Hyper-V'' can also be identified from the registry:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE23]'
+  prefs: []
+  type: TYPE_PRE
+- en: VM devices
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'These are virtual devices created by the VM. Here are the accessible devices
+    created by VirtualBox and VMWare:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| **VirtualBox** | **VMWare** |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `\\.\VBoxGuest` `\\.\VBoxTrayIPC`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`\\.\VBoxMiniRdrDN` | `\\.\HGFS` `\\.\vmci` |'
+  prefs: []
+  type: TYPE_NORMAL
+- en: CPUID results
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: '`CPUID` is an x86 instruction that returns information about the processor
+    it is running under.  Before running the instruction, the type of information,
+    called a leaf, is required and stored in register EAX.  Depending on the leaf,
+    it returns values in registers EAX, EBX, ECX, and EDX.  Every bit stored in the
+    registers may tells if a certain CPU feature is available or not. Details about
+    the returned CPU information can be found at [https://en.wikipedia.org/wiki/CPUID](https://en.wikipedia.org/wiki/CPUID).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: One of then pieces of `CPUID` returned information is a flag that tells whether
+    the system is running on a hypervisor. Hypervisor is a CPU feature that supports
+    running VM guests. For anti-VM, if this flag were enabled, it would mean that
+    the process is in a VM guest.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The following x86 code checks whether the hypervisor flag is enabled:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE24]'
+  prefs: []
+  type: TYPE_PRE
+- en: The preceding code retrieves information from CPUID leaf 1\. The 31^(st) bit
+    result in the `ecx` register is placed in the carry flag. If the bit is set to
+    1, the system is running on a hypervisor.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Besides the hypervisor information, some specific VM software can be identified
+    from the guest OS. The CPUID instruction can return a unique string ID to identify
+    the VM software the guest is under. The following code checks whether it is running
+    in a VMWare guest:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE25]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'When values of the `ebx`, `ecx`, and `edx` registers are concatenated, it would
+    read as `VMwareVMware`. Here is a list of known string IDs used by other VM software:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| **VirtualBox 4.x** | **VMware** | **Hyper-V** | **KVM** | **Xen** |'
+  prefs: []
+  type: TYPE_TB
+- en: '| VBoxVBoxVBox | VMwareVMware | Microsoft Hv | KVMKVMKVM | XenVMMXenVMM |'
+  prefs: []
+  type: TYPE_TB
+- en: Anti-emulation tricks
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Anti-emulation or anti-automated analysis are methods employed by a program
+    to prevent moving further in its code if it identifies that it is being analyzed.
+    The behavior of a program can be logged and analyzed using automated analysis
+    tools such as Cuckoo Sandbox, Hybrid Analysis, and ThreatAnalyzer. The concept
+    of these tricks is in being able to determine that the system in which a program
+    is running is controlled and was set up by a user.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Here are some things that distinguish a user-controlled environment and an
+    automated analysis controlled system from each other:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: A user-controlled system has mouse movement.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: User controlled systems can include a dialog box that waits for a user to scroll
+    down and then click on a button.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'The setup of an automated analysis system has the following attributes:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: A low amount of physical memory
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: A low disk size
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The free space on the disk may be nearly depleted
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The number of CPUs is only one
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The screen size is too small
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Simply setting up a task that requires a user's manual input would determine
+    that the program is running in a user-controlled environment. Similar to anti-VM,
+    the VM guest setup would make use of the lowest possible requirements, such that
+    it doesn't eat up the VM host's computer resources.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Another anti-analysis trick checks for running analysis tools. These tools
+    include the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: OllyDBG (`ollydbg.exe`)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: WinDbg (`windbg.exe`)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: IDA Pro (`ida.exe`, `idag.exe`, `ida64.exe`, `idag64.exe`)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'SysInternals Suite Tools, which includes the following:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Process Explorer (`procexp.ex`e)
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Process Monitor (`procmon.exe`)
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Regmon (`regmon.exe`)
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Filemon (`filemon.exe`)
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: TCPView (`tcpview.exe`)
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Autoruns (`autoruns.exe`, `autorunsc.exe`)
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Wireshark (`wireshark.exe`)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: A way around these tricks is for automated analysis to trick them back. For
+    example, there are ways to mimic mouse movement and even read dialog window properties,
+    scroll, and click buttons. A simple work-around for anti-analysis trick is to
+    rename the tool we're using to monitor behaviors.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Anti-dumping tricks
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'This method does not stop dumping memory to a file. This trick instead prevents
+    the reverser from easily understanding the dumped data. Here are some examples
+    of how this could be applied:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Portions of the PE header have been modified, so that the process dump gives
+    the wrong properties.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Portions of `PEB`, such as `SizeOfImage`, have been modified, so that the process
+    dumping tool dumps wrong.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Dumping is very useful for seeing decrypted data. Anti-dumping tricks would
+    re-encrypt the decrypted code or data after use.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: To overcome this trick, we can either identify or skip the code that modifies
+    data. For re-encryption, we can also skip the code that re-encrypts, to leave
+    it in a decrypted state.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Summary
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Malware have been evolving by adding new techniques to evade anti-virus and
+    reverse engineering.  These techniques include process hollowing, process injection,
+    process doppelganging, code anti-debugging, and anti-analysis.  Process hollowing
+    and process doppelganging techniques basically overwrites the image of a legit
+    process with a malicious image.  This masks the malicious program with a legit
+    process.  Process injection, on the other hand, inserts and runs code in a remote
+    process space.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Anti-debugging, anti-analysis, and the other tricks discussed in this chapter
+    are obstacles for reverse engineering. But knowing the concept for these tricks
+    enables us to overcome them. Doing static analysis with deadlisting, we can identify
+    and then skip the tricky code, or in the case of SEH, place a breakpoint at the
+    handler.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We discussed anti-debugging tricks and their technique of using errors to cause
+    exceptions and hold the rest of its code at the handler. We also discussed other
+    tricks, including anti-VM and anti-emulation tricks, which are able to identify
+    being in an analysis environment.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the next chapter, we will be using what we have learned here with an actual
+    reverse engineering analysis of an executable file.
+  prefs: []
+  type: TYPE_NORMAL

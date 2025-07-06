@@ -1,0 +1,956 @@
+- en: Packing and Encryption
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: As a continuation of what we have learned about obfuscation, we will now introduce
+    a set of tools which are categorized to defend software from reverse engineering.
+    The result of using these tools, such as packers and crypters, is a transformed
+    version of the original executable file which still behaves exactly as the original
+    flow of code behavior did. Based on the tool used, we will discuss what a transformed
+    executable would look like and how execution of the transformed file takes place.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We have picked the UPX tool to demonstrate how packers work at low-level and
+    to show techniques that can be used to reverse it.
+  prefs: []
+  type: TYPE_NORMAL
+- en: There are many free packers available in the internet that are commonly used
+    by malicious author to pack their software (fsg, yoda, aspack), but for the sake
+    of simplicity we will focus on the simplest of them all UPX.
+  prefs: []
+  type: TYPE_NORMAL
+- en: This chapter will use Windows as our environment and will be debugging with
+    `x86Dbg` or `OllyDbg`. We will also show how the Volatility tool may come in handy.
+    We will touch on obfuscation in the scripting language, and then use a bit of
+    Cyber Chef to decipher data.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We will cover the following topics in this chapter:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Unpacking with the UPX tool
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Identifying unpacking stubs, and setting breakpoints for memory extraction using
+    debuggers
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Dumping memory, and extracting programs executing in memory
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Identifying and decrypting segments using keys within executables
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: A quick review on how native executables are loaded by the OS
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'For better understanding on how packers modify files, let us have a quick review
+    of how executable files are loaded by the operating system. Native executables
+    are better known as PE files for Windows and ELF files for Linux. These files
+    are compiled down to their low-level format; that is, using assembly language
+    like `x86` instructions. Every executable is structured with a header, code section,
+    data section, and other pertinent sections. The code section contains the actual
+    low-level instruction codes, while the data section contains actual data used
+    by the code. The header contains information about the file, the sections, and
+    how the file should be mapped as a process in the memory. This is shown in the
+    following diagram:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/c3f6cd0f-df22-4a7c-a644-dd44a50531a7.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'The header information can be classified as raw and virtual. Raw information
+    consists of appropriate information about the physical file, such as file offsets
+    and size. The offsets are relative to file offset 0\. While virtual information
+    consists of appropriate information regarding memory offsets in a process, virtual
+    offsets are usually relative to the image base, which is the start of the process
+    image in memory. The image base is an address in the process space allocated by
+    the operating system. Basically, the header tells us how the operating system
+    should map the file (raw) and its sections to the memory (virtual). In addition,
+    every section has an attribute which tells us whether the section can be used
+    for reading, writing, or executing. *In [chapter 4](1017358e-f842-4115-8779-f721299bbe3c.xhtml),
+    Static and Dynamic Reversing,* under Memory Regions and Mapping of a Process,
+    we showed how a raw file gets mapped in virtual memory space. The following figure
+    shows how the file on a disk (left) would look when mapped in virtual memory space
+    (right):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/a8515ba2-47c7-4331-a0d2-997a973d91c1.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: The libraries or modules containing functions required by the code are also
+    listed in a portion of the file that can be seen in sections other than the code
+    and data sections. This is called the import table. It is a list of API functions
+    and the libraries it is from. After the file is mapped, the operating system loads
+    all the libraries in the same process space. The libraries are loaded in the same
+    manner as the executable file but in a higher memory region of the same process
+    space. More about where the libraries are loaded can be found in *[Chapter 4](1017358e-f842-4115-8779-f721299bbe3c.xhtml),
+    Static and Dynamic Reversing,* under Memory Regions and Mapping of a Process.
+  prefs: []
+  type: TYPE_NORMAL
+- en: When everything is mapped and loaded properly, the OS reads the entry point
+    address from the header then passes the code execution to that address.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'There are other sections of the file that make the operating system behave
+    in a special manner. An example of this is the icons displayed by the file explorer,
+    which can be found in the resource section. The file can also contain digitally
+    signed signatures which are used as indicators if the file is allowed to run in
+    the operating system. The CFF Explorer tool should be able to help us to view
+    the header information and these sections, as shown in the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/a4fe8056-8050-4655-9f41-3cbe76dc4269.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'We have covered the basics so far but all these structures are well documented
+    by Microsoft and the Linux community. The structure of the Windows PE file can
+    be found in the following link: [https://docs.microsoft.com/en-us/windows/desktop/debug/pe-format](https://docs.microsoft.com/en-us/windows/desktop/debug/pe-format).
+    While the structure for a Linux ELF file can be found in the following link: [http://refspecs.linuxbase.org/elf/elf.pdf](http://refspecs.linuxbase.org/elf/elf.pdf)[.](http://refspecs.linuxbase.org/elf/elf.pdf)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Packers, crypters, obfuscators, protectors and SFX
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Executable files can have the code packed, encrypted and obfuscated but remain
+    executable with all of the program intact. These techniques are primarily aimed
+    at protecting the program from being reversed. The rule is that if the original
+    program works properly, it can be reversed. For the rest of the chapter, we will
+    define the term host or original program as the executable file, data, or code
+    before it gets packed, encrypted, obfuscated or protected.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Packers or compressors
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Packers, also known as compressors, are tools used to compress the host down
+    to a smaller size. The concept of compressing data helps us to reduce the time
+    taken to transfer any data. At the obfuscation side, compressed data will most
+    likely not show complete readable text.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In the following figure, the left pane shows the code''s binary and data before
+    getting compressed, while the one on the right shows its compressed form. Notice
+    that the text strings are not completely found in the compressed form:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/02c8d137-d8f9-44f2-ab8b-77eee87e984f.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Given that the code and data are now compressed, executing the file would require
+    a code that decompresses it. This code is called the decompression code stub.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In the following figure, the original structure of the file is shown at the
+    left with the program entry point in the code section. A probable packed version
+    would have a new structure (right) with the entry point starting in the decompression
+    stub:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/3ee41652-bfc8-4808-843d-5fc24d65f369.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: When the packed executable is executed, the stub runs first and, afterwards,
+    passes the code execution to the decompressed code. The entry point in the header
+    should point to the address of the stub.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Packers reduce the size of some of the sections and thus must change values
+    in the file header. The raw location and size of the sections are modified. As
+    a matter of fact, some packers would treat the file as one big section containing
+    both the code and data within it. The trick is to set this one big section with
+    readable, writable, and executable attributes. However, this may run the risk
+    of having improper error handling, especially when code accidentally writes to
+    a supposedly read-only area, or executes code to a supposedly non-executable area.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The end result of a packed file is to get the host behavior intact with a packed
+    file having a smaller file size.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Crypters
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Obfuscation by encryption is done by crypters. Packers compress the sections
+    while crypters encrypt the sections. Similar to packers, crypters have a stub
+    used to decrypt encrypted code and data. As a result, crypters may instead increase
+    the file size of the host.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The following image shows a file `crypted` by `Yoda Crypter`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/2e3deb0e-e216-40e0-a2a3-a94c94e6921d.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: The section offsets and sizes have been retained but encrypted. The stub was
+    placed in a newly added section named `*yC*`. If we compare how the original opcode
+    bytes look with the encrypted bytes, we'll notice that opcode bytes have zero
+    bytes spread out. This is a trait that can be used to identify encrypted bytes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Another trait for packers and crypters is about how they import API functions.
+    Using CFF Explorer to check out the Import Directory, we only see two imported
+    APIs: `LoadLibrary` and `GetProcAddress`. Both functions are from `Kernel32.DLL`,
+    and notice that it has its name in mixed character casing: `KeRnEl32.Dll`, as
+    shown in the following example:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/ae22180c-68cc-4a2c-84c8-293e9b53f055.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: With only these two API functions, every function it requires can be dynamically
+    loaded.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The following image shows the `GetProcAddress` API:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/1f2e11de-2cf2-464f-b3ea-bd1004f0bb7f.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'While the following image shows the `LoadLibrary` API:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/a3f62daa-9d13-4845-aee1-43dca870c8bc.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Looking at the stub, we expected it to have a loop code that contains the decryption
+    algorithm. The following image shows the decryption algorithm used by `Yoda Crypter`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/79b7a8d7-418e-4385-aa6c-9462e3b6f9ab.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Obfuscators
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Obfuscators are also classified as code modifiers which change the structure
+    of the code while retaining the flow of the program. In the previous chapter,
+    we introduced the control flow flattening (CFF) technique. The CFF technique converts
+    a small code to run in a loop which gets controlled by a control flag. However,
+    obfuscation is not limited to the CFF technique. The compiled file structure can
+    also be modified, especially for a psuedocode based execution, like Visual Basic 
+    and .NET compiled programs.
+  prefs: []
+  type: TYPE_NORMAL
+- en: One of the main techniques to obfuscate is to garble, or encrypt, the name of
+    functions so that decompilers wouldn't be able to recognize the function correctly.
+    Examples of these high-level obfuscating tools are `Obfuscar`, `CryptoObfuscator`
+    and `Dotfuscator`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The renaming of variable names with random generated text strings, converting
+    the code text to hexadecimal text, and splitting text for the code to concatenate
+    the text are some obfuscation techniques used for scripts such as JavaScript and
+    visual basic scripts.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The following screenshot gives an example of an obfuscated JavaScript code
+    using an online obfuscation tool:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/bb99bd91-6156-48c5-96f5-962b4d062135.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: The original code is at the left while its obfuscated version is at the right.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Protectors
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The protectors employ the combination of packers and crypters, and other anti-reversing
+    features. Protected software usually has multiple layers of decompression and
+    decryption that may use cipher algorithms like `blowfish`, `sha512`, or `bcrypt`.
+    Some sophisticated protectors even use their own code virtualization which is
+    similar to the pseudocode concept. Protectors are usually sold commercially and
+    used for anti-piracy.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Examples of Windows executable protectors are `Themida`, `VMProtect`, `Enigma`,
+    and `Asprotect`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: SFX  Self-extracting archives
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'We usually archive our files using ZIP and RAR. But, did you know that these
+    archived files can be turned into a self-extracting executable (SFX)? The intention
+    for these tools is to easily produce installers for any software requiring multiple
+    files, such as the main program and its dependent library modules. Embedded in
+    the SFX archive is an SFX script. This script is responsible for instructing which
+    directories the files are destined to be extracted to. This can be seen in the
+    following diagram:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/34e695d6-380e-4829-aead-208370444121.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Usually, SFX have scripting features that can:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Extract archived files
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Run a file from the extracted files
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Run any file from the system
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Delete files
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Make registry entries
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Visit sites from the internet
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Create files
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Basically, it can pretty much do what a regular program can do to the system. 
+    Examples of SFX tools are `Winzip SFX`, `RARSFX` and `NSIS`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Unpacking
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: At this stage, using `x86dbg`, we are going to unpack a packed executable. In
+    this debugging session, we will be unpacking a UPX packed file. Our target will
+    be to reach the original host's entry point. Besides this UPX packed file, we
+    have provided packed samples in our GitHub page that can be used for practice.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The UPX tool
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The Ultimate Packer for `eXecutables`, also known as UPX, can be downloaded
+    from [https://upx.github.io/](https://upx.github.io/). The tool itself can pack
+    Windows executables. It is also able to restore or unpack UPX packed files. To
+    see it in action, we used the tool on the file `original.exe`. This is shown in
+    the following example:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/1243d625-3205-433a-b970-f6da7804e079.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Notice that the original file size reduced after being packed.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Debugging though the packer
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Major modifications in the file, especially in the PE file header, have been
+    made by the packer.  To better understand how packers work, let us compare the
+    host and the packed version of the executable file. Using the CFF tool, let us
+    inspect the header differences.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The figure above shows the NT header difference between the original and the
+    UPX packed version:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/6a76527a-ff15-48a6-8899-12d0314adb9c.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'The only difference here is the number of sections, which was reduced from
+    four down to three, as demonstrated by the following example:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/ebdcd8a3-15fd-494c-9d0d-70711802c495.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'In the optional header comparison in the preceding example, the changes are:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'SizeOfCode: `0x0C00 to 0x1000`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'SizeOfInitializedData: `0x0e00 to 0x5000`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'AddressOfEntryPoint: `0x157e to 0x6b90`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'BaseOfCode: `0x1000 to 0x6000`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'BaseOfData: `0x2000 to 0x7000`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'SizeOfImage: `0x5000 to 0x8000`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'SizeOfHeaders: `0x0400 to 0x1000`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'CheckSum: `0x4a92` to `0`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The image below shows a comparison between the data directory table of the original
+    and UPXed version of the program.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/15625b6d-22e6-47d1-83b9-0df8a48da825.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'The previous example shows that the changes in the data directory are:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Import Directory RVA: `0x234c to 0x71b4`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Import Directory Size: `0x0078 to 0x017c`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Resource Directory RVA: `0x4000` to `0x7000`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Resource Directory Size: `0x01b0` to `0x01b4`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Debug Directory RVA: `0x2110` to `0`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Debug Directory Size: `0x001c` to `0`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Configuration Directory RVA: `0x2240` to `0x6d20`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Configuration Directory Size: `0x40` t0 `0x48`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Import Address Directory RVA: `0x2000` to `0`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Import Address Directory Size: `0xf4` t0 `0`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The image below shows a comparison between the header sections between the original
+    and the UPXed version of the program.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/dd3f387d-8b4e-4cae-a8d0-f43d49803da5.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: The previous example shows that almost all of the information in the original
+    section header has changed in the UPXed version. The raw and virtual offsets,
+    sizes, and characteristics have changed.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'For the `UPX0` section, the meaning of the bit flags in the Characteristics
+    field are listed in the following example:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/1b3ef49a-2408-4680-9ce0-2c0f0f04e783.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'The following example shows that the number of imported API functions has been
+    reduced, but the original static import library files are still the same:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/067b898a-afc5-4376-948f-b22bd7e26264.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'The following figure shows the API functions that will be imported for `KERNEL32.dll`.
+    They have totally different API functions:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/b677cb7b-916c-4426-a6ae-16898b2cb3cc.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'As for the resource directory contents, it looks like the size did not change
+    except for the offset, as can be seen in the following example:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/9c33933a-f6b7-43b6-9238-3926b7faecf5.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'The following list shows the changes on which the traits are based in the packed
+    file:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'There are three sections, namely `UPX0`, `UPx1` and `.rsrc`:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`UPX0` has virtual section properties but has no raw section properties.  This
+    only means that the section will be allocated by the operating system but no data
+    will be mapped to it from the file. This section is set with read, write, and
+    execute flags.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The entry point address is within the `UPX1` section. The stub should be located
+    in this section, along with the compressed code and data.
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The `.rsrc` section seems to retain its contents. Retaining the resource section
+    should still give out the proper icons and program details read by the operating
+    system's file explorer.
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: With the packer having its own structure causing major changes in the sections,
+    some header fields, like the `BaseOfCode` and `BaseOfData`, were totally modified.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Virtual sizes were aligned based on the `SectionAlignment`. For example, the
+    `.rsrc's` virtual size was originally `0x1b0`, aligning it with the `SectionAlignment`,
+    which should make it `0x1000`.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The ImageSize has increased since a stub was inserted by the packer.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The entry point is the sum of the `ImageBase` and `AddressOfEntryPoint`. The
+    original entry point is located at `0x0040157e`. This address is located within
+    the range of `UPX0`, which begins at `0x00401000` with a size of `0x5000`. The
+    stub is located at the packed file's entry point in the `UPX1` section. The outcome
+    we are expecting is that the packer decompresses the code, dynamically imports
+    the API functions, and finally passes the code execution to the original entry
+    point. To hasten our debugging, what we should be looking for is an instruction,
+    or a set of instructions, that will pass execution to `0x0040157e`, which is the
+    original entry point.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let us see this in action by opening `upxed.exe` in `x86dbg`. We start off
+    at the entry point at `0x00406b90`, as shown in the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/6c6f2f87-a06c-46ce-bf7f-d417842a3b8a.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: The operating system maps the file to the memory, and we have all the virtual
+    sections allocated as well. The first instruction uses `pushad` to save all the
+    initial flag states. If it saves all the flags, it should restore these flags
+    before it jumps towards the original entry point. The next instruction stores
+    the address `0x00406000` to register `esi`. This address is the start of the `UPX1`
+    section. This is where the compressed data is. The next line stores `0x00401000`
+    to register edi. It is easy to tell that the compressed data will be decompressed
+    from `esi` to `edi`. With debugging on, the decompression codes are from `0x00406b91`
+    to `0x00406c5d`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Before placing a breakpoint at `0x00406c62`, set a dump window with the address
+    `0x00401000`.  This should help us view a decompressed portion of the host. Running
+    through the code until `0x00406c62` should complete the decompression. This is
+    shown in the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/793dcfef-c8fc-4822-9a1b-fba54d8439cf.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: The next set of instructions fixes call instructions using relative jump addresses.
+    This code runs from `0x00406c65` to `0x00406c94`. Just place another breakpoint,
+    or instead use a Run until selection at the `0x00406c96` line, to run through
+    the loop of this call fixing code.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The next lines are the portion of the packer that dynamically load the API functions
+    used by the host. The code stores `0x00405000` to register edi. This address contains
+    data where it can locate the list of names of the original modules and API function
+    names associated with each module.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'For every module name, it uses `LoadLibraryA` to load the libraries that the
+    host will use later. This is shown in the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/551f9041-3358-4832-a14d-2c131ec6fb89.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Right after loading a module, it uses `GetProcAddress` to retrieve the addresses
+    of the APIs the host will use, as shown in the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/1e125dac-f447-4748-a176-8a6d0e3471a0.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Every retrieved API address is stored at the host import table which is located
+    at `0x00402000`. Restoring the function addresses to the same import table address
+    should make the host call the APIs without any issues. Placing a breakpoint at
+    `0x00406cde` should execute the dynamic import routine.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The next routine is about to set the mapped header''s access permission to
+    read-only, preventing it from being written to or code executed, as shown in the
+    following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/5cccd84a-3b6d-4639-a27c-278a3a2cf00e.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'VirtualProtect is used to set memory access flags and also takes four parameters. 
+    The following code shows the parameters according to MSDN:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The first call to VirtualProtect is set with an `lpAddress` equal to `0x00400000`, 
+    dwSize with 0x1000 bytes, and the protect flags with a value of 4.  The value
+    4 denotes the constant for PAGE_READWRITE. The succeeding calls to VirtualProtect
+    are set with a protect flag `PAGE_READONLY`. This is shown in the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/602b8972-1555-4e58-8974-bb1257e51220.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Remember that, at the start of the code, we encountered a `pushad` instruction.
+    At this point, we are on its counterpart instruction, `popad`. This is most likely
+    the part where execution will be passed to the original entry point. Looking at
+    the `jmp` instruction at `0x00406D1B`, the address jumps to an address in the
+    `UPX0` section. Looking at our host-packed comparison, the original entry point
+    is indeed located at `0x0040157e`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Reaching the original entry point should conclude debugging the packer code.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Dumping processes from memory
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: A packed file's data cannot be seen in plain sight, but if we let it run, everything
+    is expected to be unpacked in its process space. What we aim to do is to  produce
+    a version of the file in its unpacked state. To do that, we need to dump the whole
+    memory then extract the executable's process image to a file.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Memory dumping with VirtualBox
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'We will be using Volatility to dump the process from a suspended VirtualBox
+    image. First of all, we need to learn how to dump a VirtualBox image:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Enable the VirtualBox''s debug menu:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 'For Windows VirtualBox hosts:'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Enter a new environment variable named `VBOX_GUI_DBG_ENABLED` and set it to
+    `true`. This is shown in the following screenshot:'
+  prefs:
+  - PREF_IND
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '![](img/ccf3b225-dc8c-42fd-a412-fc7ae1849729.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'For Linux hosts:'
+  prefs:
+  - PREF_OL
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Edit/etc/environment as a root user
+  prefs:
+  - PREF_IND
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Add a new entry `VBOX_GUI_DBG_ENABLED=true`
+  prefs:
+  - PREF_IND
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Execute the command: `source /etc/environment`
+  prefs:
+  - PREF_IND
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Restart VirtualBox if already opened
+  prefs:
+  - PREF_IND
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Run the packed executable in the Windows guest. We are going to run `upxed.exe`
+    from our GitHub page.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 'From the VBoxDbg console, execute these lines to save the whole memory dump
+    to a file. Note that there should be a dot before the `pgmphystofile` command,
+    as shown in the following example:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: memory.dmp is the filename and is stored at the logged-in user's home directory. 
+    That is the `%userprofile%` folder in Windows and the `~/` folder in Linux.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Next, we will be using Volatility to parse the memory dump and extract the data
+    we need.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Extracting the process to a file using Volatility
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Volatility can be downloaded from [https://www.volatilityfoundation.org/releases](https://www.volatilityfoundation.org/releases).
+    For this section, our VirtualBox host is in a Linux Ubuntu machine. The Volatility
+    command parameters shown here should also be the same when used in Windows.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'First, we need to identify the exact operating system version using Volatility
+    using the `imageinfo` parameter, as shown in the following examples:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: '![](img/1e74b79c-f4b7-4a24-9f6a-a4ced051a377.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Again, `~/memory.dmp` is the file path of the memory we just dumped. The result
+    should show a list of the identified OS profile. For Windows 7 SP1 32-bit, we
+    would be using `Win7SP1x86` as our profile for succeeding `Volatility` commands.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Next, we will have to list down the running processes and identify which is
+    our packed executable. To list down running processes, we will be using the `pslist`
+    parameter, as shown in the following examples:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: '![](img/18117a63-4071-4796-8744-5ef99fd0d456.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Looking at the second column''s last line in the previous screenshot, we find
+    `upxed.exe`. We need to note down the process ID (PID) which has a value of `2656`.
+    Now that we have retrieved the PID of our packed executable, we can dump the process
+    to file using the `procdump` parameter, as shown in the following code:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: '`procdump` will save the process executable in the `dump/` folder set by the
+    `-D` parameter, as shown in the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/b6bb2c9b-fecf-451e-8455-204a21ac8c7d.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Volatility has a wide range of features to choose from. Feel free to explore
+    these arguments as these may help in fitting analysis situations.
+  prefs: []
+  type: TYPE_NORMAL
+- en: How about an executable in its unpacked state?
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Now that we have an executable file from Volatility, running this back in our
+    Windows guest sandbox gives us the following message:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/54d1cf48-4267-4422-957f-c42b5ca3c349.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Remember that the packed executable has its own PE header and stub and not that
+    of the original host's. The header, stub and compressed data were directly mapped
+    to the process space. Every API function was dynamically imported. Even with the
+    code and data decompressed, the entry point set in the header is still of the
+    packed executables and not of the original hosts.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Fortunately, `x86dbg` has a plugin known as Scylla. After reaching the original
+    entry point, which means we are in the unpacked state, we can rebuild the process
+    being debugged into a brand new executable file. The new executable file is already
+    unpacked and can be executed alone.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'This still requires us to debug the packed executable until we reach the original
+    entry point (OEP). Once at the OEP, open up Scylla from the plugins'' drop-down
+    menu. This should open up the Scylla window, as shown in the following example:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/c86e5f9d-594c-43b4-bfda-1e132d7de025.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'The active process is already set to the `upxed.exe` process. The OEP is also
+    set to where the instruction pointer is. The next thing to do is click on IAT
+    Autosearch to make Scylla parse the process space and locate the most probable
+    import table. This fills up the VA and `Size` fields in the IAT info frame with
+    the probable import table location and size. Click on `Get Imports` to make Scylla
+    scan for the imported library and API functions. This is shown in the following
+    screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/07a1de67-a50b-41dd-92f0-302c20a24d93.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Expand one of the libraries and it will show the API functions it found. Now,
+    under the Dump frame, click on the Dump button. This brings up a dialog that asks
+    where to save the executable file. This simply dumps the executable file''s process.
+    We still need to apply the IAT info and imports. Click on Fix Dump and open the
+    dumped executable file. This produces a new file with the `_SCY` appended to the
+    file name, as shown in the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/4c440597-7e46-4672-9ca4-fd983ffdc793.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Running this new executable file should give us the same result as the original
+    host's behavior.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In Volatility, we did not have enough information to reconstruct the executable
+    file. Using `x86dbg` and Scylla, though requiring us to get past debugging the
+    packer stub, we were able to have a reconstructed executable file.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Other file-types
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Nowadays, websites usually convert binary data to printable ASCII text in order
+    for the site developers to easily embed this data along with the HTML scripts.
+    Others simply convert data to something that is not easy for humans to read. In
+    this section, we will aim to decode data that has been hidden from plain understandable
+    form. In *[Chapter 13 ](0aefc43b-86b5-4596-a467-c499a15d192d.xhtml)Reversing various
+    File-types*, we will deal more with how to reverse other File-Types besides Windows
+    and Linux executables. In the meantime, we will just decode obvious data.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let us head to our browsers and visit [www.google.com](http://www.google.com),
+    at the time of writing (we stored a copy of the source at [https://github.com/PacktPublishing/Mastering-Reverse-Engineering/blob/master/ch10/google_page_source.txt](https://github.com/PacktPublishing/Mastering-Reverse-Engineering/blob/master/ch10/google_page_source.txt)),
+    viewing the source would show us a portion that has a `b64` encoded text, as in
+    the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/ce52a38e-2e88-42e5-bfb4-513d2cf6eae3.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Using Cyberchef, a tool which can help decode various types of encoded data
+    including base 64, we can deduce this data to something we understand. Just copy
+    and paste the base-64 data into the input box then double-click *From Base64*.
+    This should display the decoded binary content in the output box, as shown in
+    the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/54e29fc8-9791-4041-b84f-2b421c999112.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Notice that the output has a `PNG` written at the beginning. This is most likely
+    a PNG image file. In addition, if we carefully look at the source code, we can
+    see that the type of data was also indicated before the base-64 encoded data,
+    as shown in the following example:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'If we click on the disk icon, we can save the output data to a file and name
+    it with a `.png` extension. That should enable us to view the image, as shown
+    in the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/f4a2eed5-75d1-4f0b-a267-c3f1debad7b6.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: There are other supported encoded types from the Cyberchef tool. If we ever
+    encounter similar encoded text, the internet has all the available tools to help
+    us out.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Summary
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Reverse engineering is about how we work with the tools in their proper situations.
+    Even with packed, encrypted, and obfuscated executables, hidden information can
+    still be extracted.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In this chapter, we introduced various concepts of how data can be hidden using
+    packers, crypters, obfuscators, protectors, and even SFX tools. We encountered
+    a packed file produced by the UPX tool which we were still able to reverse using
+    a debugger. Being aware of where the instruction pointer is, we can determine
+    if we are already at the original entry point. As a general rule, if the instruction
+    pointer has jumped from a different section, we can say that we are already at
+    the original entry point.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Using another solution to viewing the unpacked state of a program, we used Volatility
+    with a memory dump from a VirtualBox guest and extracted the process of the executable
+    that we just ran. Using the Scylla tool, we were also able to rebuild an unpacked
+    state of the packed executable.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We ended this chapter by introducing the CyberChef tool, which is able to decode
+    popular encoded data like base-64\. This tool might come in useful when we encounter
+    encoded data not only in scripts found in websites but in every executable we
+    encounter.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the next chapter, we will proceed further in our journey by identifying malicious
+    behaviors executed by malware.
+  prefs: []
+  type: TYPE_NORMAL

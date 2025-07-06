@@ -1,0 +1,780 @@
+- en: Mixing Modules Written in Assembly and Those Written in High-Level Languages
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: We have come a long way and have covered almost every aspect of Assembly programming
+    basics. In fact, we should be able to implement any algorithm in Assembly language
+    by this time; however, there are a few important things left we have not touched
+    yet, but they are nonetheless important to know.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Despite the fact that writing relatively large parts of a product (not to say
+    writing a complete product) in Assembly language may not be the best idea when
+    it comes to timelines, it may still be a very interesting and challenging task
+    (educational as well). Sometimes it is more convenient to implement certain parts
+    of an algorithm in Assembly, rather than using a high-level language. Remember
+    the tiny virtual machine we used for XOR encryption of data? For the sake of an
+    example, we will implement a simple encryption/decryption module in Assembly and
+    see how it may be used with high-level languages.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In this chapter, we will cover the following topics:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Implementing the core of a primitive cryptographic module
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Building object files for further linking with code written in high-level languages:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**OBJ**: Object files for Windows (32 and 64 bit);'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**O**: Linkable ELF for Linux (32 and 64 bit);'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Building DLL (dynamic link libraries) and SO (shared objects) for Windows and
+    Linux (32 and 64 bit) to be used with the .NET platform
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Crypto Core
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The main project of this chapter is a tiny, simple (not to say primitive) encryption/decryption
+    module written entirely in Assembly. Since the topic of this chapter is interfacing
+    Assembly modules and modules written in high-level languages, we will not delve
+    into cryptography principles, but we will rather concentrate on the portability
+    and interoperability of our code while using a slightly modified XOR algorithm.
+    The idea behind the algorithm is to receive an array of bytes and do the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Take a byte and rotate it a certain number of bits to the left (the counter
+    is randomly generated at compile time).
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: XOR the result with the 1-byte key (randomly generated at compile time as well).
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Write the byte back to the array.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: If there are more bytes to encrypt, go to step 1; otherwise break out of the
+    loop.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 'The following screenshot is an example output of the algorithm we are about
+    to implement:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/23636279-3418-455a-92cc-ab914aa0008a.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Not the best encryption, but definitely enough for our needs.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Portability
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Our intention is to write portable code that may be used on both 32-bit and
+    64-bit Windows and Linux platforms. This may either sound impossible or very tedious
+    work, but it is quite simple. First of all, we have to define a few constants
+    and macros, which will ease our further work, so let's begin by creating the `platform.inc`
+    and `crypto.asm` source files where the latter is the main source file and the
+    one we will compile.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Flat Assembler is capable of producing files in a variety of formats, beginning
+    with raw binary output and DOS executables, through Windows-specific formats and
+    up to Linux binaries (both executable and object). It is assumed that you are
+    familiar with at least some of the following formats:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 32-bit Windows object file (MS COFF format)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 64-bit Windows object file (MS64 COFF format)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 32-bit Windows DLL
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 64-bit Windows DLL
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 32-bit Linux object file (ELF)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 64-bit Linux object file (ELF64)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'There is no need to be deeply acquainted with them, as the Flat Assembler does
+    all the hard work for us and all we have to do is tell it which format we are
+    interested in (and format our code accordingly). We will use a compile time variable,
+    `ACTIVE_TARGET`, for conditional compilation and use the following constants as
+    possible values:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: Specifying the output format
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: As usual, the main source file (in our case, `crypto.asm`) should begin with
+    the output format specification, thus telling the assembler how to treat the code
+    and sections when creating the output file. As we have mentioned earlier, the
+    compile-time variable, `ACTIVE_TARGET`, is the one to be used for the selection
+    of the proper code for the assembler to process.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The next step would be defining a macro that would conditionally generate the
+    proper code sequence. Let''s call it `set_output_format`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'This macro would tell the assembler to evaluate the `ACTIVE_TARGET` compile-time
+    variable and only use specific code. For example, when `ACTIVE_TARGET` equals
+    `TARGET_W64_OBJ`, the assembler will only process the following line:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: Thus, it will generate a 64-bit Windows object file.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Conditional declaration of code and data sections
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Having told the compiler what output format we are expecting, we need to declare
+    the sections. Since we are writing portable code, we will use two macros to properly
+    declare code and data sections for each of the formats mentioned earlier. As we
+    are used to seeing a data section after the code section (at least in this book,
+    as the order may vary), we will declare a macro responsible for the proper declaration
+    of the beginning of the code section first:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'We will follow it by the macro declaring data section:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: Exporting symbols
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The last macro in the series would be the one that makes it possible to export
+    certain symbols. Our implementation of a cryptographic core would export just
+    one symbol--the `GetPointers()` procedure--which, in turn, would return a pointer
+    to a structure containing pointers to the rest of procedures. This macro follows
+    the previously defined pattern:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: The preceding macro would make the symbol visible to either a static or dynamic
+    linker, depending on the target we are building. Alternatively, we could replace
+    `macro finalize` with the `postpone` directive, which would force the body of
+    the macro to be executed automatically once the end of the source is reached.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now we may save the `platform.inc` file as we will not alter it in any way in
+    the future.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Core procedures
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Having taken care of all the output format specifics, we may safely proceed
+    to the implementation of the core''s code. As it has already been mentioned earlier,
+    we are about to export only a single entry; however, we still need to implement
+    the rest. There are only four procedures in our core:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`f_set_data_pointer`: This procedure accepts a single parameter, which is a
+    pointer to the data we want to process, and stores it to the `data_pointer` global
+    variable'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`f_set_data_length`: This procedure accepts one parameter, which is the length
+    of data we want to encrypt/decrypt, and stores it to the `data_length` global
+    variable'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`f_encrypt`: This procedure implements the encryption loop'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`f_decrypt`: This is the inverse operation of `f_encrypt`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'However, prior to implementing all of these, we first need to prepare the template
+    or, to be more precise, the skeleton for our main source file. This template would
+    look a tiny bit different from what we are used to due to the extensive usage
+    of macroinstructions. However, don''t let it confuse you. The structure is logically
+    (and from an Assembler''s point of view) the same as the one we have been dealing
+    with earlier:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: Despite having a different look from what we are used to seeing, the preceding
+    code is quite self-explanatory and there is not too much to add, if at all. All
+    the hard work is being delegated to previously defined macroinstructions and the
+    only aspect we still have to take care of is the bit capacity. As you can see,
+    the size and addresses are given 8 bytes by default. The purpose of this is to
+    make them fit both 32-bit and 64-bit needs. We could have inserted another `if…else`
+    clause, but since we only have 3 bit capacity-dependent data items, spending another
+    4 bytes for each of them in 32-bit mode is not an issue.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Encryption/decryption
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'As we are developing a crypto core here, it is natural to begin with the implementation
+    of the cryptographic functionality first. The following code performs the encryption
+    of data according to the algorithm we previously defined:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'By now, you should be able to differentiate between different parts of a procedure
+    yourself, seeing where the prolog ends, where the epilog begins, and where the
+    core functionality resides. In this particular case, the majority of the code
+    is dedicated to preserving/restoring registers and to accessing parameters/variables,
+    while the core functionality may be narrowed down to this code:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'For 32-bit platform or to this code:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: For its 64-bit platform.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'It is quite obvious that the implementation of the decryption procedure would
+    be 99% identical to the encryption one. The only change would be swapping the
+    rotation and `XOR` instructions (while changing the direction of rotation, of
+    course). Thus, the 32-bit version of `f_decrypt` would have the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: Similarly, its 64-bit analog would be just the same two lines.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Setting the encryption/decryption parameters
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'As you may have noticed (I hope you have), the procedures discussed in the
+    previous section do not receive any parameters at all. Therefore, we do need to
+    supply two more procedures in order to make it possible to tell the core where
+    data resides and how many bytes to process. As each of these procedures accepts
+    one parameter, the code would be a bit more segmented in order to reflect the
+    calling convention being used, which, in our case, is as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: cdecl for 32-bit targets
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Microsoft x64 for Windows-based 64-bit targets
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: AMD64 for Linux-based 64-bit targets
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: f_set_data_pointer
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'This procedure receives a parameter of the `void*` type . Of course, the assembler
+    does not care about the type of parameter a certain procedure expects. To be more
+    precise, the assembler, as a compiler, is not aware of the procedure parameters
+    as a concept, not to mention that it has no concept of procedure at all. Let''s
+    take a look at the implementation of the `f_set_data_pointer` procedure:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE11]'
+  prefs: []
+  type: TYPE_PRE
+- en: Nothing complicated in this code either. The parameter passed to this procedure
+    is simply being written to the `data_pointer` location.
+  prefs: []
+  type: TYPE_NORMAL
+- en: f_set_data_length
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: This procedure is identical to `f_set_data_pointer` with the only difference
+    being the address where the parameter is written. Simply copy the preceding code
+    and change `data_pointer` to `data_length`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Another alternative is to implement a single procedure, thus getting rid of
+    redundant code, which would accept two parameters:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The actual parameter (either a pointer to data or its size) as the assembler
+    does not care about types
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: A selector, which will tell the procedure where the parameter value should be
+    stored
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Try to implement this yourself; it would be a good quick exercise.
+  prefs: []
+  type: TYPE_NORMAL
+- en: GetPointers()
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The `GetPointers()` procedure is the only one we make public, the only one
+    that would be visible to a dynamic or static linker, depending on the selected
+    output target. The logic behind this procedure is primitive. It creates a structure
+    (in this example, the structure is statically allocated), filled with the addresses
+    of core procedures, and returns the address of this structure:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE12]'
+  prefs: []
+  type: TYPE_PRE
+- en: Once all of the preceding procedures have been added to the main source file,
+    you may safely compile it and see that an output of the selected output format
+    is being generated. If you leave the target specified here, you should be able
+    to see a 32-bit windows DLL being created.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Interfacing with C/C++
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Let me take advantage of the topic of this chapter and say it once. Enough of
+    the Assembly, let's do some C (for those willing to link Assembly code to C++,
+    this C example should be easy to understand; if not--this is the wrong book).
+    For the sake of an example, we will generate an object file out of our Assembly
+    sources and link it with the code written in C for both 32-bit and 64-bit Windows
+    and Linux.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Static linking - Visual Studio 2017
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: First of all, let's see how we generate an object file. I am quite sure you
+    have already understood how to produce different targets in general and for this
+    example in particular. Let's begin with a 32-bit MSCOFF object file by setting
+    the `ACTIVE_TARGET` variable to `TARGET_W32_OBJ` and compiling the main source
+    file.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Create a C/C++ project in Visual Studio and copy the object file into the project
+    directory as shown in the following screenshot (the screenshot shows object files
+    for both 32-bit and 64-bit):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/3d49a776-9371-48ae-8395-bf2a55cee01c.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'As you can see in the preceding screenshot, there is at least one more file
+    we need, namely the header file. Since our crypto engine is fairly simple, we
+    do not need any complicated header files. The one shown here would definitely
+    suffice:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/b6dc370f-0850-4d1c-80bd-72feba5642d4.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: There is a small catch in the preceding code. Try figuring out what isn't correct
+    before you read the next paragraph.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Technically, the code is correct. It would compile and run without a problem,
+    but there is one very important aspect of linking modules written in Assembly
+    to other languages, very important and not quite obvious at the first glance:structure
+    member alignment. In this example, we only used one structure (where we store
+    procedure pointers) and we took proper care of it so that the pointers would be
+    properly aligned depending on the platform. While we aligned our data on a byte
+    boundary (stored it sequentially), Visual Studio's default structure member alignment
+    value is, well, Default, which does not really tell us a lot. Assumptions may
+    be made (in this case, we can assume that Default means the first option, which
+    is a 1-byte alignment), but there is no guarantee of that and we have to explicitly
+    specify the alignment, as assumptions not only do not always work in the case
+    of Assembly, but they also pose a serious threat. It is important to mention that,
+    despite the fact that we have been mentioning Visual Studio in this paragraph,
+    the same applies to any C compiler.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'One way to specify structure member alignment would be through the project
+    settings, as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/1c462b0e-ec69-4c68-88e6-335d602a609f.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'This is good enough for our example, but it may cause problems in the case
+    of larger projects. It is highly recommended not to change the structure member
+    alignment project-wide without any reasonable need for such a change. Instead,
+    we may make a tiny modification to our header file, which would tell the compiler
+    how to handle structure member alignment for this specific structure. Insert the
+    following code right before the declaration of the `crypto_functions_t` structure:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE13]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Insert the following right after the declaration:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE14]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Now, consider the following line:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE15]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Change the preceding line to this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE16]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Then, add the `main.c` file as shown in the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/988a72aa-6f43-4189-b431-a15b843f9a57.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: The code in the `main.c` file is more than self-explanatory. There are only
+    two local variables; the `testString` variable represents the data we will process
+    and `funcs` will store the pointer to the `pointers` structure in our Crypto Core.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Do not try to build the project yet as we have not told Visual Studio about
+    our object file. Right-click on the project and select Properties. The following
+    screenshot shows how to add our object file for a 64-bit platform project. The
+    same should be done for a 32-bit project. You should just pay attention to which
+    object file goes to which platform:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/e0fbfe62-707d-4086-8d64-800214506a65.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: In the accompanying example project, the `crypto_w64.obj` file goes to the x64
+    platform, and `crypto_w32.obj` is for x86.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'You are now free to build and run the project (either x86 or x64, given that
+    the object files are specified correctly). I would suggest setting breakpoints
+    at lines 13 and 15 of the `main.c` file in order to be able to spot the changes
+    in memory pointed by `testString`. While running, you would get something similar
+    to the following (similar because the key would be different with each build of
+    our Crypto Core):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/8a81cb37-2039-404c-882f-1835968eff7e.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'The preceding screenshot shows the data supplied to the core prior to encryption.
+    The following screenshot shows the same data after it has been encrypted:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/d7e4ab3f-733f-4f93-8f66-eed9ecc7afd0.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: The decryption of this encrypted data would take us back to the good old `Hello,
+    World!`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Static linking - GCC
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'There is not much difference between Visual Studio and GCC when it comes to
+    linking object files built from Assembly sources to high-level language code.
+    In fact, to be completely honest, we have to admit that an object file compiled
+    from Assembly code is not different from an object file compiled from high-level
+    languages. In the case of GCC, we have the high-level sources (the C source and
+    the header; no need to modify the files) and two object files, which, for the
+    sake of convenience, we name `crypto_32.o` and `crypto_64.o`. The commands used
+    to build executables out of our source and object files would slightly differ
+    depending on the platform in use. If you are running a 32-bit Linux system, then
+    you would issue the following commands in order to build 32-bit and 64-bit executables,
+    respectively:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE17]'
+  prefs: []
+  type: TYPE_PRE
+- en: The second command would only work if you have 64-bit development tools/libraries
+    installed.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'If you are running a 64-bit system, then you make a slight change to the commands
+    (and take care of the 32-bit development tools and libraries being installed):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE18]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'And:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE19]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Inspecting the memory content with GDB while running one of the `testxx` files
+    would provide you with a picture similar to the following screenshot before encryption:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/0dc58d05-4366-451e-819b-9aee957b53cf.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'And after encryption, you will see something like the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/a0ad54b9-bdc4-4882-a175-6a8420ef5702.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Dynamic linking
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Dynamic linking implies the use of dynamic link libraries (on Windows) or shared
+    objects (on Linux) and is the same as with other DLLs/SOs. The mechanism of dynamic
+    linking will be briefly covered in the next chapter.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We will, however, build dynamic link libraries and shared objects right now
+    in order to be able to proceed further. Compile the `crypto.asm` file, setting
+    the `ACTIVE_TARGET` compile-time variable to `TARGET_W32_DLL` in order to generate
+    a 32-bit DLL for Windows, and then to `TARGET_W64_DLL` in order to generate a
+    64-bit DLL. Keep in mind the fact that changing `ACTIVE_TARGET` does not affect
+    the name of the output, so we would have to rename the result of each compilation
+    accordingly.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'While on Windows you have to simply change the `ACTIVE_TARGET` compile-time
+    variable and compile by going to Run | Compile in the GUI (or hit *Ctrl* + *F9*
+    on the keyboard), you would have to build object files for Linux and then enter
+    another command in a terminal when on Linux. The command would be one of these:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE20]'
+  prefs: []
+  type: TYPE_PRE
+- en: Having DLLs for Windows and shared objects for Linux, we are now safe to proceed
+    further and see how modules written in Assembly may be integrated with frameworks
+    such as .NET.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Assembly and managed code
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: As we have already seen, static or dynamic linking is not as difficult as it
+    may seem, as long as we are dealing with native code, but what happens when we,
+    for example, decide to use code written in Assembly with a program written in
+    C#, which is a managed environment and is not run by the processor itself, but
+    rather by a sort of a virtual machine? Many are afraid of mixing native modules
+    and managed ones. Using native modules compiled from Assembly sources with managed
+    code may seem to be even more frightening or even impossible. However, as we have
+    seen earlier, there is no difference between modules initially written in Assembly
+    and those written in other languages on the binary level. When it comes to managed
+    code like, for example C#, things are just a bit more complex than linking to
+    native object files or using a DLL/SO. The following does not apply to managed
+    C++ code, in which case you may simply follow the steps discussed earlier in this
+    chapter, in order to link a native object to managed code, as managed C++ is the
+    only language supported by Visual Studio that provides such capability.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the case of C#, however, we are limited to DLL/SO as C# is a pure managed
+    environment without the ability to digest native code in the form of an object
+    file. In such a case, there is a need for a sort of a shim code, an adapter. In
+    our example, we will use a simple class, which imports our core's functionality
+    from `crypto_wxx.dll` on Windows or from `libcrypto_xx.so` on Linux and exposes
+    it through its methods to the rest of the code.
+  prefs: []
+  type: TYPE_NORMAL
+- en: There is a common misbelief that the .NET platform is Windows-specific. Alas,
+    this is too common. However, .NET platform is, in reality, almost as portable
+    as Java and supports quite a selection of platforms. However, we will concentrate
+    on Windows (32/64-bits) and Linux (32/64-bits).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Native structure versus managed structure
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The first thing we would run into, when attempting to tie something similar
+    to the implementation of our core''s interface to a platform such as .NET, is
+    the way data is passed between managed code and native code. There''s hardly any
+    possibility for managed and native code to access the same memory areas. It is
+    not impossible, but definitely is not healthy, hence we would have to pass data
+    between the two domains--the managed domain and native domain. Luckily, there
+    is a class in the .NET framework that allows us to perform such operations relatively
+    painlessly--`System.Runtime.InteropServices.Marshal`. Since we are using a pointer
+    to a structure containing pointers to exported procedures, we need to implement
+    a managed structure to be used with our .NET crypto class and this is done in
+    a rather simple manner:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE21]'
+  prefs: []
+  type: TYPE_PRE
+- en: The preceding code perfectly declares the type of structure we need and we may
+    get to implement the crypto class. Although the implementation of misbelief C#
+    class falls way beyond the scope of this book, it seems appropriate to dedicate
+    a few lines to a definition of methods and delegates in this case.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Importing from DLL/SO and function pointers
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Interoperability in .NET is an interesting topic, but it would be much better
+    to refer to proper resources dedicated to it. Here, we will only consider .NET''s
+    analogs of function pointers and misbelief dynamic importing of functions exported
+    by DLLs and shared objects. But, first, let''s construct the class, import the
+    `GetPointers()` procedure, and define function pointer delegates:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE22]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The preceding code is for the Linux version; however, it may easily be changed
+    to the Windows version by changing the name of the shared object to the name of
+    a DLL. With this class, working with our Crypto Core is rather simple and may
+    be summarized by the following code:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE23]'
+  prefs: []
+  type: TYPE_PRE
+- en: However, despite the fact that, if we implement the preceding class and try
+    to use it in our code, it would compile well, we are still unable to actually
+    run it. This is because we need to supply the DLL or shared object, depending
+    on the platform of our choice. The easiest way to supply the libraries is to copy
+    them into the solution folder and tell the IDE (Visual Studio or Monodevelop)
+    to handle them properly.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The first step is to copy the libraries (DLLs on Windows and SOs on Linux)
+    into the project folder. The following screenshot shows the Monodevelop project
+    folder on Linux, but the procedure is just the same for both Linux and Windows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/f74210ea-23ec-4561-9ab5-8b524735bbcf.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: The next step would be to actually tell the IDE how to treat these files. First,
+    add them to the project by right-clicking on the project and then navigating to
+    Add | Existing Item for Visual Studio or Add | Add Files for Monodevelop, and
+    then set the properties for each of the libraries as shown in the following screenshots.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To set the properties in Visual Studio:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/a71c3698-b647-43ab-8dda-1bc8b7b689d6.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'To set the properties in Monodevelop:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/c5d7916b-8acf-4f11-92b7-10c9230638ba.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Although the GUI is different, both need to have Build Action set to Content
+    and Copy to Output Directory set to Copy always in Visual Studio and checked in
+    Monodevelop.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now we can build out project (either on Windows or Linux) and run it. We may
+    either watch the data being encrypted/decrypted in memory or add a tiny function
+    that would print out the content of memory within a specific range.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'If everything is set up correctly, then the output should be similar to the
+    following when on Windows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/262b1def-d9f0-4b1e-86a3-824b72fabaf9.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'The output on Linux would be similar to this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/0e4bdbf1-efab-45c3-a61a-012875cb0d64.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Summary
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In this chapter, we covered just a few aspects of interfacing your Assembly
+    code to the outer world. There are numerous programming languages out there; however,
+    a decision was taken to concentrate on C/C++ and the .NET platform as the best
+    way to illustrate how modules written in Assembly language may be bound to the
+    code written in high-level languages. To put it simply, any language that is compiled
+    into native code would use the same mechanism as C and C++; on the other hand,
+    any .NET-like platform, although, having a platform-specific binding mechanism,
+    would use the same approach on a low level.
+  prefs: []
+  type: TYPE_NORMAL
+- en: However, I assume that there is one question hanging in the air. How about linking
+    third-party code to our Assembly program? Although the title of this chapter may
+    have implied that this topic is included, it would make much more sense to cover
+    it in the next chapter as the only thing we will be dealing with is using third-party
+    code with our programs written in the Assembly language.
+  prefs: []
+  type: TYPE_NORMAL

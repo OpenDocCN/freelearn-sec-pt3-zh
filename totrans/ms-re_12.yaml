@@ -1,0 +1,1317 @@
+- en: Practical Reverse Engineering of a Windows Executable
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Reverse engineering is very common when dealing with malware analysis. In this
+    chapter, we will look at an executable program and determine its actual behavioral
+    flow using the tools we have learned so far. We will head straight from static
+    analysis to dynamic analysis. This will require that we have our lab set up ready
+    so that it will be easier to follow through.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The target file that will be analyzed in this chapter has behaviors that were
+    seen in actual malware. Regardless of a file being malware or not, we have to
+    handle every file we analyze carefully in an enclosed environment. Let's get started
+    on performing some reversing.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**We will cover the following topics in this chapter:**'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Practical static analysis
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Practical dynamic analysis
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Things to prepare
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The file we are about to analyze can be downloaded from [https://github.com/PacktPublishing/Mastering-Reverse-Engineering/blob/master/ch12/whatami.zip](https://github.com/PacktPublishing/Mastering-Reverse-Engineering/blob/master/ch12/whatami.zip).
+    It is a password-protected zip file and the password is "`infected`", without
+    the quotes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We need to prepare our Windows lab setup. The analysis discussed in this chapter
+    runs the program in a VirtualBox guest running a Windows 10 32-bit operating system .
+    The following tools additionally need to be prepared:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'IDA Pro 32-bit: A copy of the free version can be downloaded from [https://github.com/PacktPublishing/Mastering-Reverse-Engineering/blob/master/tools/Disassembler%20Tools/32-bit%20idafree50.exe](https://github.com/PacktPublishing/Mastering-Reverse-Engineering/blob/master/tools/Disassembler%20Tools/32-bit%20idafree50.exe).'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'x86dbg: The latest version can be downloaded from [https://x64dbg.com](https://x64dbg.com).
+    A copy of of an older version is available at [https://github.com/PacktPublishing/Mastering-Reverse-Engineering/blob/master/tools/Debuggers/x64dbg%20-%20snapshot_2018-04-05_00-33.zip](https://github.com/PacktPublishing/Mastering-Reverse-Engineering/blob/master/tools/Debuggers/x64dbg%20-%20snapshot_2018-04-05_00-33.zip).'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Fakenet: The official version can be downloaded at [https://github.com/fireeye/flare-fakenet-ng](https://github.com/fireeye/flare-fakenet-ng).
+    A copy can also be downloaded from [https://github.com/PacktPublishing/Mastering-Reverse-Engineering/tree/master/tools/FakeNet](https://github.com/PacktPublishing/Mastering-Reverse-Engineering/tree/master/tools/FakeNet)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: SysInternals Suite: [https://docs.microsoft.com/en-us/sysinternals/downloads/](https://docs.microsoft.com/en-us/sysinternals/downloads/)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Snowman: [https://derevenets.com/](https://derevenets.com/)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: HxD: [https://mh-nexus.de/en/hxd/](https://mh-nexus.de/en/hxd/)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'CFF Explorer: [https://ntcore.com/](https://ntcore.com/)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: We may need other tools as we proceed with our analysis. If you find tools that
+    are more comfortable to use, feel free to use them.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Initial static analysis
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'To help us out in terms of our static info gathering, here is a list of the
+    information that we need to obtain:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: File properties (name, size, other info)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Hash (MD5, SHA1)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: File type (including header information)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Strings
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Deadlisting (highlight where we need information)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: At the end of the initial analysis, we will have to summarize all the information
+    we retrieved.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Initial file information
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'To get the filename, file size, hash calculations, file type, and other information
+    regarding the file, we will be using `CFF` Explorer. When opening the file, we
+    might encounter an error message when using the latter, as can be seen in the
+    following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/bd96f036-2350-4a15-bb9a-0ee95534364b.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: This error is caused by MS Windows' virus protection feature. Since we are in
+    a sandboxed environment (under a virtualized guest environment), it should be
+    okay to disable this. Disabling this feature in a production environment can expose
+    risks for the computer getting compromised by malware.
+  prefs: []
+  type: TYPE_NORMAL
+- en: To disable this feature in Windows, select Start->Settings->Windows Security->Virus
+    & threat protection->Virus & threat protection settings. Then turn off Real-time
+    protection. You might as well turn off both Cloud-delivered protection and Automatic
+    sample submission to prevent any security settings from blocking activities that
+    the program that is being analyzed might perform.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The following screenshot shows Real-time protection disabled:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/2227778a-5de9-40fb-9730-cc75bc095a97.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Opening the file with CFF Explorer reveals a lot of information, including
+    packer identification of the file being UPX packed:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/34f736a3-b6b9-4a9a-aa99-652121aa44a8.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'From the preceding result, we can tabulate the following file information:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| Filename | `whatami.exe` |'
+  prefs: []
+  type: TYPE_TB
+- en: '| File size | 28,672 bytes |'
+  prefs: []
+  type: TYPE_TB
+- en: '| MD5 | F4723E35D83B10AD72EC32D2ECC61091 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| SHA-1 | 4A1E8A976F1515CE3F7F86F814B1235B7D18A231 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| File type | Win32 PE file – packed with UPX v3.0 |'
+  prefs: []
+  type: TYPE_TB
+- en: 'We will have to download the UPX tool and try to decompress the file. The UPX
+    tool can be downloaded from [https://upx.github.io/](https://upx.github.io/).
+    Using UPX, extract the file using the "`-d`" option, as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The result after decompressing the file, demonstrated as follows, tells us
+    that the file originally had a size of 73,728 bytes:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/333c44f9-fcce-4917-b21a-8393c5ef9534.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'So, if we re-open the file in CFF Explorer, our file information table would
+    now include the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| Filename | whatami.exe |'
+  prefs: []
+  type: TYPE_TB
+- en: '| File size | 73,728 bytes |'
+  prefs: []
+  type: TYPE_TB
+- en: '| MD5 | 18F86337C492E834B1771CC57FB2175D |'
+  prefs: []
+  type: TYPE_TB
+- en: '| SHA-1 | C8601593E7DC27D97EFC29CBFF90612A265A248E |'
+  prefs: []
+  type: TYPE_TB
+- en: '| File type | Win32 PE file – compiled by Microsoft Visual C++ 8 |'
+  prefs: []
+  type: TYPE_TB
+- en: 'Let''s see what notable strings we can find using SysInternals'' strings tool.
+    Strings is a command-line tool. Just pass the filename as the tool''s argument
+    and redirect the output to a file. Here is how we use it:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'By removing noisy strings or text that are not relevant, we obtained the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'We highlighted a number of text strings. As a result, we may be expecting a
+    number of messages to pop up by using the `MessageBoxA` function. With APIs such
+    as `LoadResource` and `LockResource`, we may also encounter code that will process
+    some data from the resource section. A suspended process may also be invoked after
+    seeing APIs such as `CreateProcess` and `ResumeThread`. Anti-debugging may also
+    be expected using the `IsDebuggerPresent` API. The program may have been compiled
+    to use GUI-based code using `CreateWindowExW` and `RegisterClassExW`, but we do
+    not see the window messaging loop functions: `GetMessage`, `TranslateMessage`,
+    and `DispatchMessage`.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: All these are just assumptions that we can better understand following further
+    analysis. Now, let's try to do deadlisting on the file using IDA Pro.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Deadlisting
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'After opening up `whatami.exe` in IDA Pro, auto-analysis recognizes the `WinMain`
+    function. In the following screenshot, we can see that the first three APIs that
+    will be executed are `LoadStringW`, `RegisterClassExW`, and `CreateWindowEx`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/944764d5-5452-49b7-a608-d62f0716b1d7.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: When `CreateWindowExW` is executed, the window properties are taken from the
+    configuration set by `RegisterClassExW`. The `ClassName`, which is used as the
+    name of the window, is taken from the file's text string resource using `LoadStringW`.
+    However, our concern here would only be the code pointed to by `lpfnWindProc`
+    takes us. When `CreateWindowExW` is executed, the code pointed to by the `lpfnWndProc`
+    parameter is executed.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Before we proceed, take a look at `sub_4010C0`. Let''s see the code that comes
+    after `CreateWindowExW`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/e2cdeaa3-09ee-44f0-ba7e-0424771208f0.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: The preceding screenshot shows that after `CreateWindowExW`, `ShowWindow` and
+    `UpdateWindow` are the only APIs that may be executed. However, there are indeed no
+    window messaging APIs that were expected to process window activities. This would
+    entail us assuming that the intention of the program was only to run code at the
+    address pointed to by the `lpfnWndProc` parameter.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Double clicking on `dword_4010C0`, which is the address of  `lpfnWndProc`,
+    will show a set of bytes that have not been properly analyzed by IDA Pro. Since
+    we are sure that this area should be a code, we will have to tell IDA Pro that
+    it is a code.  By pressing ''`c`'' at address `0x004010C0`, IDA Pro will start
+    converting the bytes to readable assembly language code. Select `Yes` when IDA
+    Pro asks us to convert to code:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/ac468539-3f52-4783-8283-469b3c820792.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Scrolling down, we will encounter another unrecognized code at `0x004011a0`.
+    Just perform the same procedure:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/bdee9e12-1807-48b9-a856-30db46fe8f8a.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Scrolling down again will bring us to data that can no longer be converted.
+    This should be the last part of the code. Let's tell IDA Pro that this code should
+    be a treated as a function. To do that, highlight lines from `0x004010C0` to `0x004011C0`,
+    right-click on the highlighted lines, and then select "`Create function...`" to
+    turn the set of code into a function.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/e7b3b932-4ec0-4d75-acfe-94182572daab.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Turning the code into a function will help our deadlisting see a graphical
+    view of the code. To do that, right-click and select Graph view. The following
+    screenshot shows the first set of code of the function. What interests us here
+    is how the `rdtsc` and `cpuid` instructions were used:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/fe7fd37f-7f67-48f1-b326-02edfca89231.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: In *[Chapter 11](65131269-b507-47b8-9229-8f5ebb219464.xhtml), Identification
+    with POC Malware*, under anti-debugging tricks, we discussed `rdtsc` being used
+    as a timing trick. The difference is calculated right after the second `rdtsc`.
+    In the following code, the expected duration should only be less than or equal
+    to `0x10000`, or `65,536` cycles. If we get to pass that timing trick, a message
+    box will appear.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Leaf 1 (set in the register `eax`) is passed to the first execution of a `cpuid`
+    instruction. Again, in [Chapter 11](65131269-b507-47b8-9229-8f5ebb219464.xhtml),
+    `cpuid` can be used for anti-VM tricks. The result is placed in register eax.
+    This is followed by three `xor` instructions that eventually exchange the values
+    of the `eax` and `ecx` registers.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: The bt instruction moves the 31st (`0x1F`) bit to the `carry` flag. If the 31st
+    bit is set, it means that we are running in a hypervisor environment. We will
+    need to take note of this line during our debugging session later. We want to
+    make the result with the 31st bit set to `0`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: This may be followed by another check on the 5th bit using `xor ecx, 20h`. With
+    the 5th bit set, it would mean that VMX (Virtual Machine eXtensions) instructions
+    are available. If the VMX instructions are available, it would also mean that
+    the system is capable of running virtualization. Usually, VMX is only available
+    at the host VM, and the program can assume that it is running on the physical
+    machine. For bitwise logic, if the 5th bit of `ecx` is set, an `xor` `20h` should
+    make it a zero. But if the other bits of register `ecx` were set, register ecx
+    would not have a zero value. We should also take note on this for our debug session.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Two main tricks were shown here – a timing-trick and an anti-VM trick. Overall,
+    if we deduce what we analyzed, the program can either go in two directions: the
+    loop at `loc_4010EF`, which makes no sense, and the `MessageBoxA` code.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'If we take a closer look, the whole anti-debug and anti-VM tricks are enclosed
+    by `pusha` and `popa` instructions. Essentially, we can skip the whole trick codes
+    and jump right to the `MessageBoxA` code, as can be seen in the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/69be9a22-0617-43f5-b253-b3948eb711ce.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'The `MessageBoxA` code is followed by functions that read an `RCDATA` (`0x0A`)
+    resource type with an ordinal name of `0x88` (`136`).  Using CFF Explorer, click
+    on Resource Editor and expand `RCData`. We should be able to see the data being
+    read here, as shown in the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/e3da36a3-e137-4e4d-bdc7-7853fcc0d759.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: The data is copied, using `memcpy`, to a memory space allocated using `VirtualAlloc`.
+    The allocated size is the size indicated in the RCData's properties. The size
+    can be seen by expanding `RCData` in the Resource Directory in `CFF` Explorer. The
+    address of the copied data is left to the`edi register.`
+  prefs: []
+  type: TYPE_NORMAL
+- en: We also see `IsDebuggerPresent` being used here, another anti-debugging trick.
+    Following the green line ends up to an `ExitProcess`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The following screenshot is where the red line goes to:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/f1c9fdfa-5748-4fb4-845e-fa3f9bc0c243.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: The loop at `loc_4011A0` seems to be decrypting the data. Remember that the
+    address of the data is in register edi. The decryption algorithm uses a `ror`
+    `0x0c` (rotate 12 bits to the right). After decryption, it stores the data address
+    to register `eax` and then calls the `sub_4011D0` function.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Knowing the location and size of the decrypted data, we should be able to create
+    a memory dump during our debug session.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Inside `sub_4011DO`, the address stored in eax is transferred to the esi register,
+    and subsequently to register edi. We then encounter a call to `CreateProcessA`
+    that runs "calc":'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/e5ef948f-0df7-491a-9538-ceae1b2992c7.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: The process named "`calc`" is actually the Windows default calculator application. The
+    sixth parameter of `CreateProcessA`, `dwCreationFlags`, is what interests us here.
+    The value of 4 denotes CREATE_SUSPENDED. The calculator was run as a process in
+    suspended mode. This means that it is not running and was only loaded in the calculator's
+    own process space.
+  prefs: []
+  type: TYPE_NORMAL
+- en: If we were to make a block diagram of `sub_4011D0` with the sequence of API
+    functions, we would have something like this.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/6d652ae7-c513-4389-b68e-ea5cc2a83aa8.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: The sequence of APIs demonstrates a behavior called process hollowing. Process
+    hollowing is a technique, commonly used by malware, to mask its code under a legitimate
+    process. This technique creates a process in a suspended state, and then its memory
+    is unmapped and replaced with a different process image. In this case, the legitimate
+    process is Calculator.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The `NtUnmapViewOfSection` API is a function that unmaps or removes the PE image
+    layout from a given process space. This API comes from the `NTDLL.DLL` library
+    file. Instead of using `LoadLibrary`, the `GetModuleHandle` was used. `LoadLibrary`
+    is used to load a library that has not yet been loaded, while `GetModuleHandle`
+    is used to retrieve the handle of an already loaded library. In this case, the
+    program assumed that `NTDLL.DLL` was already loaded.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The following screenshot shows the disassembly code that retrieves the function
+    address of `NtUnmapViewOfSection`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/3ff2b81f-36ec-483a-8944-76ef8245b5eb.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: The decrypted data from the resource section's RCData is passed to sub_4011D0\.
+    Every call to `WriteProcessMemory` reads chunks of data from the decrypted data.
+    Given this, we are expecting the decrypted data to be that of a `Win32` PE file.
+  prefs: []
+  type: TYPE_NORMAL
+- en: To summarize, the code initially creates a window. However, the registered window
+    properties are almost empty, except for the callback, `Wndproc`. The `Wndproc`
+    callback is the code that initially executes when the window is created. As a
+    result, the creation of a window using `RegisterClassEx` and `CreateWindow` APIs
+    were just used to pass code execution. In other words, the whole window creation
+    was the simple equivalent of a `jmp` instruction.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Here''s another diagram outlining the flow of code at the Wndproc callback:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/2f056250-3218-4130-a3da-3b47c0d9324e.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: In the first section of the `Wndproc` code, we encountered anti-debug (timing
+    tricks with `rdtsc`) and anti-vm (`cpuid` bit 31 and 5) tricks. Once we get passed
+    that, a message box appears. The data from the resource's RCData is copied to
+    an allocated memory. We encounter another anti-debugging trick using the `IsDebuggerPresent`
+    API. The data is decrypted and passed to a process-hollowing code using Calculator.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Our next target for analysis would be the decrypted image executed using process
+    hollowing. We will start directly with debugging.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Debugging
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: We will be using `x86dbg` for our debug session. Remember that we decompressed
+    the file using UPX. It would be wise to open the decompressed version instead
+    of the original whatami.exe file.  Opening the compressed will be fine but we
+    will have to go through debugging the UPX packed code.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Unlike IDA Pro, `x86dbg` is not able to recognize the `WinMain` function where
+    the real code starts. In addition, after opening the file, the instruction pointer
+    may still be somewhere in the `NTDLL` memory space. And to avoid being in an `NTDLL`
+    region during startup, we may need to make a short configuration change in `x86dbg`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Select Options->Preference. Under the Events tab, uncheck System Breakpoint
+    and TLS Callbacks. Click on the Save button and then select Debug->Restart. This
+    should now bring us to the entry point of `whatami.exe` at the following address:
+    `0x004016B8`.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Since we already know the `WinMain` address from IDA Pro, we can just place
+    a breakpoint at that address. The WinMain address is at `0x00401000`. Press CTRL+G,
+    then type `0x00401000`, then press `F2` to place a breakpoint, and finally press
+    `F9` to run the program.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Here is a screenshot of where we should be at this point:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/0ab87182-92d2-404c-b7b1-a90d34c623f1.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'We have observed in our static analysis that `RegisterClassExW` and `CreateWindowExW`
+    were used to set the WndProc as a window handler where more interesting codes
+    are placed. Make a breakpoint at the WndProc address, `0x004010c0`, and then press
+    F9\. This should bring us to the following screenshot, where the anti-debug and
+    anti-VM codes are located:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/cc6abbd1-5daf-4dd3-a481-05d7ff40bc0d.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: We highlighted the anti-debug and anti-VM codes here. These codes run begins
+    from the pushad instruction up to the popad instruction. What we can do here is
+    skip the anti-debug and anti-VM codes. Press F7 or F8 until we are at address
+    `0x004010C9`. Select line `0x00401108`, the line right after `popad`, and then
+    right-click on it to bring up the context menu. Select Set New Origin Here. This
+    brings the instruction pointer, register EIP, to this address.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We should now be at the code that displays the following message using the
+    `MessageBoxA` function. Just keep on pressing `F8` until the following message
+    appears:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/7b5d6d55-d7cd-45de-921e-5c6690a4c240.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'You will have to click on the OK button for debugging to proceed. The next
+    portion of the code will retrieve the `RCData` from the resource section. Keep
+    on pressing `F8` until we reach line `0x0040117D`, a call to `memcpy`. If we look
+    carefully at the three parameters to be passed for `memcpy`, register edi should
+    contain the source address of the data to be copied, register `eax` should contain
+    the destination address, and register `esi` should contain the size of data to
+    be copied. To get a memory view of what the destination will contain, select the
+    value of `EDI` in the right-hand pane, and then right-click on it to show the
+    context menu. Select Follow in Dump. We should now be able to view Dump 1''s memory
+    space, as demonstrated in the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/c62ec0fc-248f-4d42-9ab3-f78f54c4d1b8.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Press `F8` to proceed with the `memcpy`. The following screenshot shows the
+    current location:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/c8fa24a5-79e1-4148-a8d9-6d38bd409da5.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Keep on pressing `F8` until we are at the line (`0x00401192`) after the call
+    to `IsDebuggerPresent`. Register `EAX` is expected to be set to `1`, which indicates
+    a "`True`" value. We will need to change that to "`False`", with a zero value.
+    To do that, double-click on the value of register `EAX`, and then change 1 to
+    0\. In effect, this should not let the code jump straight to the `ExitProcess`
+    call.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The next code would be the decryption routine. The arrows in the far left-hand
+    pane show a `loopback` code. The algorithm uses a `ror` instruction. Keep on pressing
+    `F8` while observing Dump 1\. We can slowly see the data being decrypted, starting
+    with an `MZ` header. You can place a breakpoint at address `0x004011B7`, where
+    the decryption code ends and reveals entirely decrypted data, shown as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/b181cffc-145e-4e76-8ca0-3f684564ccc8.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'The decrypted data is a `Win32` PE file with a size of `0x0D000` (53,248 bytes).
+    What we can do here is dump this decrypted memory to a file. To do that, click
+    on the Memory Map tab or select View->Memory Map. This shows us the process memory
+    space with the addresses of memory sections and its respective size. The memory
+    address where the decrypted data is, in our case, `0x001B000`. This address may
+    be different to other analyzes. Select the decrypted data''s memory address with
+    a size of `0x00D000`, right-click to bring up the context menu, and then select
+    Dump Memory to File. Refer to the following example:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/ab880fb3-5717-4e14-b593-ded0ef9154c5.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Save the file and open it with CFF Explorer. This gives us the following file
+    information:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| File size | 53,248 bytes |'
+  prefs: []
+  type: TYPE_TB
+- en: '| MD5 | DD073CBC4BE74CF1BD0379BA468AE950 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| SHA-1 | 90068FF0C1C1D0A5D0AF2B3CC2430A77EF1B7FC4 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| File type | Win32 PE file – compiled by Microsoft Visual C++ 8 |'
+  prefs: []
+  type: TYPE_TB
+- en: 'In addition, viewing the import directory shows us four library modules: `KERNEL32`,
+    `ADVAPI32`, `WS2_32`, and `URLMON`. The following CFF Explorer screenshot shows
+    that registry and cryptography APIs are being imported from `ADVAPI32`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/efd52791-c10a-4054-b3bb-6e451975f2bc.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: The presence of `WS2_32` means that the program might use network socket functions.
+    `URLDownloadToFile` is the single API imported from `URLMON`. We are expecting
+    a file to be downloaded.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Going back to our debug session, there are two call instructions left. The
+    one option is a call to `ExitProcess`, which will terminate the currently running
+    process. The other is a call to address `0x004011DO`. Use `F7` to do a debug step
+    causing the debugger to enter the call instruction. This is the function that
+    does the process-hollowing routine. The following screenshot is where we should
+    be at after entering `0x004011D0`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/3dae1c5e-4076-45f1-ab3d-f37bdd6d4498.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Continue pressing `F8` until after the call to `CreateProcessA`. Open Windows
+    Task Manger, and take a look at the list of processes. You should see `calc.exe`
+    in suspended status, shown as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/da66e345-7684-44d6-bfb3-f6d15e43c8d2.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Continue pressing F8 until we reach the line that calls `ResumeThread` (`0x0040138C`).
+    What happened is that the unknown PE file has just replaced the image of the Calculator
+    process. If we take a look back at the block diagram of `sub_4011D0`, we are currently
+    in the process hollowing behavior of this program. While Calculator is in suspended
+    mode, no code is being executed yet. So before hitting `F8` on the `ResumeThread`
+    line, we will have to attach the suspended Calculator and place breakpoints at
+    the entry point or at its WinMain address. To do that, we will have to open up
+    another `x86dbg` debugger, then select File->Attach, and look for calc. If you
+    cannot see that, you will need to run as an administrator by selecting File->Restart.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let''s use IDA Pro to help us identify the `WinMain` address. Open the dumped
+    memory in IDA Pro and, following the automated analysis, we''ll be at the `WinMain`
+    function. Change the view to Text view and then take note of the `WinMain` address,
+    as in the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/9daabfd9-b5cf-4d1a-9e39-8f7364ddbe46.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'In `x86dbg`, place a breakpoint at `0x004017A0`, as shown in the following
+    screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/a8cc9ddc-d421-48b1-8061-0564d9129005.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Now we are ready to press `F8` over the `ResumeThread` line. But before doing
+    that, it would be a good idea to create a snapshot of our running VM just in case
+    something goes sideways:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/b00bfc6c-0590-47ef-af67-f6f8365f3b88.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: At this point, the only API left for `whatami.exe` to run is `ExitProcess`.
+    This means that we can just press `F9` to let this process die.
+  prefs: []
+  type: TYPE_NORMAL
+- en: After `ResumeThread` has been called, the `calc` process is lifted from being
+    suspended and begins to run. But since the unknown image is in a debugger paused
+    state, we observe that the `calc` image is still at the attached breakpoint instruction
+    pointer.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The unknown image
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: At this point, we have the memory dump opened in IDA Pro and have the same unknown
+    image mapped into a Calculator process. We will work with both tools by using
+    IDA Pro for viewing the disassembly code and `x86dbg` for debugging.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In `x86dbg`, we have placed a breakpoint at the `WinMain` address of the unknown
+    image. However, the instruction pointer is still at an `NTDLL` address. Hit `F9`
+    to make it continue and bring us to our `WinMain`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Taking a detailed look at the disassembly codes from `WinMain`, we will notice
+    an SEH anti-debug here:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/9dba0f73-d52f-42aa-9060-2e8501cb1f06.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: '`call sub_4017CB` goes to a subroutine that has a `call $+5`, `pop eax`, and
+    then a `retn` instruction.  `call $+5` calls the next line. Remember that when
+    `call` is executed, the top of the stack will contain the return address. `call
+    sub_4017CB` stores the return address, `0x004017B3`, at the top of the stack.
+    And again, `call $+5` stores `0x004017D0` at the top of the stack. `0x004017D0`
+    is placed in the eax register because of `pop eax`. The ret instruction returns
+    to the `0x004017AD` address. A value of 2 is added to the address stored at the
+    `eax` register. As a result, the address in `eax` points to `0x004017D2`. This
+    must be the handler for the SEH being set up.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: We can go through the SEH, or simply skip this in our debug session. Skipping
+    it would be as simple since we can identify the pushf/pusha and popa/popf instructions
+    and execute the same process as we did in the `whatami.exe` process.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Going through the SEH should also be simple. We can just place a breakpoint
+    at the handler address, `0x004017D2`, and press `F9` until we reach the handler.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We can choose either of these options. When it comes to decisions like this,
+    it is always wise to take a snapshot of the VM. We can try both options by simply
+    restoring the VM snapshot.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Our next stop is `sub_401730`. The following screenshot shows the code in `sub_401730`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/1f5afc70-9fd4-4b11-a134-00633edc2eca.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Debugging through this code reveals that `LoadLibraryA` and `GetProcAddress`
+    is used to retrieve the address of `MessageBoxA`. Afterward, it just displays
+    a message.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/13c0140c-b9a3-4c92-8a36-2ae633d93d1f.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: The next lines of code is an anti-automated analysis trick. We can see that
+    the difference of the results of two `GetTickCount` is being compared to a value
+    `0x0493e0` or `300000`. Between the calls to `GetTickCount`, a Sleep function
+    is also called.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/84224f71-7972-4b5a-ab53-4fc1e2561031.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: A Sleep for 300000 means 5 minutes. Usually, automated analysis systems would
+    turn a long Sleep to a very short one. The preceding code wants to make sure that
+    5 minutes really elapsed. As analysts debugging this code, we can simply skip
+    this trick by setting our instruction pointer after the jb instruction.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Next is a call to `sub_401500` with two parameters: "`mcdo.thecyberdung.net`"
+    and `0x270F` (`9999`). The routine contains socket APIs. As we did before, let
+    us list down the sequence of APIs we will encounter.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/5da17ef7-1d5d-4ec2-bce6-da8f60a2300b.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: For network socket behaviors, what we will be looking into are the parameters
+    and results for `gethostbyname`, `htons`, `send` and `recv`. Again, before we
+    proceed, taking a VM snapshot would be recommended at this point.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Keep on step debugging until we reach the call to `gethostbyname`. We can get
+    the server to which the program is connecting to by looking at `gethostbyname`'s
+    parameters. And that would be "`mcdo.thecyberdung.net`". Proceeding with the call,
+    we might encounter a problem with gethostbyname's result. The result in register
+    EAX is zero. This means `gethostbyname` failed because it was not able to resolve "`mcdo.thecyberdung.net`"
+    to an IP address. What we need to do is setup `FakeNet` to mimic the internet.
+    Revert the VM snapshot to take us back before executing `WSAStartup`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Before running `FakeNet`, disconnect the cable by selecting Machine->Settings->Network
+    from the VirtualBox menu. Expand the Advanced menu and uncheck Cable connected.
+    We are doing this procedure to make sure that there will be no interference for
+    `FakeNet` reconfiguring the network.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/4dfa693d-503f-4f74-a485-a970788a3495.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'The following screenshot shows `FakeNet` running successfully. `FakeNet` might
+    require running in administrative privileges. If that happens, just run it as
+    an Administrator:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/80d8275d-6920-4043-8fbe-a8634476dde2.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Restore cable connection by checking the VM Network settings'' Cable Connected
+    check box. To verify that everything works fine, open up Internet Explorer and
+    visit any website. The resulting page should be similar to the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/29d6134e-4011-428a-931c-0044cc63d31c.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Now, we can go back to our debugging at the `gethostbyname` address. We should
+    now get a result in register `EAX` with `FakeNet` running.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/f16a8cd1-bfa2-4221-b15d-fcf872e74fd1.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: The next API we are after is `htons`. This should give us information about
+    the server's network port the program is going to connect to. The parameter passed
+    to `htons` is stored in register `ECX`. This is the port number that will be used,
+    `0x270F` or `9999`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/d3eb8ed4-5b1c-447c-a300-7cf8f825787a.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Going on with debugging, we encounter the connect function where actual connection
+    to the server and given port commences. The connect function returns zero to register
+    `EAX` if it was successful. In our case, this fails with a `-1` return value.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/8fd24efd-99db-4f8c-a88b-fa31a6939789.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: The reason for this is that FakeNet only supports commonly used and few known
+    malware ports. Fortunately, we can edit FakeNet's configuration and add port 9999
+    to the list. FakeNet's configuration file, FakeNet.cfg, is found at the same directory
+    where FakeNet's executable is. But before updating this file, we will have to
+    revert again to snapshot before `WSAStartup` is called.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Using Notepad, edit `FakeNet.cfg`. Look for the line that has the "`RawListner`"
+    text. If not found, just append the following lines in the config file.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'When this line is added, the config file should look like this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/d9ca9b81-b7f4-49d8-8636-0468a0e2231e.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Take note of the added `RawListener` line. After this, restart `FakeNet` then
+    debug again until we reach the `connect` API. This time we are expecting the connect
+    function to become successful.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/b459d245-6250-4552-9ecf-f8960a1eb70a.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Continue debugging until we reach the send function. The second parameter (look
+    at the second entry from the top of stack) of the send function points to the
+    address of the data to be sent. Press `F8` to proceed sending the data and look
+    at `FakeNet`'s command console.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/04fe011d-19fc-4989-9b1e-027f3d265d48.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: We highlighted the communication between this program and `FakeNet`. Remember
+    that `FakeNet` here is a mimic of the remote server. The data sent was "`OLAH`".
+  prefs: []
+  type: TYPE_NORMAL
+- en: Continue debugging until we reach another send or `recv` function. The next
+    function is a `recv`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/5553d328-abf7-40ba-bbdc-676319e48a8a.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'The second parameter is the buffer that receives data from the server. Apparently,
+    we are not expecting `FakeNet` to send any data back. What we can do is monitor
+    succeeding code that will process the data in this `recv` buffer. But to make
+    the `recv` call successful, the return value should be a non-zero number. We will
+    have to change register EAX''s value after stepping on the `recv` call, as we
+    did in the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/33e6d80c-8ef7-4a7d-b04f-9a4e55522e5e.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: The next lines of code compare the data received with a string. See the following
+    disassembly using the `repe cmpsb` instruction to compare the strings.  This instruction
+    compares the text string stored at the address pointed to by registers `ESI` and
+    `EDI`.  The number of bytes to compare is stored in register `ECX`.  The supposedly
+    received data is located at the address pointed to by register `ESI`.  And the
+    address of the string, "`jollibee`", is stored in register `EDI`.  What we want
+    to happen here is make both strings equal.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/199617e2-c270-4c2c-9705-fc9063e72b40.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: To do that in our debug session, we will have to edit the bytes at the received
+    data address and make it equal to the 9 character string being compared to. Right
+    click on the value of register ESI to bring up the context menu, select Follow
+    in Dump. At the first byte of the data in Dump window, right click and select
+    Binary->Edit.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/9c6ca9b4-2d8c-4007-8b55-54f22335c22e.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'This pops up a dialog box (shown in the following) where we can enter the string
+    "jollibee":'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/f044cce3-ff5c-49e0-99c8-27476d1ee789.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Hit F8 to proceed with the comparison.  This should not go to the address where
+    the conditional jump points to. Continue debugging until we reach another send
+    function. Again, look at the data to be sent, which is the address that the second
+    parameter points to. However, irrespective of whether this succeeds or fails,
+    the result is not processed. The succeeding API closes the connection with `closesocket`
+    and WSACleanup functions, sets `EAX` to `1`, and returns from the current function.
+    `EAX` will only be set to `1` after the last send function.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We've highlighted `var_DBD` in the disassembly code shown below to see that
+    a value of 1 was stored after the sending data back to the server.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/69265df9-3e46-4dae-9a47-d3a693ad44b5.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: After returning to the `WinMain` function, it would be wise to do a VM snapshot.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Keep on debugging until we reach a call to address `0x00401280`. There are
+    two parameters that will be passed to the function with values stored in the `EAX`
+    and `ECX` registers . The data is dumped under `Dump 1`, demonstrated as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/9f96b84d-a3a9-4cfd-9fe0-2320f4a6a65e.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'After entering function `0x00401280`, we will only encounter a URLDownloadToFile
+    function. The function downloads `https://raw.githubusercontent.com/PacktPublishing/Mastering-Reverse-Engineering/master/ch12/manginasal` and
+    stores it to a file named `unknown`, as can be seen in the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/29ac6bdc-7b6c-4c56-b02e-ad7e599ac7a5.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Doing this, we get to encounter an error that fails to download the file. The
+    reason is that we are still under a mimicked internet.  This time, we will need
+    to get a connection to the live internet. We will have to revert back to the snapshot
+    before the `URLDownloadToFile` function happens.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In the FakeNet console, press *CTRL + C* to exit the tool. To test whether
+    the live internet is up, visit [http://testmyids.com](http://testmyids.com) from
+    the internet browser. The result should be similar to the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/8f75bef0-1f45-4f84-82f6-d64c27a86e07.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Check VirtualBox's network configuration and Windows' network setup if the internet
+    cannot be accessed.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'With the internet connection up, the program should be able to download the
+    file successfully. The file is downloaded with the filename `unknown`. If we load
+    this file in CFF Explorer, we get these file properties:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/d70d28ca-824e-4428-a041-044bdd433a26.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'The following screenshot shows the file''s content by selecting the CFF Explorer''s
+    Hex Editor:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/0d2d2d21-17d6-4d93-8906-814aa5f33136.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: The file seems to be encrypted. We should expect that the next behavior will
+    process this file. Keep on debugging until we reach a call to address `0x004012e0`.
+    This function accepts two parameters, an address stored in `EAX`, and another
+    address pushed to the stack. The function receives these `imagine` parameter strings from
+    the top of the stack and `unknown` from the register `EAX`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Entering the function reveals reading the content of the file  "unknown". The
+    disassembly code that reads the file in a newly allocated memory space is as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/dec5b811-42f5-432a-a913-4f86bf17e748.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Keep on pressing `F8` until after the `CloseHandle` call. The next set of code
+    shows the use of `Cryptographic` APIs. Let''s list the sequence of APIs here once
+    again:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Based on the list, it would seem that whatever is decrypted gets stored in
+    a file. What we would want to know about this are the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The cryptographic algorithm used
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The cipher key used
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The name of the file it stores data into
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: To identify the algorithm used, we should monitor the parameters used in either
+    `CryptAcquireContextA` function. Keep on debugging until `CryptAcquireContextA`.
+    The fourth parameter, `dwProvType`, should tell us what algorithm was used. `dwProvType`
+    here is `0x18` or `24`. For the list of provider type values, we can reference [https://docs.microsoft.com/en-us/dotnet/api/system.security.permissions.keycontainerpermissionattribute.providertype](https://docs.microsoft.com/en-us/dotnet/api/system.security.permissions.keycontainerpermissionattribute.providertype).
+    In this case, 24 is defined for the value of `PROV_RSA_AES`. Thus, the cipher
+    algorithm here uses `RSA AES`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The cipher key used for this algorithm should be the third parameter of the
+    `CryptHashData` function. Look at the second parameter of the `CryptHashData`
+    function in the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/1b37c065-05b0-4389-b202-08c1db122bd8.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: The key is `this0is0quite0a0long0cryptographic0key`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: For the final piece of information, we need to monitor `CreateFileA` to get
+    the filename of where the decrypted data will possibly be placed.  After debugging
+    to `CreateFileA`, we should see the first parameter as the output filename, "`imagine`".
+    The `CryptDecrypt` function accepts the location of encrypted data, the fifth
+    parameter, and decrypts it at the same location. The process runs in a loop where
+    every piece of decrypted data gets appended to the "imagine" file.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The following screenshot, an IDA Pro graphical view, shows decrypted data being
+    appended to the output file:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/04c32dde-4d4e-423c-960a-3cd7a0fbbd89.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: The decryption ends by closing the cryptographic handles with `CryptDestroyKey`,
+    `CryptDestroyHash`, and `CryptReleaseContext`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Curious enough, let''s use CFF Explorer to extract information from the "`imagine`"
+    file:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/e01b8815-3c93-4fa9-a838-15d52b16504a.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Using the TrID tool, we get a more meaningful file type, as shown in the following
+    screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/b7438729-a772-407e-a581-f04c66d7eebc.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: The file is a `PNG` image file.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Continuing with the debug session, keep on pressing `F8` until we reach a call
+    to address `0x00401180`. Press `F7` to enter this function. This reveals the utilization
+    of registry APIs in this sequence:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Basically, the registry functions here only retrieve certain values that exist
+    in the registry. The disassembly codes shown below shows that the first query
+    retrieves the data value of `ProgId` from the `HKEY_CURRENT_USER\Software\Microsoft\Windows\Shell\Associations\UrlAssociations\http\UserChoice` registry
+    key:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/9877d651-ebb4-4aa4-96be-ed3a937cebb0.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'If we take a look at the registry, this location points to the ID of the default
+    internet browser used by the logged-in user. The following screenshot shows an
+    example of the ID of the default internet browser set in `Progid`, which is `FirefoxURL-308046B0AF4A39CB`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/7be3ae70-acdb-4d97-b9dd-b9cce1179235.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'For the next registry query, `RegOpenKeyExA` opens the `HKEY_CLASSES_ROOT\FirefoxURL-308046B0AF4A39CB\shell\open\command`
+    registry key, where `FirefoxURL-308046B0AF4A39CB` is the ID of the default internet
+    browser:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/436c57f9-4baf-417b-87c3-366faa0f7768.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'The succeeding `RegQueryValueExA` has the second parameter, `lpValuename`,
+    equal to `zero`. Refer to the disassembly as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/4b6acf8a-b025-477c-9ba6-d011701760c4.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: If `lpValuename` is equal to `0`, the data being retrieved will be taken from
+    the default value.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Looking at the registry, this is displayed as (Default), demonstrated as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/d463d335-cbfe-4a62-af7b-b04ec70cc941.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Hence, the action performed by the function was retrieval of the command line
+    for the default internet browser.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The following lines of code resolve the full file path of the "`imagine`" file,
+    and then pass the path to the final function, `sub_401000`, before exiting the
+    process:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/2925d97d-51ad-4d4f-9dca-798218cfac67.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Debugging into `sub_401000`, we encounter more than a hundred lines of code
+    that pretty much moves test strings around. But the `bottomline` is that it will
+    run another process using the `CreateProcessA`. Taking a look at the parameters
+    that will be passed to `CreateProcess`, the second parameter, which is the command
+    line, that it will execute contains the path of the default browser passed with
+    the full path of the "imagine" file as its argument. From the following screenshot,
+    it can be seen that we dumped the command line in Dump 1:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/4199826a-e020-4a76-8d0c-be6687ede8cd.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'As a result, this opens the "imagine" file using the default internet browser.
+    The following screenshot is displayed:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/bbd47186-f420-47a0-ae77-e901fc1b9d2b.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Analysis summary
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The following table concerns the file elements we found.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The original file is a UPX-packed Win32 executable file.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| Filename | whatami.exe |'
+  prefs: []
+  type: TYPE_TB
+- en: '| File size | 28,672 bytes |'
+  prefs: []
+  type: TYPE_TB
+- en: '| MD5 | F4723E35D83B10AD72EC32D2ECC61091 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| SHA-1 | 4A1E8A976F1515CE3F7F86F814B1235B7D18A231 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| File type | Win32 PE file – packed with UPX v3.0 |'
+  prefs: []
+  type: TYPE_TB
+- en: 'The UPX unpacked version gives us this new information about the file:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| Filename | whatami.exe |'
+  prefs: []
+  type: TYPE_TB
+- en: '| File size | 73,728 bytes |'
+  prefs: []
+  type: TYPE_TB
+- en: '| MD5 | 18F86337C492E834B1771CC57FB2175D |'
+  prefs: []
+  type: TYPE_TB
+- en: '| SHA-1 | C8601593E7DC27D97EFC29CBFF90612A265A248E |'
+  prefs: []
+  type: TYPE_TB
+- en: '| File type | Win32 PE file – compiled by Microsoft Visual C++ 8 |'
+  prefs: []
+  type: TYPE_TB
+- en: 'The program maps an unknown PE file using process hollowing. This PE file contains
+    the following information:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| File size | 53,248 bytes |'
+  prefs: []
+  type: TYPE_TB
+- en: '| MD5 | DD073CBC4BE74CF1BD0379BA468AE950 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| SHA-1 | 90068FF0C1C1D0A5D0AF2B3CC2430A77EF1B7FC4 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| File type | Win32 PE file – compiled by Microsoft Visual C++ 8 |'
+  prefs: []
+  type: TYPE_TB
+- en: 'A file downloaded from [https://raw.githubusercontent.com/PacktPublishing/Mastering-Reverse-Engineering/master/ch12/manginasal](https://raw.githubusercontent.com/PacktPublishing/Mastering-Reverse-Engineering/master/ch12/manginasal)
+    is stored in a file as unknown. Here is the file''s information:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| Filename | unknown |'
+  prefs: []
+  type: TYPE_TB
+- en: '| File size | 3,008 bytes |'
+  prefs: []
+  type: TYPE_TB
+- en: '| MD5 | 05213A14A665E5E2EEC31971A5542D32 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| SHA-1 | 7ECCD8EB05A31AB627CDFA6F3CFE4BFFA46E01A1 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| File type | Unknown file type |'
+  prefs: []
+  type: TYPE_TB
+- en: 'The unknown file was decrypted and stored using the filename "`imagine`", containing
+    the following file information:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| Filename | imagine |'
+  prefs: []
+  type: TYPE_TB
+- en: '| File size | 3,007 bytes |'
+  prefs: []
+  type: TYPE_TB
+- en: '| MD5 | 7AAF7D965EF8AEE002B8D72AF6855667 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| SHA-1 | 4757E071CA2C69F0647537E5D2A6DB8F6F975D49 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| File type | PNG file type |'
+  prefs: []
+  type: TYPE_TB
+- en: 'To recap what behaviors it executed, here is a step-by-step process:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Displays a message box: "`How did you get here?`"'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Decrypts a PE image from the resource section
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Uses process hollowing to replace "`calc`" with a decrypted PE image
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 'Displays a message box: "Learning reversing is fun. For educational purposes
+    only. This is not a malware."'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Sleeps for 5 minutes
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Checks the connection to the "`mcdo.thecyberdung.net:9999`" server
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Downloads the file from [raw.githubusercontent.com](http://raw.githubusercontent.com)
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Decrypts the downloaded file and outputs of result to a PNG image file.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Retrieves the default internet browser path
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Displays the PNG image file using the default internet browser
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Summary
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Reversing a software takes time and patience. It may take days to analyze just
+    one piece of software. But with practice and experience, the time it takes to
+    analyze a file improves.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In this chapter, we dealt with a file that can be reversed using the tools we
+    learned. With the help of a debugger, a disassembler, and tools such as CFF Explorer
+    and TriD, we were able to extract file information and behaviors. In addition,
+    we also learned to use FakeNet to mimic the network and the internet, which became
+    very useful for us when generating network information for the socket functions.
+  prefs: []
+  type: TYPE_NORMAL
+- en: There are a lot of obstacles, including anti-debugging tricks. However, familiarity
+    with these tricks enabled us to skip these codes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: One of the most important tips when reversing is to keep on making snapshots
+    just in case we encounter obstacles. We can experiment on every piece of data
+    that functions require.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Again, reversing is a patience game that you can cheat by saving and loading
+    snapshots.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Further Reading
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: DLL Injection -[ https://en.wikipedia.org/wiki/DLL_injection](https://en.wikipedia.org/wiki/DLL_injection)
+  prefs: []
+  type: TYPE_NORMAL
+- en: Process Hollowing - [https://github.com/m0n0ph1/Process-Hollowing](https://github.com/m0n0ph1/Process-Hollowing)
+  prefs: []
+  type: TYPE_NORMAL

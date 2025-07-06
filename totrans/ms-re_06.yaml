@@ -1,0 +1,1104 @@
+- en: RE in Linux Platforms
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: A lot of our tools work great in Linux. In the previous chapter, we introduced
+    a few Linux command-line tools that are already built-in by default. Linux already
+    has Python scripting installed, as well. In this chapter, we are going to discuss
+    a good setup for analyzing Linux files and hosting Windows sandbox clients.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We are going to learn how to reverse an ELF file by exploring the reversing
+    tools. We will end this chapter by setting up a Windows sandbox client, running
+    a program in it, and monitoring the network traffic coming from the sandbox.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Not all of us are fond of using Linux. Linux is an open source system. It is
+    a technology that will stick with us. As a reverse engineer, no technology should
+    be an obstacle, and it is never too late to learn this technology. The basics
+    of using Linux systems can easily be found on the internet. As much as possible,
+    this chapter tries to detail the steps required to install and execute what is
+    needed in a way that you can follow.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In this chapter, you will look at the following
+  prefs: []
+  type: TYPE_NORMAL
+- en: Understanding of linux executables
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Reversing an ELF file
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Virtualization in Linux – an analysis of a Windows executable under a Linux
+    host
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Network traffic monitoring
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Setup
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: This chapter discusses Linux reverse engineering, so we need to have a Linux
+    setup. For reverse engineering, it is recommended to deploy Linux on a bare-metal
+    machine. And since most of the analysis tools that have been developed are Debian-based,
+    let's use 32-bit Ubuntu Desktop. I chose Ubuntu because it has a strong community.
+    Because of that, most of the issues may already have a resolution or solutions
+    may be readily available.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Why build our setup on a bare-metal machine? It is a better host for our sandbox
+    clients, especially when monitoring network traffic. It also has an advantage
+    in proper handling of Windows malware, preventing compromise due to accidental
+    malware execution.
+  prefs: []
+  type: TYPE_NORMAL
+- en: You can go to [https://www.ubuntu.com/](https://www.ubuntu.com/) to obtain an
+    ISO for the Ubuntu installer. The site includes an installation guide. For additional
+    help, you can visit the community forum at [https://ubuntuforums.org/](https://ubuntuforums.org/).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '"Bare-metal machines" refers to computers that execute code directly on the
+    hardware. It is usually a term used to refer to hardware, as opposed to virtual
+    machines.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Linux executable – hello world
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'To begin with, let''s create a hello world program. Before anything else, we
+    need to make sure that the tools required to build it are installed. Open a Terminal
+    (the Terminal is Linux''s version of Windows'' Command Prompt) and enter the following
+    command. This may require you to enter your super user password:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: The C program compiler,***`gcc`,** *is usually pre-installed in Linux.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Open any text editor and type the lines of following code, saving it as `*hello.c*`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: You can use `vim` as your text editor by running `vi` from the Terminal.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To compile and run the program, use the following commands:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/67c70dee-c611-4097-b882-594d24c572df.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: The `hello` file is our Linux executable that displays a message in the console.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now, on to reversing this program.
+  prefs: []
+  type: TYPE_NORMAL
+- en: dlroW olleH
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'As an example of good practice, the process of reversing a program first needs
+    to start with proper identification. Let''s start with `file`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/687cf65a-6c09-4214-8afd-95e1ef643c80.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: It is a 32-bit ELF file-type. ELF files are native executables on Linux platforms.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Next stop, let''s take a quick look at text strings with the `strings` command:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/5dff269d-cc7b-4222-a998-22af556eadd9.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'This command will produce something like the following output:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The strings are listed in order from the start of the file. The first portion
+    of the list contained our message and the compiler information. The first two
+    lines also show what libraries are used by the program:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: The last portion of the list contains names of sections of the file. We only
+    know of a few bits of text that we placed in our C code. The rest are placed there
+    by the compiler itself, as part of its code that prepares and ends the graceful
+    execution of our code.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Disassembly in Linux is just a command line away. Using the `-d` parameter
+    of the `objdump` command, we should be able to show the disassembly of the executable
+    code. You might need to pipe the output to a file using this command line:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The output file, `disassembly.asm`, should contain the following code:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/78a86ecf-24e4-4065-8b4f-4ba81794b322.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'If you notice, the disassembly syntax is different from the format of the Intel
+    assembly language that we learned. What we see here is the AT&T disassembly syntax.
+    To get an Intel syntax, we need to use the `-M intel` parameter, as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The output should give us this disassembly result:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/d8d0f3ad-cda8-4b14-a64c-2b4be26bfc9d.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'The result shows the disassembly code of each function. In summary, there were
+    a total of 15 functions from executable sections:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The disassembly of our code is usually at the `.text` section. And, since this
+    is a GCC-compiled program, we can skip all the initialization code and head straight
+    to the `main` function where our code is at:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/2e9ffcb2-40e0-4559-9e20-2f62b1077a57.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: I have highlighted the API call on `puts`. The `puts` API is also a version
+    of `printf`. GCC was smart enough to choose `puts` over `printf` for the reason
+    that the string was not interpreted as a **C-style** **formatting string**. A
+    formatting string, or `formatter`, contains control characters, which are denoted
+    with the `%` sign, such as `%d` for integer and `%s` for string. Essentially,
+    *puts* is used for non-formatted strings, while `printf` is used for formatted
+    strings.
+  prefs: []
+  type: TYPE_NORMAL
+- en: What have we gathered so far?
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Assuming we don''t have any idea of the source code, this is the information
+    we have gathered so far:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The file is a 32-bit ELF executable.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: It was compiled using `GCC`.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: It has 15 executable functions, including the `main()` function.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The code uses common Linux libraries: `libc.so` and `ld-linux.so`.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Based on the disassembly code, the program is expected to simply show a message.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The program is expected to display the message using *puts*.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Dynamic analysis
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Now let's do some dynamic analysis. Remember that dynamic analysis should be
+    done in a sandbox environment. There are a few tools that are usually pre-installed
+    in Linux that can be used to display more detailed information. We're introducing
+    `ltrace`, `strace`, and `gdb` for this reversing activity.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Here''s how `ltrace` is used:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/53bee7c4-3d63-4cb3-888f-a7b5fedcb4b9.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: The output of `ltrace` shows a readable code of what the program did. `ltrace`
+    logged library functions that the program called and received. It called *puts*
+    to display a message. It also received an exit status of `*13*` when the program
+    terminated.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The address `*0x804840b*` is also the address of the `main` function listed
+    in the disassembly results.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`strace` is another tool we can use, but this logs system calls. Here''s the
+    result of running `strace` on our hello world program:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/f0cfce27-6903-438e-b9a7-485048822f4e.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: '`strace` logged every system call that happened, starting from when it was
+    being executed by the system. `execve` is the first system call that was logged.
+    Calling *execve* runs a program pointed to by the filename in its function argument.
+    open and read are system calls that are used here to read files. `mmap2`, `mprotect`,
+    and `brk` are responsible for memory activities such as allocation, permissions,
+    and segment boundary setting.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Deep inside the code of `puts`, it eventually executes a `write` system call. *write*,
+    in general, writes data to the object it was pointed to. Usually, it is used to
+    write to a file. In this case, *write*'s first parameter has a value of `1`. The
+    value of `1` denotes `STDOUT`, which is the handle for the console output. The
+    second parameter is the message, thus, it writes the message to `STDOUT`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Going further with debugging
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'First, we need to install `gdb` by running the following command:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The installation should look something like this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/b981eea0-bf56-42d4-a2c8-2ada69dc77a8.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Then, use `gdb` to debug the `hello` program, as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: '`gdb` can be controlled using commands. The commands are fully listed in online
+    documentation, but simply entering *help* can aid us with the basics.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'You can also use `gdb` to show the disassembly of specified functions, using
+    the `disass` command. For example, let''s see what happens if we use the `disass
+    main` command:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/70b5fff3-cc33-4560-8105-6fc97af05e6c.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Then, again we have been given the disassembly in AT&T sytnax. To set `gdb`
+    to use Intel syntax, use the following command:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'This should give us the Intel assembly language syntax, as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/dae5d1c8-b452-4953-9a17-408ebba42b02.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: To place a breakpoint at the *main* function, the command would be `b *main`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Take note that the asterisk (***) specifies an address location in the program.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'After placing a breakpoint, we can run the program using the `run` command.
+    We should end up at the address of the `main` function:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/ca8df952-7c77-4d62-b292-cd6b31fe5ae1.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: To get the current values of the registers, enter `info registers`. Since we
+    are in a 32-bit environment, the extended registers (that is, EAX, ECX, EDX, EBX,
+    and EIP) are used. A 64-bit environment would show the registers with the R-prefix
+    (that is, RAX, RCX, RDX, RBX, and RIP).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now that we are at the main function, we can run each instruction with step
+    into (the `stepi` command) and step over (the `nexti` command). Usually, we follow
+    this with the `info registers` command to see what values changed.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The abbreviated command equivalent of `stepi` and `nexti` are `si` and `ni` respectively.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Keep on entering `si` and `disass main` until you reach the line containing `call 
+     0x80482e0 <puts@plt>`. You should end up with these `disass` and `info registers`
+    result:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/715fa4b8-b7b4-4a89-9cfe-f83f3f2fcb90.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'The `=>` found at the left side indicates where the instruction pointer is
+    located. The registers should look similar to this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/fe08f099-3f30-41bb-b635-d513eba128c8.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Before the *puts* function gets called, we can inspect what values were pushed
+    into the stack. We can view that with `x/8x $esp`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/7d9e3ec2-7058-4fdc-b797-5ca2a81da2b0.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'The `x` command is used to show a memory dump of the specified address. The
+    syntax is x/FMT ADDRESS. FMT has 3 parts: the repeat count, the format letter,
+    and the size letter. You should be able to see more information about the `x`
+    command with `help x`. `x/8x $esp` shows 8 DWORD hexadecimal values from the address
+    pointed by the `esp` register. Since the address space is in 32 bits, the default
+    size letter was shown in `DWORD` size.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`puts` expects a single parameter. Thus, we are only interested in the first
+    value pushed at the `0x080484c0` stack location. We expect that the parameter
+    should be an address to where the message should be. So, entering the `x/s` command should
+    give us the contents of the message, as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/3340ddc8-a942-4f2b-881b-22c9873765c0.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Next, we need to do a step over (`ni`) the call instruction line. This should
+    display the following message:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/1d363b89-6fa1-48bc-81f0-383c6c0188b8.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'But if you used `si`, the instruction pointer will be in the *puts* wrapper
+    code. We can still go back to where we left off using the `until` command, abbreviated
+    as `u`. Simply using the `until` command steps in one instruction. You''ll have
+    to indicate the address location where it will stop. It is like a temporary breakpoint.
+    Remember to place an asterisk before the address:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/791b767d-655f-44aa-a05e-7b05b8dba256.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: The remaining `6` lines of code restore the values of *ebp* and *esp* right
+    after entering the main function, then returning with *ret*. Remember that a call
+    instruction would store the return address at the top of the stack, before actually
+    jumping to the function address. The `ret` instruction will read the return value
+    pointed to by the *esp* register.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The values of `esp` and `ebp`, right after entering the main function, should
+    be restored before the *ret* instruction. Generally, a function begins by setting
+    up its own stack frame for use with the function's local variables.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Here's a table showing the changes in the values of the `esp`, `ebp`, and `ecx` registers
+    after the instruction at the given address.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note that the stack, denoted by the *esp* register, starts from a high address
+    and goes down to lower addresses as it is used to store data.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| **Address** | **Instruction** | **esp** | **ebp** | **ecx** | **Remarks**
+    |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `0x0804840b` | `lea ecx,[esp+0x04]` | `0xbffff08c` | `0` | `0xbffff090` |
+    Initial values after entering main. [0xbffff08c] = 0xb7e21637This is the return
+    address.  |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `0x0804840f` | `and esp,0xfffffff0` | `0xbffff080` | `0` | `0xbffff090` |
+    Aligns the stack in 16-byte paragraphs. In effect, this subtracts 0xc from esp.
+    |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `0x08048412` | `push DWORD PTR [ecx-0x4]` | `0xbffff07c` | `0` | `0xbffff090`
+    | [0xbffff07c] = 0xb7e21637ecx - 4 = 0xbffff08c points to the return address.The
+    return address is now placed in two stack addresses. |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `0x08048415` | `push ebp` | `0xbffff078` | `0` | `0xbffff090` | Begins stack
+    frame setup.[0xbffff078] = 0 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `0x08048416` | `mov ebp,esp` | `0xbffff078` | `0xbffff078` | `0xbffff090`
+    | Saves esp. |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `0x08048418` | `push ecx` | `0xbffff074` | `0xbffff078` | `0xbffff090` |
+    Saves ecx.[0xbffff074] = 0xbffff090 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `0x08048419` | `sub esp,0x4` | `0xbffff070` | `0xbffff078` | `0xbffff090`
+    | Allocates 4 bytes for stack frame. |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `0x0804841c` | `sub esp,0xc` | `0xbffff064` | `0xbffff078` | `0xbffff090`
+    | Allocates another 12 bytes for stack frame. |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `0x0804841f` | `push 0x80484c0` | `0xbffff060` | `0xbffff078` | `0xbffff090`
+    | [0xbffff060] = 0x080484c0[0x080484c0] = "hello world!" |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `0x08048424` | `call 0x80482e0 <puts@plt>` | `0xbffff060` | `0xbffff078`
+    | `0xffffffff` | Stack is still the same after the call. |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `0x08048429` | `add esp,0x10` | `0xbffff070` | `0xbffff078` | `0xffffffff`
+    | Adds 0x10 to esp reducing the stack frame. |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `0x0804842c` | `nop` | `0xbffff070` | `0xbffff078` | `0xffffffff` | No operation
+    |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `0x0804842d` | `mov ecx,DWORD PTR [ebp-0x4]` | `0xbffff070` | `0xbffff078`
+    | `0xbffff090` | Restores the value of ecx before call. |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `0x08048430` | `leave` | `0xbffff07c` | `0` | `0xbffff090` | `leave` is the
+    equivalent of `mov esp, ebp`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`pop ebp` |'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| `0x08048431` | `lea esp,[ecx-0x4]` | `0xbffff08c` | `0` | `0xbffff090` |
+    ecx - 4 = 0xbffff08c[0xbffff08c] = 0xb7e21637The address of esp is restored back.
+    |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `0x08048434` | `ret` | `-` | `-` | `-` | Returns to 0xb7e21637 |'
+  prefs: []
+  type: TYPE_TB
+- en: 'You can either continue exploring the cleanup code after `ret`, or just make
+    the program eventually end by using `continue` or its abbreviation, `c`, as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/200c3f96-d71a-4a65-a6a0-b17b8f627d33.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: A better debugger
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Before moving to more Linux executable-reversing activities, let's explore more
+    tools. `gdb` seems fine, but it would have been better if we were able to debug
+    it interactively, using visual tools for debugging. In [Chapter 5](d07cbca0-a1cf-4ad3-9c69-39c1359f0209.xhtml),* Tools
+    of Trade*, we introduced the Radare, under the *Disassemblers* and *Debuggers*
+    sections, as a tool that is capable of doing both disassembly and debugging. So,
+    let's get a feel for using Radare.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Setup
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Radare is in its second version. To install it, you''ll need ***git*** to install
+    from the GitHub repository, as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: The instructions for installing it are written in the `README` file. As of the
+    time of writing, it is suggested that `Radare2` is installed by running the `sys/install.sh`
+    or `sys/user.sh` shell scripts from the Terminal.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Hello World in Radare2
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Besides its disassembler and debugger, `Radare2` is also packed with a bunch
+    of tools . Most of these are static analysis tools.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To get the `MD5` hash of the hello world binary file, we can use `rabin2`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/14d9938f-1db4-4264-ba60-11170b3493bf.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'With the use of the `ls` command and `rahash2`, we are able to determine these
+    pieces of information:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE11]'
+  prefs: []
+  type: TYPE_PRE
+- en: '`rabin2` is another tool that can extract static information from a file, such
+    as the type of file, header information, sections, and strings.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let''s get the type of file first by using the `rabin2 -I hello` command:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/19e3d518-6902-40e0-a205-8c73953b44d4.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: The *bintype*, *class,* *hascode,* and *os* fields indicate that the file is
+    an executable 32-bit ELF file that runs in Linux. *arch*, *bits*, *endian,* and
+    *machine* suggest that the file was built with an x86 code. In addition, the *lang*
+    field indicates that the file was compiled from C language. This information will
+    definitely help us prepare for what to expect during disassembly and debugging.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To list imported functions, we use `rabin2 -i hello`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/b69f875d-034f-4218-8bee-0a5f90d1d9f5.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: There are two global functions we are interested in: `puts` and `__libc_start_main. puts`,
+    as we discussed, is used to print a message. __libc_start_main is a function that
+    initializes the stack frame, sets up the registers and some data structures, sets
+    up error handling, and then calls the `main()` function.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To get the ELF header info, use `rabin2 -H hello`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/57482507-87b8-4d5a-bf71-ff97abe09293.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'If we are only interested with the strings we can find from the data section,
+    use the `rabin2 -z hello` command:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/1fa0a014-2c46-40a1-be5f-baba6946c0ab.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'With `rabin2`, we got additional information about the file, shown here:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE12]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Let''s try the `radare2` debugger itself. From the Terminal console, you can
+    either use `radare2`''s abbreviation `r2`, or `radare2` itself, with the `-d <file>`
+    as its argument:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/7f4d2f8b-088d-4dac-a561-9102bee56749.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'This takes you to the `radare2` console. Enclosed in square brackets, the address
+    indicates where the current `eip` is. It is not the entry point of the hello program,
+    but rather an address in the dynamic loader. As with `gdb`, you''ll have to enter
+    commands. To bring up help, just use ***?*** and it will show you a list of commands
+    as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/c9fcbae6-12b8-4e7a-9003-c55da31a5eda.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'We start off by using the `aaa` command. This analyzes the code for function
+    calls, flags, references and tries to generate constructive function names:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/5b9d3a96-9da9-43c2-a57c-2c1f30d810d0.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Using the `V!` command sets the console to visual mode. In this mode, we should
+    be able to debug the program while having an interactive view of the registry
+    and the stack. Entering `:` should show a command console. Pressing *Enter* should
+    bring us back to visual mode. Type `V?` to show more visual mode commands. It
+    is also best to maximize the Terminal window to get a better view of the debugger:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/5a6d0096-31f5-48dc-bc6f-fb42273bd2bc.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: In the command console, enter `db entry0`. This should set a breakpoint at the
+    entry point address of our program. But, since we also know that this program
+    has a main function, you can also enter `db sym.entry` to set a breakpoint at
+    the main function.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In visual mode, you can start the actual debugging using these keys that are
+    available by default:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE13]'
+  prefs: []
+  type: TYPE_PRE
+- en: With the entry point and main function set with a breakpoint, press *F9* to
+    run the program. We should end up in the entry point address.
+  prefs: []
+  type: TYPE_NORMAL
+- en: You'll need to refresh radare2's visual mode by reopening it to see the changes.
+    To do that, just press `q` twice to quit visual mode. But before running `V!`
+    again, you'll need to seek the current *eip* by using the `s eip` command.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Pressing *F9* again should bring you to the main function of our program. Remember
+    to refresh the visual mode:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/1bfd154d-269a-43cc-8ba7-73e7b9e793f5.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Press *F7* or *F8* to trace the program while seeing the stack and registers
+    change. The letter **b** at the left of the address at line `0x0804840b` indicates
+    that the address is set with a breakpoint.
+  prefs: []
+  type: TYPE_NORMAL
+- en: So far, we have learned about the basic commands and keys. Feel free to explore
+    the other commands and you'll definitely get more information and learn some easy
+    ways to work around analyzing files.
+  prefs: []
+  type: TYPE_NORMAL
+- en: What is the password?
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: So now that we know how to debug "`Unix style`", let's try the passcode program.
+    You can download the passcode program from [https://github.com/PacktPublishing/Mastering-Reverse-Engineering/raw/master/ch6/passcode](https://github.com/PacktPublishing/Mastering-Reverse-Engineering/raw/master/ch6/passcode).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Try to get some static information. Here''s a list of commands you can use:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE14]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'At this point, the information we''re after is as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'File size: 7,520 bytes'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'MD5 hash: `b365e87a6e532d68909fb19494168bed`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'SHA256 hash: `68d6db63b69a7a55948e9d25065350c8e1ace9cd81e55a102bd42cc7fc527d8f`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'The type of file: ELF'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 32-bit x86 Intel
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Compiled C code that has notable imported functions: `printf`, `puts`, `strlen`
+    and `__isoc99_scanf`
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Notable strings are as follows:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Enter password:'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Correct password!
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Incorrect password!
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Now, for a quick dynamic analysis, let''s use `ltrace ./passcode`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/add36a4b-6311-4548-b3b3-94e565a8b4e0.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'We tried a few passwords but none returned "Correct password!" The file doesn''t
+    even have a hint in the list of strings for us to use. Let''s try `strace`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/17b71727-34bd-41a3-af90-0d30fb47d235.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'The line with `read(0, asdf123` is where the password was manually entered.
+    The code after this goes to the exit door. Let''s do a deadlisting activity based
+    on the disassembly, but this time, we''ll use `radare2`''s graphical view. Go
+    ahead and open up `radare2` with the `radare2 -d passcode` command. In the `radare2`
+    console, use this sequence of commands:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE15]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'These should open up a graphical representation of the disassembly code blocks
+    from the *main* function. Scroll down and you should see conditional branching
+    where the green line denotes a `true`, while the red line denotes a `false` flow.
+    Keep scrolling down until you see the `Correct password!` text string. We''ll
+    work backwards from there:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/cd9fdf03-bf07-43d5-9959-1bc333c8ae06.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'In the `0x80485d3` block, where the `Correct password!` string is, we see that
+    the message was displayed using *puts*. Going to that block is a red line from
+    the `0x80485c7` block. In the `0x80485c7` block, the value in `local_418h` was
+    compared to `0x2de` (or 734 in decimal format). The value should be equal to 734
+    to make it go to the `Correct password!` block. If we were to try to decompile
+    the C code, it would look something like this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE16]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Scroll up to see where the red line came from:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/3baf70f4-e296-4bff-b5e7-9d8e2cf172d4.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: By the way this graph looks, there is a loop, and to exit the loop, it would
+    require the value at `local_414h` to be greater than or equal to the value at
+    `local_410h`. The loop exits to the `0x80485c7` block. At the `0x8048582` block,
+    both values at `local_418h` and `local_414h` are initialized to 0\. These values
+    are compared in the `0x80485b9` block.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Inspecting the `0x8048598` block, there are three variables of concern: `local_40ch`,
+    `local_414h`, and `local_418h`. If we were to make a pseudo code of this block,
+    it would look like this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE17]'
+  prefs: []
+  type: TYPE_PRE
+- en: '`local_414h` seem to be a pointer of the data pointed to by `local_40c`. `local_418`
+    starts from 0, and each byte from `local_40ch` is added. Looking at an overview,
+    a checksum algorithm seems to be happening here:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE18]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Let''s move further up and identify what `local_40ch` and `local_410h` should
+    be:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/cda0a10d-bf1d-4487-ae47-a4aee0d4533f.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'This is the main block. There are three named functions here:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`printf()`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`scanf()`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`strlen()`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`local_40ch` and `local_410h` here were used. `local_40ch` is the second parameter
+    for `scanf`, while the data at the `0x80486b1` address should contain the format
+    expected. `local_40ch` contains the buffer typed in. To retrieve the data at `0x80486b1`,
+    just enter a colon (`:`), enter `s 0x80486b1`, then return back to the visual
+    mode. Press `q` again to view the data:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/a3bb1b71-9c1c-4250-aa97-77185aa8c6ae.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: The length of the data in `local_40ch` is identified and stored in `local_410h`.
+    The value at `local_410h` is compared to 7\. If equal, it follows the red line
+    going to the `0x8048582` block, or the start of the checksum loop. If not, it
+    follows the green line going to the `0x80485e5` block that contains code that
+    will display Incorrect password!
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In summary, the code would most likely look like this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE19]'
+  prefs: []
+  type: TYPE_PRE
+- en: The entered password should have a **size of 7 characters** and the sum of all
+    characters in the password should be **equal to 734**. Therefore, the password
+    can be anything, as long as it satisfies the given conditions.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Using the ASCII table, we can determine the equivalent value of each character.
+    If the sum is 734 from a total of 7 characters, we simply divide 734 by 7\. This
+    gives us a value of 104, or 0x68 with a remainder of 6\. We can distribute the
+    remainder, 6, to 6 of the characters, giving us this set:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| **Decimal** | **Hex** | **ASCII character** |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `105` | `0x69` | `i` |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `105` | `0x69` | `i` |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `105` | `0x69` | `i` |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `105` | `0x69` | `i` |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `105` | `0x69` | `i` |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `105` | `0x69` | `i` |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `104` | `0x68` | `h` |'
+  prefs: []
+  type: TYPE_TB
+- en: 'Let''s try the password `*iiiiiih*` or `*hiiiiii*`, as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/9662b666-050d-4866-aae5-afaa040eb512.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Network traffic analysis
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'This time, we''ll work on a program that receives a network connection and
+    sends back some data. We will be using the file available at [https://github.com/PacktPublishing/Mastering-Reverse-Engineering/raw/master/ch6/server](https://github.com/PacktPublishing/Mastering-Reverse-Engineering/raw/master/ch6/server).
+    Once you have it downloaded, execute it from the Terminal as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/f0923c75-f968-4b69-a0ee-b31f029798c8.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'The program is a server program that waits for connections to port `9999`.
+    To test this out, open a browser, then use the IP address of the machine where
+    the server is running, plus the port. For example, use `127.0.0.1:9999` if you''re
+    trying this from your own machine. You might see something like the following
+    output:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/9bb98eba-3bda-459c-b49a-6c759f743deb.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'To understand network traffic, we need to capture some network packets by using
+    tools such as `tcpdump`. `tcpdump` is usually pre-installed in Linux distributions.
+    Open another Terminal and use the following command:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE20]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Here''s a brief explanation of the parameters used:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`-i lo` uses the `loopback` network interface. We have used it here since we
+    plan on accessing the server locally.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`''port 9999''`, with the single quotes, filters only packets that are using
+    port 9999.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`-w captured.pcap` writes data packets to a PCAP file named `captured.pcap`.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Once `tcpdump` listens for data, try connecting to the server by visiting `127.0.0.1:9999`
+    from the browser. If you wish to connect from outside the machine which holds
+    the server, then re-run `tcpdump` without the `-i lo` parameter. This uses the
+    default network interface instead. And instead of visiting using `127.0.0.1`,
+    you'll have to use the IP address used by the default network interface.
+  prefs: []
+  type: TYPE_NORMAL
+- en: To stop `tcpdump`, just break it using *Ctrl* + *C*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To view the contents of `captured.pcap` in human readable form, use the following
+    command:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE21]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'This command should redirect the the `tcpdump` output to `captured.log`. The `-X`
+    parameter shows the packet data in hexadecimal and ASCII. `-r captured.pcap` means
+    read from the `PCAP` file `captured.pcap`. Opening the `captured.log` file should
+    look something like the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/ca234b8d-421e-479d-9ce2-eafb8c3b3965.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Before we proceed, let's examine some basics on the two most popular network
+    protocols, **Transmission Control Protocol **(**TCP**) and **User Datagram Protocol**
+    (**UDP**). TCP is a network transmission in which a communication between a sender
+    and a receiver is established. The communication begins with a 3-way handshake,
+    where the sender sends a SYN flag to the receiver, then the receiver sends back
+    SYN and ACK flags to the sender, and finally, the sender sends an ACK flag to
+    the receiver, opening the start of a communication. Further exchange of data between
+    the sender and receiver are done in segments. Every segment has a 20-byte TCP
+    header that contains the IP address of the sender and the receiver and any current
+    status flags. This is followed by the size of the data being transmitted and the
+    data itself. UDP uses a shorter header, since it only sends data and doesn't require
+    acknowledgement from the receiver. It is not required, via UDP, to do a 3-way
+    handshake. The primary purpose of UDP is to keep sending data to the receiver.
+    TCP seems to be more reliable in terms of exchanging data, however. For UDP, sending
+    data is much faster, as there are no overheads required. UDP is commonly used
+    to transmit huge amounts of data via file transmission protocols, while TCP is
+    used to communicate data that requires integrity.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the preceding screenshot, lines 1 to 15 show a TCP 3-way handshake. The first
+    connection from the localhost port at `55704` (client) to the localhost port at `9999` (server)
+    is a SYN, denoted in the flags as `S`. This was responded to by an `S.` flag,
+    which means SYN and ACK. The last is an ACK denoted by `.` in the flags. The client
+    port at 55704 is an ephemeral port. An ephemeral port is a system generated port
+    for client connections. The server port at `9999` is fixed in the server program.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In lines 16 to 23, we can see the actual response data from the server to the
+    client. The server sends back a data containing a 55 character data containing
+    the string "*You have connected to the Genie. Nothing to see here.*" and 2 new
+    line (`0x0A`) characters to the client. The data before the 55 character string
+    is the packet's header containing information about the packet. The packet header,
+    when parsed, is the information described in line 16\. The TCP flags are `P.`,
+    which means PUSH and ACK. The information in the packet header structure is documented
+    in the TCP and UDP specifications. You can start to look for these specifications
+    at `RFC 675`, available at [https://tools.ietf.org/html/rfc675](https://tools.ietf.org/html/rfc675), and
+    `RFC 768`, available at [https://tools.ietf.org/html/rfc768](https://tools.ietf.org/html/rfc768).
+    To fast-track the process, we can use Wireshark, which will be discussed later,
+    to help us parse through the packet information.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In lines `24` to `28`, FIN and ACK flags, formatted as `F.`, are sent from the
+    server to the client, saying that the server is closing the connection. Lines
+    29 to 33 is an ACK response, `.`, that acknowledges the connection is being closed.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'A better tool for capturing and viewing this graphically is ***Wireshark***.
+    Previously known as *Ethereal*, Wireshark has the same capabilities as `tcpdump`.
+    Wireshark can be manually downloaded and installed from [https://www.wireshark.org/](https://www.wireshark.org/).
+    It can also be installed using the following `apt` command:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE22]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Capturing network packets requires root privileges in order to access the network
+    interfaces. This is the reason for our use of `sudo` when running ***tcpdump***.
+    The same goes when using ***Wireshark***. So, to execute ***Wireshark*** in Linux,
+    we use the following command:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE23]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Besides capturing traffic and showing it in real time, you can also open and
+    view PCAP files in ***Wireshark***:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/792d9e60-f28f-40cb-a2ce-4729c1a44b4b.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'To start capturing, double-click on `any` from the list of interfaces. This
+    essentially captures from both the default network interface and the loopback
+    interface *lo*. What you''ll see are continuous lines of network traffic packets.
+    Wireshark has a display filter to minimize all the noise we see. For our exercise,
+    in the filter field, enter the following display filter:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE24]'
+  prefs: []
+  type: TYPE_PRE
+- en: This should only show packets that use the TCP port at `9999`. There are more
+    filters you can experiment on. These are documented in Wireshark's manual pages.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Clicking on a packet shows parsed information that gives you a better understanding
+    of the packet fields, as shown in the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/49370842-9097-4ffc-b20c-ddf9612b3ef4.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Wireshark has a wide-knowledge of standard packets. This makes Wireshark a must-have
+    tool for every analyst.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Summary
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In this chapter, our discussions revolved around reverse engineering tools that
+    are already built into Linux systems. Debian-based operating systems, such as
+    Ubuntu, are popular for reverse engineering purposes because of the wide community
+    and tools available. We have focused more on how to analyze Linux' native executable,
+    the ELF file. We started off by using GCC to compile a C program source into an
+    ELF executable. We proceeded to analyze the executable using static info-gathering
+    tools, including `ls`, `file`, `strings`, and `objdump`. Then we used `ltrace`
+    and `strace` to carry out a dynamic analysis. Then we used `gdb` to debug the
+    program, showing us Intel assembly language syntax.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We also introduced and explored the `radare2` toolkit. We used `rahash2` and
+    `rabin2` to gather static information, and used `radare2` for disassembly and
+    debugging in an interactive view. Network analysis tools were not left behind
+    either, as we used `tcpdump` and `Wireshark`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the information security world, most files to be analyzed are executables
+    based on Microsoft Windows, which we're going to discuss in the next chapter.
+    We may not encounter much analysis of Linux files in the industry, but knowing
+    how to do it will definitely come in handy when the task requires it.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Further reading
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The files and sources used in this chapter can be found at [https://github.com/PacktPublishing/Mastering-Reverse-Engineering/tree/master/ch6](https://github.com/PacktPublishing/Mastering-Reverse-Engineering/tree/master/ch6)[.](https://github.com/PacktPublishing/Mastering-Reverse-Engineering/tree/master/ch6)
+  prefs: []
+  type: TYPE_NORMAL
