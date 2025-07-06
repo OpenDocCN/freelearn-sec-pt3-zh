@@ -1,0 +1,535 @@
+<html><head></head><body><div><div><div><div><h1 class="title"><a id="ch02"/>Chapter 2.  Client-server IP-only Networks </h1></div></div></div><p>In this chapter, we will cover the following topics:</p><div><ul class="itemizedlist"><li class="listitem">Setting up the public and private keys</li><li class="listitem">A simple configuration</li><li class="listitem">Server-side routing</li><li class="listitem">Adding IPv6 support</li><li class="listitem">Using <code class="literal">client-config-dir</code> files</li><li class="listitem">Routing - subnets on both sides</li><li class="listitem">Redirecting the default gateway</li><li class="listitem">Redirecting the IPv6 default gateway</li><li class="listitem">Using an <code class="literal">ifconfig-pool</code> block</li><li class="listitem">Using the status file</li><li class="listitem">The management interface</li><li class="listitem">Proxy-arp</li></ul></div><div><div><div><div><h1 class="title"><a id="ch02lvl1sec17"/>Introduction</h1></div></div></div><p>The recipes in this chapter will cover the most commonly used deployment model for OpenVPN: a single server with multiple remote clients capable of routing IP traffic.</p><p>We will also look at several common routing configurations in addition to the use of the management interface at both the client and server side.</p><p>The last recipe of this chapter will show how it is possible to avoid the use of network bridges for most practical use cases.</p><p>As a routed TUN-style setup is the most commonly used deployment model, some of the sample configuration files presented in this chapter will be reused throughout the rest of the book. In particular, the configuration files such as <code class="literal">basic-udp-server.conf</code>, <code class="literal">basic-udp-client.conf</code>, <code class="literal">basic-tcp-server.conf</code>, and <code class="literal">basic-tcp-client.conf</code> from the <em>Server-side routing</em> recipe will be reused often, as well as the Windows client configuration files <code class="literal">basic-udp-client.ovpn</code> and <code class="literal">basic-tcp-client.ovpn</code> from the <em>Using an ifconfig-pool block</em> recipe.</p></div></div>
+<div><div><div><div><h1 class="title"><a id="ch02lvl1sec18"/>Setting up the public and private keys</h1></div></div></div><p>Before we can set up a client/server VPN, we need to set up the public key infrastructure (PKI). The PKI comprises the certificate authority, the private keys, and the certificates (public keys) for both the client and server. We also need to generate a Diffie-Hellman parameter file, which is required for perfect forward secrecy.</p><p>To set up PKI, we make use of the <code class="literal">easy-rsa</code> scripts. These scripts were originally supplied with the OpenVPN distribution itself, but nowadays, they can also be downloaded and installed separately.</p><div><div><div><div><h2 class="title"><a id="ch02lvl2sec49"/>Getting ready</h2></div></div></div><p>The PKI needs to be set up on a trusted computer. This can be the same as the computer on which the OpenVPN server is run, but from a security point of view, it is best if the PKI is kept completely separate from the rest of the OpenVPN services. One option is to keep the PKI certificate authority (CA) key located on a separate external disk, which is attached only when required. Another option would be to keep the CA private key on a separate computer that is not hooked up to any network at all.</p><p>This recipe was done on Linux, but can also be done on a Mac OS machine. On Windows, the commands are very similar as well. The Linux <code class="literal">easy-rsa</code> scripts are meant to be run from a bash-like shell, so make sure you are not running csh/tcsh (UNIX shells).</p></div><div><div><div><div><h2 class="title"><a id="ch02lvl2sec50"/>How to do it...</h2></div></div></div><div><ol class="orderedlist arabic"><li class="listitem">Create the directories for the PKI and copy over the <code class="literal">easy-rsa</code> distribution from your OpenVPN installation:<pre class="programlisting">
+<strong>      $ mkdir -m 700 -p /etc/openvpn/cookbook/keys</strong>
+<strong>      $ cd /etc/openvpn/cookbook</strong>
+<strong>      $ cp -drp /usr/share/easy-rsa/2.0/* .</strong>
+</pre><div><h3 class="title"><a id="note7"/>Note</h3><p>Note that there is no need to run these commands as the <code class="literal">root</code> user, provided that the user is allowed to create the above directory path.</p></div></li><li class="listitem">Next, we set up the <code class="literal">vars</code> file. Create a file containing the following:<pre class="programlisting">        export EASY_RSA=/etc/openvpn/cookbook 
+        export OPENSSL="openssl" 
+        export PKCS11TOOL="pkcs11-tool" 
+        export GREP="grep" 
+        export KEY_CONFIG=`$EASY_RSA/whichopensslcnf $EASY_RSA` 
+        export KEY_DIR="$EASY_RSA/keys" 
+        export PKCS11_MODULE_PATH="dummy" 
+        export PKCS11_PIN="dummy" 
+        export KEY_SIZE=2048 
+        export CA_EXPIRE=3650 
+        export KEY_EXPIRE=1000 
+        export KEY_COUNTRY="US" 
+        export KEY_PROVINCE= 
+        export KEY_CITY= 
+        export KEY_ORG="Cookbook 2.4" 
+        export KEY_OU= 
+        export KEY_CN= 
+        export KEY_EMAIL="openvpn@example.com" 
+</pre><div><h3 class="title"><a id="note8"/>Note</h3><p>Note that the <code class="literal">PKCS11_MODULE_PATH</code> and <code class="literal">PKCS11_PIN</code> entries are needed even if you are not using smart cards.</p><p>Also note that some <code class="literal">KEY_</code> variables are set to an empty value. This is required for generating certificates in a batch, as we shall see later on.</p><p>The default <code class="literal">KEY_SIZE</code> of 2048 bits is sufficiently secure for the next few years. A larger key size (4096 bits) is possible, but the tradeoff is a performance penalty. We shall generate a 4096 bit CA private key, as performance is not an issue here.</p><p>Adjust the settings (<code class="literal">KEY_ORG</code>, <code class="literal">KEY_OU</code>, <code class="literal">KEY_EMAIL</code>) to reflect your organization. The meaning of these settings is explained in more details later.</p></div></li><li class="listitem">Source the <code class="literal">vars</code> file and generate the CA private key and certificate, using a 4096-bit modulus. Choose a strong password for the CA certificate. After that, simply press the <em>Enter</em> key every time the script asks for input:<pre class="programlisting">
+<strong>      $ cd /etc/openvpn/cookbook</strong>
+<strong>      $ . ./vars</strong>
+<strong>      $ ./clean-all</strong>
+<strong>      $ KEY_SIZE=4096 ./build-ca --pass</strong>
+</pre><p>Sample output is shown in the following screenshot:</p><div><img src="img/image00338.jpeg" alt="How to do it..."/></div><p style="clear:both; height: 1em;"> </p></li><li class="listitem">Next, we build the server certificate. As we do not wish to include an e-mail address in every certificate, we now set the <code class="literal">KEY_EMAIL</code> variable to an empty value. When the script asks for input, press the <em>Enter</em> key. When the script asks for the CA private key (<code class="literal">ca.key</code>) password, enter the password for the CA certificate. Finally, when the script asks for a <code class="literal">[y/n]</code> answer, type <code class="literal">y</code>:<pre class="programlisting">        <strong>$ export KEY_EMAIL=</strong>
+        <strong>$ ./build-key-server openvpnserver</strong>
+        <strong>Generating a 2048 bit RSA private key</strong>
+                                      
+<strong>        ............................................................
+        ............................+++</strong>
+<strong>...........................................+++</strong>
+        <strong>writing new private key to 'openvpnserver.key'</strong>
+        <strong>-----</strong>
+        <strong>You are about to be asked to enter information that will be 
+        incorporated</strong>
+        <strong>into your certificate request.</strong>
+        <strong>What you are about to enter is what is called a Distinguished 
+        Name or a DN.</strong>
+        <strong>There are quite a few fields but you can leave some blank</strong>
+        <strong>For some fields there will be a default value,</strong>
+        <strong>If you enter '.', the field will be left blank.</strong>
+        <strong>-----</strong>
+        <strong>Country Name (2 letter code) [US]:</strong>
+        <strong>State or Province Name (full name) []:</strong>
+        <strong>Locality Name (eg, city) []:</strong>
+        <strong>Organization Name (eg, company) [Cookbook 2.4]:</strong>
+        <strong>Organizational Unit Name (eg, section) []:</strong>
+        <strong>Common Name (eg, your name or your server's hostname)         
+        [openvpnserver]:</strong>
+            <strong>Name []:</strong>
+            <strong>Email Address []:</strong>
+        <strong>Please enter the following 'extra' attributes</strong>
+        <strong>to be sent with your certificate request</strong>
+        <strong>A challenge password []:</strong>
+        <strong>An optional company name []:</strong>
+        <strong>Using configuration from /etc/openvpn/cookbook/openssl-
+        1.0.0.cnf</strong>
+        <strong>Enter pass phrase for /etc/openvpn/cookbook/keys/ca.key:</strong>
+        <strong>Check that the request matches the signature</strong>
+        <strong>Signature ok</strong>
+        <strong>The Subject's Distinguished Name is as follows</strong>
+        <strong>countryName           :PRINTABLE:'US'</strong>
+        <strong>organizationName      :PRINTABLE:'Cookbook 2.4'</strong>
+        <strong>commonName            :PRINTABLE:'openvpnserver'</strong>
+        <strong>Certificate is to be certified until Oct 13 17:49:24 2018 GMT 
+        (1000 days)</strong>
+        <strong>Sign the certificate? [y/n]:y</strong>
+        <strong>1 out of 1 certificate requests certified, commit? [y/n]y</strong>
+        <strong>Write out database with 1 new entries</strong>
+        <strong>Data Base Updated</strong>
+</pre></li><li class="listitem">The first client certificate is generated in a batch. It is a very fast method for generating a client certificate, but it is not possible to set a password on the client's private key file. It is still required to enter the <code class="literal">ca.key</code> password:<pre class="programlisting">
+<strong>      $ ./build-key --batch client1</strong>
+</pre><p>Sample output is shown in the following screenshot:</p><div><img src="img/image00339.jpeg" alt="How to do it..."/></div><p style="clear:both; height: 1em;"> </p></li><li class="listitem">The second client certificate is generated with a password. Choose a strong password (but different from the CA certificate password!). The output is abbreviated for clarity:<pre class="programlisting">        <strong>$ ./build-key-pass --batch client2</strong>
+        <strong>Generating a 2048 bit RSA private key</strong>
+        <strong>............+++</strong>
+        <strong>...............+++</strong>
+        <strong>writing new private key to 'client2.key'</strong>
+        <strong>Enter PEM pass phrase:</strong>
+        <strong>Verifying - Enter PEM pass phrase:</strong>
+        <strong>-----</strong>
+        <strong>Using configuration from /etc/openvpn/cookbook/openssl-
+        1.0.0.cnf</strong>
+        <strong>Enter pass phrase for /etc/openvpn/cookbook/keys/ca.key:</strong>
+        <strong>Check that the request matches the signature</strong>
+        <strong>Signature ok</strong>
+        <strong>The Subject's Distinguished Name is as follows</strong>
+        <strong>countryName           :PRINTABLE:'US'</strong>
+        <strong>organizationName      :PRINTABLE:'Cookbook 2.4'</strong>
+        <strong>commonName            :PRINTABLE:'client2'</strong>
+        <strong>Certificate is to be certified until Oct 13 17:59:15 2018 GMT 
+        (1000 days)</strong>
+        <strong>Write out database with 1 new entries</strong>
+        <strong>Data Base Updated</strong>
+</pre></li><li class="listitem">Next, build the Diffie-Hellman parameter file for the server:<div><img src="img/image00340.jpeg" alt="How to do it..."/></div><p style="clear:both; height: 1em;"> </p></li><li class="listitem">And finally, generate the <code class="literal">tls-auth</code> key file:<pre class="programlisting">
+<strong>       $ openvpn --genkey --secret ta.key</strong>
+</pre></li></ol><div></div></div><div><div><div><div><h2 class="title"><a id="ch02lvl2sec51"/>How it works...</h2></div></div></div><p>The <code class="literal">easy-rsa</code> scripts are a handy set of wrapper scripts around some of the <code class="literal">openssl ca</code> commands. The <code class="literal">openssl ca</code> commands are commonly used to set up a PKI using X509 certificates. The <code class="literal">build-dh</code> script is a wrapper for the <code class="literal">openssl dh</code> command.</p></div><div><div><div><div><h2 class="title"><a id="ch02lvl2sec52"/>There's more...</h2></div></div></div><p>The <code class="literal">easy-rsa</code> scripts provide a full PKI setup, supporting different platforms and many settings. Some of these are outlined here.</p><div><div><div><div><h3 class="title"><a id="ch02lvl3sec9"/>Using the easy-rsa scripts on Windows</h3></div></div></div><p>To use the <code class="literal">easy-rsa</code> scripts on Windows, a command window (<code class="literal">cmd.exe</code>) is required and the starting <code class="literal">./</code> needs to be removed from all the commands, for example:</p><pre class="programlisting">
+<strong>[Win]C:&gt; vars</strong>
+<strong>[Win]C:&gt; clean-all</strong>
+<strong>[Win]C:&gt; build-ca</strong>
+</pre></div><div><div><div><div><h3 class="title"><a id="ch02lvl3sec10"/>Some notes on the different variables</h3></div></div></div><p>The following variables are set in the <code class="literal">vars</code> file:</p><div><ul class="itemizedlist"><li class="listitem"><code class="literal">KEY_SIZE=2048</code>: This is the cipher strength for all private keys. The longer the key size is, the stronger the encryption. Unfortunately, it also makes the encryption process slower.</li><li class="listitem"><code class="literal">CA_EXPIRE=3650</code>: This gives the number of days the CA certificate is considered valid, thus translating to a period of 10 years. For a medium-secure setup, this is fine; however, if stronger security is required, this number needs to be lowered.</li><li class="listitem"><code class="literal">KEY_EXPIRE=1000</code>: This gives the number of days for which the client of the server certificate is considered valid, thus translating to a period of almost 3 years.</li><li class="listitem"><code class="literal">KEY_COUNTRY="US"</code>, <code class="literal">KEY_PROVINCE=</code>, <code class="literal">KEY_CITY=</code>, <code class="literal">KEY_ORG="Cookbook 2.4"</code>, <code class="literal">KEY_EMAIL=openvpn@example.com</code>: These variables are all used to form the certificate <strong>Distinguished Name</strong> (<strong>DN</strong>). None of them are required, but both OpenVPN and OpenSSL suggest using at least <code class="literal">KEY_COUNTRY</code> to indicate where a certificate was issued.</li></ul></div></div></div><div><div><div><div><h2 class="title"><a id="ch02lvl2sec53"/>See also</h2></div></div></div><div><ul class="itemizedlist"><li class="listitem">See <a class="link" title="Chapter 4.  PKI, Certificates, and OpenSSL" href="part0048.xhtml#aid-1DOR01">Chapter 4</a>, <em>PKI, Certificates, and OpenSSL</em>, for a lengthier introduction to the <code class="literal">easy-rsa</code> scripts and the <code class="literal">openssl</code> commands</li></ul></div></div></div>
+<div><div><div><div><h1 class="title"><a id="ch02lvl1sec19"/>A simple configuration</h1></div></div></div><p>This recipe will demonstrate how to set up a connection in the client or server mode using certificates.</p><div><div><div><div><h2 class="title"><a id="ch02lvl2sec54"/>Getting ready</h2></div></div></div><p>Install OpenVPN 2.3.9 or higher on two computers. Make sure the computers are connected over a network. Set up the client and server certificates using the previous recipe. For this recipe, the server computer was running CentOS 6 Linux and OpenVPN 2.3.9 and the client was running Fedora 22 Linux and OpenVPN 2.3.10.</p></div><div><div><div><div><h2 class="title"><a id="ch02lvl2sec55"/>How to do it...</h2></div></div></div><div><ol class="orderedlist arabic"><li class="listitem">Create the server configuration file:<pre class="programlisting">        proto udp 
+        port 1194 
+        dev tun 
+        server 10.200.0.0 255.255.255.0 
+ 
+        ca   /etc/openvpn/cookbook/ca.crt 
+        cert /etc/openvpn/cookbook/server.crt 
+        key  /etc/openvpn/cookbook/server.key 
+        dh   /etc/openvpn/cookbook/dh2048.pem 
+</pre><p>Then save it as <code class="literal">example2-2-server.conf</code>.</p></li><li class="listitem">Copy over the public certificates and the server private key from the <code class="literal">/etc/openvpn/cookbook/keys</code> directory:<pre class="programlisting">
+<strong>      [server]$ cd /etc/openvpn/cookbook</strong>
+<strong>      [server]$ cp keys/ca.crt ca.crt</strong>
+<strong>      [server]$ cp keys/openvpnserver.crt server.crt</strong>
+<strong>      [server]$ cp keys/openvpnserver.key server.key</strong>
+<strong>      [server]$ cp keys/dh2048.pem dh2048.pem</strong>
+</pre><div><h3 class="title"><a id="note9"/>Note</h3><p>Note that there is no need to run the preceding commands as user <code class="literal">root</code>, provided that write access to these directories has been given.</p></div></li><li class="listitem">Start the server:<pre class="programlisting">
+<strong>      [root@server]# openvpn --config example2-2-server.conf</strong>
+</pre></li><li class="listitem">Next, create the client configuration file:<pre class="programlisting">        client 
+        proto udp 
+        remote openvpnserver.example.com 
+        port 1194 
+        dev tun 
+        nobind 
+ 
+        ca /etc/openvpn/cookbook/ca.crt 
+        cert /etc/openvpn/cookbook/client1.crt 
+        key /etc/openvpn/cookbook/client1.key 
+</pre><p>Then save it as <code class="literal">example2-2-client.conf</code>.</p></li><li class="listitem">Transfer the files such as <code class="literal">ca.crt</code>, <code class="literal">client1.crt</code>, and <code class="literal">client1.key</code> to the client machine using a secure channel; for example, using the <code class="literal">scp</code> command:<div><img src="img/image00341.jpeg" alt="How to do it..."/></div><p style="clear:both; height: 1em;"> </p></li><li class="listitem">Then, start the client:<pre class="programlisting">
+<strong>      [root@client]# openvpn --config example2-2-client.conf</strong>
+<strong>      [...]</strong>
+<strong> [openvpnserver] Peer Connection Initiated with 
+          openvpnserver:1194</strong>
+        <strong>  TUN/TAP device tun0 opened</strong>
+         <strong> /sbin/ip link set dev tun0 up mtu 1500</strong>
+         <strong> /sbin/ip addr add dev tun0 local 10.200.0.6 peer 10.200.0.5</strong>
+         <strong> Initialization Sequence Completed</strong>
+</pre></li></ol><div></div><p>After the connection is established, we can verify that it is working by pinging the server (notice the IP address):</p><pre class="programlisting">
+<strong>[client]$ ping -c 2 10.200.0.1</strong>
+<strong>PING 10.200.0.1 (10.200.0.1) 56(84) bytes of data.</strong>
+<strong>64 bytes from 10.200.0.1: icmp_seq=1 ttl=64 time=30.6 ms</strong>
+<strong>64 bytes from 10.200.0.1: icmp_seq=2 ttl=64 time=30.7 ms</strong>
+</pre></div><div><div><div><div><h2 class="title"><a id="ch02lvl2sec56"/>How it works...</h2></div></div></div><p>When the server starts, it configures the first available TUN interface with the IP address <code class="literal">10.200.0.1</code> and with a fake remote address of <code class="literal">10.200.0.2</code>. After that, the server listens on the UDP port <code class="literal">1194</code> for incoming connections.</p><p>The client connects to the server on this port. After the initial TLS handshake, using both the client and server certificates, the client is assigned the IP address <code class="literal">10.200.0.6</code> (or rather the mini-network <code class="literal">10.200.0.4</code> - <code class="literal">10.200.0.7</code>). The client configures its first available TUN interface using this information, after which the VPN is established.</p></div><div><div><div><div><h2 class="title"><a id="ch02lvl2sec57"/>There's more...</h2></div></div></div><p>After the connection is established, you can query the <code class="literal">tun0</code> interface like this:</p><pre class="programlisting">
+<strong>[client]$ /sbin/ifconfig tun0 | grep inet</strong>
+</pre><p>Then, look for the following:</p><pre class="programlisting">inet addr:10.200.0.6  P-t-P:10.200.0.5 
+</pre><p>The IP address <code class="literal">10.200.0.5</code> is a placeholder address and can never be reached. Starting with OpenVPN 2.1, it has also become possible to assign linear addresses to the clients that allow you to have more clients in the same range of IP addresses. This will be explained in the next recipe.</p><p>The first address is the VPN client address from a <code class="literal">/30</code> subnet, and the second address is the fake remote endpoint address. Each <code class="literal">/30</code> subnet has to start at a multiple of four, and the VPN client IP address is at the starting address plus two:</p><div><ul class="itemizedlist"><li class="listitem"><code class="literal">10.200.0.[0-3]</code>, the VPN IP is <code class="literal">10.200.0.1</code>. Normally, this block is for the OpenVPN server itself.</li><li class="listitem"><code class="literal">10.200.0.[4-7]</code>, the client IP is <code class="literal">10.200.0.6</code>. Normally, this block is for the first client to connect.</li><li class="listitem"><code class="literal">10.200.0.[8-11]</code>, <code class="literal">[12-15]</code>, <code class="literal">[16-19]</code>, and so on are used for consecutive clients.</li></ul></div><p>Because of the <code class="literal">/30</code> subnet for each address, this topology mode is known as <strong>net30</strong>. It is still the default topology mode, but this will change in the near future.</p></div></div>
+<div><div><div><div><h1 class="title"><a id="ch02lvl1sec20"/>Server-side routing</h1></div></div></div><p>This recipe will demonstrate how to set up server-side routing in client or server mode. With this setup, the OpenVPN client will be able to reach all the machines behind the OpenVPN server.</p><p>Compared to the previous recipe, this recipe contains extra settings that are often used in production environments including the use of <code class="literal">linear</code> addresses (<code class="literal">topology subnet</code>).</p><p>The configuration files used in this recipe are useful building blocks for other recipes throughout this book; therefore, they are named <code class="literal">basic-udp-server.conf</code>, <code class="literal">basic-udp-client.conf</code>, and so on.</p><div><div><div><div><h2 class="title"><a id="ch02lvl2sec58"/>Getting ready</h2></div></div></div><p>Install OpenVPN 2.3.9 or higher on two computers. Make sure the computers are connected over a network. Set up the client and server certificates using the previous recipe. For this recipe, the server computer was running CentOS 6 Linux and OpenVPN 2.3.9 and the client was running Fedora 20 Linux and OpenVPN 2.3.9.</p><p>We use the following network layout here:</p><div><img src="img/image00342.jpeg" alt="Getting ready"/></div><p style="clear:both; height: 1em;"> </p></div><div><div><div><div><h2 class="title"><a id="ch02lvl2sec59"/>How to do it...</h2></div></div></div><div><ol class="orderedlist arabic"><li class="listitem">Create the server configuration file:<pre class="programlisting">        proto udp 
+        port 1194 
+        dev tun 
+        server 10.200.0.0 255.255.255.0 
+ 
+        ca       /etc/openvpn/cookbook/ca.crt 
+        cert     /etc/openvpn/cookbook/server.crt 
+        key      /etc/openvpn/cookbook/server.key 
+        dh       /etc/openvpn/cookbook/dh2048.pem 
+        tls-auth /etc/openvpn/cookbook/ta.key 0 
+ 
+        persist-key 
+        persist-tun 
+        keepalive 10 60 
+ 
+        push "route 10.198.0.0 255.255.0.0" 
+        topology subnet 
+ 
+        user  nobody 
+        group nobody   # use "group nogroup" on some distros 
+ 
+        daemon 
+        log-append /var/log/openvpn.log 
+</pre><p>Then save it as <code class="literal">basic-udp-server.conf</code>. Note that in some Linux distributions, the group <code class="literal">nogroup</code> is used instead of <code class="literal">nobody</code>.</p></li><li class="listitem">Copy over the <code class="literal">tls-auth</code> secret key file from the <code class="literal">/etc/openvpn/cookbook/keys</code> directory:<pre class="programlisting">
+<strong>      [root@server]# cp keys/ta.key ta.key</strong>
+</pre></li><li class="listitem">Then start the server:<pre class="programlisting">
+<strong>       root@server]# openvpn --config basic-udp-server.conf</strong>
+</pre></li><li class="listitem">Make sure IP-traffic forwarding is enabled on the server:<pre class="programlisting">
+<strong>      [root@server]# sysctl -w net.ipv4.ip_forward=1</strong>
+</pre></li><li class="listitem">Next, create the client configuration file:<pre class="programlisting">        client 
+        proto udp 
+        remote openvpnserver.example.com 
+        port 1194 
+        dev tun 
+        nobind 
+ 
+        ca       /etc/openvpn/cookbook/ca.crt 
+        cert     /etc/openvpn/cookbook/client1.crt 
+        key      /etc/openvpn/cookbook/client1.key 
+        tls-auth /etc/openvpn/cookbook/ta.key 1 
+ 
+        remote-cert-tls server 
+</pre><p>Save it as <code class="literal">basic-udp-client.conf</code>.</p></li><li class="listitem">Transfer the <code class="literal">tls-auth</code> secret key file, <code class="literal">ta.key</code>, to the client machine using a secure channel, such as <code class="literal">scp</code>:<pre class="programlisting">
+<strong>      [root@client]# scp \   </strong>
+<strong>          openvpnserver:/etc/openvpn/cookbook/keys/ta.key . </strong>
+</pre></li><li class="listitem">Start the client:<pre class="programlisting">
+<strong>    [root@client]# openvpn --config basic-udp-client.conf</strong>
+        <strong>OpenVPN 2.3.9 x86_64-redhat-linux-gnu [SSL (OpenSSL)] [LZO] 
+        [EPOLL]</strong>
+<strong>[PKCS11] [MH] [IPv6] built on Dec 16 2015</strong>
+<strong>library versions: OpenSSL 1.0.1e-fips 11 Feb 2013, LZO 2.08</strong>
+<strong>Control Channel Authentication: using   
+        '/etc/openvpn/cookbook/ta.key' as a OpenVPN static key file</strong>
+<strong>UDPv4 link local: [undef]</strong>
+<strong>UDPv4 link remote: [AF_INET]openvpnserver:1194</strong>
+<strong>[openvpnserver] Peer Connection Initiated with      
+        [AF_INET]openvpnserver:1194</strong>
+<strong>TUN/TAP device tun0 opened</strong>
+<strong>do_ifconfig, tt-&gt;ipv6=0, tt-&gt;did_ifconfig_ipv6_setup=0</strong>
+<strong>/usr/sbin/ip link set dev tun0 up mtu 1500</strong>
+<strong>/usr/sbin/ip addr add dev tun0 10.200.0.2/24 broadcast 
+        10.200.0.255</strong>
+<strong>Initialization Sequence Completed</strong>
+</pre></li><li class="listitem">Add a route to the server-side gateway, <code class="literal">gateway1</code>, so that all VPN traffic is sent back to the VPN server. In this recipe, we use a router that understands a Linux <code class="literal">ip route</code> like syntax:<pre class="programlisting">
+<strong>       [gateway1]&gt; ip route add 10.200.0.0/24 via 10.198.1.1</strong>
+</pre></li></ol><div></div><p>After the VPN is established, verify that we are able to ping a machine on the remote server LAN:</p><pre class="programlisting">
+<strong>[client]$ ping -c 2 10.198.0.10</strong>
+<strong>PING 10.198.0.10 (10.198.0.10) 56(84) bytes of data.</strong>
+<strong>64 bytes from 10.198.0.10: icmp_seq=1 ttl=63 time=31.1 ms</strong>
+<strong>64 bytes from 10.198.0.10: icmp_seq=2 ttl=63 time=30.0 ms</strong>
+</pre></div><div><div><div><div><h2 class="title"><a id="ch02lvl2sec60"/>How it works...</h2></div></div></div><p>The server starts and configures the first available TUN interface with the IP address <code class="literal">10.200.0.1</code>. With the directive <code class="literal">topology subnet</code>, the fake remote address is also 10.200.0.1. After that, the server listens on the UDP port <code class="literal">1194</code> for incoming connections. For security reasons, the OpenVPN process switches to user and group <code class="literal">nobody</code>. Even if a remote attacker was able to compromise the OpenVPN process, the security breach would be contained to the user <code class="literal">nobody</code> instead of the user <code class="literal">root</code>. When the <code class="literal">user</code> and <code class="literal">group</code> directives are used, it is wise to add the following as well:</p><pre class="programlisting">persist-key 
+persist-tun 
+</pre><p>Otherwise, OpenVPN will not be able to restart itself correctly.</p><p>Another security measure is the use of the following on the server side (and <code class="literal">ta.key 1</code> on the client side):</p><pre class="programlisting">tls-auth /etc/openvpn/cookbook/ta.key 0 
+</pre><p>This prevents the server from being overloaded by a so-called <strong>Distributed Denial of Service</strong> (<strong>DDoS</strong>) attack, as OpenVPN will just ignore those packets immediately if the HMAC is not correct.</p><p>The following directive sets up a <code class="literal">keepalive</code> timer on both the client and the server side:</p><pre class="programlisting">keepalive 10 60 
+</pre><p>Every 10 seconds, a packet is sent from the server to the client side and vice versa to ensure that the VPN tunnel is still up and running. If no reply is received after 60 seconds on the client side, the VPN connection is automatically restarted. On the server side, the timeout period is multiplied by two; hence the server will restart the VPN connection if no reply is received after 120 seconds.</p><p>Finally, the following directives are very commonly used in a production setup, where the OpenVPN process continues to run in the background (daemonizes itself) after the operator logs out:</p><pre class="programlisting">daemon 
+log-append /var/log/openvpn.log 
+</pre><p>All output of the OpenVPN process is appended to the log file, <code class="literal">/var/log/openvpn.log</code>. You can use the <code class="literal">tail -f</code> command to monitor the output of the OpenVPN process.</p><p>The client connects to the server. After the initial TLS handshake, using both the client and server certificates, the client is assigned the IP address <code class="literal">10.200.0.2</code>. The client configures its first available TUN interface using this information and updates its routing table so that traffic for the server-side Site B's LAN is tunneled over the VPN.</p></div><div><div><div><div><h2 class="title"><a id="ch02lvl2sec61"/>There's more...</h2></div></div></div><p>As the example files used in this recipe are reused later on, it is useful to explain a bit more about the options used.</p><div><div><div><div><h3 class="title"><a id="ch02lvl3sec11"/>Linear addresses</h3></div></div></div><p>After the connection is established, you can query the <code class="literal">tun0</code> interface like this:</p><pre class="programlisting">
+<strong>[client]$ /sbin/ifconfig tun0 | grep inet</strong>
+</pre><p>Then, look for the following:</p><pre class="programlisting">inet addr:10.200.0.2  P-t-P:10.200.0.2 
+</pre><p>This is caused by the <code class="literal">topology subnet</code> directive, which is something new in OpenVPN 2.1. This directive tells OpenVPN to assign only a single IP address to each client. With OpenVPN 2.0, the minimum number of IP addresses per client is four (as we can see in the previous recipe).</p></div><div><div><div><div><h3 class="title"><a id="ch02lvl3sec12"/>Using the TCP protocol</h3></div></div></div><p>In the previous example, we chose the UDP protocol. The configuration files in this recipe can easily be converted to use the TCP protocol by changing the following line:</p><pre class="programlisting">proto udp 
+</pre><p>It should be changed to the following:</p><pre class="programlisting">proto tcp 
+</pre><p>This should be done in both the client and server configuration files. Save these files as <code class="literal">basic-tcp-server.conf</code> and <code class="literal">basic-tcp-client.conf</code> for future use:</p><pre class="programlisting">
+<strong>$ cd /etc/openvpn/cookbook</strong>
+<strong>$ sed 's/proto udp/proto tcp' basic-udp-server.conf \</strong>
+<strong>    &gt; basic-tcp-server.conf</strong>
+<strong>$ sed 's/proto udp/proto tcp/' basic-udp-client.conf \</strong>
+<strong>    &gt; basic-tcp-client.conf</strong>
+</pre></div><div><div><div><div><h3 class="title"><a id="ch02lvl3sec13"/>Server certificates and ns-cert-type server</h3></div></div></div><p>On the client side, the <code class="literal">remote-cert-tls server</code> directive is often used in combination with a server certificate that is built using the following:</p><pre class="programlisting">
+<strong>$ build-key-server</strong>
+</pre><p>This is done in order to prevent man-in-the-middle attacks. The idea is that a client will refuse to connect to a server that does not have a special server certificate. By doing this, it is no longer possible for a malicious client to pose as a server. This option also supports certificates with explicit key usage and extended key usage, based on the RFC 3280 TLS rules.</p><p>Older versions of OpenVPN used the <code class="literal">ns-cert-type server</code> directive. This option is still supported, but it will be deprecated in a future version of OpenVPN.</p></div><div><div><div><div><h3 class="title"><a id="ch02lvl3sec14"/>Masquerading</h3></div></div></div><p>In this recipe, the gateway on the server-side LAN is configured with an extra route for the VPN traffic. Sometimes, this is not possible, in which case, the Linux <code class="literal">iptables</code> command can be used to set up masquerading:</p><pre class="programlisting">
+<strong>[root@server]# iptables -t nat -I POSTROUTING -o eth0 \</strong>
+<strong>    -s 10.200.0.0/24 -j MASQUERADE</strong>
+</pre><p>This instructs the Linux kernel to rewrite all traffic that is coming from the subnet <code class="literal">10.200.0.0/24</code> (that is, our OpenVPN subnet) and that is leaving the Ethernet interface <code class="literal">eth0</code>. Each of these packets has its source address rewritten so that it appears as if it's coming from the OpenVPN server itself and not from the OpenVPN client. The <code class="literal">iptables</code> module keeps track of these rewritten packets so that when a return packet is received, the reverse is done and the packets are forwarded back to the OpenVPN client again. This is an easy method to enable routing to work, but there is a drawback when many clients are used, as it is no longer possible to distinguish traffic on Site B's LAN if it is coming from the OpenVPN server itself, from client1 via the VPN tunnel, or from clientN via the VPN tunnel.</p></div></div></div>
+<div><div><div><div><h1 class="title"><a id="ch02lvl1sec21"/>Adding IPv6 support</h1></div></div></div><p>Support for IPv6 addresses is relatively new in OpenVPN. As IPv6 addresses are now being used more and more by companies and Internet Service Providers, this recipe provides a setup for using IPv6 for tunnel endpoints as well as using it inside the tunnel.</p><div><div><div><div><h2 class="title"><a id="ch02lvl2sec62"/>Getting ready</h2></div></div></div><p>This recipe is a continuation of the previous one. Install OpenVPN 2.3.9 or higher on two computers. Make sure the computers are connected over a network. Set up the client and server certificates using the previous recipe. For this recipe, the server computer was running CentOS 6 Linux and OpenVPN 2.3.9 and the client was running Fedora 20 Linux and OpenVPN 2.3.9. Keep the configuration file, <code class="literal">basic-udp-server.conf</code>, from the previous recipe at hand as well as the client configuration file, <code class="literal">basic-udp-client.conf</code>.</p></div><div><div><div><div><h2 class="title"><a id="ch02lvl2sec63"/>How to do it...</h2></div></div></div><div><ol class="orderedlist arabic"><li class="listitem">Modify the server configuration file, <code class="literal">basic-udp-server.conf</code>, by adding a line:<pre class="programlisting">
+<strong>    server-ipv6 2001:db8:100::0/112</strong>
+</pre><p>Then save it as <code class="literal">example2-4-server.conf</code>.</p></li><li class="listitem">Start the server:<pre class="programlisting">
+<strong>      [root@server]# openvpn --config example2-4-server.conf</strong>
+<strong>[...]</strong>
+<strong>do_ifconfig, tt-&gt;ipv6=1, tt-&gt;did_ifconfig_ipv6_setup=1</strong>
+<strong>/sbin/ip link set dev tun0 up mtu 1500</strong>
+<strong>/sbin/ip addr add dev tun0 10.200.0.1/24 broadcast  
+          10.200.0.255</strong>
+<strong>/sbin/ip -6 addr add <strong>2001:db8:100::1/112</strong> dev tun0</strong>
+<strong>[...]</strong>
+</pre></li><li class="listitem">Start the client using the configuration file from the previous recipe:<pre class="programlisting">
+<strong>      [root@client]# openvpn --config basic-udp-client.conf</strong>
+<strong>[...]</strong>
+<strong>[openvpnserver] Peer Connection Initiated with         
+          [AF_INET]openvpnserver:1194</strong>
+<strong>TUN/TAP device tun0 opened</strong>
+<strong>do_ifconfig, <strong>tt-&gt;ipv6=1, tt-&gt;did_ifconfig_ipv6_setup=1</strong>
+</strong>
+<strong>/usr/sbin/ip link set dev tun0 up mtu 1500</strong>
+<strong>/usr/sbin/ip addr add dev tun0 10.200.0.2/24 broadcast 
+          10.200.0.255</strong>
+<strong>/usr/sbin/ip -6 addr add <strong>2001:db8:100::1000/112</strong> dev tun0</strong>
+<strong>Initialization Sequence Completed</strong>
+</pre><p>The output showing that OpenVPN has configured an IPv6 address is shown in boldface.</p></li><li class="listitem">Verify that we can reach the server using the <code class="literal">ping6</code> command:<pre class="programlisting">
+<strong>      [client]$   ping6 -c 4  2001:db8:100::</strong>
+<strong>PING 2001:db8:100::1(2001:db8:100::1) 56 data bytes</strong>
+<strong>64 bytes from 2001:db8:100::1: icmp_seq=1 ttl=64 time=9.01 ms</strong>
+<strong>64 bytes from 2001:db8:100::1: icmp_seq=2 ttl=64 time=10.8 ms</strong>
+<strong>64 bytes from 2001:db8:100::1: icmp_seq=3 ttl=64 time=9.42 ms</strong>
+<strong>64 bytes from 2001:db8:100::1: icmp_seq=4 ttl=64 time=8.36 ms</strong>
+<strong>--- 2001:db8:100::1 ping statistics ---</strong>
+<strong>4 packets transmitted, 4 received, 0% packet loss, time   
+          3004ms</strong>
+<strong>rtt min/avg/max/mdev = 8.364/9.409/10.832/0.904 ms</strong>
+</pre></li></ol><div></div></div><div><div><div><div><h2 class="title"><a id="ch02lvl2sec64"/>How it works...</h2></div></div></div><p>IPv6 support in OpenVPN works almost exactly like IPv4. The addressing format is different and most options need an extra <code class="literal">-ipv6</code> suffix.</p></div><div><div><div><div><h2 class="title"><a id="ch02lvl2sec65"/>There's more...</h2></div></div></div><p>There are a couple of useful tricks to keep in mind when using client configuration files. Some of these tricks are explained here.</p><div><div><div><div><h3 class="title"><a id="ch02lvl3sec15"/>IPv6 endpoints</h3></div></div></div><p>If the server <code class="literal">openvpnserver.example.com</code> resolves to an IPv6 address and the client has a valid IPv6 address, then the connection can be automatically established using IPv6. This is achieved by changing the <code class="literal">proto udp</code> line in both client and server configurations to <code class="literal">proto udp6</code>. It is then also possible to specify an IPv6 address for the server, using the following command:</p><pre class="programlisting">
+<strong>remote 2001:db8:120:e120:225:90ff:fec0:3ed1</strong>
+</pre><p>Note that even with <code class="literal">proto udp6</code> in the server configuration file, IPv4 clients can still connect.</p></div><div><div><div><div><h3 class="title"><a id="ch02lvl3sec16"/>IPv6-only setup</h3></div></div></div><p>Even with OpenVPN 2.4, it is not yet possible to set up an IPv6-only VPN. You must always supply an (bogus) IPv4 address range for the VPN IP space. However, with OpenVPN 2.4, it is possible to set up an OpenVPN server that will accept requests only from IPv6-enabled clients. A new flag for the <code class="literal">bind</code> directive was added for this:</p><pre class="programlisting">proto udp6 
+bind ipv6only 
+</pre></div></div></div>
+<div><div><div><div><h1 class="title"><a id="ch02lvl1sec22"/>Using client-config-dir files</h1></div></div></div><p>In a setup where a single server can handle many clients, it is sometimes necessary to set per-client options that overrule the global options. The <code class="literal">client-config-dir</code> option is very useful for this. It allows the administrator to assign a specific IP address to a client; to push specific options, such as compression and DNS server, to a client; or to temporarily disable a client altogether.</p><div><div><div><div><h2 class="title"><a id="ch02lvl2sec66"/>Getting ready</h2></div></div></div><p>This recipe is a continuation of the previous one. Install OpenVPN 2.3.9 or higher on two computers. Make sure the computers are connected over a network. Set up the client and server certificates using the previous recipe. For this recipe, the server computer was running CentOS 6 Linux and OpenVPN 2.3.9 and the client was running Fedora 20 Linux and OpenVPN 2.3.9. Keep the server configuration file, <code class="literal">basic-udp-server.conf</code>, at hand along with the client configuration file, <code class="literal">basic-udp-client.conf</code>, from the <em>Server-side routing</em> recipe.</p></div><div><div><div><div><h2 class="title"><a id="ch02lvl2sec67"/>How to do it...</h2></div></div></div><div><ol class="orderedlist arabic"><li class="listitem">Modify the server configuration file, <code class="literal">basic-udp-server.conf</code>, by adding a line:<pre class="programlisting">
+<strong>    client-config-dir /etc/openvpn/cookbook/clients</strong>
+</pre><p>Then save it as <code class="literal">example2-5-server.conf</code>.</p></li><li class="listitem">Next, create the directory for the <code class="literal">client-config</code> files and place a file in there with the name of the client certificate. This file needs to contain a single line with the IP address for the client listed twice:<pre class="programlisting">
+<strong>      [root@server]# mkdir -m 755 /etc/openvpn/cookbook/clients</strong>
+<strong>      [root@server]# cd /etc/openvpn/cookbook/clients</strong>
+<strong>      [root@server]# echo "ifconfig-push 10.200.0.7 10.200.0.7" \</strong>
+<strong>        &gt; client1</strong>
+</pre></li><li class="listitem">This name can be retrieved from the client certificate file using the following:<pre class="programlisting">
+<strong>      [server]$ openssl x509 -subject -noout -in client1.crt</strong>
+<strong>subject= /C=US/O=Cookbook 2.4/CN=client1</strong>
+</pre></li><li class="listitem">Start the server:<pre class="programlisting">
+<strong>      [root@server]# openvpn --config example2-5-server.conf</strong>
+</pre></li><li class="listitem">Start the client using the configuration file from the previous recipe:<pre class="programlisting">
+<strong>      [root@client]# openvpn --config basic-udp-client.conf</strong>
+<strong>[...]</strong>
+<strong>[openvpnserver] Peer Connection Initiated with 
+          [AF_INET]openvpnserver:1194</strong>
+<strong>TUN/TAP device tun0 opened</strong>
+<strong>do_ifconfig, tt-&gt;ipv6=0, tt-&gt;did_ifconfig_ipv6_setup=0</strong>
+<strong>/usr/sbin/ip link set dev tun0 up mtu 1500</strong>
+<strong>/usr/sbin/ip addr add dev tun0 10.200.0.7/24 broadcast 
+          10.200.0.255</strong>
+<strong>Initialization Sequence Completed</strong>
+</pre></li></ol><div></div></div><div><div><div><div><h2 class="title"><a id="ch02lvl2sec68"/>How it works...</h2></div></div></div><p>When a client connects to the server with its certificate and with the certificate's common name <code class="literal">client1</code>, the OpenVPN server checks whether there is a corresponding client configuration file (also known as a CCD file) in the <code class="literal">client-config-dir</code> directory. If it exists, it is read in as an extra set of options for that particular client. In this recipe, we use it to assign a specific IP address to a client (although there are more flexible ways to do that). The client is now always assigned the IP address <code class="literal">10.200.0.7</code>.</p><p>The client configuration file contains a single line, <code class="literal">ifconfig-push 10.200.0.7 10.200.0.</code>7, which instructs the OpenVPN server to push the client IP address <code class="literal">10.200.0.7</code> to this particular client. The IP address needs to be listed twice, which is mostly due to the legacy of <code class="literal">topology net30</code> mode.</p><p>In this mode, which is still the default in OpenVPN 2.3, a remote endpoint address is always needed and it needs to be within a /30 network range of the client's VPN IP address. In <code class="literal">topology subnet</code> mode, it suffices to list the client's VPN IP address twice, or to list the client's VPN IP address followed by a netmask.</p></div><div><div><div><div><h2 class="title"><a id="ch02lvl2sec69"/>There's more...</h2></div></div></div><p>There are a couple of useful tricks to keep in mind when using client configuration files. Some of these tricks are explained here.</p><div><div><div><div><h3 class="title"><a id="ch02lvl3sec17"/>The default configuration file</h3></div></div></div><p>If the following conditions are met, then the <code class="literal">DEFAULT</code> file is read and processed instead:</p><div><ul class="itemizedlist"><li class="listitem">A <code class="literal">client-config-dir</code> directive is specified</li><li class="listitem">There is no matching client file for the client's certificate in that directory</li><li class="listitem">A file called <code class="literal">DEFAULT</code> does exist in that directory</li></ul></div><p>Please note that this name is case-sensitive.</p></div><div><div><div><div><h3 class="title"><a id="ch02lvl3sec18"/>Troubleshooting</h3></div></div></div><p>Troubleshooting configuration problems with CCD files is a recurring topic on the OpenVPN mailing lists. The most common configuration errors are as follows:</p><div><ul class="itemizedlist"><li class="listitem">Always specify the full path in the <code class="literal">client-config-dir</code> directive</li><li class="listitem">Make sure the directory is accessible and the CCD file, is readable to the user which is used to run OpenVPN (<code class="literal">nobody</code> or <code class="literal">openvpn</code> in most cases)</li><li class="listitem">Make sure that the right filename is used for the CCD file, without any extensions</li></ul></div></div><div><div><div><div><h3 class="title"><a id="ch02lvl3sec19"/>Options allowed in a client-config-dir file</h3></div></div></div><p>The following configuration options are allowed in a CCD file:</p><div><ul class="itemizedlist"><li class="listitem"><code class="literal">push</code>: This option is used for pushing DNS servers, WINS servers, routes, and so on</li><li class="listitem"><code class="literal">push-reset</code>: This option is used to overrule global push options</li><li class="listitem"><code class="literal">iroute</code>: This option is used for routing client subnets to the server</li><li class="listitem"><code class="literal">ifconfig-push</code>: This option is used for assigning a specific IP address, as done in this recipe</li><li class="listitem"><code class="literal">disable</code>: This option is used for temporarily disabling a client altogether</li><li class="listitem"><code class="literal">config</code>: This option is used for including another configuration file</li></ul></div></div></div></div>
+<div><div><div><div><h1 class="title"><a id="ch02lvl1sec23"/>Routing - subnets on both sides</h1></div></div></div><p>This recipe will demonstrate how to set up server-side and client-side routing in client/server mode. With this setup, the OpenVPN client will be able to reach all the machines behind the OpenVPN server, and the server will be able to reach all the machines behind the client.</p><div><div><div><div><h2 class="title"><a id="ch02lvl2sec70"/>Getting ready</h2></div></div></div><p>This recipe uses the PKI files created in the first recipe of this chapter. Install OpenVPN 2.3.9 or higher on two computers. Make sure the computers are connected over a network. For this recipe, the server computer was running CentOS 6 Linux and OpenVPN 2.3.9 and the client was running Fedora 20 Linux and OpenVPN 2.3.9. Keep the server configuration file, <code class="literal">basic-udp-server.conf</code>, handy along with the client configuration file, <code class="literal">basic-udp-client.conf</code>, from the <em>Server-side routing</em> recipe.</p><p>We use the following network layout:</p><div><img src="img/image00343.jpeg" alt="Getting ready"/></div><p style="clear:both; height: 1em;"> </p></div><div><div><div><div><h2 class="title"><a id="ch02lvl2sec71"/>How to do it...</h2></div></div></div><div><ol class="orderedlist arabic"><li class="listitem">Modify the server configuration file, <code class="literal">basic-udp-server.conf</code>, by adding these lines:<pre class="programlisting">        client-config-dir /etc/openvpn/cookbook/clients 
+        route 192.168.4.0 255.255.255.0 10.200.0.1 
+</pre><p>Then save it as <code class="literal">example2-6-server.conf</code>.</p></li><li class="listitem">Next, create the directory for the client configuration files:<pre class="programlisting">
+<strong>       [root@server]# mkdir -m 755 /etc/openvpn/cookbook/clients</strong>
+</pre></li><li class="listitem">Place a file in this directory with the name of the client certificate. This file will contain a single line:<pre class="programlisting">        iroute 192.168.4.0 255.255.255.0 
+</pre><p>The name of the client certificate can be retrieved from the client certificate file using the following command:</p><pre class="programlisting">
+<strong>       $ openssl x509 -subject -noout -in client1.crt</strong>
+<strong>subject= /C=US/O=Cookbook 2.4/CN=client1</strong>
+</pre><p>Thus, for this recipe, the client configuration file needs to be named <code class="literal">client1</code>, without an extension.</p></li><li class="listitem">Start the server:<pre class="programlisting">
+<strong>       [root@server]# openvpn --config example2-6-server.conf</strong>
+</pre></li><li class="listitem">Start the client:<pre class="programlisting">
+<strong>       [root@client]# openvpn --config basic-udp-client.conf</strong>
+</pre></li><li class="listitem">After the VPN is established, we need to set up routing on both sides. Enable the IP traffic forwarding feature on the server:<pre class="programlisting">
+<strong>       [root@server]# sysctl -w net.ipv4.ip_forward=1</strong>
+</pre></li><li class="listitem">Add a route to LAN B's Gateway to point to the OpenVPN server itself:<pre class="programlisting">
+<strong>       [siteB-gw]&gt; ip route add 192.168.4.0/24 via 10.198.1.1</strong>
+<strong>       [siteB-gw]&gt; ip route add 10.200.0.0/24 via 10.198.1.1</strong>
+</pre><p>Here, <code class="literal">10.198.1.1</code> is the LAN IP address of the OpenVPN server used in this recipe.</p></li><li class="listitem">Now set up routing on the client side:<pre class="programlisting">
+<strong>       [client]$ sysctl -w net.ipv4.ip_forward=1</strong>
+</pre></li><li class="listitem">And similarly, add a route for the LAN A Gateway:<pre class="programlisting">
+<strong>       [siteA-gw]&gt; ip route add 10.198.0.0/16 via 192.168.4.5</strong>
+<strong>       [siteA-gw]&gt; ip route add 10.200.0.0/24 via 192.168.4.5</strong>
+</pre><p>Here, <code class="literal">192.168.4.5</code> is the LAN IP address of the OpenVPN client used in this recipe.</p></li><li class="listitem">Now, we verify that we can ping a machine on the remote server LAN:<pre class="programlisting">
+<strong>     [client]$ ping -c 2 10.198.0.10</strong>
+<strong>     PING 10.198.0.10 (10.198.0.10) 56(84) bytes of data.</strong>
+<strong>     64 bytes from 10.198.0.10: icmp_seq=1 ttl=63 time=31.1 ms</strong>
+<strong>     64 bytes from 10.198.0.10: icmp_seq=2 ttl=63 time=30.0 ms</strong>
+</pre><p>We verify the same vice versa:</p><pre class="programlisting">
+<strong>    [server]$ ping -c 2 192.168.4.164</strong>
+<strong>    PING 192.168.4.164 (192.168.4.164) 56(84) bytes of data.</strong>
+<strong>    64 bytes from 192.168.4.164: icmp_seq=1 ttl=64 time=30.2 ms</strong>
+<strong>    64 bytes from 192.168.4.164: icmp_seq=2 ttl=64 time=29.7 ms</strong>
+</pre></li></ol><div></div></div><div><div><div><div><h2 class="title"><a id="ch02lvl2sec72"/>How it works...</h2></div></div></div><p>When a client connects to the server with its certificate and with the certificate's common name, <code class="literal">client1</code>, the OpenVPN server reads the client configuration file (also known as a CCD file) in the <code class="literal">client-config-dir</code> directory. The following directive in this file tells the OpenVPN server that the subnet <code class="literal">192.168.4.0/24</code> is reachable through the client <code class="literal">client1</code>:</p><pre class="programlisting">iroute 192.168.4.0 255.255.255.0 
+</pre><p>This directive has nothing to do with a kernel routing table and is only used internally by the OpenVPN server process.</p><p>The following server directive is used by OpenVPN to configure the routing table of the operating system so that all of the traffic intended for the subnet <code class="literal">192.168.4.0/24</code> is forwarded to the interface with the IP address <code class="literal">10.200.0.1</code>, which is the VPN IP of the server:</p><pre class="programlisting">route 192.168.4.0 255.255.255.0 10.200.0.1 
+</pre><p>With the appropriate routing set up on both ends, site-to-site routing is now possible.</p></div><div><div><div><div><h2 class="title"><a id="ch02lvl2sec73"/>There's more...</h2></div></div></div><p>When routing client-side traffic to and from multiple clients, there are several caveats to be aware of.</p><div><div><div><div><h3 class="title"><a id="ch02lvl3sec20"/>Masquerading</h3></div></div></div><p>We could have used masquerading on both ends as well, but with multiple clients it becomes very hard to keep track of the network traffic.</p></div><div><div><div><div><h3 class="title"><a id="ch02lvl3sec21"/>Client-to-client subnet routing</h3></div></div></div><p>If another VPN client needs to reach the subnet <code class="literal">192.168.4.0/24</code> behind client <code class="literal">client1</code>, the server configuration file needs to be extended with the following:</p><pre class="programlisting">push "route 192.168.4.0 255.255.255.0" 
+</pre><p>This instructs all clients that subnet <code class="literal">192.168.4.0/24</code> is reachable through the VPN tunnel, except for client <code class="literal">client1</code>. The client <code class="literal">client1</code> itself is excluded due to the matching <code class="literal">iroute</code> entry.</p></div><div><div><div><div><h3 class="title"><a id="ch02lvl3sec22"/>No route statements in a CCD file</h3></div></div></div><p>Note that you cannot use the route directive inside a CCD file. This is a long-standing missing feature of OpenVPN. It is possible to achieve similar behavior using a <code class="literal">learn-address</code> script, as we will learn in <a class="link" title="Chapter 5. Scripting and Plugins" href="part0060.xhtml#aid-1P71O1">Chapter 5</a>, <em>Scripting and Plugins</em>.</p></div></div><div><div><div><div><h2 class="title"><a id="ch02lvl2sec74"/>See also</h2></div></div></div><div><ul class="itemizedlist"><li class="listitem">The <em>Complete site-to-site setup</em> recipe from <a class="link" title="Chapter 1.  Point-to-Point Networks" href="part0015.xhtml#aid-E9OE1">Chapter 1</a>, <em>Point-to-Point Networks</em>, where it is explained how to connect two remote LANs via a VPN tunnel using a point-to-point setup</li><li class="listitem">The <em>Using a learn-address script</em> recipe from <a class="link" title="Chapter 5. Scripting and Plugins" href="part0060.xhtml#aid-1P71O1">Chapter 5</a>, <em>Scripting and Plugins</em>, where it is explained how to use a <code class="literal">learn-address</code> script to dynamically set and remove server-side routes</li></ul></div></div></div>
+<div><div><div><div><h1 class="title"><a id="ch02lvl1sec24"/>Redirecting the default gateway</h1></div></div></div><p>A very common use of a VPN is to route all of the traffic over a secure tunnel. This allows one to safely access a network or even the Internet itself from within a hostile environment (for example, a poorly protected, but properly trojaned Internet cafÃ©teria).</p><p>In this recipe, we will set up OpenVPN to do exactly this. This recipe is very similar to the <em>Server-side routing</em> recipe, but there are some pitfalls when redirecting all of the traffic over a VPN tunnel.</p><div><div><div><div><h2 class="title"><a id="ch02lvl2sec75"/>Getting ready</h2></div></div></div><p>The network layout used in this recipe is the same as in the <em>Server-side routing</em> recipe.</p><p>This recipe uses the PKI files created in the first recipe of this chapter. Install OpenVPN 2.3.9 or higher on two computers. Make sure the computers are connected over a network. For this recipe, the server computer was running CentOS 6 Linux and OpenVPN 2.3.9 and the client was running Fedora 20 Linux and OpenVPN 2.3.9. Keep the server configuration file, <code class="literal">basic-udp-server.conf</code>, at hand along with the client configuration file, <code class="literal">basic-udp-client.conf</code>, from the <em>Server-side routing</em> recipe.</p></div><div><div><div><div><h2 class="title"><a id="ch02lvl2sec76"/>How to do it...</h2></div></div></div><div><ol class="orderedlist arabic"><li class="listitem">Create the server configuration file by adding a line to the <code class="literal">basic-udp-server.conf</code> file:<pre class="programlisting">        push "redirect-gateway def1" 
+</pre><p>Save it as <code class="literal">example2-7-server.conf</code>.</p></li><li class="listitem">Start the server:<pre class="programlisting">
+<strong>       [root@server]# openvpn --config example2-7-server.conf</strong>
+</pre></li><li class="listitem">In another server terminal, enable IP-traffic forwarding:<pre class="programlisting">
+<strong>       [root@server]# sysctl -w net.ipv4.ip_forward=1</strong>
+</pre></li><li class="listitem">Start the client:<pre class="programlisting">
+<strong>       [root@client]# openvpn --config basic-udp-client.conf</strong>
+</pre><p>You will observe something like this:</p><div><img src="img/image00344.jpeg" alt="How to do it..."/></div><p style="clear:both; height: 1em;"> </p></li><li class="listitem">After the VPN is established, verify that all of the traffic is going over the tunnel:<div><img src="img/image00345.jpeg" alt="How to do it..."/></div><p style="clear:both; height: 1em;"> </p><p>The first address in the <code class="literal">traceroute</code> output is the address of the OpenVPN server, hence all of the traffic is routed over the tunnel.</p></li></ol><div></div></div><div><div><div><div><h2 class="title"><a id="ch02lvl2sec77"/>How it works...</h2></div></div></div><p>When the client connects to the OpenVPN server, a special redirect statement is pushed out by the server to the OpenVPN client:</p><pre class="programlisting">push "redirect-gateway def1" 
+</pre><p>The configuration option <code class="literal">def1</code> tells the OpenVPN client to add three routes to the client operating system:</p><pre class="programlisting">192.168.96.101 via 192.168.4.1 dev eth0 
+0.0.0.0/1 via 10.200.0.1 dev tun0 
+128.0.0.0/1 via 10.200.0.1 dev tun0 
+</pre><p>The first route is an explicit route from the client to the OpenVPN server via the LAN interface. This route is needed as otherwise all the traffic for the OpenVPN server itself would go through the tunnel.</p><p>The other two routes are a clever trick to overrule the default route so that all of the traffic is sent through the tunnel instead of to the default LAN gateway. The existing default route to the LAN gateway is not deleted due to the <code class="literal">def1</code> parameter.</p></div><div><div><div><div><h2 class="title"><a id="ch02lvl2sec78"/>There's more...</h2></div></div></div><p>There are many parameters and flags related to the <code class="literal">redirect-gateway</code> directive. A subset of these parameters is listed here as well as some other special use cases.</p><div><div><div><div><h3 class="title"><a id="ch02lvl3sec23"/>Redirect-gateway parameters</h3></div></div></div><p>Originally, OpenVPN supported only the following directive:</p><pre class="programlisting">push "redirect-gateway" 
+</pre><p>This is used to delete the original default route and replace it with a route to the OpenVPN server. This may seem like a clean solution, but in some cases, OpenVPN was unable to determine the existing default route. This often happened to clients connecting through mobile connections. This also used to create routing lockups, where all of the traffic was routed through the tunnel, including the packets sent by the OpenVPN client itself.</p><p>With the current version of OpenVPN, there are several flags for the <code class="literal">redirect-gateway</code> directive:</p><div><ul class="itemizedlist"><li class="listitem"><code class="literal">local</code>: This flag tells OpenVPN to not set a direct route from the client to the server. It is useful only if the client and server are in the same LAN, such as when securing wireless networks.</li><li class="listitem"><code class="literal">block-local</code>: This flag instructs OpenVPN to block all of the network access to the LAN after the VPN tunnel is established. This is achieved by routing all of the LAN traffic into the tunnel itself, except for the traffic to the OpenVPN server itself.</li><li class="listitem"><code class="literal">bypass-dhcp</code>: This flag adds a direct route to the local DHCP server. If the local DHCP server is on a separate subnet, this will ensure that the DHCP addresses assigned to the non-VPN interfaces will continue to be refreshed. This option is picked up automatically by a Windows client. On other operating systems, a plugin or script is required.</li><li class="listitem"><code class="literal">bypass-dns</code>: This flag adds a direct route to the local DNS server. In large-scale networks, the DNS server is often not found on the local subnet that the client is connected to. If the route to this DNS server is altered to go through the VPN tunnel after the client has connected, this will cause, at the very least, a serious performance penalty. More likely, the entire DNS server will become unreachable. It is picked up by a Windows client automatically and requires a plugin or script on other operating systems.</li><li class="listitem"><code class="literal">!ipv4</code>: This flag was added in OpenVPN 2.4 and it instructs OpenVPN to not redirect any IPv4 traffic over the VPN tunnel. It is useful only in combination with the flag <code class="literal">ipv6</code>. We will go into detail more in the next recipe.</li><li class="listitem"><code class="literal">ipv6</code>: This flag was added in OpenVPN 2.4 and it instructs OpenVPN to also redirect all IPv6 traffic over the VPN tunnel. We will go into more detail in the next recipe.</li></ul></div></div><div><div><div><div><h3 class="title"><a id="ch02lvl3sec24"/>The redirect-private option</h3></div></div></div><p>Apart from the <code class="literal">redirect-gateway</code> directive, OpenVPN has a second, comparatively less well-known, option called <code class="literal">redirect-private</code>. This option takes the same parameters as the <code class="literal">redirect-gateway</code> directive, but it instructs OpenVPN to make no changes to the default routes at all. It is used most often in combination with the <code class="literal">bypass-dhcp</code>, <code class="literal">bypass-dns</code>, <code class="literal">ipv6</code>, and <code class="literal">block-local</code> flags.</p></div><div><div><div><div><h3 class="title"><a id="ch02lvl3sec25"/>Split tunneling</h3></div></div></div><p>In some cases, the <code class="literal">redirect-gateway</code> parameter is a bit too restrictive. You might want to add a few routes to local networks and route all other traffic over the VPN tunnel. The OpenVPN <code class="literal">route</code> directive has a few special parameters for this:</p><div><ul class="itemizedlist"><li class="listitem"><code class="literal">net_gateway</code>: This is a special gateway representing the LAN gateway address that OpenVPN determined when starting. For example, to add a direct route to the LAN <code class="literal">192.168.4.0</code>/<code class="literal">24</code>, you would add the following to the client configuration file:<pre class="programlisting">        route 192.168.4.0 255.255.255.0 net_gateway 
+</pre></li><li class="listitem"><code class="literal">vpn_gateway</code>: This is a special gateway representing the VPN gateway address. If you want to add a route that explicitly sends traffic for a particular subnet over the VPN tunnel, overruling any local routes, you would add the following option:<pre class="programlisting">        route 10.198.0.0 255.255.0.0 vpn_gateway</pre></li></ul></div></div></div><div><div><div><div><h2 class="title"><a id="ch02lvl2sec79"/>See also</h2></div></div></div><div><ul class="itemizedlist"><li class="listitem">The <em>Server-side routing</em> recipe, where the basic steps of setting up server-side routing is explained</li></ul></div></div></div>
+<div><div><div><div><h1 class="title"><a id="ch02lvl1sec25"/>Redirecting the IPv6 default gateway</h1></div></div></div><p>With the advent of IPv6 networks, it is becoming increasingly important to be able to set up a VPN that will secure both IPv4 and IPv6 traffic. If only IPv4 traffic is secured over a VPN tunnel, then it is still possible for traffic to leak out over IPv6. In this recipe, we will set up OpenVPN to secure all IPv6 traffic as well. Support for this was added in OpenVPN 2.4.</p><div><div><div><div><h2 class="title"><a id="ch02lvl2sec80"/>Getting ready</h2></div></div></div><p>The network layout used in this recipe is the same as in the <em>Server-side routing</em> recipe.</p><p>This recipe uses the PKI files created in the first recipe of this chapter. Install OpenVPN 2.4 or higher on two computers. Make sure the computers are connected over a network. For this recipe, the server computer was running CentOS 6 Linux and OpenVPN 2.4 and the client was running Fedora 20 Linux and OpenVPN 2.4. For the server, keep the IPv6 configuration file, <code class="literal">example2-4-server.conf</code>, from the <em>Adding IPv6 support</em> recipe at hand. For the client, keep the configuration file, <code class="literal">basic-udp-client.conf</code>, from the <em>Server-side routing</em> recipe at hand.</p></div><div><div><div><div><h2 class="title"><a id="ch02lvl2sec81"/>How to do it...</h2></div></div></div><div><ol class="orderedlist arabic"><li class="listitem">Create the server configuration file by adding a line to the <code class="literal">example2-4-server.conf</code> file:<pre class="programlisting">        push "redirect-gateway ipv6 !ipv4" 
+</pre><p>Save it as <code class="literal">example2-8-server.conf</code>.</p></li><li class="listitem">Start the server:<pre class="programlisting">
+<strong>       [root@server]# openvpn --config example2-8-server.conf</strong>
+</pre></li><li class="listitem">In another server terminal, enable IP-traffic forwarding:<pre class="programlisting">
+<strong>       [root@server]# sysctl -w net.ipv6.conf.all.forwarding=1</strong>
+</pre></li><li class="listitem">Start the client:<pre class="programlisting">
+<strong>      [root@client]# openvpn --config basic-udp-client.conf</strong>
+<strong>[...]</strong>
+<strong>add_route_ipv6(::/3 -&gt; 2001:db8:100::1 metric -1) dev tun1</strong>
+<strong>add_route_ipv6(2000::/4 -&gt; 2001:db8:100::1 metric -1) dev 
+          tun1</strong>
+<strong>add_route_ipv6(3000::/4 -&gt; 2001:db8:100::1 metric -1) dev 
+          tun1</strong>
+<strong>add_route_ipv6(fc00::/7 -&gt; 2001:db8:100::1 metric -1) dev 
+          tun1</strong>
+<strong>Initialization Sequence Completed</strong>
+</pre></li></ol><div></div></div><div><div><div><div><h2 class="title"><a id="ch02lvl2sec82"/>How it works...</h2></div></div></div><p>When the client connects to the OpenVPN server, a special redirect statement is pushed out by the server to the OpenVPN client:</p><pre class="programlisting">push "redirect-gateway ipv6 !ipv4" 
+</pre><p>The configuration flag <code class="literal">ipv6</code> tells the OpenVPN client to redirect all of the IPv6 traffic over the tunnel, by adding three routes to the client operating system:</p><pre class="programlisting">2000::/4 
+3000::/4 
+fc00::/4 
+</pre><p>This effectively redirects all of the IPv6 traffic over the VPN tunnel.</p><p>The second flag <code class="literal">!ipv4</code>, tells the OpenVPN client to not redirect IPv4 traffic. This was added to this example to demonstrate that it is also possible to redirect IPv6 traffic only.</p></div><div><div><div><div><h2 class="title"><a id="ch02lvl2sec83"/>There's more...</h2></div></div></div><p>It is possible to achieve the same behavior by adding the following lines to the server configuration file:</p><pre class="programlisting">push "route-ipv6 2000::/4" 
+push "route-ipv6 3000::/4" 
+push "route-ipv6 fc00::/4" 
+</pre><p>This is supported in OpenVPN 2.3 as well. However, there is a very important caveat to this: if the IPv6 address of the server is in the same range as any of the preceding addresses, then this setup will fail, as all of the traffic for the preceding IPv6 networks will be redirected over the tunnel. To overcome this problem, the flag <code class="literal">ipv6</code> was introduced in OpenVPN 2.4.</p></div></div>
+<div><div><div><div><h1 class="title"><a id="ch02lvl1sec26"/>Using an ifconfig-pool block</h1></div></div></div><p>In this recipe, we will use an <code class="literal">ifconfig-pool</code> block to separate regular VPN clients from administrative VPN clients. This makes it easier to set up different firewall rules for administrative users.</p><div><div><div><div><h2 class="title"><a id="ch02lvl2sec84"/>Getting ready</h2></div></div></div><p>This recipe uses the PKI files created in the first recipe of this chapter. Install OpenVPN 2.3.9 or higher on two computers. Make sure the computers are connected over a network. For this recipe, the server computer was running CentOS 6 Linux and OpenVPN 2.3.9 and the regular VPN client was running Windows 7 64 bit and OpenVPN 2.3.11 and was assigned to the <code class="literal">192.168.200.0</code> network. The VPN client Admin was running Fedora 20 Linux and OpenVPN 2.3.9 and was on the <code class="literal">192.168.202.0</code> network. Keep the client configuration file, <code class="literal">basic-udp-client.conf</code>, from the <em>Server-side routing</em> recipe at hand.</p><p>We use the following network layout:</p><div><img src="img/image00346.jpeg" alt="Getting ready"/></div><p style="clear:both; height: 1em;"> </p></div><div><div><div><div><h2 class="title"><a id="ch02lvl2sec85"/>How to do it...</h2></div></div></div><div><ol class="orderedlist arabic"><li class="listitem">Create the server configuration file:<pre class="programlisting">        proto udp 
+        port 1194 
+        dev tun 
+ 
+        mode server 
+        ifconfig 192.168.200.1 255.255.255.0 
+        ifconfig-pool 192.168.200.100 192.168.200.120 
+        route 192.168.200.0 255.255.248.0 192.168.200.1 
+        push "route 192.168.200.1" 
+        push "route 192.168.200.0 255.255.248.0" 
+ 
+        ca       /etc/openvpn/cookbook/ca.crt 
+        cert     /etc/openvpn/cookbook/server.crt 
+        key      /etc/openvpn/cookbook/server.key 
+        dh       /etc/openvpn/cookbook/dh2048.pem 
+        tls-auth /etc/openvpn/cookbook/ta.key 0 
+ 
+        persist-key 
+        persist-tun 
+        keepalive 10 60 
+ 
+        topology subnet 
+        push "topology subnet" 
+ 
+        user  nobody 
+        group nobody  # use "group nogroup" on some distros 
+ 
+        daemon 
+        log-append /var/log/openvpn.log 
+ 
+        client-config-dir /etc/openvpn/cookbook/clients 
+</pre><p>Then save it as <code class="literal">example2-9-server.conf</code>.</p></li><li class="listitem">Start the server:<pre class="programlisting">
+<strong>       [root@server]# openvpn --config example2-9-server.conf</strong>
+</pre></li><li class="listitem">The administrative VPN client will be assigned a special IP address using a client-configuration file:<pre class="programlisting">
+<strong>       [root@server]# mkdir -m 755 /etc/openvpn/cookbook/clients</strong>
+<strong>       [root@server]# cd /etc/openvpn/cookbook/clients</strong>
+<strong>       [root@server]# echo "ifconfig-push 192.168.202.6 
+           192.168.202.6" \</strong>
+<strong>         &gt; client1</strong>
+</pre><p>Note that the client VPN address is listed twice. This is not a typo; for more details on this, refer to the previous recipe.</p></li><li class="listitem">Note that the <code class="literal">clients</code> directory needs to be world-readable, as the OpenVPN server process will run as user <code class="literal">nobody</code> after starting up.</li><li class="listitem">Next, start the Linux client using the configuration file from the earlier recipe:<pre class="programlisting">
+<strong>       [root@AdminClient]# openvpn --config basic-udp-client.conf</strong>
+<strong>[...]</strong>
+<strong>[openvpnserver] Peer Connection Initiated with 
+           openvpnserver:1194</strong>
+<strong>TUN/TAP device tun0 opened</strong>
+<strong>do_ifconfig, tt-&gt;ipv6=0, tt-&gt;did_ifconfig_ipv6_setup=0</strong>
+<strong>/usr/sbin/ip link set dev tun0 up mtu 1500</strong>
+<strong>/usr/sbin/ip addr add dev tun0 <strong>192.168.202.6/24</strong> broadcast     
+           192.168.200.255</strong>
+<strong>Initialization Sequence Completed  </strong>
+</pre><p>The IP address that is assigned to the administrative client is highlighted for clarity.</p></li><li class="listitem">Create a configuration file for the Windows client:<pre class="programlisting">        client 
+        proto udp 
+        remote openvpnserver.example.com 
+        port 1194 
+        dev tun 
+        nobind 
+ 
+        ca       "c:/program files/openvpn/config/ca.crt" 
+        cert     "c:/program files/openvpn/config/client2.crt" 
+        key      "c:/program files/openvpn/config/client2.key" 
+        tls-auth "c:/program files/openvpn/config/ta.key" 1 
+ 
+        remote-cert-tls server 
+</pre></li><li class="listitem">Then save it as <code class="literal">basic-udp-client.ovpn</code>.<div><h3 class="title"><a id="note10"/>Note</h3><p>Note the use of the forward slash (<code class="literal">/</code>), which is easier to use than the backslash (<code class="literal">\</code>), as the backslash needs to be repeated twice each time.</p></div></li><li class="listitem">Transfer the <code class="literal">ca.crt</code>, <code class="literal">client2.crt</code>, and <code class="literal">client2.key</code> files along with the <code class="literal">tls-auth</code> secret key file, <code class="literal">ta.key</code>, to the Windows machine using a secure channel, such as <code class="literal">winscp</code> or the PuTTY <code class="literal">pscp</code> command-line tool.</li><li class="listitem">Start the Windows client using the OpenVPN GUI:<div><img src="img/image00347.jpeg" alt="How to do it..."/></div><p style="clear:both; height: 1em;"> </p><div><h3 class="title"><a id="note11"/>Note</h3><p>Remember that this client's private key file is protected using a password or passphrase. After both the clients are connected, we verify that they can ping each other and the server (assuming that no firewalls are blocking access).</p></div></li><li class="listitem">On the Admin Client:<pre class="programlisting">
+<strong>      [AdminClient]$ ping 192.168.200.1</strong>
+<strong>      [AdminClient]$ ping 192.168.200.102</strong>
+</pre></li><li class="listitem">And on the regular client:<pre class="programlisting">
+<strong>      [WinClient]C:&gt; ping 192.168.200.1</strong>
+<strong>      [WinClient]C:&gt; ping 192.168.202.6</strong>
+</pre></li></ol><div></div></div><div><div><div><div><h2 class="title"><a id="ch02lvl2sec86"/>How it works...</h2></div></div></div><p>A server configuration file normally uses the following directive to configure a range of IP addresses for the clients:</p><pre class="programlisting">server 192.168.200.0 255.255.255.0 
+</pre><p>This directive is internally expanded to the following:</p><pre class="programlisting">mode server 
+tls-server 
+ 
+ifconfig 192.168.200.1 192.168.200.2  
+ifconfig-pool 192.168.200.4 192.168.200.251 
+route 192.168.200.0 255.255.255.0 
+push "route 192.168.200.1" 
+if (topology==subnet) push "topology subnet" 
+</pre><p>So, by not using the <code class="literal">server</code> directive, but by specifying our own <code class="literal">ifconfig-pool</code> range, we can override this behavior. We then use a CCD file to assign an IP address to the administrative client, which falls outside of the <code class="literal">ifconfig-pool</code> range. By using the appropriate <code class="literal">route</code> and <code class="literal">push "route"</code> statements, we ensure that all clients are able to ping each other.</p><p>Note that we also need to explicitly push the topology in this case, as this is no longer done automatically by the <code class="literal">server</code> directive.</p></div><div><div><div><div><h2 class="title"><a id="ch02lvl2sec87"/>There's more..</h2></div></div></div><p>There are many details to consider when setting up the default configuration files.</p><div><div><div><div><h3 class="title"><a id="ch02lvl3sec26"/>Configuration files on Windows</h3></div></div></div><p>The OpenVPN GUI application on Windows always starts in the directory:</p><pre class="programlisting">C:\Program Files\OpenVPN\config 
+</pre><p>Or, <code class="literal">C:\Program Files(x86)\..</code>. when using the 32-bit version of OpenVPN on 64-bit versions of Windows. Thus, the directory paths in the <code class="literal">basic-udp-client.ovpn</code> configuration file can be omitted:</p><pre class="programlisting">ca       ca.crt 
+cert     client2.crt 
+key      client2.key 
+tls-auth ta.key 1 
+</pre></div><div><div><div><div><h3 class="title"><a id="ch02lvl3sec27"/>Client-to-client access</h3></div></div></div><p>With this setup, the VPN clients can connect to each other even though we did not make use of the following directive in the server-side configuration:</p><pre class="programlisting">client-to-client 
+</pre><p>This is possible due to the <code class="literal">route</code> and <code class="literal">push "route"</code> statements in the server configuration file. The advantage of not using <code class="literal">client-to-client</code> is that it is still possible to filter out unwanted traffic using <code class="literal">iptables</code> or another firewalling solution.</p><p>If there is no need for the administrative clients to connect to the regular VPN clients (or vice versa), then the netmask can be adjusted to:</p><pre class="programlisting">route 192.168.200.0 255.255.255.0 
+push "route 192.168.200.0 255.255.255.0" 
+</pre><p>Now, the networks are completely separated.</p></div><div><div><div><div><h3 class="title"><a id="ch02lvl3sec28"/>Using the TCP protocol</h3></div></div></div><p>In this example, we chose the UDP protocol. The client configuration file in this recipe can easily be converted to use TCP protocol by changing the line:</p><pre class="programlisting">proto udp 
+</pre><p>Change it to the following:</p><pre class="programlisting">proto tcp 
+</pre><p>Save this file as <code class="literal">basic-tcp-client.ovpn</code> for future use.</p></div></div></div>
+<div><div><div><div><h1 class="title"><a id="ch02lvl1sec27"/>Using the status file</h1></div></div></div><p>OpenVPN offers several options to monitor the clients connected to a server. The most commonly used method is using a status file. This recipe will show how to use and read the OpenVPN's status file.</p><div><div><div><div><h2 class="title"><a id="ch02lvl2sec88"/>Getting ready</h2></div></div></div><p>The network layout used in this recipe is the same as in the <em>Server-side routing</em> recipe. This recipe uses the PKI files created in the first recipe of this chapter. Install OpenVPN 2.3.9 or higher on two computers. Make sure the computers are connected over a network. For this recipe, the server computer was running CentOS 6 Linux and OpenVPN 2.3.9. The first client was running Fedora 20 Linux and OpenVPN 2.3.9. The second client was running Windows 7 64 bit and OpenVPN 2.3.11. For the Linux server, keep the server configuration file <code class="literal">basic-udp-server.conf</code> from the <em>Server-side routing</em> recipe at hand. For the Linux client, keep the client configuration file <code class="literal">basic-udp-client.conf</code> from the same recipe at hand. For the Windows client, keep the corresponding client configuration file, <code class="literal">basic-udp-client.ovpn</code>, from the previous recipe at hand.</p></div><div><div><div><div><h2 class="title"><a id="ch02lvl2sec89"/>How to do it...</h2></div></div></div><div><ol class="orderedlist arabic"><li class="listitem">Create the server configuration file by adding a line to the <code class="literal">basic-udp-server.conf</code> file:<pre class="programlisting">        status /var/log/openvpn.status 
+</pre><p>Save it as <code class="literal">example2-10-server.conf</code>.</p></li><li class="listitem">Start the server:<pre class="programlisting">
+<strong>       [root@server]# openvpn --config example2-10-server.conf</strong>
+</pre></li><li class="listitem">First, start the Linux client:<pre class="programlisting">
+<strong>       [root@client1]# openvpn --config basic-udp-client.conf</strong>
+</pre></li><li class="listitem">After the VPN is established, list the contents of the <code class="literal">openvpn.status</code> file:<pre class="programlisting">
+<strong>       [root@server]# cat /var/log/openvpn.status</strong>
+</pre><p>A sample output is shown in the following screenshot:</p><div><img src="img/image00348.jpeg" alt="How to do it..."/></div><p style="clear:both; height: 1em;"> </p></li><li class="listitem">Transfer the <code class="literal">ca.crt</code>, <code class="literal">client2.crt</code>, and <code class="literal">client2.key</code> files along with the <code class="literal">tls-auth</code> secret key file, <code class="literal">ta.key</code>, to the Windows machine using a secure channel, such as <code class="literal">winscp</code> or PuTTY's <code class="literal">pscp</code> command-line tool.</li><li class="listitem">Start the Windows client on the command line:<pre class="programlisting">
+<strong>       [WinClient2]C:&gt; cd \program files\openvpn\config</strong>
+<strong>       [WinClient2]C:&gt; ..\bin\openvpn --config basic-udp-
+           client.ovpn</strong>
+</pre><p>Remember that this client's private key file is protected using a password or passphrase.</p></li><li class="listitem">List the contents of the status file again on the server:<pre class="programlisting">
+<strong>       [root@server]# cat /var/log/openvpn.status</strong>
+</pre><p>A sample output is shown in the following screenshot:</p><div><img src="img/image00349.jpeg" alt="How to do it..."/></div><p style="clear:both; height: 1em;"> </p></li></ol><div></div></div><div><div><div><div><h2 class="title"><a id="ch02lvl2sec90"/>How it works...</h2></div></div></div><p>Each time a client connects to the OpenVPN server, the status file is updated with the connection information. The <strong>OpenVPN </strong>
+<strong>CLIENT</strong>
+<strong>LIST</strong> and <strong>ROUTING </strong>
+<strong>TABLE</strong> tables are the most interesting ones, as they provide the following information:</p><div><ul class="itemizedlist"><li class="listitem">Which clients are connected</li><li class="listitem">From which IP address the clients are connecting</li><li class="listitem">The number of bytes each client has received and transferred</li><li class="listitem">The time at which the client connected</li></ul></div><p>In addition, the routing table also shows which networks are routed to each client.</p></div><div><div><div><div><h2 class="title"><a id="ch02lvl2sec91"/>There's more...</h2></div></div></div><p>There are three things to keep in mind when using status files:</p><div><div><div><div><h3 class="title"><a id="ch02lvl3sec29"/>Status parameters</h3></div></div></div><p>The <code class="literal">status</code> directive takes two parameters:</p><div><ul class="itemizedlist"><li class="listitem">The filename of the status file.</li><li class="listitem">Optionally, the refresh frequency for updating the status file. The default value of 60 seconds should suffice for most situations.</li></ul></div></div><div><div><div><div><h3 class="title"><a id="ch02lvl3sec30"/>Disconnecting clients</h3></div></div></div><p>Note that when a client disconnects the status file, it is not updated immediately. OpenVPN first tries to reconnect to the client based on the <code class="literal">keepalive</code> parameters in the server configuration file. The server configuration file in this recipe uses:</p><pre class="programlisting">keepalive 10 60 
+</pre><p>This tells the server that it will ping the client every 10 seconds. If it does not get a response after 60 seconds * 2, the connection is restarted. The OpenVPN server will double the value of the second argument. The server will also tell the client to ping every 10 seconds and to restart the connection after 60 seconds if it does not get any response.</p></div><div><div><div><div><h3 class="title"><a id="ch02lvl3sec31"/>Explicit-exit-notify</h3></div></div></div><p>One of the lesser-known options of OpenVPN is the following directive:</p><pre class="programlisting">explicit-exit-notify [N] 
+</pre><p>This can be set on the client side so that when the client disconnects, it will send an explicit <strong>OCC_EXIT</strong> message to the server (if at all possible). This will speed up the removal of disconnected clients. The optional parameter N indicates the number of times the message will be sent. By default, only a single <strong>OCC_EXIT</strong> message is sent, which can cause problems as the UDP protocol does not guarantee the delivery of packets.</p></div></div></div>
+<div><div><div><div><h1 class="title"><a id="ch02lvl1sec28"/>The management interface</h1></div></div></div><p>This recipe shows how an OpenVPN client is managed using the management interface from the server side.</p><div><div><div><div><h2 class="title"><a id="ch02lvl2sec92"/>Getting ready</h2></div></div></div><p>The network layout used in this recipe is the same as in the <em>Server-side routing</em> recipe. This recipe uses the PKI files created in the first recipe of this chapter. For this recipe, the server computer was running CentOS 6 Linux and OpenVPN 2.3.9. The client was running Windows 7 64 bit and OpenVPN 2.3.10. For the server, keep the server configuration file, <code class="literal">basic-udp-server.conf</code>, from the <em>Server-side routing</em> recipe at hand. For the Windows client, keep the corresponding client configuration file, <code class="literal">basic-udp-client.ovpn</code>, from the previous recipe at hand.</p></div><div><div><div><div><h2 class="title"><a id="ch02lvl2sec93"/>How to do it...</h2></div></div></div><div><ol class="orderedlist arabic"><li class="listitem">Start the server using the default server configuration file:<pre class="programlisting">
+<strong>      [root@server]# openvpn --config basic-udp-server.conf</strong>
+</pre></li><li class="listitem">Create a configuration file for the Windows client by adding a line to the <code class="literal">basic-udp-client.ovpn</code> file:<pre class="programlisting">        management tunnel 23000 stdin 
+</pre><p>Save it as <code class="literal">example2-11.ovpn</code>.</p></li><li class="listitem">Transfer the <code class="literal">ca.crt</code>, <code class="literal">client2.crt</code>, and <code class="literal">client2.key</code> files along with the <code class="literal">tls-auth</code> secret key file, <code class="literal">ta.key</code>, to the Windows machine using a secure channel, such as <code class="literal">winscp</code> or the PuTTY <code class="literal">pscp</code> command-line tool.</li><li class="listitem">The OpenVPN GUI does not support this particular configuration of the management interface. Therefore, we start the Windows client on the command line:<pre class="programlisting">
+<strong>      [WinClient]C:&gt; cd \program files\openvpn\config</strong>
+<strong>      [WinClient]C:&gt; ..\bin\openvpn --config example2-11.ovpn</strong>
+</pre><p>The OpenVPN client will now ask for a password for the management interface. Pick a good password. After that, it will ask for the private key passphrase.</p></li><li class="listitem">After the VPN is established, we can connect from the server to the management interface of the OpenVPN client using the telnet program on the server:<pre class="programlisting">
+<strong>      [server]$ telnet 10.200.0.3 23000</strong>
+<strong>Trying 10.200.0.3...</strong>
+<strong>Connected to 10.200.0.3.</strong>
+<strong>Escape character is '^]'.</strong>
+<strong>ENTER PASSWORD:</strong>
+<strong>SUCCESS: password is correct</strong>
+<strong>&gt;INFO:OpenVPN Management Interface Version 1 -- type 'help' 
+          for more info</strong>
+<strong>status</strong>
+<strong>OpenVPN STATISTICS</strong>
+<strong>Updated,Fri Feb 5 18:22:31 2016</strong>
+<strong>TUN/TAP read bytes,21849</strong>
+<strong>TUN/TAP write bytes,451</strong>
+<strong>TCP/UDP read bytes,6571</strong>
+<strong>TCP/UDP write bytes,30172</strong>
+<strong>Auth read bytes,707</strong>
+<strong>TAP-WIN32 driver status,"(null)"</strong>
+<strong>END</strong>
+<strong>signal SIGTERM</strong>
+</pre></li><li class="listitem">Use <em>Ctrl</em> + <em>]</em> or quit to exit the <code class="literal">telnet</code> program.</li></ol><div></div></div><div><div><div><div><h2 class="title"><a id="ch02lvl2sec94"/>How it works...</h2></div></div></div><p>When the OpenVPN client connects to the server, a special management interface is set up using the directive:</p><pre class="programlisting">management tunnel 23000 stdin 
+</pre><p>It has the following parameters:</p><div><ul class="itemizedlist"><li class="listitem">The <code class="literal">tunnel</code> parameter to bind the management interface to the VPN tunnel itself. This is useful for testing purposes and some advanced client setups. On the server side, it is best to always specify <code class="literal">127.0.0.1</code> for the management IP.</li><li class="listitem">The port <code class="literal">23000</code> on which the management interface will be listening.</li><li class="listitem">The last parameter is the password file or the special keyword <code class="literal">stdin</code> to indicate that the management interface password will be specified when OpenVPN starts up. Note that this password is completely unrelated to the private key passphrases or any other user management passwords that OpenVPN uses.</li></ul></div><p>After the management interface comes up, the server operator can connect to it using telnet and can query the client. The client can type the following:</p><pre class="programlisting">signal SIGTERM 
+</pre><p>This effectively shuts itself down as if the user has stopped it! This shows how important it is to protect the management interface and its password.</p></div><div><div><div><div><h2 class="title"><a id="ch02lvl2sec95"/>There's more...</h2></div></div></div><p>The management interface can also be run on the OpenVPN server itself. In that case, it is possible to list the connected clients, disconnect them, or perform a variety of other OpenVPN administrative tasks.</p><p>It is expected that the management interface will become more important in future versions of OpenVPN, both on the client and the server side, as the preferred method for programmatically interacting with the OpenVPN software.</p></div><div><div><div><div><h2 class="title"><a id="ch02lvl2sec96"/>See Also</h2></div></div></div><div><ul class="itemizedlist"><li class="listitem">The <em>Management interface</em> recipe in <a class="link" title="Chapter 3. Client-server Ethernet-style Networks" href="part0038.xhtml#aid-147LC1">Chapter 3</a>, <em>Client-server Ethernet-style Networks</em>, explains the use of the server-side management interface in more detail</li></ul></div></div></div>
+<div><div><div><div><h1 class="title"><a id="ch02lvl1sec29"/>Proxy ARP</h1></div></div></div><p>In this recipe, we will use the <code class="literal">proxy-arp</code> feature of the Linux kernel to make the VPN clients appear as part of the server-side LAN. This eliminates the need to use bridging, which is desirable in most cases.</p><div><div><div><div><h2 class="title"><a id="ch02lvl2sec97"/>Getting ready</h2></div></div></div><p>This recipe uses the PKI files created in the first recipe of this chapter. For this recipe, the server computer was running CentOS 6 Linux and OpenVPN 2.3.9. The client was running Windows 7 64 bit and OpenVPN 2.3.10. For the server, keep the server configuration file, <code class="literal">basic-udp-server.conf</code>, from the <em>Server-side routing</em> recipe at hand. For the Windows client, keep the corresponding client configuration file, <code class="literal">basic-udp-client.ovpn</code>, from the <em>Using an ifconfig-pool block</em> recipe at hand.</p><p>We use the following network layout:</p><div><img src="img/image00350.jpeg" alt="Getting ready"/></div><p style="clear:both; height: 1em;"> </p></div><div><div><div><div><h2 class="title"><a id="ch02lvl2sec98"/>How to do it...</h2></div></div></div><div><ol class="orderedlist arabic"><li class="listitem">Create the server config file by adding the following lines to the <code class="literal">basic-udp-server.conf</code> file:<pre class="programlisting">        script-security 2 
+        client-connect    /etc/openvpn/cookbook/proxyarp-connect.sh 
+        client-disconnect /etc/openvpn/cookbook/proxyarp-disconnect.sh 
+</pre><p>Save it as <code class="literal">example2-12-server.conf</code>.</p></li><li class="listitem">Create the <code class="literal">proxyarp-connect.sh</code> script:<pre class="programlisting">        #!/bin/bash 
+        /sbin/arp -i eth0  -Ds $ifconfig_pool_remote_ip eth0 pub 
+</pre><p>Then create the <code class="literal">proxyarp-disconnect.sh</code> script:</p><pre class="programlisting">        #!/bin/bash 
+        /sbin/arp -i eth0  -d $ifconfig_pool_remote_ip 
+</pre></li><li class="listitem">Make sure that both the scripts are executable:<pre class="programlisting">
+<strong>      [root@server]# cd /etc/openvpn/cookbook</strong>
+<strong>      [root@server]# chmod 755 proxyarp-connect.sh </strong>
+<strong>      [root@server]# chmod 755 proxyarp-disconnect.sh</strong>
+</pre></li><li class="listitem">Start the server:<pre class="programlisting">
+<strong>      [root@server]# openvpn --config example2-12-server.conf</strong>
+</pre></li><li class="listitem">Then, start the Windows client using the OpenVPN GUI:<div><img src="img/image00351.jpeg" alt="How to do it..."/></div><p style="clear:both; height: 1em;"> </p></li></ol><div></div><p>After a client has successfully connected, the <code class="literal">arp</code> table on the OpenVPN server will have a new entry:</p><pre class="programlisting">10.198.1.130 * * MP eth0 
+</pre><p>From a machine on the server-side LAN, we can now ping the VPN client:</p><pre class="programlisting">
+<strong>[siteBclient]C:&gt; ping 10.198.1.130</strong>
+</pre><p>Note that no special routing is required on Site B's LAN. The VPN client truly appears as being on the LAN itself.</p></div><div><div><div><div><h2 class="title"><a id="ch02lvl2sec99"/>How it works...</h2></div></div></div><p>The <code class="literal">proxy-arp</code> feature is supported by most UNIX and Linux kernels. It is used most often for connecting dial-in clients to a LAN, and nowadays, also by ADSL and cable Internet providers. When the OpenVPN client connects, an IP address is borrowed from Site B's LAN range. This IP address is assigned to the OpenVPN client. At the same time, a special ARP entry is made on the OpenVPN server to tell the rest of the network that the OpenVPN server acts as a proxy for <code class="literal">10.198.1.130</code>. This means that when another machine on Site B's LAN wants to know where to find the host with <code class="literal">10.198.1.130</code>, then the OpenVPN server will respond (with its own MAC address).</p></div><div><div><div><div><h2 class="title"><a id="ch02lvl2sec100"/>There's more...</h2></div></div></div><p>A <code class="literal">proxy-arp</code> setup has its own set of applications as well as challenges. Some of them are listed here:</p><div><div><div><div><h3 class="title"><a id="ch02lvl3sec32"/>TAP-style networks</h3></div></div></div><p>The <code class="literal">proxy-arp</code> feature can also be used in a TAP-style network. In combination with an external DHCP server, it provides almost the same functionality as that of an Ethernet bridging solution without the drawbacks of Ethernet bridging itself.</p></div></div><div><div><div><div><h2 class="title"><a id="ch02lvl2sec101"/>User nobody</h2></div></div></div><p>Note that in this example we did not use:</p><pre class="programlisting">user nobody 
+group nobody</pre><p>We did this because it would have prevented the  <code class="literal">proxyarp-*</code> scripts from working. In order to execute the <code class="literal">/sbin/arp</code> command, root privileges are required. Therefore, it is not possible to switch to user <code class="literal">nobody</code> after the OpenVPN server has started. Alternatively, one can configure <code class="literal">sudo</code> access to the <code class="literal">/sbin/arp</code> command to circumvent this.</p><div><div><div><div><h3 class="title"><a id="ch02lvl3sec33"/>Broadcast traffic might not always work</h3></div></div></div><p>Sending broadcast traffic over a network where <code class="literal">proxy-arp</code> is used is tricky. For most purposes (for example, Windows Network Neighborhood browsing), <code class="literal">proxy-arp</code> will work. For some applications that require all the clients to be a member of a full broadcast domain, using <code class="literal">proxy-arp</code> might not suffice. In that case, Ethernet bridging is a better solution.</p></div></div><div><div><div><div><h2 class="title"><a id="ch02lvl2sec102"/>See also</h2></div></div></div><div><ul class="itemizedlist"><li class="listitem">The <em>Checking broadcast and non-IP traffic</em> recipe from <a class="link" title="Chapter 3. Client-server Ethernet-style Networks" href="part0038.xhtml#aid-147LC1">Chapter 3</a>, <em>Client-server Ethernet-style Networks</em></li></ul></div></div></div></body></html>

@@ -1,0 +1,526 @@
+<html><head></head><body><div><h1 class="header-title">Extracting Data Physically from Android Devices</h1>
+                
+            
+            
+                
+<p>In this chapter, we will be covering physical data extraction, using free and open source tools wherever possible. The majority of the material that is covered in this chapter will use the <strong>Android Debug Bridge</strong> (<strong>ADB</strong>) methods that we discussed previously in this book. By the end of this chapter, the reader should be familiar with the following:</p>
+<ul>
+<li>What physical extraction means</li>
+<li>Physical data extraction using <kbd>dd</kbd>, <kbd>nanddump</kbd>, and Magnet ACQUIRE</li>
+<li>RAM imaging and analysis</li>
+<li>SD card acquisitions</li>
+<li>JTAG and chip-off methods</li>
+</ul>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Physical extraction overview</h1>
+                
+            
+            
+                
+<p>In digital forensics, a physical extraction is an exact bit-for-bit image of the electronic media, and this definition remains true for mobile devices. In traditional computer forensics, this typically involves removing the evidence drive from the suspect's computer and imaging it via a write-blocker without ever booting the drive, resulting in an image file containing an exact copy of the suspect's drive. The output is frequently referred to as a <strong>raw image</strong>, or simply a binary (<kbd>.bin</kbd>) file. Physical extractions differ from logical ones in that they are exact copies of the device's memory, and include unallocated space, file slack, volume slack, and so on.</p>
+<p class="mce-root"/>
+<p class="mce-root">In mobile forensics, the result is the same—an exact bit-for-bit image of the device—but the methods are somewhat different. For example, removing the flash memory from the device to image it can be both time-consuming and expensive, and requires a lot of specialized knowledge (though it can be done, as discussed in the <em>Chip-off</em> section later in this chapter). Furthermore, short of using advanced JTAG or chip-off methods, the device must be booted to some degree (and written to in many cases) in order to access the data. Finally, finding a tool that can even parse the final image file can be very difficult. Hard drive images and file systems have long been documented and studied, while mobile images and file systems change frequently; in some cases, mobile file systems are even unique to a specific manufacturer. Knowing what to do with the image after it has been acquired can be just as challenging as acquiring the image in the first place!</p>
+<p class="mce-root">Many of the techniques discussed in <a href="b5ab11df-1911-4deb-accd-f92c74650e6d.xhtml" target="_blank">Chapter 4</a>, <em>Extracting Data Logically from Android Devices</em>, will still apply here: booting into a custom recovery is still the most forensically sound process; physically acquiring a live device should be avoided if at all possible.</p>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">What data can be acquired physically?</h1>
+                
+            
+            
+                
+<p>The short answer is: everything. Since a physical acquisition is an exact image of the device, every bit of data on the device is in the image file. As mentioned in the preceding section, with a physical extraction, an examiner is usually only limited by their ability to find the relevant data. Generally, this is due to a lack of good image analysis tools in the mobile forensics space. To further compound the matter, applications have been known to encode or otherwise obfuscate user data, so simply browsing through the image in a hex editor will frequently miss valuable evidence. In this chapter, we will cover various methods for mounting or otherwise viewing the file system of a physical extraction, while <a href="c0ffe5a3-4668-436d-9f02-e70a67f3e43e.xhtml" target="_blank">Chapter 7</a>,<em> Forensic Analysis of Android Applications</em>, will focus on analyzing data from specific applications.</p>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Root access</h1>
+                
+            
+            
+                
+<p>Once again, just as in logical extractions, root access is going to be a critically important aspect of physical extractions. To manually image a device, we are going to have to execute commands on the device from the ADB shell, and these will require root permissions. If root access cannot be obtained, the SD card can generally still be imaged. The only recourse beyond that is JTAG or chip-off methods.</p>
+<p class="mce-root"/>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Extracting data physically with dd</h1>
+                
+            
+            
+                
+<p>The <kbd>dd</kbd> command should be familiar to any examiner who has done traditional hard drive forensics. <kbd>dd</kbd> is a Linux command-line utility used by definition to convert and copy files, but is frequently used in forensics to create bit-by-bit images of entire drives. Many variations of <kbd>dd</kbd> also exist and are commonly used, such as <kbd>dcfldd</kbd>, <kbd>dc3dd</kbd>, <kbd>ddrescue</kbd>, and <kbd>dccidd</kbd>. As <kbd>dd</kbd> is built for Linux-based systems, it is frequently included on Android platforms. This means that a method for creating an image of the device often already exists on the device!</p>
+<p>The <kbd>dd</kbd> command has many options that can be set; only the forensically important options are going to be covered in the following list. A full list of command options can be found at <a href="http://man7.org/linux/man-pages/man1/dd.1.html">http://man7.org/linux/man-pages/man1/dd.1.html</a>. The format of the <kbd>dd</kbd> command is as follows:</p>
+<pre><strong>dd if=/dev/block/mmcblk0 of=/sdcard/blk0.img bs=4096 conv=notrunc,noerror,sync<br/></strong></pre>
+<p>Let's define the preceding format of <kbd>dd</kbd> command:</p>
+<ul>
+<li><kbd>if</kbd>: Specifies the input file to read from.</li>
+<li><kbd>of</kbd>: Specifies the output file to write to.</li>
+<li><kbd>bs</kbd>: Block size. Data is read and written in the size of the block specified, and defaults to 512 bytes if not specified.</li>
+<li><kbd>conv</kbd>: Conversion options:
+<ul>
+<li><kbd>notrunc</kbd>: Does not truncate the output file.</li>
+<li><kbd>noerror</kbd>: Continues imaging if an error is encountered.</li>
+<li><kbd>sync</kbd>: In conjunction with no error, this writes <kbd>\x00</kbd> for blocks with an error. This is important for maintaining file offsets within the image.</li>
+</ul>
+</li>
+</ul>
+<div><p>Do not mix up the <kbd>if</kbd> and <kbd>of</kbd> flags, as this could result in overwriting the target device!</p>
+</div>
+<p>Note that there is an important correlation between the <kbd>bs</kbd>, <kbd>noerror</kbd>, and <kbd>sync</kbd> flags: if an error is encountered, <kbd>\x00</kbd> will be written for the entire block that was read (as determined by the block size). Thus, smaller block sizes result in less data being missed in the event of an error. The downside is that, typically, smaller block sizes result in a slower transfer rate. An examiner will have to decide whether a timely or more accurate acquisition is preferred.</p>
+<p>As discussed in the previous chapter, booting into Recovery Mode for the imaging process is the most forensically sound method.</p>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Determining what to image  </h1>
+                
+            
+            
+                
+<p>When imaging a computer, an examiner must first find what the drive is mounted as, for example, <kbd>/dev/sda</kbd>. The same is true when imaging an Android device. The first step is to launch the ADB shell and view the <kbd>/proc/partitions</kbd> file by using the following command:</p>
+<pre><strong>cat /proc/partitions</strong></pre>
+<p>The output will show all of the partitions on the device:</p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-575 image-border" src="img/283d5e63-bddb-4d6c-927b-aa9bc52d2ee1.png" style="width:20.92em;height:37.08em;" width="308" height="546"/></p>
+<p>In the preceding output, <kbd>mmcblk0</kbd> is the entirety of the flash memory on the device. To image the entire flash memory, we could use <kbd>/dev/blk/mmcblk0</kbd> as the input file flag (<kbd>if</kbd>) for the <kbd>dd</kbd> command. Everything following it, indicated by p1-24, is a partition of the flash memory. The size is shown in blocks. In this case, the block size is 1,024 bytes, for a total internal storage size of approximately 16 GB. To obtain a full image of the device's internal memory, we would run <kbd>dd</kbd> with <kbd>mmcblk0</kbd> as the input file.</p>
+<p class="mce-root">Of course, we are not interested in every partition of the device, as most of them hardly contain any relevant information. As you already know, the most interesting part is the <kbd>/data</kbd> partition. Usually, it's the largest one, so it may be <kbd>mmcblk0p24</kbd>, that is, 11,784,192 blocks in size. Let's learn more about it by running the <kbd>df</kbd> command:</p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-576 image-border" src="img/d3b7d2a5-2fce-4f77-a4ce-3631cd5c6603.png" style="width:59.83em;height:20.50em;" width="718" height="246"/></p>
+<p>As you can see from the preceding screenshot, we were right—<kbd>mmcblk0p24</kbd> is the userdata partition.</p>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Writing to an SD card</h1>
+                
+            
+            
+                
+<p>The output file of <kbd>dd</kbd> can be written to the device's SD card. This should only be done if the suspect SD card can be removed and replaced with a forensically sterile SD. This ensures that the <kbd>dd</kbd> output is not overwriting evidence. Obviously, if you're writing to an SD card, ensure that the SD card is larger than the partition being imaged.</p>
+<div><p>On newer devices, the <kbd>/sdcard</kbd> partition is actually a symbolic link to <kbd>/storage/self/primary</kbd>. In this case, using <kbd>dd</kbd> to copy the <kbd>/data</kbd> partition to the SD card won't work, and could corrupt the device because the input file is essentially being written to itself.</p>
+</div>
+<p>Let's look at what else we can find under <kbd>/storage</kbd>:</p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-577 image-border" src="img/5e99a8cb-f97a-4223-8658-013998154ce5.png" style="width:37.17em;height:6.75em;" width="506" height="92"/></p>
+<p>As you can see, we also have the <kbd>6264-3264</kbd> and <kbd>emulated</kbd> subdirectories. But where is our SD card mounted? Let's run the <kbd>mount</kbd> command:</p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-578 image-border" src="img/9b4ea91e-8549-4798-9ddf-89531fa528b7.png" style="width:63.25em;height:9.92em;" width="759" height="119"/></p>
+<p>We are using a 128 GB SD card, so it must be mounted under <kbd>6264-3264</kbd>. Now we are ready to start the imaging process of the <kbd>/data</kbd> partition:</p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-579 image-border" src="img/31619091-1274-4984-8aeb-0de00da86284.png" style="width:67.67em;height:6.00em;" width="812" height="72"/></p>
+<p>Now, an image of the <kbd>/data</kbd> partition exists on the SD card. It can be pulled to the examiner's machine with <kbd>adb pull</kbd>, or simply read from the SD card.</p>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Writing directly to an examiner's computer with netcat</h1>
+                
+            
+            
+                
+<p>If the image cannot be written to the SD card, an examiner can use <kbd>netcat</kbd> to write the image directly to their machine. <kbd>netcat</kbd> is a Linux-based tool that's used for transferring data over a network connection. We recommend using a Linux or macOS computer for <kbd>netcat</kbd>, as it is built-in, though Windows versions do exist. The examples that follow were performed on the SIFT workstation (Linux Ubuntu).</p>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Installing netcat on the device</h1>
+                
+            
+            
+                
+<p>In the past, very few, if any, Android devices come with <kbd>netcat</kbd> installed. To check, simply open the ADB shell and type <kbd>nc</kbd>. If it returns saying <kbd>nc</kbd> is not found, <kbd>netcat</kbd> will have to be installed manually on the device. <kbd>netcat</kbd>, compiled for Android, can be found in many places online; for example, at <a href="https://github.com/MobileForensicsResearch/netcat">https://github.com/MobileForensicsResearch/netcat</a>.</p>
+<p>If we look back at the results from our mount command from the previous section, we can see that the <kbd>/dev</kbd> partition is mounted as <kbd>tmpfs</kbd>. The <kbd>tmpfs</kbd> is a Linux term meaning that the partition is meant to appear as an actual file system on the device, but is truly only stored in RAM. This means that we can push <kbd>netcat</kbd> here without making any permanent changes to the device, using the following command on the examiner's computer:</p>
+<pre><strong>adb push nc /dev/Examiner_Folder/nc</strong></pre>
+<p>The command should have created the <kbd>Examiner_Folder</kbd> in <kbd>/dev</kbd>, and <kbd>nc</kbd> should be in it. This can be verified by running the following command in the ADB shell:</p>
+<pre><strong>ls /dev/Examiner_Folder</strong></pre>
+<p>In current versions of Android (starting from Marshmallow), <strong>Toybox</strong>—a free and open source software implementation of some Unix command-line utilities, including <kbd>netcat</kbd>—is already installed, so an examiner doesn't need to install it. </p>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Using netcat</h1>
+                
+            
+            
+                
+<p>We will need two Terminal windows open, with the ADB shell open in one of them. The other will be used to listen to the data being sent from the device.</p>
+<p>Now, we need to enable port forwarding over ADB from the examiner's computer:</p>
+<pre><strong>adb forward tcp:9999 tcp:9999</strong></pre>
+<p><kbd>9999</kbd> is the port we chose to use for <kbd>netcat</kbd>; it can be any arbitrary port number between <kbd>1023</kbd> and <kbd>65535</kbd> on a Linux or macOS system (<kbd>1023</kbd> and below are reserved for system processes, and require root permission to use). Windows will allow any port to be assigned.</p>
+<p>In the Terminal window with ADB shell, run the following:</p>
+<pre><strong>dd if=/dev/block/mmcblk0p24 bs=1024 | toybox nc –l –p 9999</strong></pre>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p class="mceNonEditable"/>
+<p class="mceNonEditable"/>
+<div><p><kbd>mmcblk0p24</kbd> is the userdata partition on this device, however, the entire flash memory or any other partition could also be imaged with this method. In most cases, it is best practice to image the entirety of the flash memory in order to acquire all possible data from the device. Some commercial forensic tools may also require the entire memory image, and may not properly handle an image of a single partition.</p>
+</div>
+<p>In the other Terminal window, run the following:</p>
+<pre><strong>nc 127.0.0.1 9999 &gt; userdata.dd</strong></pre>
+<p>The <kbd>userdata.dd</kbd> file should have been created and in the current directory of the examiner's computer. When the data has finished transferring, <kbd>netcat</kbd> in both Terminals will terminate and return to the Command Prompt. This process can take a significant amount of time, depending on the size of the image.</p>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Extracting data physically with nanddump</h1>
+                
+            
+            
+                
+<p>In all of the examples that we've covered thus far, the partitions were all MMC blocks, which is typically seen in newer devices. Older devices, however, are far more likely to consist of <strong>Memory Technology Device</strong> (<strong>MTD</strong>) blocks. We have seen cases in the past where <kbd>dd</kbd> was unable to properly image an MTD block, although more often than not it works fine. If <kbd>dd</kbd> fails, there is a widely distributed utility called MTD-Utils that's used to read and write from MTD blocks; <kbd>nanddump</kbd> is a part of MTD-Utils, and can be used similarly to <kbd>dd</kbd> in order to read from an MTD block. In the cases where <kbd>dd</kbd> failed, <kbd>nanddump</kbd> was always successful.</p>
+<p>Versions of <kbd>nanddump</kbd> compiled for Android can be found in many places online; we used the one found here: <a href="https://github.com/jakev/android-binaries/blob/master/nanddump">https://github.com/jakev/android-binaries/blob/master/nanddump</a>.</p>
+<p class="mce-root"/>
+<p>The process to put <kbd>nanddump</kbd> on the device is the same as used for <kbd>netcat</kbd> previously:</p>
+<pre><strong>adb push nanddump /dev/Examiner_Folder/nanddump</strong><br/><strong>chmod +x /dev/Examiner_Folder/nanddump</strong></pre>
+<p>Just like <kbd>dd</kbd>, <kbd>nanddump</kbd> can be used to write either to an SD card or the examiner's computer via <kbd>netcat</kbd>:</p>
+<ol>
+<li>From a Terminal window, run the following:</li>
+</ol>
+<pre style="padding-left: 60px"><strong>adb forward tcp:9999 tcp:9999</strong></pre>
+<ol start="2">
+<li>From a separate Terminal window within the ADB shell, run the following:</li>
+</ol>
+<pre style="padding-left: 60px"><strong>/dev/Examiner_Folder/nanddump /dev/block/mmcblk0p34 | /dev/Examiner_Folder/nc –l –p 9999</strong></pre>
+<ol start="3">
+<li>In the first Terminal window, where <kbd>adb forward</kbd> was used, run the following:</li>
+</ol>
+<pre style="padding-left: 60px"><strong>nc 127.0.0.1 9999 &gt; data_partition.img</strong></pre>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Extracting data physically with Magnet ACQUIRE</h1>
+                
+            
+            
+                
+<p>ACQUIRE is a free tool by Magnet Forensics that can be used for the acquisition of a wide range of potential digital evidence sources, from hard drives and smartphones to cloud data. Of course, it supports both logical and physical acquisition of Android devices, up to the latest of those running Android Pie. The tool can be downloaded after registration here: <a href="https://www.magnetforensics.com/magnet-acquire/">https://www.magnetforensics.com/magnet-acquire/</a>.</p>
+<p>In this example, we are going to image a rooted smartphone running Android Oreo:</p>
+<ol>
+<li>Start by choosing the appropriate device from the list:</li>
+</ol>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-580 image-border" src="img/95113152-8c1f-4252-9282-3bf53d4c3a94.png" style="width:65.08em;height:47.50em;" width="781" height="570"/></p>
+<p style="padding-left: 60px">As you can see, our device has privileged access—this means that it's rooted. Also, we immediately have some metadata, such as OS version, device serial number, and so on. If the device you are going to image isn't listed for some reason, you can use the The device I'm looking for isn't showing up option. This contains step-by-step guides on how to make the tool detect it.</p>
+<ol start="2">
+<li>Once you have chosen the right device, you can select the image type:</li>
+</ol>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-581 image-border" src="img/bd621ebd-d091-42a4-8f86-66c3bbf0074b.png" style="width:64.58em;height:29.67em;" width="775" height="356"/></p>
+<ol start="3">
+<li>There are two options: Full and Quick. The first one is a physical acquisition and is not always available, while the second is logical—it's available for any Android device. As our device is rooted, we can choose the Full option. </li>
+</ol>
+<ol start="4">
+<li>Finally, choose the folder and image names, destination, and fill in the other fields if necessary:</li>
+</ol>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-582 image-border" src="img/583f31a3-3bf4-46c2-8f78-2d67b14c2216.png" style="width:65.00em;height:43.33em;" width="780" height="520"/></p>
+<ol start="5">
+<li>Clicking the ACQUIRE button will start the acquisition process. In our example, the imaging of 16 GB of storage only took 10 minutes. If you look in the log file (<kbd>activity_log.txt</kbd>), you will notice that the same tools are actually used—<kbd>dd</kbd> and <kbd>toybox</kbd>:</li>
+</ol>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-583 image-border" src="img/d999d425-4783-424e-a7a3-29f31076e1a0.png" style="width:99.00em;height:16.67em;" width="1188" height="200"/></p>
+<p>As you can see, imaging an Android device with Magnet ACQUIRE is much easier than with <kbd>dd</kbd> and <kbd>netcat</kbd>, but under the hood, the process is the same. Sometimes, the tool may even help you to perform physical acquisition of non-rooted devices, as it contains a number of exploits that are capable of getting temporary privileged access, as well as TWRP custom recoveries that can be used to obtain the full images of unencrypted devices.</p>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Verifying a full physical image</h1>
+                
+            
+            
+                
+<p>Verification that an image file is identical to the device is a critical step in traditional digital forensics. It can be a little trickier, if not impossible, on Android devices. The image that has been created can be hashed using whatever tool the examiner typically uses. Verifying the memory on the device can be done through the ADB shell by using the following command, where the path given is the block or partition that was imaged:</p>
+<pre><strong>md5sum /dev/block/mmcblk0</strong></pre>
+<p>However, the <kbd>md5sum</kbd> command is not included on all Android devices. If it is not included, an examiner may be able to find a version that's been compiled for their device online, and push it to the device in a <kbd>tmpfs</kbd> partition, as shown previously, with <kbd>netcat</kbd> and <kbd>nanddump</kbd>.</p>
+<p>Another issue is if the image was acquired live, that is, not in Recovery Mode, as discussed in the previous chapter. It is a virtual certainty that the MD5 hashes will not match, as data is constantly changing on the device (even if it is RF-shielded or in Airplane Mode). In this case, an examiner would have to document that the device was live when acquired and explain that the hashes are not expected to match.</p>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Analyzing a full physical image</h1>
+                
+            
+            
+                
+<p>Once an image has been obtained using one of the preceding methods, an examiner could conceivably go through the image manually and extract each partition, but would probably prefer to avoid doing that. Luckily, there is a wide variety of mobile forensic tools that can ingest a physical image, such as Cellebrite UFED, Oxygen Forensic, Magnet AXIOM, Belkasoft Evidence Center, and many others. Unfortunately, none of these are free or open source; by far the most popular analysis tool that is free and open source is Autopsy by Basis Technology.</p>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Autopsy</h1>
+                
+            
+            
+                
+<p>The Sleuth Kit began as a set of Linux-based command-line tools for forensics; eventually, a browser-based GUI named Autopsy was added. Recently, Autopsy has been released as a standalone platform on Windows, and includes support for analyzing Android images. Version 4.9.0 is shown in the following screenshots. The full process for loading and analyzing an image will be covered in <a href="1b4c4086-f708-4bea-9bb4-f2f477b10c85.xhtml" target="_blank">Chapter 8</a>, <em>Android Forensic Tools Overview</em>.</p>
+<p>Autopsy can be downloaded from <a href="https://www.sleuthkit.org/autopsy/download.php">https://www.sleuthkit.org/autopsy/download.php</a>.</p>
+<p>Once the image has been loaded, expanding the image will show all of the volumes that Autopsy found:</p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-584 image-border" src="img/989c8428-746d-486f-9220-8ed4a4cbdf77.png" style="width:22.42em;height:40.33em;" width="272" height="489"/></p>
+<p class="mce-root"/>
+<p>One of these volumes will be the data partition, as shown in the following screenshot:</p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-585 image-border" src="img/e0c614ad-b0ce-457b-ae0b-2eff7aa3382c.png" style="width:18.75em;height:53.33em;" width="242" height="688"/></p>
+<p>Note that the media directory in the preceding screenshot is the SD card, as it was symbolically linked to the data partition. The <kbd>data</kbd> folder within the <kbd>/data</kbd> partition will contain application data:</p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-586 image-border" src="img/b97797c4-91f9-41ac-9569-b56c8168d257.png" style="width:21.58em;height:51.50em;" width="303" height="722"/></p>
+<p>As each application is installed, a directory is created for it.</p>
+<p>Note that a red X icon on a folder indicates it was deleted, and means that the application was removed from the device.</p>
+<p>Finally, Autopsy does a good job of pulling out some data automatically for an examiner, but as with all forensic tools, this information should be verified manually. We will cover this in <a href="c0ffe5a3-4668-436d-9f02-e70a67f3e43e.xhtml" target="_blank">Chapter 7</a>, <em>Forensic Analysis of Android Applications</em>:</p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-587 image-border" src="img/c462454c-8f53-4a11-b9bf-8540192cd914.png" style="width:20.50em;height:12.67em;" width="267" height="165"/></p>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Issues with analyzing physical dumps</h1>
+                
+            
+            
+                
+<p>The most common problem we see on many forensic forums and email lists is examiners obtaining a physical dump and then not being able to load that dump into a tool that claims to support the device. The vast majority of the time, this is because the examiner fails to account for the <strong>out-of-band</strong> (<strong>OOB</strong>) area.</p>
+<p>The OOB area, sometimes called spare area, is a small section of the flash memory that's been reserved for metadata. The metadata usually consists of <strong>error-correcting code</strong> (<strong>ECC</strong>), information about bad blocks, and in some cases, information about the file system. This causes an issue for examiners because most mobile forensic tools do not account for the OOB area; they expect it to not be included in the image. When presenting the tool with an image containing spare area, the tool frequently does not know what to do and fails to parse the data properly.</p>
+<p>The reason that tools fail to account for the OOB area is that it is not included in <kbd>dd</kbd> images, which is what most tools use to create their images. The OOB area may be included when using <kbd>nanddump</kbd>, though depending on the binary used, there may be an option to exclude it. The OOB area is included with chip-off and JTAG images.</p>
+<p>To properly load the image into forensic tools, the OOB area will need to be removed first. A general rule of thumb is that the OOB size is based on the page size of the device; for every 512 bytes of page size, there will be 16 bytes of OOB space. For example, a device with 2,048 byte page sizes would likely have 64 bytes of OOB area at the end of each page. However, this is completely up to the memory manufacturer. Before attempting to remove OOB area, an examiner should find the datasheet for the specific memory chip to confirm the page and OOB area sizes. This can generally be done by finding the memory chip on the phone's circuit board and searching for the model number of the chip.</p>
+<p>The following is some sample code for a Python script that will remove the OOB area from an image. Just as in the last chapter, we don't claim to be Python experts and we're sure there are better, more efficient ways to do this, but it does work:</p>
+<pre>import sys<br/>file_to_parse = open(sys.argv[1],'rb')<br/>file_after_removal = open('file_out.bin','wb')<br/>while file_to_parse:<br/>   lines_out = file_to_parse.read(2048)<br/>   if lines_out:<br/>         file_after_removal.write(lines_out)<br/>         file_to_parse.seek(64,1)<br/>   if not lines_out:<br/>         break<br/>print 'Done'<br/>file_to_parse.close()<br/>file_after_removal.close()</pre>
+<p>This file, if named <kbd>OOB_Remover.py</kbd>, would be executed with the following command:</p>
+<pre><strong>python OOB_Remover.py C:\Users\Android_Examiner\physicaldump.bin</strong></pre>
+<p>The output file, with no OOB area, would be named <kbd>file_out.bin</kbd> in the directory where the script was executed. The original is not edited or modified in any way.</p>
+<p>Note that the code as it is written assumes a page size of 2,048 and an OOB size of 64; these two numbers would have to be edited for the specific sizes of the memory chip the image was taken from. The output should then be able to be loaded into commercial mobile forensic tools.</p>
+<p class="mce-root"/>
+<p class="mce-root"/>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Imaging and analyzing Android RAM</h1>
+                
+            
+            
+                
+<p>Pulling Android memory is not applicable in a great many cases, due to the fact that it requires root access. Most public root processes involve rebooting the phone, which erases volatile RAM, meaning that by the time an examiner gains root access to image the RAM, it's too late because the RAM has been erased. Because of this, and possibly other reasons, there is not great support for Android RAM imaging and analysis in the commercial forensic world. However, there are cases where imaging RAM is applicable, and may prove invaluable to a case. If a device is already rooted when it is seized, imaging the RAM should be a mandatory step in the seizure process. As powering the phone off will erase the RAM, the device should be placed in Airplane Mode (and any other network connections such as Wi-Fi and Bluetooth should be disabled) and the RAM should be imaged immediately to avoid the device battery dying before the RAM can be pulled.</p>
+<p>The main challenge when it comes to RAM is the analysis. RAM is completely raw, unstructured data; there is no file system. When viewed in a hex editor, RAM appears to just be a giant blob of data with very little rhyme or reason to help examiners figure out what they are looking at. This difficulty is compounded by the fact that modern devices commonly have gigabytes' worth of RAM. RAM can easily be searched for by keywords using traditional forensic tools and methods, but that presumes that an examiner knows exactly what they are looking for.</p>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">What can be found in RAM?</h1>
+                
+            
+            
+                
+<p>Any data that is written to the flash memory must pass through RAM; there is no other way for the processor to communicate with the flash memory. This means that almost anything done on the device may be found in the contents of a RAM dump. Depending on the amount of device usage, data may remain in RAM indefinitely, until it needs to be overwritten. RAM dumps frequently contain text that's been typed on the device, including usernames and passwords, and application data that is not stored permanently on the device. For example, the Facebook application used to store the contents of a user's News Feed in a database in its application folder. Newer versions do not save the user's News Feed, but it exists in RAM.</p>
+<p class="mce-root"/>
+<p class="mce-root"/>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Imaging RAM with LiME</h1>
+                
+            
+            
+                
+<p>The most common tool for Android RAM acquisition is the <strong>Linux Memory Extractor</strong> (<strong>LiME</strong>), previously known as DMD. LiME is free and open source, but isn't highly user-friendly as it requires the user to compile it from the source code, which can only be done on a Linux system. The compilation process must also be done for each specific version of Android for each device being examined, which somewhat limits its usability in the field. This is necessary because LiME is not binary (like the <kbd>netcat</kbd> and <kbd>nanddump</kbd> tools we used before); instead, it is a kernel module, which must be built specifically for each kernel it will be loaded into.</p>
+<p>In order to ensure that the proper kernel source code is downloaded, we will need to determine the model and software version for a device, which can be done by scrolling through the phone menu to Settings | System | About Phone. Alternatively, this information can be found in the ADB shell by running the following command:</p>
+<pre><strong>cat /system/build.prop</strong></pre>
+<p>The software version of the model should be in the first few lines at the top of the file.</p>
+<p>Luckily, most Android manufacturers release their kernel source code; a quick Google search can usually turn up source code for each model and software version. The following are the open source release sites for a few major manufacturers:</p>
+<ul>
+<li><strong>Samsung</strong>: <a href="http://opensource.samsung.com/reception.do">http://opensource.samsung.com/reception.do</a></li>
+<li><strong>Motorola</strong>: <a href="http://sourceforge.net/motorola/">http://sourceforge.net/motorola/</a></li>
+<li><strong>HTC</strong>: <a href="http://www.htcdev.com/devcenter">http://www.htcdev.com/devcenter</a></li>
+<li><strong>Google (Nexus devices)</strong>: <a href="https://source.android.com/source/building-kernels.html">https://source.android.com/source/building-kernels.html</a></li>
+</ul>
+<div><p>The correct model and version source must be used. Using the wrong kernel source to compile LiME will, at the very least, not work on the device. Loading an incompatible kernel module could also crash the device.</p>
+</div>
+<p>To obtain the source code for LiME, navigate to <a href="https://github.com/504ensicsLabs/LiME">https://github.com/504ensicsLabs/LiME</a> and choose the Download ZIP option, and then extract the <kbd>.zip</kbd>.</p>
+<p>There are many excellent resources online explaining how to compile LiME for a specific kernel, and even how to create a custom Volatility plugin to examine the resulting RAM dump, so they won't be duplicated here:</p>
+<ul>
+<li><strong>Linux Memory Extractor</strong>: <a href="https://github.com/504ensicsLabs/LiME/tree/master/doc">https://github.com/504ensicsLabs/LiME/tree/master/docV</a></li>
+<li><strong>Volatility</strong>: <a href="https://github.com/volatilityfoundation/volatility/wiki/Android">https://github.com/volatilityfoundation/volatility/wiki/Android</a></li>
+</ul>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Acquiring Android SD cards</h1>
+                
+            
+            
+                
+<p>As discussed previously in this chapter and in previous chapters, the SD card can refer to a physical, external SD card or a partition within the flash memory. A removable external SD card can be imaged separately from the device through a write-blocker with typical computer forensics tools, or using the <kbd>dd/nanddump</kbd> techniques shown previously, although the former is usually faster due to not needing to write data over <kbd>netcat</kbd>.</p>
+<p>Physically imaging an SD card is extremely similar to the physical imaging that we discussed previously; in fact, if the SD card is symbolically linked to the <kbd>/data</kbd> partition, it would be acquired as part of the <kbd>/data</kbd> partition, as seen in the <em>Autopsy</em> section's screenshots. The only difference in the process is that if the SD card is being imaged, the output file cannot be written to the SD card! This means that using the <kbd>netcat</kbd> methods we covered previously are the best option for physically imaging an internal SD card.</p>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">What can be found on an SD card?</h1>
+                
+            
+            
+                
+<p>By default, the SD card is typically used to store large files, including downloaded items and pictures that have been taken with the device. Many applications will also create their own directory on the SD card for storing data such as images that have been sent or received through chat applications. In some cases, as will be seen in <a href="1b4c4086-f708-4bea-9bb4-f2f477b10c85.xhtml" target="_blank">Chapter 8</a>, <em>Android Forensic Tools Overview</em>, there are even applications that will routinely perform a backup of all of their data to the SD card. This is especially useful to forensic examiners because they may not be able to access the internal memory due to security settings or the inability of obtaining root access, but may be able to access the SD card.</p>
+<p>Common SD card locations of interest include, but, of course, are not limited to the following:</p>
+<ul>
+<li><kbd>/Alarms</kbd>: May contain custom alarms</li>
+<li><kbd>/Android/data</kbd>: Storage location for some application data</li>
+<li><kbd>/DCIM/Camera</kbd>: Includes pictures taken with the device's camera</li>
+<li><kbd>/Download</kbd>: May contain downloaded files</li>
+<li><kbd>/Movies</kbd>: May contain downloaded video files</li>
+<li><kbd>/Notifications</kbd>: May contain custom notifications</li>
+<li><kbd>/Pictures</kbd>: May contains different images, including screenshots taken on the device</li>
+<li><kbd>/Podcasts</kbd>: May contain downloaded podcasts</li>
+<li><kbd>/Ringtones</kbd>: May contain custom ringtones</li>
+</ul>
+<div><p>The <kbd>/Android/data</kbd> folder may persist, even if the app has been deleted. The contents of the folders will be deleted, but the folders may remain, which is an indication that the application was previously installed on the device.</p>
+</div>
+<p>These are just common default locations; if a device is rooted, the user could place any data from the internal memory onto the SD card.</p>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  </body></html>

@@ -1,0 +1,426 @@
+<html><head></head><body><div><div><div><div><h1 class="title"><a id="ch04"/>Chapter 4.  PKI, Certificates, and OpenSSL </h1></div></div></div><p>In this chapter, we will cover:</p><div><ul class="itemizedlist"><li class="listitem">Certificate generation</li><li class="listitem">OpenSSL tricks: x509, pkcs12, verify output</li><li class="listitem">Revoking certificates</li><li class="listitem">The use of CRLs</li><li class="listitem">Checking expired/revoked certificates</li><li class="listitem">Intermediary CAs</li><li class="listitem">Multiple CAs: stacking, using the <code class="literal">capath</code> directive</li><li class="listitem">Determining which crypto library is used</li><li class="listitem">Crypto features of OpenSSL and PolarSSL</li><li class="listitem">Pushing ciphers</li><li class="listitem">Elliptic curve support</li></ul></div><div><div><div><div><h1 class="title"><a id="ch04lvl1sec40"/>Introduction</h1></div></div></div><p>This chapter is a small detour into the public key infrastructures (PKIs), certificates, and <code class="literal">openssl</code> commands. The primary purpose of the recipes in this chapter is to show how the certificates, which are used in OpenVPN, can be generated, managed, viewed, and what kind of interactions exist between OpenSSL and OpenVPN.</p></div></div>
+<div><div><div><div><h1 class="title"><a id="ch04lvl1sec41"/>Certificate generation</h1></div></div></div><p>This recipe will demonstrate how to create and sign a certificate request using plain <code class="literal">openssl</code> commands. This is slightly different from using the <code class="literal">easy-rsa</code> scripts, but very instructive.</p><div><div><div><div><h2 class="title"><a id="ch04lvl2sec143"/>Getting ready</h2></div></div></div><p>Set up the <code class="literal">easy-rsa</code> certificate environment using the first recipe from <a class="link" title="Chapter 2.  Client-server IP-only Networks" href="part0025.xhtml#aid-NQU21">Chapter 2</a>, <em>Client-server IP-only Networks</em>, by sourcing the <code class="literal">vars</code> file. This recipe was performed on a computer running Fedora 22 Linux but it can easily be run on Windows or MacOS. Note that the <code class="literal">easy-rsa</code> package can be downloaded independently of OpenVPN itself.</p></div><div><div><div><div><h2 class="title"><a id="ch04lvl2sec144"/>How to do it...</h2></div></div></div><p>Before we can use plain <code class="literal">openssl</code> commands to generate and sign a request, there are a few environment variables that need to be set. These variables are not set in the <code class="literal">vars</code> file by default.</p><div><ol class="orderedlist arabic"><li class="listitem">Add the missing environment variables:<pre class="programlisting">
+<strong>       $ cd /etc/openvpn/cookbook</strong>
+<strong>       $ . ./vars</strong>
+<strong>       $ export KEY_CN=</strong>
+<strong>       $ export KEY_OU=</strong>
+<strong>       $ export KEY_NAME=</strong>
+<strong>       $ export OPENSSL_CONF=/etc/openvpn/cookbook/openssl-
+           1.0.0.cnf</strong>
+</pre><p>Note that the <code class="literal">openssl-1.0.0.cnf</code> file is part of the easy-rsa distribution and should already be present in the directory <code class="literal">/etc/openvpn/cookbook</code>.</p></li><li class="listitem">Next, we generate the certificate request without a password. This is achieved by adding the option <code class="literal">-nodes</code> to the <code class="literal">openssl req</code> command:<pre class="programlisting">
+<strong>       $ openssl req -nodes -newkey rsa:2048 -new -out client.req \</strong>
+<strong>         -subj "/C=NL/O=Cookbook/CN=MyClient"</strong>
+<strong>   Generating a 2048 bit RSA private key</strong>
+<strong>   .......................................++++++</strong>
+<strong>   ............++++++</strong>
+<strong>   writing new private key to 'privkey.pem'</strong>
+<strong>   -----</strong>
+</pre></li><li class="listitem">Finally, we sign the certificate request using the Certificate Authority private key:<pre class="programlisting">
+<strong>       $ openssl ca -in client.req -out client.crt</strong>
+<strong>    Using configuration from /etc/openvpn/cookbook/openssl.cnf</strong>
+<strong>    Enter pass phrase for /etc/openvpn/cookbook/keys/ca.key:</strong>
+<strong>    [enter CA key password]</strong>
+<strong>    Check that the request matches the signature</strong>
+<strong>    Signature ok</strong>
+<strong>    The Subject's Distinguished Name is as follows</strong>
+<strong>    countryName           :PRINTABLE:'NL'</strong>
+<strong>    organizationName      :PRINTABLE:'Cookbook'</strong>
+<strong>    commonName            :PRINTABLE:'MyClient'</strong>
+<strong>    Certificate is to be certified until Apr 20 15:08:25 2026 GMT 
+        (3650 days)</strong>
+<strong>    Sign the certificate? [y/n]:y</strong>
+<strong>    1 out of 1 certificate requests certified, commit? [y/n]y</strong>
+<strong>    Write out database with 1 new entries</strong>
+<strong>    Data Base Updated</strong>
+</pre></li></ol><div></div></div><div><div><div><div><h2 class="title"><a id="ch04lvl2sec145"/>How it works...</h2></div></div></div><p>The first step is always to generate a private key. In this recipe, we generate a private key without a password, which is not really secure. A certificate request is signed using the private key to prove that the certificate request and the private key belong together. The <code class="literal">openssl req</code> command generates both the private key and the certificate requests in one go.</p><p>The second step is to sign the certificate request using the private key of the <strong>Certificate Authority</strong> (<strong>CA</strong>). This results in an X.509 certificate file, which can be used in OpenVPN.</p><p>A copy of the (public) X.509 certificate is also stored in the <code class="literal">/etc/openvpn/cookbook/keys</code> directory. This copy is important if the certificate needs to be revoked later on, so do not remove it from that directory.</p></div><div><div><div><div><h2 class="title"><a id="ch04lvl2sec146"/>There's more...</h2></div></div></div><p>It is also possible to generate a private key protected by a password ("pass phrase" in OpenSSL terms). In order to generate such a private key, simply remove the <code class="literal">-nodes</code> command line parameter:</p><pre class="programlisting">
+<strong>$ openssl req -newkey rsa:1024 -new -out client.req \</strong>
+<strong>    -subj "/C=NL/O=Cookbook/CN=MyClient"</strong>
+</pre><p>The OpenSSL command will now ask for a passphrase:</p><pre class="programlisting">
+<strong>Enter PEM pass phrase:</strong>
+<strong>Verifying - Enter PEM pass phrase:</strong>
+</pre></div><div><div><div><div><h2 class="title"><a id="ch04lvl2sec147"/>See also</h2></div></div></div><div><ul class="itemizedlist"><li class="listitem">The <em>Setting up the public and private keys</em> recipe from <a class="link" title="Chapter 2.  Client-server IP-only Networks" href="part0025.xhtml#aid-NQU21">Chapter 2</a>, <em>Client-server IP-only Networks</em>, where the initial setup of the PKI using the <code class="literal">easy-rsa</code> scripts is explained</li></ul></div></div></div>
+<div><div><div><div><h1 class="title"><a id="ch04lvl1sec42"/>OpenSSL tricks - x509, pkcs12, verify output</h1></div></div></div><p>The OpenSSL commands may seem daunting at first, but there are a lot of useful commands in the OpenSSL toolbox for viewing and managing X.509 certificates and private keys. This recipe will show how to use a few of those commands.</p><div><div><div><div><h2 class="title"><a id="ch04lvl2sec148"/>Getting ready</h2></div></div></div><p>Set up the <code class="literal">easy-rsa</code> certificate environment using the first recipe from <a class="link" title="Chapter 2.  Client-server IP-only Networks" href="part0025.xhtml#aid-NQU21">Chapter 2</a>, <em>Client-server IP-only Networks</em>, by sourcing the <code class="literal">vars</code> file. This recipe was performed on a computer running Fedora 22 Linux but it can easily be run on Windows or MacOS.</p></div><div><div><div><div><h2 class="title"><a id="ch04lvl2sec149"/>How to do it...</h2></div></div></div><p>For this recipe, we need to perform the following steps:</p><div><ol class="orderedlist arabic"><li class="listitem">To view the subject and expiry date of a given certificate, type:<pre class="programlisting">
+<strong>$ cd /etc/openvpn/cookbook/keys</strong>
+<strong>$ openssl x509 -subject -enddate -noout -in client1.crt</strong>
+<strong>      subject= /C=US/O=Cookbook 2.4/CN=client1</strong>
+<strong>notAfter=Oct 13 17:54:30 2018 GMT</strong>
+</pre></li><li class="listitem">To export a certificate and private key in <code class="literal">PKCS12</code> format:<pre class="programlisting">
+<strong>$ openssl pkcs12 -export -in client1.crt \</strong>
+<strong>  -inkey client1.key -out client1.p12</strong>
+<strong>   Enter Export Password:[Choose a strong password]</strong>
+<strong>   Verifying - Enter Export Password:[Type the password again]</strong>
+<strong>$ chmod 600 client1.p12</strong>
+</pre><p>Note that the <code class="literal">chmod 600</code> ensures that the PKCS12 file is readable only by the user.</p></li><li class="listitem">Verify the purpose of a given certificate:<pre class="programlisting">
+<strong>$ openssl verify -purpose sslclient -CAfile ca.crt client1.crt</strong>
+<strong> client1.crt: OK</strong>
+</pre></li><li class="listitem">Notice the error if we select the wrong purpose (<code class="literal">sslclient</code> versus <code class="literal">sslserver</code>):<pre class="programlisting">
+<strong>$ openssl verify -purpose sslclient -CAfile ca.crt server.crt</strong>
+<strong>  server.crt: C = US, O = Cookbook 2.4, CN = openvpnserver</strong>
+<strong>  error 26 at 0 depth lookup:unsupported certificate purpose</strong>
+<strong>  OK</strong>
+</pre></li><li class="listitem">Change the password (passphrase) of a certificate:<pre class="programlisting">
+<strong>$ openssl rsa -in client2.key -aes256 -out newclient.key</strong>
+<strong>  Enter pass phrase for client2.key:[old password]</strong>
+<strong>  writing RSA key</strong>
+<strong>  Enter PEM pass phrase:[new password]</strong>
+<strong>  Verifying - Enter PEM pass phrase:[new password]</strong>
+</pre></li></ol><div></div></div><div><div><div><div><h2 class="title"><a id="ch04lvl2sec150"/>How it works...</h2></div></div></div><p>The OpenSSL toolkit consists of a wide range of commands to generate, manipulate, and view X.509 certificates and their corresponding private keys. The commands in this chapter are but a small subset of the available commands. On Linux and UNIX systems, you can use <code class="literal">openssl -h</code> and the manual pages for <code class="literal">x509</code>, <code class="literal">pkcs12</code>, and <code class="literal">req</code> for more details. The manual pages are also available online at <a class="ulink" href="http://www.openssl.org/docs/apps/openssl.html">http://www.openssl.org/docs/apps/openssl.html</a>.</p><p>Click on the OpenSSL commands lower down in the list of all commands for direct pointers.</p></div></div>
+<div><div><div><div><h1 class="title"><a id="ch04lvl1sec43"/>Revoking certificates</h1></div></div></div><p>A common task when managing a PKI is to revoke certificates that are no longer needed or that have been compromised. This recipe demonstrates how certificates can be revoked using the <code class="literal">easy-rsa</code> script and how OpenVPN can be configured to make use of a <strong>Certificate Revocation List</strong> (<strong>CRL</strong>).</p><div><div><div><div><h2 class="title"><a id="ch04lvl2sec151"/>Getting ready</h2></div></div></div><p>Set up the client and server certificates using the first recipe from <a class="link" title="Chapter 2.  Client-server IP-only Networks" href="part0025.xhtml#aid-NQU21">Chapter 2</a>, <em>Client-server IP-only Networks</em>. This recipe was performed on a computer running CentOS 6 Linux, but it can easily be run on Windows or Mac OS.</p></div><div><div><div><div><h2 class="title"><a id="ch04lvl2sec152"/>How to do it...</h2></div></div></div><div><ol class="orderedlist arabic"><li class="listitem">First, we generate a certificate:<pre class="programlisting">
+<strong>$ cd /etc/openvpn/cookbook</strong>
+<strong>$ . ./vars</strong>
+<strong>$ ./build-key client4</strong>
+<strong>[...]</strong>
+</pre></li><li class="listitem">Then, we immediately revoke it:<pre class="programlisting">
+<strong>$ ./revoke-full client4</strong>
+<strong>Using configuration from /etc/openvpn/cookbook/openssl-
+        1.0.0.cnf</strong>
+<strong>Enter pass phrase for /etc/openvpn/cookbook/keys/ca.key:</strong>
+<strong>Revoking Certificate 06.</strong>
+<strong>Data Base Updated</strong>
+<strong>Using configuration from /etc/openvpn/cookbook/openssl-
+        1.0.0.cnf</strong>
+<strong>Enter pass phrase for /etc/openvpn/cookbook/keys/ca.key:</strong>
+<strong>client4.crt: C = US, O = Cookbook 2.4, CN = client4</strong>
+<strong>error 23 at 0 depth lookup:certificate revoked</strong>
+</pre></li><li class="listitem">This will also update the CRL list. The CRL can be viewed using the command:<pre class="programlisting">
+<strong>$ openssl crl -text -noout -in keys/crl.pem</strong>
+<strong>Certificate Revocation List (CRL):</strong>
+<strong>        Version 1 (0x0)</strong>
+<strong>    Signature Algorithm: sha256WithRSAEncryption</strong>
+<strong>        Issuer: /C=US/O=Cookbook 2.4/CN=Cookbook 2.4
+                CA/emailAddress=openvpn@example.com</strong>
+<strong>        Last Update: Apr 22 15:54:10 2016 GMT</strong>
+<strong>        Next Update: May 22 15:54:10 2016 GMT</strong>
+<strong>Revoked Certificates:</strong>
+<strong>    Serial Number: 06</strong>
+<strong>        Revocation Date: Apr 22 15:54:08 2016 GMT</strong>
+<strong>    Signature Algorithm: sha256WithRSAEncryption</strong>
+<strong>         12:8a:f0:b4:3e:aa:5b:a1:13:64:41:c7:0b:46:ef:00:99:50:</strong>
+<strong>         6b:72:b8:2e:ff:93:eb:9b:7e:63:9e:8d:78:63:e8:96:44:30:</strong>
+<strong>         5b:eb:3d:4a:a4:2a:36:1e:8c:c6:cd:11:63:b1:d5:88:31:46:</strong>
+</pre></li></ol><div></div></div><div><div><div><div><h2 class="title"><a id="ch04lvl2sec153"/>How it works...</h2></div></div></div><p>A CRL contains a list of certificate serial numbers that have been revoked. Each serial number can be handed out by a CA only once, so this serial number is unique to this particular CA. The CRL is signed using the CA's private key, ensuring that the CRL is indeed issued by the appropriate party.</p></div><div><div><div><div><h2 class="title"><a id="ch04lvl2sec154"/>There's more...</h2></div></div></div><p>The question "what exactly is needed to revoke a certificate" is often asked, so the following section goes a bit deeper into this.</p><div><div><div><div><h3 class="title"><a id="ch04lvl3sec47"/>What is needed to revoke a certificate</h3></div></div></div><p>In order to revoke a certificate, the certificate subject ("DN") is required as well as the certificate serial number. If a certificate is lost, then it is simply not possible to revoke it. This shows how important it is to do proper PKI management, including backing up the certificates that have been handed out to users.</p></div></div><div><div><div><div><h2 class="title"><a id="ch04lvl2sec155"/>See also</h2></div></div></div><div><ul class="itemizedlist"><li class="listitem">The next recipe, <em>The use of CRLs</em></li><li class="listitem">The recipe later in this chapter, <em>Multiple CA's: stacking, using the -capath directive</em></li></ul></div></div></div>
+<div><div><div><div><h1 class="title"><a id="ch04lvl1sec44"/>The use of CRLs</h1></div></div></div><p>This recipe shows how to configure OpenVPN to use a CRL. It uses the CRL created in the previous recipe. This recipe is an extension of the recipe <em>Routing: masquerading</em> in <a class="link" title="Chapter 2.  Client-server IP-only Networks" href="part0025.xhtml#aid-NQU21">Chapter 2</a>, <em>Client-server IP-only Networks</em>, in the sense that the server and client configuration files are almost identical.</p><div><div><div><div><h2 class="title"><a id="ch04lvl2sec156"/>Getting ready</h2></div></div></div><p>Set up the client and server certificates using the first recipe from <a class="link" title="Chapter 2.  Client-server IP-only Networks" href="part0025.xhtml#aid-NQU21">Chapter 2</a>, <em>Client-server IP-only Networks</em>. Generate the CRL using the previous recipe. For this recipe, the server computer was running CentOS 6 Linux and OpenVPN 2.3.10. The client was running Fedora 22 Linux and OpenVPN 2.3.10. Keep the server configuration file <code class="literal">basic-udp-server.conf</code> from the <em>Server-side routing</em> recipe in <a class="link" title="Chapter 2.  Client-server IP-only Networks" href="part0025.xhtml#aid-NQU21">Chapter 2</a>, <em>Client-server IP-only Networks</em>.</p></div><div><div><div><div><h2 class="title"><a id="ch04lvl2sec157"/>How to do it...</h2></div></div></div><div><ol class="orderedlist arabic"><li class="listitem">Copy the generated CRL to a more public directory:<pre class="programlisting">
+<strong>[root@server]# cd /etc/openvpn/cookbook</strong>
+<strong>[root@server]# cp keys/crl.pem .</strong>
+</pre></li><li class="listitem">Modify the server config file <code class="literal">basic-udp-server.conf</code> by adding the lines:<pre class="programlisting">        crl-verify /etc/openvpn/cookbook/crl.pem 
+</pre><p>Save it as <code class="literal">example4-6-server.conf</code>.</p></li><li class="listitem">Start the server:<pre class="programlisting">
+<strong>[root@server]# openvpn --config example4-6-server.conf</strong>
+</pre></li><li class="listitem">Next, create the client configuration file:<pre class="programlisting">
+<strong>client</strong>
+<strong>proto udp</strong>
+        <strong>remote openvpnserver.example.com</strong>
+        <strong>port 1194</strong>
+        <strong>dev tun</strong>
+        <strong>nobind</strong>
+        <strong>remote-cert-tls server</strong>
+        <strong>tls-auth /etc/openvpn/cookbook/ta.key 1</strong>
+        <strong>ca       /etc/openvpn/cookbook/ca.crt</strong>
+        <strong>cert     /etc/openvpn/cookbook/client4.crt</strong>
+        <strong>key      /etc/openvpn/cookbook/client4.key</strong>
+</pre><p>And save it as <code class="literal">example4-6-client.conf</code>.</p></li><li class="listitem">Finally, start the client:<pre class="programlisting">
+<strong>[root@client]# openvpn --config example4-6-client.conf</strong>
+</pre></li></ol><div></div><p>The client will not be able to connect but instead, the server log file shows:</p><pre class="programlisting">
+<strong>[...] TLS_ERROR: BIO read tls_read_plaintext error: error:140890B2:SSL</strong>
+<strong>       routines:SSL3_GET_CLIENT_CERTIFICATE:no certificate returned</strong>
+<strong>[...] TLS Error: TLS object -&gt; incoming plaintext read error</strong>
+<strong>[...] TLS Error: TLS handshake failed</strong>
+</pre><p>This rather cryptic message proves that the client is not allowed to connect because the certificate is not valid.</p></div><div><div><div><div><h2 class="title"><a id="ch04lvl2sec158"/>How it works...</h2></div></div></div><p>Each time a client connects to the OpenVPN server, the CRL is checked to see whether the client certificate is listed. If it is, the OpenVPN server simply refuses to accept the client certificate and the connection will not be established.</p></div><div><div><div><div><h2 class="title"><a id="ch04lvl2sec159"/>There's more...</h2></div></div></div><p>Generating a CRL is one thing and keeping it up-to-date is another. It is very important to ensure that the CRL is kept up-to-date. For this purpose, it is best to set up a cron job that updates the server CRL file overnight. There is an outstanding bug in OpenVPN related to CRL updates: each time a client connects, the OpenVPN server tries to access the CRL file. If the file is not present or not accessible, then the OpenVPN server process aborts with an error. The proper behavior would be to temporarily refuse access to the clients but unfortunately, this is not the case.</p></div><div><div><div><div><h2 class="title"><a id="ch04lvl2sec160"/>See also</h2></div></div></div><div><ul class="itemizedlist"><li class="listitem">The recipe later in this chapter, <em>Multiple CAs: stacking, using the -capath directive</em>, in which a more advanced use of CA and CRL is explained</li></ul></div></div></div>
+<div><div><div><div><h1 class="title"><a id="ch04lvl1sec45"/>Checking expired/revoked certificates</h1></div></div></div><p>The goal of this recipe is to give an insight into some of the internals of the OpenSSL CA commands. We will show how a certificate's status is changed from "Valid" to "Revoked", or "Expired".</p><div><div><div><div><h2 class="title"><a id="ch04lvl2sec161"/>Getting ready</h2></div></div></div><p>Set up the client and server certificates using the first recipe from <a class="link" title="Chapter 2.  Client-server IP-only Networks" href="part0025.xhtml#aid-NQU21">Chapter 2</a>, <em>Client-server IP-only Networks</em>. This recipe was performed on a computer running CentOS 6 Linux but it can easily be run on Windows or Mac OS.</p></div><div><div><div><div><h2 class="title"><a id="ch04lvl2sec162"/>How to do it...</h2></div></div></div><div><ol class="orderedlist arabic"><li class="listitem">Before we can use plain <code class="literal">openssl</code> commands, there are a few environment variables that need to be set. These variables are not set in the <code class="literal">vars</code> file by default:<pre class="programlisting">
+<strong>$ cd /etc/openvpn/cookbook</strong>
+<strong>$ . ./vars</strong>
+<strong>$ export KEY_NAME=</strong>
+<strong>$ export OPENSSL_CONF=/etc/openvpn/cookbook/openssl-1.0.0.cnf</strong>
+</pre></li><li class="listitem">Now, we can query the status of a certificate using its serial number:<pre class="programlisting">        <strong>$ cd keys</strong>
+        <strong>$ openssl x509 -serial -noout -in server.crt</strong>
+        <strong>serial=01</strong>
+        <strong>$ openssl ca -status 01</strong>
+        <strong>Using configuration from /etc/openvpn/cookbook/openssl-
+        1.0.0.cnf</strong>
+        <strong>01=Valid (V)</strong>
+</pre><p>This shows that our OpenVPN server certificate is still valid.</p></li><li class="listitem">The certificate we revoked in the <em>Revoking certificates</em> recipe, shows the following:<pre class="programlisting">        <strong>$ openssl x509 -serial -noout -in client4.crt      </strong>
+        <strong>serial=06</strong>
+        <strong>$ openssl ca -status 06</strong>
+        <strong>Using configuration from /etc/openvpn/cookbook/openssl-     
+        1.0.0.cnf</strong>
+        <strong>08=Revoked (R)</strong>
+</pre></li><li class="listitem">If we look at the file <code class="literal">index.txt</code> in the <code class="literal">/etc/openvpn/cookbook/keys</code> directory, we see:<pre class="programlisting">
+<strong>V 181013174924Z            01  unknown  .../CN=openvpnserver</strong>
+<strong>R 190117155337Z 160422155408Z  06  unknown  .../CN=client4</strong>
+</pre></li><li class="listitem">Next, we modify this file using a normal text editor and replace the <code class="literal">R</code> with an <code class="literal">E</code> and we blank out the third field <code class="literal">160422155408Z</code> with spaces. This field is the timestamp when the certificate was revoked. The second line now becomes:<pre class="programlisting">
+<strong>E  190117155337Z                 08 unknown .../CN=client4</strong>
+</pre></li><li class="listitem">Now, if we check the status again we get:<pre class="programlisting">
+<strong>$ openssl ca -status 06</strong>
+<strong>Using configuration from /etc/openvpn/cookbook/openssl-
+        1.0.0.cnf</strong>
+<strong>08=Expired (E)</strong>
+</pre><p>If we generate the CRL again, we see that the certificate has been "un-revoked":</p><pre class="programlisting">        <strong>  $ openssl ca -gencrl -out crl.pem</strong>
+        <strong>  $ openssl crl -text -noout -in crl.pem  | head -8</strong>
+        <strong>Certificate Revocation List (CRL):</strong>
+        <strong>        Version 1 (0x0)</strong>
+        <strong>    Signature Algorithm: sha256WithRSAEncryption</strong>
+        <strong>        Issuer: /C=US/O=Cookbook 2.4/CN=Cookbook 2.4     
+                CA/emailAddress=openvpn@example.com</strong>
+        <strong>        Last Update: Apr 26 15:02:01 2016 GMT</strong>
+        <strong>        Next Update: May 26 15:02:01 2016 GMT</strong>
+        <strong>No Revoked Certificates.</strong>
+        <strong>    Signature Algorithm: sha256WithRSAEncryption</strong>
+</pre></li></ol><div></div></div><div><div><div><div><h2 class="title"><a id="ch04lvl2sec163"/>How it works...</h2></div></div></div><p>The OpenSSL <code class="literal">ca</code> command generates its CRL by looking at the <code class="literal">index.txt</code> file. Each line that starts with an <code class="literal">R</code> is added to the CRL, after which the CRL is cryptographically signed using the CA private key.</p><p>By changing the status of a revoked certificate to <code class="literal">E</code> or even <code class="literal">V</code> we can unrevoke a certificate.</p></div><div><div><div><div><h2 class="title"><a id="ch04lvl2sec164"/>There's more...</h2></div></div></div><p>In this recipe, we changed a certificate from <code class="literal">Revoked</code> to <code class="literal">Expired</code>. This will allow the client from the previous recipe to connect again to the server, as the certificate is still valid. The main reason to change a certificate from <code class="literal">Valid</code> to <code class="literal">Expired</code> in the <code class="literal">indext.txt</code> file is to allow us to generate and hand out a new certificate using the exact same name.</p></div></div>
+<div><div><div><div><h1 class="title"><a id="ch04lvl1sec46"/>Intermediary CAs</h1></div></div></div><p>This recipe shows how to set up an intermediary CA and how to configure OpenVPN to make use of an intermediary CA. The OpenVPN <code class="literal">easy-rsa</code> scripts also include functionality to set up an intermediary CA. The advantage of an intermediary CA (or sub CA) is that the top-level CA (also known as the root CA) can be guarded more closely. The intermediary CAs can be distributed to the people responsible for generating the server and client certificates.</p><div><div><div><div><h2 class="title"><a id="ch04lvl2sec165"/>Getting ready</h2></div></div></div><p>Set up the client and server certificates using the first recipe from <a class="link" title="Chapter 2.  Client-server IP-only Networks" href="part0025.xhtml#aid-NQU21">Chapter 2</a>, <em>Client-server IP-only Networks</em>. This recipe was performed on a computer running CentOS 6 Linux but it can easily be run on Windows or Mac OS.</p></div><div><div><div><div><h2 class="title"><a id="ch04lvl2sec166"/>How to do it...</h2></div></div></div><div><ol class="orderedlist arabic"><li class="listitem">First, we create the intermediary CA certificate:<pre class="programlisting">
+<strong>$ cd /etc/openvpn/cookbook/</strong>
+        <strong>$ . ./vars</strong>
+        <strong>$ ./build-inter IntermediateCA</strong>
+</pre></li><li class="listitem">Verify that this certificate can indeed act as a Certificate Authority:<pre class="programlisting">        <strong>$ openssl x509 -text -noout -in keys/IntermediateCA.crt \</strong>
+        <strong>  | grep -C 1 CA</strong>
+        <strong>            X509v3 Basic Constraints:</strong>
+        <strong>                CA:TRUE</strong>
+        <strong>    Signature Algorithm: sha1WithRSAEncryption</strong>
+</pre></li><li class="listitem">Next, we create a new <code class="literal">keys</code> directory for our intermediary CA (the current directory is still <code class="literal">/etc/openvpn/cookbook</code>):<pre class="programlisting">        <strong>$ mkdir -m 700 -p IntermediateCA/keys</strong>
+        <strong>$ cp [a-z]* IntermediateCA</strong>
+        <strong>$ cd IntermediateCA</strong>
+</pre></li><li class="listitem">Edit the <code class="literal">vars</code> file in the new directory and change the <code class="literal">EASY_RSA</code> line to:<pre class="programlisting">        export EASY_RSA=/etc/openvpn/cookbook/IntermediateCA 
+</pre></li><li class="listitem">Source this new <code class="literal">vars</code> file and set up the <code class="literal">keys</code> directory:<pre class="programlisting">        <strong>$ . ./vars</strong>
+        <strong>$ ./clean-all</strong>
+        <strong>$ cp ../keys/IntermediateCA.crt keys/ca.crt</strong>
+        <strong>$ cp ../keys/IntermediateCA.key keys/ca.key</strong>
+</pre></li><li class="listitem">Now we are ready to create our first intermediary certificate:<pre class="programlisting">        <strong>$ ./build-key IntermediateClient</strong>
+</pre></li><li class="listitem">Verify that the certificate has the new Intermediary CA as its issuer:<pre class="programlisting">        <strong>$ openssl x509 -subject -issuer -noout -in  
+        keys/IntermediateClient.crt</strong>
+<strong>       subject= /C=US/O=Cookbook 2.4/CN=IntermediateClient</strong>
+        <strong>   issuer= /C=US/O=Cookbook 2.4/CN=subCA/emailAddress=...</strong>
+</pre></li><li class="listitem">And finally, we verify that the certificate is indeed a valid certificate. In order to do this we need to "stack" the root CA (public) certificate and the intermediary CA certificate into a single file:<pre class="programlisting">        <strong>$ cd /etc/openvpn/cookbook</strong>
+        <strong>$ cat keys/ca.crt IntermediateCA/keys/ca.crt &gt; ca+subca.pem</strong>
+        <strong>$ cp IntermediateCA/keys/IntermediateClient.{crt,key} .</strong>
+        <strong>$ openssl verify -CAfile ca+subca.pem IntermediateClient.crt</strong>
+        <strong>IntermediateClient.crt: OK</strong>
+</pre></li></ol><div></div></div><div><div><div><div><h2 class="title"><a id="ch04lvl2sec167"/>How it works...</h2></div></div></div><p>The intermediary CA certificate has the "right" to act as a certificate authority, meaning that it can sign new certificates itself. The intermediary CA needs a directory structure for this, which is very similar to the root CA directory structure. First, we set up this directory structure and then we copy over all the necessary files. After that we create a client certificate and verify that it is a valid certificate. In order to perform this validation, the entire certificate chain from the root-level CA to the intermediary CA to the client certificate need to be present. This is why the root CA public certificate and the intermediary CA public certificate are stacked into a single file. This single file is then used to perform the entire certificate chain validation.</p></div><div><div><div><div><h2 class="title"><a id="ch04lvl2sec168"/>There's more...</h2></div></div></div><p>Certificates that have been issued by an intermediary CA also need to be revoked by the same CA. This means that with multiple CAs you will also have to use multiple CRLs. Fortunately, CRLs can be stacked just like CA certificates: concatenate the files together using the <code class="literal">cat</code> command, as will be explained in the next recipe.</p></div></div>
+<div><div><div><div><h1 class="title"><a id="ch04lvl1sec47"/>Multiple CAs - stacking, using the capath directive</h1></div></div></div><p>The goal of this recipe is to create an OpenVPN setup where the client certificates are signed by a "client-only" CA and the server certificate is signed by a different "server-only" CA. This provides an extra level of operational security, where one person is allowed to create only client certificates, whereas another is allowed to generate only a server certificate. This ensures that the client and server certificates can never be mixed for a Man-in-the-Middle attack.</p><div><div><div><div><h2 class="title"><a id="ch04lvl2sec169"/>Getting ready</h2></div></div></div><p>Set up the server certificate using the first recipe from <a class="link" title="Chapter 2.  Client-server IP-only Networks" href="part0025.xhtml#aid-NQU21">Chapter 2</a>, <em>Client-server IP-only Networks</em>. Use the client certificate and the intermediary CA certificate from the previous recipe. For this recipe, the server computer was running CentOS 6 Linux and OpenVPN 2.3.10. The client was running Fedora 22 Linux and OpenVPN 2.3.10.</p></div><div><div><div><div><h2 class="title"><a id="ch04lvl2sec170"/>How to do it...</h2></div></div></div><div><ol class="orderedlist arabic"><li class="listitem">Create the server configuration file:<pre class="programlisting">        tls-server 
+        proto udp 
+        port 1194 
+        dev tun 
+ 
+        server 192.168.200.0 255.255.255.0 
+ 
+        ca       /etc/openvpn/cookbook/ca+subca.pem 
+        cert     /etc/openvpn/cookbook/server.crt 
+        key      /etc/openvpn/cookbook/server.key 
+        dh       /etc/openvpn/cookbook/dh1024.pem 
+        tls-auth /etc/openvpn/cookbook/ta.key 0 
+ 
+        persist-key 
+        persist-tun 
+        keepalive 10 60 
+ 
+        user  nobody 
+        group nobody 
+ 
+        daemon 
+        log-append /var/log/openvpn.log 
+</pre><p>Save it as <code class="literal">example4-9-server.conf</code>.</p></li><li class="listitem">Start the server:<pre class="programlisting">        <strong>[root@server]# openvpn --config example4-9-server.conf</strong>
+</pre></li><li class="listitem">Next, create the client configuration file:<pre class="programlisting">        client 
+        proto udp 
+        remote openvpnserver.example.com 
+        port 1194 
+ 
+        dev tun 
+        nobind 
+ 
+        tls-auth /etc/openvpn/cookbook/ta.key 1 
+        ca       /etc/openvpn/cookbook/ca.crt 
+        cert     /etc/openvpn/cookbook/IntermediateClient.crt 
+        key      /etc/openvpn/cookbook/IntermediateClient.key 
+</pre><p>Save it as <code class="literal">example4-9-client.conf</code>. Note that we did not specify the <code class="literal">ca+subca.pem</code> file in the client configuration.</p></li><li class="listitem">Start the client:<pre class="programlisting">        <strong>[root@client]# openvpn --config example4-9-client.conf</strong>
+</pre></li><li class="listitem">In the server log files, you can now see the client connecting using the certificate that was created by the Intermediary CA:<pre class="programlisting">        ... openvpnclient:49283 [IntermediateClient] Peer Connection  
+        Initiated with openvpnclient:49283 
+</pre></li></ol><div></div></div><div><div><div><div><h2 class="title"><a id="ch04lvl2sec171"/>How it works...</h2></div></div></div><p>When the client connects to the server, the client (public) certificate is sent to the server for verification. The server needs to have access to the full certificate chain in order to do the verification; therefore, we stack the root CA certificate and the intermediary CA (or sub-CA) certificate together. This allows the client to connect to the server.</p><p>Vice versa, when the client connects, the server (public) certificate is also sent to the client. As the server certificate was originally signed by the root CA, we do not need to specify the full certificate stack here.</p><p>Note that if we had forgotten to specify the <code class="literal">ca+subca.pem</code> file in the OpenVPN server configuration file, we would have received an error:</p><pre class="programlisting">openvpnclient:49286 VERIFY ERROR: depth=0, error=unable to get local issuer certificate: C=US, O=Cookbook 2.4, CN=IntermediateClient 
+</pre></div><div><div><div><div><h2 class="title"><a id="ch04lvl2sec172"/>There's more...</h2></div></div></div><p>Apart from stacking the CA certificates, it is also possible to stack the CRLs or to use an entirely different mechanism to support multiple CA certificates and their corresponding CRLs.</p><div><div><div><div><h3 class="title"><a id="ch04lvl3sec48"/>Using the -capath directive</h3></div></div></div><p>Another way to include multiple CAs and CRLs in the OpenVPN server configuration is to use the following directive:</p><pre class="programlisting">capath /etc/openvpn/cookbook/ca-dir 
+</pre><p>This directory needs to contain all CA certificates and CRLs using a special naming convention:</p><div><ul class="itemizedlist"><li class="listitem">All CA certificates must have a name equal to the hash of the CA certificate, and must end with <code class="literal">.0</code></li><li class="listitem">All CRLs must have a name equal to the hash of the CA certificate, and must end with <code class="literal">.r0</code></li></ul></div><p>For our root CA and intermediary CA, we can achieve this using the following commands:</p><pre class="programlisting">
+<strong>$ cd /etc/openvpn/cookbook</strong>
+<strong>$ mkdir ca-dir</strong>
+<strong>$ openssl x509 -hash -noout -in keys/ca.crt</strong>
+<strong>bcd54da9</strong>
+</pre><p>This hexadecimal number <code class="literal">bcd54da9</code> is the hash of the root CA certificate:</p><pre class="programlisting">
+<strong>$ cp keys/ca.crt  ca-dir/bcd54da9.0</strong>
+<strong>$ cp keys/crl.pem ca-dir/bcd54da9.r0</strong>
+</pre><p>Similarly, for the intermediary CA certificate:</p><pre class="programlisting">
+<strong>$ openssl x509 -hash -noout -in IntermediateCA/keys/ca.crt</strong>
+<strong>1f5e4734</strong>
+<strong>$ cp IntermediateCA/keys/ca.crt  ca-dir/1f5e4734.0</strong>
+<strong>$ cp IntermediateCA/keys/crl.pem ca-dir/1f5e4734.r0 </strong>
+</pre><p>When using many different CA certificates and corresponding CRLs, this method is far easier to manage than the "stacked" files.</p></div></div></div>
+<div><div><div><div><h1 class="title"><a id="ch04lvl1sec48"/>Determining the crypto library to be used</h1></div></div></div><p>Starting with OpenVPN 2.3, it became possible to build OpenVPN using either the OpenSSL cryptographic library or the PolarSSL library. The PolarSSL library is nowadays known as "mbedTLS". The PolarSSL library is used in the OpenVPN Connect apps for both Android and iOS, but the library can be used on all other supported platforms as well.</p><p>The goal of this recipe is to show how to determine which cryptographic library is used, including the run-time version number.</p><div><div><div><div><h2 class="title"><a id="ch04lvl2sec173"/>Getting ready</h2></div></div></div><p>Set up the server certificate using the first recipe from <a class="link" title="Chapter 2.  Client-server IP-only Networks" href="part0025.xhtml#aid-NQU21">Chapter 2</a>, <em>Client-server IP-only Networks</em>. Use the client certificate and the intermediary CA certificate from the previous recipe. For this recipe, the computer was running Fedora 22 Linux and OpenVPN 2.3.10, built both for OpenSSL and for PolarSSL. Keep the server configuration file <code class="literal">basic-udp-server.conf</code> from the <em>Server-side routing</em> recipe in <a class="link" title="Chapter 2.  Client-server IP-only Networks" href="part0025.xhtml#aid-NQU21">Chapter 2</a>, <em>Client-server IP-only Networks</em>.</p></div><div><div><div><div><h2 class="title"><a id="ch04lvl2sec174"/>How to do it...</h2></div></div></div><div><ol class="orderedlist arabic"><li class="listitem">Start the regular version of OpenVPN using the standard configuration file:<pre class="programlisting">        <strong>[root@server]# openvpn --config  basic-udp-server.conf</strong>
+</pre></li><li class="listitem">Check the first few lines of the server log file:<pre class="programlisting">        OpenVPN 2.3.10 x86_64-redhat-linux-gnu [SSL (OpenSSL)] [LZO]         [EPOLL] [PKCS11] [MH] [IPv6] built on Jan  4 2016 
+ 
+        library versions: OpenSSL 1.0.1e-fips 11 Feb 2013, LZO 2.08 
+</pre></li><li class="listitem">Stop the server by killing the <code class="literal">openvpn</code> process.</li><li class="listitem">Next, change the system's <code class="literal">LD_LIBRARY_PATH</code> to point to a more recent version of OpenSSL:<pre class="programlisting">        <strong>[root@server]# export LD_LIBRARY_PATH=..../openssl-1.0.1s</strong>
+        <strong>[root@server]# openvpn --config  basic-udp-server.conf</strong>
+</pre></li><li class="listitem">Check the first few lines of the server log file:<pre class="programlisting">        OpenVPN 2.3.10 x86_64-redhat-linux-gnu [SSL (OpenSSL)] [LZO]          [EPOLL] [PKCS11] [MH] [IPv6] built on Jan  4 2016 
+ 
+        library versions: OpenSSL 1.0.1s  1 Mar 2016, LZO 2.08 
+</pre></li><li class="listitem">Again, stop the server by killing the <code class="literal">openvpn</code> process.</li><li class="listitem">Switch to the PolarSSL-built version of OpenVPN and start the server again:<pre class="programlisting">        <strong>[root@server]# .../openvpn-2.3.10polarssl/openvpn --config  
+        basic-udp-server.conf</strong>
+</pre></li><li class="listitem">Check the first few lines of the server log file:<pre class="programlisting">        OpenVPN 2.3.10 x86_64-unknown-linux-gnu [SSL (PolarSSL)] [LZO]          [EPOLL] [MH] [IPv6] built on Apr 27 2016 
+ 
+        library versions: PolarSSL 1.3.16, LZO 2.08 
+</pre></li></ol><div></div></div><div><div><div><div><h2 class="title"><a id="ch04lvl2sec175"/>How it works...</h2></div></div></div><p>When OpenVPN starts the cryptographics libraries are loaded and initialized. At this point, the library's version string is retrieved and printed. By using different builds of the crypto libraries we see that only the few first lines of the server logfile alter.</p></div><div><div><div><div><h2 class="title"><a id="ch04lvl2sec176"/>There's more...</h2></div></div></div><p>The type and build of cryptographics library used determine some of the more advanced features of OpenVPN, as we will see in the next few recipes. The library version string provides vital information for debugging a non-working setup, as we will see in <a class="link" title="Chapter 6. Troubleshooting OpenVPN - Configurations" href="part0071.xhtml#aid-23MNU1">Chapter 6</a>, <em>Troubleshooting OpenVPN - Configurations</em>.</p></div><div><div><div><div><h2 class="title"><a id="ch04lvl2sec177"/>See also</h2></div></div></div><div><ul class="itemizedlist"><li class="listitem">The next recipe, in which the differences between the cryptographic libraries is explained</li><li class="listitem">The <em>How to read the OpenVPN log files</em> recipe, from <a class="link" title="Chapter 6. Troubleshooting OpenVPN - Configurations" href="part0071.xhtml#aid-23MNU1">Chapter 6</a>, <em>Troubleshooting OpenVPN - Configurations</em>, which shows in detail how to read the OpenVPN log files</li></ul></div></div></div>
+<div><div><div><div><h1 class="title"><a id="ch04lvl1sec49"/>Crypto features of OpenSSL and PolarSSL</h1></div></div></div><p>As stated in the previous recipe, it has been possible to build OpenVPN using either the OpenSSL cryptographic library or the PolarSSL library since version 2.3. In this recipe, we will show what some of the key differences between the two cryptographic libraries are.</p><div><div><div><div><h2 class="title"><a id="ch04lvl2sec178"/>Getting ready</h2></div></div></div><p>Set up the server certificate using the first recipe from <a class="link" title="Chapter 2.  Client-server IP-only Networks" href="part0025.xhtml#aid-NQU21">Chapter 2</a>, <em>Client-server IP-only Networks</em>. Use the client certificate and the intermediary CA certificate from the previous recipe. For this recipe, the computer was running Fedora 22 Linux and OpenVPN 2.3.10, built both for OpenSSL and for PolarSSL.</p></div><div><div><div><div><h2 class="title"><a id="ch04lvl2sec179"/>How to do it...</h2></div></div></div><div><ol class="orderedlist arabic"><li class="listitem">Start the regular version of OpenVPN with the <code class="literal">--show-ciphers</code> option:<pre class="programlisting">        <strong>[root@server]# openvpn --show-ciphers</strong>
+</pre></li><li class="listitem">OpenVPN will now list all available ciphers, which can easily exceed 50 ciphers for OpenSSL 1.0+. The most common ciphers are:<pre class="programlisting">        BF-CBC 128 bit default key (variable) 
+        BF-CFB 128 bit default key (variable) (TLS client/server...)  
+        BF-OFB 128 bit default key (variable) (TLS client/server...)  
+        AES-128-CBC 128 bit default key (fixed) 
+        AES-128-OFB 128 bit default key (fixed) (TLS client...)  
+        AES-128-CFB 128 bit default key (fixed) (TLS client...) 
+        AES-256-CBC 256 bit default key (fixed) 
+        AES-256-OFB 256 bit default key (fixed) (TLS client...) 
+        AES-256-CFB 256 bit default key (fixed) (TLS client...) 
+        AES-128-CFB1 128 bit default key (fixed) (TLS client...) 
+        AES-192-CFB1 192 bit default key (fixed) (TLS client...) 
+        AES-256-CFB1 256 bit default key (fixed) (TLS client...) 
+        AES-128-CFB8 128 bit default key (fixed) (TLS client...) 
+        AES-192-CFB8 192 bit default key (fixed) (TLS client...) 
+        AES-256-CFB8 256 bit default key (fixed) (TLS client...) 
+</pre></li><li class="listitem">Next, switch to the PolarSSL-built version of OpenVPN and re-run the same command:<pre class="programlisting">        <strong>[root@server]# .../openvpn-2.3.10polarssl/openvpn --show-
+        ciphers</strong>
+</pre></li><li class="listitem">The list of ciphers now is:<pre class="programlisting">        AES-128-CBC 128 bit default key 
+        AES-192-CBC 192 bit default key 
+        AES-256-CBC 256 bit default key 
+        BF-CBC 128 bit default key 
+        CAMELLIA-128-CBC 128 bit default key 
+        CAMELLIA-192-CBC 192 bit default key 
+        CAMELLIA-256-CBC 256 bit default key 
+        DES-CBC 64 bit default key 
+        DES-EDE-CBC 128 bit default key 
+        DES-EDE3-CBC 192 bit default key 
+</pre></li><li class="listitem">Start the regular version of OpenVPN with the <code class="literal">--show-digests</code> option:<pre class="programlisting">        <strong>[root@server]# openvpn --show-digests</strong>
+</pre></li><li class="listitem">OpenVPN will now list all available HMAC algorithms, which can be specified using the <code class="literal">--auth</code> option. This list can easily exceed 25 entries, therefore only the most commonly used are printed:<pre class="programlisting">        MD5 128 bit digest size 
+        SHA 160 bit digest size 
+        RIPEMD160 160 bit digest size 
+        ecdsa-with-SHA1 160 bit digest size 
+        SHA224 224 bit digest size 
+        SHA256 256 bit digest size 
+        SHA384 384 bit digest size 
+        SHA512 512 bit digest size 
+</pre></li><li class="listitem">Next, switch to the PolarSSL-built version of OpenVPN and re-run the same command:<pre class="programlisting">        <strong>[root@server]# .../openvpn-2.3.10polarssl/openvpn --show-
+        digests</strong>
+</pre></li><li class="listitem">The list of HMAC algorithms now is:<pre class="programlisting">        SHA512 512 bit default key 
+        SHA384 384 bit default key 
+        SHA256 256 bit default key 
+        SHA224 224 bit default key 
+        SHA1 160 bit default key 
+        RIPEMD160 160 bit default key 
+        MD5 128 bit default key 
+</pre></li></ol><div></div></div><div><div><div><div><h2 class="title"><a id="ch04lvl2sec180"/>How it works...</h2></div></div></div><p>When OpenVPN starts the cryptographics libraries are loaded and initialized. Only at that point are the available encryption algorithms and HMAC algorithms known. Both OpenSSL and PolarSSL provide a mechanism for retrieving the list of available algorithms, which OpenVPN uses for both the <code class="literal">--show-ciphers</code> and the <code class="literal">--show-digests</code> options.</p><p>This recipe shows that the PolarSSL/mbed-TLS library does not support all of the algorithms that OpenSSL does. When you need to support a PolarSSL-built version of OpenVPN (like the OpenVPN Connect clients for Android and iOS) then you can use only ciphers or digests (<code class="literal">--auth</code> parameter) which are supported by both crypto libraries.</p></div><div><div><div><div><h2 class="title"><a id="ch04lvl2sec181"/>There's more...</h2></div></div></div><p>Apart from the data channel cipher and HMAC algorithms, there is one more set of available algorithms that can be listed. This is the set of TLS algorithms that can be used for encrypting and authenticating the control channel. In order to list the set of TLS parameters, use the following command:</p><pre class="programlisting">
+<strong>openvpn --show-tls</strong>
+</pre><div><div><div><div><h3 class="title"><a id="ch04lvl3sec49"/>AEAD Ciphers</h3></div></div></div><p>Starting with OpenVPN 2.4, a new set of ciphers is supported. These ciphers are known as <strong>AEAD</strong> ciphers, which stands for <strong>Authenticated Encryption with Associated Data</strong>. These ciphers combine encryption with authentication, thereby removing the need for a separate HMAC algorithm and thus providing increased performance. Both OpenSSL 1.0+ and mbed-TLS 1.3+ support these ciphers. With OpenVPN 2.4+, the list of ciphers will include:</p><div><ul class="itemizedlist"><li class="listitem">AES-128-GCM</li><li class="listitem">AES-192-GCM</li><li class="listitem">AES-256-GCM</li></ul></div></div><div><div><div><div><h3 class="title"><a id="ch04lvl3sec50"/>Encryption speed</h3></div></div></div><p>Another major difference between OpenSSL and PolarSSL is the encryption/decryption speed of the algorithms. OpenSSL included hand-tuned assembly routines for maximum encryption speed, especially for the AES algorithms on newer Intel CPUs. However, the encryption speed is not the most important factor when determining the throughput of an OpenVPN network, as we will see in <a class="link" title="Chapter 8. Performance Tuning" href="part0092.xhtml#aid-2NNJO1">Chapter 8</a>, <em>Performance Tuning</em>.</p></div></div></div>
+<div><div><div><div><h1 class="title"><a id="ch04lvl1sec50"/>Pushing ciphers</h1></div></div></div><p>Another new feature of OpenVPN 2.4+ is the ability to "push" a cipher or HMAC algorithm from the server to the client. This makes it much easier to switch encryption or HMAC authentication algorithms, provided that all clients are using OpenVPN 2.4. This recipe provides a setup for explicitly pushing a cipher, as well as an explanation of the new cipher negotiation protocol.</p><div><div><div><div><h2 class="title"><a id="ch04lvl2sec182"/>Getting ready</h2></div></div></div><p>This recipe uses the PKI files created in the first recipe from <a class="link" title="Chapter 2.  Client-server IP-only Networks" href="part0025.xhtml#aid-NQU21">Chapter 2</a>, <em>Client-server IP-only Networks</em>. For this recipe, the server computer was running CentOS 6 Linux and OpenVPN 2.4.0. The client was running Fedora 22 Linux and OpenVPN 2.4.0. For the server, keep the server configuration file <code class="literal">basic-udp-server.conf</code> from the <em>Server-side routing</em> recipe in <a class="link" title="Chapter 2.  Client-server IP-only Networks" href="part0025.xhtml#aid-NQU21">Chapter 2</a>, <em>Client-server IP-only Networks</em>. For the Windows client, keep the corresponding client configuration file <code class="literal">basic-udp-client.ovpn</code>, from the <em>Using an ifconfig-pool block</em> recipe in <a class="link" title="Chapter 2.  Client-server IP-only Networks" href="part0025.xhtml#aid-NQU21">Chapter 2</a>, <em>Client-server IP-only Networks</em>.</p></div><div><div><div><div><h2 class="title"><a id="ch04lvl2sec183"/>How to do it...</h2></div></div></div><div><ol class="orderedlist arabic"><li class="listitem">Modify the server configuration file, <code class="literal">basic-udp-server.conf</code>, by adding the following lines:<pre class="programlisting">        cipher aes-256-gcm 
+        push "cipher aes-256-gcm" 
+</pre><p>Then save it as <code class="literal">example4-10-server.conf</code>.</p></li><li class="listitem">Start the server:<pre class="programlisting">
+<strong>    [root@server]# openvpn --config example4-10-server.conf</strong>
+</pre></li><li class="listitem">Start the client using the "standard" configuration file but with verbose logging:<pre class="programlisting">
+<strong>    [root@client]# openvpn --config basic-udp-client.conf --
+            verb 4</strong>
+        <strong>Data Channel Encrypt: Cipher 'BF-CBC' initialized with 128 bit 
+        key</strong>
+        <strong>Data Channel Encrypt: Using 160 bit message hash 'SHA1' for 
+        HMAC authentication</strong>
+        <strong>Data Channel Decrypt: Cipher 'BF-CBC' initialized with 128 bit 
+        key</strong>
+        <strong>Data Channel Decrypt: Using 160 bit message hash 'SHA1' for 
+        HMAC authentication</strong>
+        <strong>Control Channel: TLSv1.2, cipher TLSv1/SSLv3 ECDHE-RSA-AES256-
+        GCM-SHA384, 2048 bit RSA</strong>
+        <strong>[...]</strong>
+        <strong>OPTIONS IMPORT: data channel crypto options modified</strong>
+        <strong>[...]</strong>
+        <strong>Data Channel Encrypt: Cipher '<strong>AES-256-GCM</strong>' initialized with 256 
+        bit key</strong>
+        <strong>Data Channel Decrypt: Cipher '<strong>AES-256-GCM</strong>' initialized with 256 
+        bit key</strong>
+</pre><p>The output showing that OpenVPN is now using an AES-256 cipher is shown in bold face.</p></li><li class="listitem">Verify that we can reach the server using the <code class="literal">ping</code> command:<pre class="programlisting">
+<strong>      [client]$   ping -c 4  10.200.0.1</strong>
+<strong>PING 10.200.0.1 (10.200.0.1) 56(84) bytes of data.</strong>
+        <strong>64 bytes from 10.200.0.1: icmp_seq=1 ttl=64 time=9.23 ms</strong>
+        <strong>64 bytes from 10.200.0.1: icmp_seq=2 ttl=64 time=8.78 ms</strong>
+        <strong>64 bytes from 10.200.0.1: icmp_seq=3 ttl=64 time=10.0 ms</strong>
+        <strong>64 bytes from 10.200.0.1: icmp_seq=4 ttl=64 time=9.00 ms</strong>
+        <strong>--- 10.200.0.1 ping statistics ---</strong>
+        <strong>4 packets transmitted, 4 received, 0% packet loss, time 3004ms</strong>
+        <strong>rtt min/avg/max/mdev = 8.780/9.259/10.022/0.468 ms</strong>
+</pre></li></ol><div></div></div><div><div><div><div><h2 class="title"><a id="ch04lvl2sec184"/>How it works...</h2></div></div></div><p>Pushing a cipher is now just as simple as pushing other OpenVPN options. Versions prior to 2.4 did not support this, however. This allows VPN administrators to change the encryption parameters used without having to modify all (remote) client configuration files.</p></div><div><div><div><div><h2 class="title"><a id="ch04lvl2sec185"/>There's more...</h2></div></div></div><p>Starting with OpenVPN 2.4 a new cipher negotiation protocol is introduced. At startup, the client and server will check whether both sides support the new GCM encryption protocols. The strongest cipher from this list is then chosen as the cipher. If no match is found, then OpenVPN reverts to the default BlowFish (BF-CBC) cipher, to ensure backward compatibility.</p><p>This feature can be tuned using the new directives <code class="literal">ncp-ciphers</code> and <code class="literal">disable-ncp</code>. The first directive specifies the list of ciphers to negotiate, whereas the second directive turns off cipher negotiation altogether.</p><p>When explicitly pushing a cipher from the server to the client you can only specify a cipher from the NCP cipher list. The default NCP cipher list is AES-256-GCM:AES-128-CGM:BF-CBC.</p><pre class="programlisting">ccp-ciphers 
+push "auth SHA512" 
+</pre><div><div><div><div><h3 class="title"><a id="ch04lvl3sec51"/>Future enhancements</h3></div></div></div><p>It is expected that future enhancements of this new feature will be:</p><div><ul class="itemizedlist"><li class="listitem">A separate control channel HMAC algorithm so that you can switch the data channel algorithm independently</li><li class="listitem">The ability to set a "per-client" encryption cipher, allowing you to support different ciphers for different platforms and clients</li></ul></div></div></div></div>
+<div><div><div><div><h1 class="title"><a id="ch04lvl1sec51"/>Elliptic curve support</h1></div></div></div><p>In version 2.4 of OpenVPN support was added for using <strong>elliptic curve</strong> (<strong>EC</strong>) certificates instead of the more common RSA type certificates. <strong>Elliptic curve cryptography</strong> (<strong>ECC</strong>) provides a fast method for encrypting and authenticating a secure connection, but are not widely used yet. In part, this is due to some patenting issues. As most modern OpenSSL libraries provide ECC support, however, OpenVPN can also use EC certificates. The main advantage of ECC is that you can provide smaller keys to achieve the same level of security than with the more common RSA and DSA type encryption. This will result in a better VPN performance without sacrificing security. As we will see in this recipe, OpenVPN's control channel can be authenticated using an EC algorithm. The data channel is still authenticated using a non-EC HMAC algorithm, such as SHA1.</p><div><div><div><div><h2 class="title"><a id="ch04lvl2sec186"/>Getting ready</h2></div></div></div><p>For this recipe, the server computer was running CentOS 6 Linux and OpenVPN 2.4.0. The client was running Fedora 22 Linux and OpenVPN 2.4.0.</p></div><div><div><div><div><h2 class="title"><a id="ch04lvl2sec187"/>How to do it...</h2></div></div></div><div><ol class="orderedlist arabic"><li class="listitem">We first need to generate a new EC-based Certificate Authority:<pre class="programlisting">
+<strong>    $ export KEY_CN=</strong>
+<strong>    $ export KEY_OU=</strong>
+<strong>    $ export KEY_NAME=</strong>
+<strong>    $ export OPENSSL_CONF=/etc/openvpn/cookbook/openssl-
+        1.0.0.cnf</strong>
+<strong>    $ openssl ecparam -out cakey_temp.pem \</strong>
+<strong>         -name sect571k1 -text -genkey</strong>
+<strong>    $ openssl ec -in cakey_temp.pem -out ec-ca.key -aes256</strong>
+<strong>    $ openssl req -new -x509 -out ec-ca.crt -key ec-ca.key</strong>
+<strong>         -days 3650 -sha512 -extensions v3_ca</strong>
+<strong>         -subj "/C=US/O=Cookbook 2.4/CN=Elliptic Curve CA"</strong>
+</pre><p>This will result in an <code class="literal">ec-ca.crt</code> and <code class="literal">ec-ca.key</code> file using the <code class="literal">sect571k1</code> elliptic curve that we will use to sign the EC-based client and server certificates.</p></li><li class="listitem">Next, generate the new EC server certificate:<pre class="programlisting">
+<strong>    $ openssl req -nodes -sha512 -newkey ec:ec-ca.crt</strong>
+<strong>         -new -days 400 -out ec-server.req </strong>
+<strong>         -keyout ec-server.key</strong>
+<strong>         -subj "/C=US/O=Cookbook 2.4/CN=ecserver"</strong>
+<strong>    $ chmod 600 ec-server.key</strong>
+<strong>    $ openssl x509 -req </strong>
+<strong>        -extfile $OPENSSL_CONF </strong>
+<strong>        -extensions server</strong>
+<strong>        -out ec-server.crt -sha512 -CA ec-ca.crt </strong>
+<strong>        -CAkey ec-ca.key  -in ec-server.req </strong>
+<strong>        -set_serial $RANDOM</strong>
+</pre><p>This will result in an <code class="literal">ec-server.crt</code> and <code class="literal">ec-server.key</code> file.</p></li><li class="listitem">Similarly, generate the new EC client certificate:<pre class="programlisting">
+<strong>       $ openssl req -nodes -sha512 </strong>
+<strong>           -newkey ec:ec-ca.crt</strong>
+<strong>           -new -days 400 </strong>
+<strong>           -out ec-client.req -keyout ec-client.key</strong>
+<strong>           -subj "/C=US/O=Cookbook 2.4/CN=ecclient"</strong>
+<strong>       $ chmod 600 ec-client.key</strong>
+<strong>       $ openssl x509 -req -extfile $OPENSSL_CONF </strong>
+<strong>           -extensions usr_cert</strong>
+<strong>           -out ec-client.crt -sha512 -CA ec-ca.crt </strong>
+<strong>           -CAkey ec-ca.key -in ec-client.req </strong>
+<strong>           -set_serial $RANDOM</strong>
+</pre><p>This will result in an <code class="literal">ec-client.crt</code> and <code class="literal">ec-client.key</code> file.</p></li><li class="listitem">Create the server configuration file:<pre class="programlisting">        proto udp 
+        port 1194 
+        dev tun 
+        server 10.200.0.0 255.255.255.0 
+ 
+        ca   /etc/openvpn/cookbook/ec-ca.crt 
+        cert /etc/openvpn/cookbook/ec-server.crt 
+        key  /etc/openvpn/cookbook/ec-server.key 
+        dh   /etc/openvpn/cookbook/dh2048.pem 
+</pre><p>Save it as <code class="literal">example4-11-server.conf</code>.</p></li><li class="listitem">Start the server:<pre class="programlisting">
+<strong>      [root@server]# openvpn --config example4-11-server.conf</strong>
+</pre></li><li class="listitem">Next, create the client configuration file:<pre class="programlisting">        client 
+        proto udp 
+        remote openvpnserver.example.com 
+        port 1194 
+        dev tun 
+        nobind 
+ 
+        ca /etc/openvpn/cookbook/ec-ca.crt 
+        cert /etc/openvpn/cookbook/ec-client.crt 
+        key /etc/openvpn/cookbook/ec-client.key 
+        verb 4  
+</pre><p>Then save it as <code class="literal">example4-11-client.conf</code>.</p></li><li class="listitem">Transfer the files such as <code class="literal">ec-ca.crt</code>, <code class="literal">ec-client.crt</code>, and <code class="literal">ec-client.key</code> to the client machine using a secure channel.</li><li class="listitem">Finally, start the client:<pre class="programlisting">
+<strong>      [root@client]# openvpn --config example4-11-client.conf</strong>
+</pre><p>And observe the chosen control channel cipher:</p><pre class="programlisting">        Control Channel: TLSv1.2, cipher TLSv1/SSLv3 ECDHE-ECDSA-
+        AES256-GCM-SHA384 
+</pre><p>This shows that the control channel is protected using an ECDSA-based cipher.</p></li></ol><div></div></div><div><div><div><div><h2 class="title"><a id="ch04lvl2sec188"/>How it works...</h2></div></div></div><p>By generating an EC-based Certificate Authority and by using EC-based certificates OpenVPN can now support elliptic curve cryptography on the control channel. The data channel is still protected using the default cipher BF-CBC (Blowfish) and the default HMAC algorithm SHA1.</p><p>It should be noted that with RSA-based certificates the control channel cipher looks remarkably similar:</p><pre class="programlisting">Control Channel: TLSv1.2, cipher TLSv1/SSLv3 ECDHE-RSA-AES256-GCM-SHA384, 2048 bit RSA 
+</pre><p>It is not the "ECDHE" part which proves that ECC is used, but "ECDSA".</p></div><div><div><div><div><h2 class="title"><a id="ch04lvl2sec189"/>There's more...</h2></div></div></div><p>It is also possible to choose different ECDH "curves". This is done by first listing the available ECDH curves on the OpenVPN server:</p><pre class="programlisting">
+<strong>[root@server]# openvpn --show-curves</strong>
+<strong>Available Elliptic curves:</strong>
+<strong>[...]</strong>
+<strong>secp112r1</strong>
+<strong>secp112r2</strong>
+<strong>secp521r1</strong>
+<strong>prime192v1</strong>
+<strong>prime192v2</strong>
+<strong>[...]</strong>
+</pre><p>And then by adding the option to the server configuration file:</p><pre class="programlisting">
+<strong>ecdh-curve secp521r1</strong>
+</pre><div><div><div><div><h3 class="title"><a id="ch04lvl3sec52"/>Elliptic curve support</h3></div></div></div><p>Not all Linux distributions provide an OpenSSL library that supports elliptic curve cryptography out of the box. Notably RedHat-based and RedHat-derived distributions, such as RedHat Enterprise Linux, CentOS and Fedora explicitly disable ECC support. RedHat cites patent issues as the reason, but the "default" OpenSSL library ships with full ECC support.</p><p>As the Linux distributions used throughout this book are CentOS and Fedora, a custom build of the OpenSSL 1.0.2 library was made especially for this recipe.</p></div></div></div></body></html>

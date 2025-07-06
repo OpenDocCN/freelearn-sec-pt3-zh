@@ -1,0 +1,1598 @@
+<html><head></head><body>
+        
+
+                            
+                    <h1 class="header-title">Working with Files</h1>
+                
+            
+            
+                
+<p>One of the defining features of Unix and Linux systems is how everything is treated as a file. Processes, files, directories, sockets, devices, and pipes are all treated as files. Given this fundamental feature of the operating system, learning how to manipulate files is a critical skill. This chapter provides several examples of the different ways to manipulate files.</p>
+<p>First, we will look at the basics, namely creating, truncating, deleting, opening, closing, renaming, and moving files. We will also look at how to get detailed attributes about a file, such as permissions and ownership, size, and symlink information.</p>
+<p>A whole section in this chapter is dedicated to the different ways you can read from and write to files. There are multiple packages that contain useful functions; moreover, the reader and writer interfaces enable many different options, such as buffered readers and writers, direct read and writes, scanners, and helper functions for quick operations.</p>
+<p>Additionally, examples are provided for archiving and unarchiving, compressing and uncompressing, creating temporary files and directories, and downloading files over HTTP.</p>
+<p>Specifically, this chapter will cover the following topics:</p>
+<ul>
+<li>Creating empty files and truncating files</li>
+<li>Getting detailed file information</li>
+<li>Renaming, moving, and deleting files</li>
+<li>Manipulating permissions, ownership, and timestamps</li>
+<li>Symlinks</li>
+<li>Multiple ways of reading and writing files</li>
+<li>Archives</li>
+<li>Compression</li>
+<li>Temporary files and directories</li>
+<li>Downloading files over HTTP</li>
+</ul>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">File basics</h1>
+                
+            
+            
+                
+<p>Because files are such an integral part of the computing ecosystem, it is crucial to understand the options available in Go for working with files. This section covers some basic operations, such as opening, closing, creating, and deleting files. Additionally, it covers renaming and moving, seeing if files exist, modifying permissions, ownership, timestamps, and working with symbolic links. Most of these examples use a hard-coded filename of <kbd>test.txt</kbd>. Change this filename if you want to operate on a different file.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Creating an empty file</h1>
+                
+            
+            
+                
+<p>A common tool used in Linux is the <strong>touch</strong> program. It's frequently used when you need to quickly create an empty file with a specific name. The following example replicates one of the common <strong>touch</strong> use case of creating an empty file.</p>
+<p>There are limited uses to creating an empty file, but let's consider one example. What if there was a service that wrote logs to a rotating set of files. Every day a new file is created with the current date, and the day's logs are written to that file. The developer might have been smart and put very strict permissions on the log files so that only administrators can read them. But, what if they left loose permissions on the directory? What would happen if you created an empty file with the next day's date? The service may only create a new log file if one does not exist, but if one does exist it will use it without checking the permissions. You could take advantage of this by creating an empty file that you have read permissions to. The file should be named the same way the service would name the log file. For example, if the service uses a format like this for logs: <kbd>logs-2018-01-30.txt</kbd>, you could create an empty file named <kbd>logs-2018-01-31.txt</kbd> and the next day, the service will write to that file since it already exists and you will have read permissions, as opposed to the service creating a new file with root only permissions if no file existed.</p>
+<p>The following is the code implementation of this example:</p>
+<pre>package main 
+ 
+import ( 
+   "log" 
+   "os" 
+) 
+ 
+func main() { 
+   newFile, err := os.Create("test.txt") 
+   if err != nil { 
+      log.Fatal(err) 
+   } 
+   log.Println(newFile) 
+   newFile.Close() 
+} </pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Truncating a file</h1>
+                
+            
+            
+                
+<p>Truncating a file is when you trim a file down to a maximum length. Truncating is often used to completely remove all contents of a file, but it can also be used to limit a file to a specific maximum size. One notable characteristic of <kbd>os.Truncate()</kbd> is that it will actually increase the length of a file if it is smaller than the specified truncate limit. It will fill any blank space with null bytes.</p>
+<p>Truncating a file has more practical uses than creating an empty file. When log files get too big, they can be truncated to save disk space. If you are attacking, you may want to truncate <kbd>.bash_history</kbd> and other log files to cover your tracks. Genuinely, malicious actors may truncate files just for the sake of destroying data.</p>
+<pre>package main 
+ 
+import ( 
+   "log" 
+   "os" 
+) 
+ 
+func main() { 
+   // Truncate a file to 100 bytes. If file 
+   // is less than 100 bytes the original contents will remain 
+   // at the beginning, and the rest of the space is 
+   // filled will null bytes. If it is over 100 bytes, 
+   // Everything past 100 bytes will be lost. Either way 
+   // we will end up with exactly 100 bytes. 
+   // Pass in 0 to truncate to a completely empty file 
+ 
+   err := os.Truncate("test.txt", 100) 
+   if err != nil { 
+      log.Fatal(err) 
+   } 
+} </pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Getting the file info</h1>
+                
+            
+            
+                
+<p>The following example will print out all the metadata available about a file. It includes the obvious attributes, namely name, size, permissions, last modified time, and whether it is a directory. The last data piece it contains is the <kbd>FileInfo.Sys()</kbd> interface. This contains information about the underlying source of the file, which is most commonly a filesystem on a hard disk:</p>
+<pre>package main 
+ 
+import ( 
+   "fmt" 
+   "log" 
+   "os" 
+) 
+ 
+func main() { 
+   // Stat returns file info. It will return 
+   // an error if there is no file. 
+   fileInfo, err := os.Stat("test.txt") 
+   if err != nil { 
+      log.Fatal(err) 
+   } 
+   fmt.Println("File name:", fileInfo.Name()) 
+   fmt.Println("Size in bytes:", fileInfo.Size()) 
+   fmt.Println("Permissions:", fileInfo.Mode()) 
+   fmt.Println("Last modified:", fileInfo.ModTime()) 
+   fmt.Println("Is Directory: ", fileInfo.IsDir()) 
+   fmt.Printf("System interface type: %T\n", fileInfo.Sys()) 
+   fmt.Printf("System info: %+v\n\n", fileInfo.Sys()) 
+} </pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Renaming a file</h1>
+                
+            
+            
+                
+<p>The standard library provides a convenient function for moving a file. Renaming and moving are synonymous terms; if you want to move a file from one directory to another, use the <kbd>os.Rename()</kbd> function, as shown in the following code block:</p>
+<pre>package main 
+ 
+import ( 
+   "log" 
+   "os" 
+) 
+ 
+func main() { 
+   originalPath := "test.txt" 
+   newPath := "test2.txt" 
+   err := os.Rename(originalPath, newPath) 
+   if err != nil { 
+      log.Fatal(err) 
+   } 
+} </pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Deleting a file</h1>
+                
+            
+            
+                
+<p>This following example is straightforward, and it demonstrates how to delete a file. The standard package provides <kbd>os.Remove()</kbd>, which expects a file path:</p>
+<pre>package main 
+ 
+import ( 
+   "log" 
+   "os" 
+) 
+ 
+func main() { 
+   err := os.Remove("test.txt") 
+   if err != nil { 
+      log.Fatal(err) 
+   } 
+} </pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Opening and closing files</h1>
+                
+            
+            
+                
+<p>When opening a file, there are several options. When calling <kbd>os.Open()</kbd>, it just requires a filename and provides a read-only file. Another option is to use <kbd>os.OpenFile()</kbd>, which expects more options. You can specify whether you want a read-only or write-only file. You can also choose to read and write, append, create if does not exist, or truncate upon opening. Pass the desired options combined with the logical OR operator. Closing files is done by calling <kbd>Close()</kbd> on the file object. You can close a file explicitly or you can defer the call. Refer to <a href="1537b549-81fb-4988-b72b-33fbad866d5b.xhtml">Chapter 2</a>, <em>The Go Programming Language</em> for more details on the <kbd>defer</kbd> keyword. The following example does not use the <kbd>defer</kbd> keyword option, but later examples will:</p>
+<pre>package main 
+ 
+import ( 
+   "log" 
+   "os" 
+) 
+ 
+func main() { 
+   // Simple read only open. We will cover actually reading 
+   // and writing to files in examples further down the page 
+   file, err := os.Open("test.txt") 
+   if err != nil { 
+      log.Fatal(err) 
+   }  
+   file.Close() 
+ 
+   // OpenFile with more options. Last param is the permission mode 
+   // Second param is the attributes when opening 
+   file, err = os.OpenFile("test.txt", os.O_APPEND, 0666) 
+   if err != nil { 
+      log.Fatal(err) 
+   } 
+   file.Close() 
+ 
+   // Use these attributes individually or combined 
+   // with an OR for second arg of OpenFile() 
+   // e.g. os.O_CREATE|os.O_APPEND 
+   // or os.O_CREATE|os.O_TRUNC|os.O_WRONLY 
+ 
+   // os.O_RDONLY // Read only 
+   // os.O_WRONLY // Write only 
+   // os.O_RDWR // Read and write 
+   // os.O_APPEND // Append to end of file 
+   // os.O_CREATE // Create is none exist 
+   // os.O_TRUNC // Truncate file when opening 
+} </pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Checking whether a file exists</h1>
+                
+            
+            
+                
+<p>Checking whether a file exists is a two-step process. First, <kbd>os.Stat()</kbd> must be called on the file to get <kbd>FileInfo</kbd>. If the file does not exist, then a <kbd>FileInfo</kbd> struct is not returned, but an error is returned. There are multiple errors that <kbd>os.Stat()</kbd> might return, so the error type must be inspected. The standard library provides a function called <kbd>os.IsNotExist()</kbd> that will inspect an error to see whether it was caused because a file does not exist.</p>
+<p>The following example will call <kbd>log.Fatal()</kbd> if the file does not exist, but you can handle the error gracefully and move on without exiting if desired:</p>
+<pre>package main 
+ 
+import ( 
+   "log" 
+   "os" 
+) 
+ 
+func main() { 
+   // Stat returns file info. It will return 
+   // an error if there is no file. 
+   fileInfo, err := os.Stat("test.txt") 
+   if err != nil { 
+      if os.IsNotExist(err) { 
+         log.Fatal("File does not exist.") 
+      } 
+   } 
+   log.Println("File does exist. File information:") 
+   log.Println(fileInfo) 
+} </pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Checking read and write permissions</h1>
+                
+            
+            
+                
+<p>Similar to the previous example, checking the read and write permissions is done by inspecting an error using a function called <kbd>os.IsPermission()</kbd>. This function will return true if the error passed was caused due to a permission problem, as shown in the following example:</p>
+<pre>package main 
+ 
+import ( 
+   "log" 
+   "os" 
+) 
+ 
+func main() { 
+   // Test write permissions. It is possible the file 
+   // does not exist and that will return a different 
+   // error that can be checked with os.IsNotExist(err) 
+   file, err := os.OpenFile("test.txt", os.O_WRONLY, 0666) 
+   if err != nil { 
+      if os.IsPermission(err) { 
+         log.Println("Error: Write permission denied.") 
+      } 
+   } 
+   file.Close() 
+ 
+   // Test read permissions 
+   file, err = os.OpenFile("test.txt", os.O_RDONLY, 0666) 
+   if err != nil { 
+      if os.IsPermission(err) { 
+         log.Println("Error: Read permission denied.") 
+      } 
+   } 
+   file.Close()<br/>} </pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Changing permissions, ownership, and timestamps</h1>
+                
+            
+            
+                
+<p>If you own a file or have the right privileges, you can change the ownership, timestamp, and permissions. A set of functions are provided by the standard library. They are given here:</p>
+<ul>
+<li><kbd>os.Chmod()</kbd></li>
+<li><kbd>os.Chown()</kbd></li>
+<li><kbd>os.Chtimes()</kbd></li>
+</ul>
+<p>The following example demonstrates how to use these functions to alter the metadata of a file:</p>
+<pre>package main 
+ 
+import ( 
+   "log" 
+   "os" 
+   "time" 
+) 
+ 
+func main() { 
+   // Change permissions using Linux style 
+   err := os.Chmod("test.txt", 0777) 
+   if err != nil { 
+      log.Println(err) 
+   } 
+ 
+   // Change ownership 
+   err = os.Chown("test.txt", os.Getuid(), os.Getgid()) 
+   if err != nil { 
+      log.Println(err) 
+   } 
+ 
+   // Change timestamps 
+   twoDaysFromNow := time.Now().Add(48 * time.Hour) 
+   lastAccessTime := twoDaysFromNow 
+   lastModifyTime := twoDaysFromNow 
+   err = os.Chtimes("test.txt", lastAccessTime, lastModifyTime) 
+   if err != nil { 
+      log.Println(err) 
+   } 
+} </pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Hard links and symlinks</h1>
+                
+            
+            
+                
+<p>A typical file is just a pointer to a place on the hard disk, called an inode. A hard link creates a new pointer to the same place. A file will only be deleted from the disk after all links to it are removed. Hard links only work on the same filesystem. A hard link is what you might consider a "normal" link.</p>
+<p>A symbolic link, or soft link, is a little different, it does not point directly to a place on the disk. Symlinks only reference other files by name. They can point to files on different filesystems. However, not all systems support symlinks.</p>
+<p>Windows historically did not have good support for symlinks, but the examples were tested in Windows 10 Pro, and both hard links and symlinks work properly if you have administrator privileges. To execute a Go program from the command line as an administrator, first open Command Prompt as an administrator by right clicking on it and selecting Run as administrator. From there you can execute the program, and the symlinks and hard links will work as expected.</p>
+<p>The following example demonstrates how to create a hard link and a symbolically linked file, as well as determine if a file is a symlink and how to modify the symlink file metadata without altering the original file:</p>
+<pre>package main 
+ 
+import ( 
+   "fmt" 
+   "log" 
+   "os" 
+) 
+ 
+func main() { 
+   // Create a hard link 
+   // You will have two file names that point to the same contents 
+   // Changing the contents of one will change the other 
+   // Deleting/renaming one will not affect the other 
+   err := os.Link("original.txt", "original_also.txt") 
+   if err != nil { 
+      log.Fatal(err) 
+   } 
+ 
+   fmt.Println("Creating symlink") 
+   // Create a symlink 
+   err = os.Symlink("original.txt", "original_sym.txt") 
+   if err != nil { 
+      log.Fatal(err) 
+   } 
+ 
+   // Lstat will return file info, but if it is actually 
+   // a symlink, it will return info about the symlink. 
+   // It will not follow the link and give information 
+   // about the real file 
+   // Symlinks do not work in Windows 
+   fileInfo, err := os.Lstat("original_sym.txt") 
+   if err != nil { 
+      log.Fatal(err) 
+   } 
+   fmt.Printf("Link info: %+v", fileInfo) 
+ 
+   // Change ownership of a symlink only 
+   // and not the file it points to 
+   err = os.Lchown("original_sym.txt", os.Getuid(), os.Getgid()) 
+   if err != nil { 
+      log.Fatal(err) 
+   } 
+} </pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Reading and writing</h1>
+                
+            
+            
+                
+<p>Reading and writing files can be done in numerous ways. Go provides interfaces that make it easy to write your own functions that work with files or any other reader/writer interface.</p>
+<p>Between the <kbd>os</kbd>, <kbd>io</kbd>, and <kbd>ioutil</kbd> packages, you can find the right function for your needs. These examples cover a number of the options available.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Copying a file</h1>
+                
+            
+            
+                
+<p>The following example uses the <kbd>io.Copy()</kbd> function to copy the contents from one reader to another writer:</p>
+<pre>package main 
+ 
+import ( 
+   "io" 
+   "log" 
+   "os" 
+) 
+ 
+func main() { 
+   // Open original file 
+   originalFile, err := os.Open("test.txt") 
+   if err != nil { 
+      log.Fatal(err) 
+   } 
+   defer originalFile.Close() 
+ 
+   // Create new file 
+   newFile, err := os.Create("test_copy.txt") 
+   if err != nil { 
+      log.Fatal(err) 
+   } 
+   defer newFile.Close() 
+ 
+   // Copy the bytes to destination from source 
+   bytesWritten, err := io.Copy(newFile, originalFile) 
+   if err != nil { 
+      log.Fatal(err) 
+   } 
+   log.Printf("Copied %d bytes.", bytesWritten) 
+ 
+   // Commit the file contents 
+   // Flushes memory to disk 
+   err = newFile.Sync() 
+   if err != nil { 
+      log.Fatal(err) 
+   }  
+} </pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Seeking positions in a file</h1>
+                
+            
+            
+                
+<p>The <kbd>Seek()</kbd> function is useful for setting the file cursor in a specific location. By default, it starts at offset 0 and moves forward as you read bytes. You might want to reset the cursor back to the beginning of a file or jump directly to a specific location. The <kbd>Seek()</kbd> function allows you to do this.</p>
+<p><kbd>Seek()</kbd> takes two parameters. The first one is distance; you want to move the cursor in bytes. It can move forward with a positive integer, or backward in a file if a negative number is provided. The first parameter, the distance, is a relative value, not an absolute position in the file. The second parameter specifies where the relative point starts and is called <kbd>whence</kbd>. The <kbd>whence</kbd> parameter is the point of reference for the relative offset. It can either be <kbd>0</kbd>, <kbd>1</kbd>, or <kbd>2</kbd>, representing the beginning of the file, the current position, and the end of the file, respectively.</p>
+<p>As an example, if <kbd>Seek(-1, 2)</kbd> was specified, it would set the file cursor one byte back from the end of the file. <kbd>Seek(2, 0)</kbd> would seek the second byte from the beginning of <kbd>file.Seek(5, 1)</kbd>, which would move the cursor forward 5 bytes from its current position:</p>
+<pre>package main 
+ 
+import ( 
+   "fmt" 
+   "log" 
+   "os" 
+) 
+ 
+func main() { 
+   file, _ := os.Open("test.txt") 
+   defer file.Close() 
+ 
+   // Offset is how many bytes to move 
+   // Offset can be positive or negative 
+   var offset int64 = 5 
+ 
+   // Whence is the point of reference for offset 
+   // 0 = Beginning of file 
+   // 1 = Current position 
+   // 2 = End of file 
+   var whence int = 0 
+   newPosition, err := file.Seek(offset, whence) 
+   if err != nil { 
+      log.Fatal(err) 
+   } 
+   fmt.Println("Just moved to 5:", newPosition) 
+ 
+   // Go back 2 bytes from current position 
+   newPosition, err = file.Seek(-2, 1) 
+   if err != nil { 
+      log.Fatal(err) 
+   } 
+   fmt.Println("Just moved back two:", newPosition) 
+ 
+   // Find the current position by getting the 
+   // return value from Seek after moving 0 bytes 
+   currentPosition, err := file.Seek(0, 1) 
+   fmt.Println("Current position:", currentPosition) 
+ 
+   // Go to beginning of file 
+   newPosition, err = file.Seek(0, 0) 
+   if err != nil { 
+      log.Fatal(err) 
+   } 
+   fmt.Println("Position after seeking 0,0:", newPosition) 
+} </pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Writing bytes to a file</h1>
+                
+            
+            
+                
+<p>You can write using just the <kbd>os</kbd> package, which is needed already to open the file. Since all Go executables are statically linked binaries, every package you import increases the size of your executable. Other packages such as <kbd>io</kbd>, <kbd>ioutil</kbd>, and <kbd>bufio</kbd> provide some more help, but they are not necessary:</p>
+<pre>package main 
+ 
+import ( 
+   "log" 
+   "os" 
+) 
+ 
+func main() { 
+   // Open a new file for writing only 
+   file, err := os.OpenFile( 
+      "test.txt", 
+      os.O_WRONLY|os.O_TRUNC|os.O_CREATE, 
+      0666, 
+   ) 
+   if err != nil { 
+      log.Fatal(err) 
+   } 
+   defer file.Close() 
+ 
+   // Write bytes to file 
+   byteSlice := []byte("Bytes!\n") 
+   bytesWritten, err := file.Write(byteSlice) 
+   if err != nil { 
+      log.Fatal(err) 
+   } 
+   log.Printf("Wrote %d bytes.\n", bytesWritten) 
+} </pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Quickly writing to a file</h1>
+                
+            
+            
+                
+<p>The <kbd>ioutil</kbd> package has a useful function called <kbd>WriteFile()</kbd>, that will handle creating/opening, writing a slice of bytes, and closing. It is useful if you just need a quick way to dump a slice of bytes to a file:</p>
+<pre>package main 
+ 
+import ( 
+   "io/ioutil" 
+   "log" 
+) 
+ 
+func main() { 
+   err := ioutil.WriteFile("test.txt", []byte("Hi\n"), 0666) 
+   if err != nil { 
+      log.Fatal(err) 
+   } 
+} </pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Buffered writer</h1>
+                
+            
+            
+                
+<p>The <kbd>bufio</kbd> package lets you create a buffered writer so that you can work with a buffer in memory before writing it to disk. This is useful if you need to do a lot of manipulation on the data before writing it to disk to save time from disk IO. It is also useful if you only write one byte at a time and want to store a large number in a memory buffer before dumping it to file at once, otherwise you would be performing disk IO for every byte. This puts wear and tear on your disk as well as it slows down the process.</p>
+<p>Buffered writers can be inspected to see how much unbuffered data it is currently storing and how much buffer space is remaining. A buffer can also be reset to undo any changes since the last flush. The buffers are also resizable.</p>
+<p>The following example opens a file named <kbd>test.txt</kbd> and creates a buffered writer that wraps the file object. A few bytes are written to the buffer and then a string is written. The in-memory buffer is then inspected before flushing the contents of the buffer to the file on disk. It also demonstrates how to reset a buffer, undoing any changes that have not been flushed, and how to inspect the space left in a buffer. Finally, it demonstrates how to resize the buffer to a specific size:</p>
+<pre>package main 
+ 
+import ( 
+   "bufio" 
+   "log" 
+   "os" 
+) 
+ 
+func main() { 
+   // Open file for writing 
+   file, err := os.OpenFile("test.txt", os.O_WRONLY, 0666) 
+   if err != nil { 
+      log.Fatal(err) 
+   } 
+   defer file.Close() 
+ 
+   // Create a buffered writer from the file 
+   bufferedWriter := bufio.NewWriter(file) 
+ 
+   // Write bytes to buffer 
+   bytesWritten, err := bufferedWriter.Write( 
+      []byte{65, 66, 67}, 
+   ) 
+   if err != nil { 
+      log.Fatal(err) 
+   } 
+   log.Printf("Bytes written: %d\n", bytesWritten) 
+ 
+   // Write string to buffer 
+   // Also available are WriteRune() and WriteByte() 
+   bytesWritten, err = bufferedWriter.WriteString( 
+      "Buffered string\n", 
+   ) 
+   if err != nil { 
+      log.Fatal(err) 
+   } 
+   log.Printf("Bytes written: %d\n", bytesWritten) 
+ 
+   // Check how much is stored in buffer waiting 
+   unflushedBufferSize := bufferedWriter.Buffered() 
+   log.Printf("Bytes buffered: %d\n", unflushedBufferSize) 
+ 
+   // See how much buffer is available 
+   bytesAvailable := bufferedWriter.Available() 
+   if err != nil { 
+      log.Fatal(err) 
+   } 
+   log.Printf("Available buffer: %d\n", bytesAvailable) 
+ 
+   // Write memory buffer to disk 
+   bufferedWriter.Flush() 
+ 
+   // Revert any changes done to buffer that have 
+   // not yet been written to file with Flush() 
+   // We just flushed, so there are no changes to revert 
+   // The writer that you pass as an argument 
+   // is where the buffer will output to, if you want 
+   // to change to a new writer 
+   bufferedWriter.Reset(bufferedWriter) 
+ 
+   // See how much buffer is available 
+   bytesAvailable = bufferedWriter.Available() 
+   if err != nil { 
+      log.Fatal(err) 
+   } 
+   log.Printf("Available buffer: %d\n", bytesAvailable) 
+ 
+   // Resize buffer. The first argument is a writer 
+   // where the buffer should output to. In this case 
+   // we are using the same buffer. If we chose a number 
+   // that was smaller than the existing buffer, like 10 
+   // we would not get back a buffer of size 10, we will 
+   // get back a buffer the size of the original since 
+   // it was already large enough (default 4096) 
+   bufferedWriter = bufio.NewWriterSize( 
+      bufferedWriter, 
+      8000, 
+   ) 
+ 
+   // Check available buffer size after resizing 
+   bytesAvailable = bufferedWriter.Available() 
+   if err != nil { 
+      log.Fatal(err) 
+   } 
+   log.Printf("Available buffer: %d\n", bytesAvailable) 
+} </pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Reading up to n bytes from a file</h1>
+                
+            
+            
+                
+<p>The <kbd>os.File</kbd> type comes with a couple of basic functions. One of them is <kbd>File.Read()</kbd>. <kbd>Read()</kbd>, which expects a byte slice to be passed as a parameter. Bytes are read from the file and placed in the byte slice. <kbd>Read()</kbd> will read as many bytes as it can or until the buffer fills up, and then it will stop reading.</p>
+<p>Multiple calls to <kbd>Read()</kbd> may be necessary before getting to the end of a file, depending on the size of the buffer provided and the size of the file. An <kbd>io.EOF</kbd> error is returned if the end of a file is reached during a call to <kbd>Read()</kbd>:</p>
+<pre>package main 
+ 
+import ( 
+   "log" 
+   "os" 
+) 
+ 
+func main() { 
+   // Open file for reading 
+   file, err := os.Open("test.txt") 
+   if err != nil { 
+      log.Fatal(err) 
+   } 
+   defer file.Close() 
+ 
+   // Read up to len(b) bytes from the File 
+   // Zero bytes written means end of file 
+   // End of file returns error type io.EOF 
+   byteSlice := make([]byte, 16) 
+   bytesRead, err := file.Read(byteSlice) 
+   if err != nil { 
+      log.Fatal(err) 
+   } 
+   log.Printf("Number of bytes read: %d\n", bytesRead) 
+   log.Printf("Data read: %s\n", byteSlice) 
+} </pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Reading exactly n bytes</h1>
+                
+            
+            
+                
+<p>In the previous example, <kbd>File.Read()</kbd> will not return an error if a file only contains 10 bytes, but you provide a byte slice buffer with 500 bytes. There are some occasions where you want to ensure that the entire buffer is filled up. The <kbd>io.ReadFull()</kbd> function will return an error if the entire buffer is not filled up. If <kbd>io.ReadFull()</kbd> does not have any data to read, an EOF error is returned. If it reads some data, but then encounters an EOF, it will return an <kbd>ErrUnexpectedEOF</kbd> error:</p>
+<pre>package main 
+ 
+import ( 
+   "io" 
+   "log" 
+   "os" 
+) 
+ 
+func main() { 
+   // Open file for reading 
+   file, err := os.Open("test.txt") 
+   if err != nil { 
+      log.Fatal(err) 
+   } 
+ 
+   // The file.Read() function will happily read a tiny file in to a    <br/>   // large byte slice, but io.ReadFull() will return an 
+   // error if the file is smaller than the byte slice. 
+   byteSlice := make([]byte, 2) 
+   numBytesRead, err := io.ReadFull(file, byteSlice) 
+   if err != nil { 
+      log.Fatal(err) 
+   } 
+   log.Printf("Number of bytes read: %d\n", numBytesRead) 
+   log.Printf("Data read: %s\n", byteSlice) 
+} </pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Reading at least n bytes</h1>
+                
+            
+            
+                
+<p>Another useful function provided by the <kbd>io</kbd> package is <kbd>io.ReadAtLeast()</kbd>. This will return an error if at least specific number of bytes are not. Similar to <kbd>io.ReadFull()</kbd>, an <kbd>EOF</kbd> error is returned if no data is found, and an <kbd>ErrUnexpectedEOF</kbd> error is returned if some data is read before encountering the end of the file:</p>
+<pre>package main 
+ 
+import ( 
+   "io" 
+   "log" 
+   "os" 
+) 
+ 
+func main() { 
+   // Open file for reading 
+   file, err := os.Open("test.txt") 
+   if err != nil { 
+      log.Fatal(err) 
+   } 
+ 
+   byteSlice := make([]byte, 512) 
+   minBytes := 8 
+   // io.ReadAtLeast() will return an error if it cannot 
+   // find at least minBytes to read. It will read as 
+   // many bytes as byteSlice can hold. 
+   numBytesRead, err := io.ReadAtLeast(file, byteSlice, minBytes) 
+   if err != nil { 
+      log.Fatal(err) 
+   } 
+   log.Printf("Number of bytes read: %d\n", numBytesRead) 
+   log.Printf("Data read: %s\n", byteSlice) 
+} </pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Reading all bytes of a file</h1>
+                
+            
+            
+                
+<p>The <kbd>ioutil</kbd> package provides a function to read every byte in a file and return it as byte slice. This function is convenient because you do not have to define the byte slice before doing the read. The drawback is that a really large file will return a large slice that may be bigger than expected.</p>
+<p>The <kbd>io.ReadAll()</kbd> function expects a file that has already been opened with <kbd>os.Open()</kbd> or <kbd>Create()</kbd>:</p>
+<pre>package main 
+ 
+import ( 
+   "fmt" 
+   "io/ioutil" 
+   "log" 
+   "os" 
+) 
+ 
+func main() { 
+   // Open file for reading 
+   file, err := os.Open("test.txt") 
+   if err != nil { 
+      log.Fatal(err) 
+   } 
+ 
+   // os.File.Read(), io.ReadFull(), and 
+   // io.ReadAtLeast() all work with a fixed 
+   // byte slice that you make before you read 
+ 
+   // ioutil.ReadAll() will read every byte 
+   // from the reader (in this case a file), 
+   // and return a slice of unknown slice 
+   data, err := ioutil.ReadAll(file) 
+   if err != nil { 
+      log.Fatal(err) 
+   } 
+ 
+   fmt.Printf("Data as hex: %x\n", data) 
+   fmt.Printf("Data as string: %s\n", data) 
+   fmt.Println("Number of bytes read:", len(data)) 
+} </pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Quickly reading whole files to memory</h1>
+                
+            
+            
+                
+<p>Similar to the <kbd>io.ReadAll()</kbd> function in the previous example, <kbd>io.ReadFile()</kbd> will read all the bytes in a file and return a byte slice. The primary difference between the two is that <kbd>io.ReadFile()</kbd> expects a file path, not a file object that has already been opened. The <kbd>io.ReadFile()</kbd> function will take care of opening, reading, and closing the file. You just provide a filename and it provides the bytes. This is often the quickest and easiest method to load file data.</p>
+<p>While this method is very convenient, it has limitations; because it reads the entire file directly to memory, very large files may exhaust a system's memory limit:</p>
+<pre>package main 
+ 
+import ( 
+   "io/ioutil" 
+   "log" 
+) 
+ 
+func main() { 
+   // Read file to byte slice 
+   data, err := ioutil.ReadFile("test.txt") 
+   if err != nil { 
+      log.Fatal(err) 
+   } 
+ 
+   log.Printf("Data read: %s\n", data) 
+} </pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Buffered reader</h1>
+                
+            
+            
+                
+<p>Creating a buffered reader will store a memory buffer with some of the contents. A buffered reader also provides some more functions that are not available on the <kbd>os.File</kbd> or <kbd>io.Reader</kbd> types. The default buffer size is 4096 and the minimum size is 16. Buffered readers provide a set of useful functions. Some of the functions available include, but are not limited to, the following:</p>
+<ul>
+<li><kbd>Read()</kbd>: This is to read data into a byte slice</li>
+<li><kbd>Peek()</kbd>: This is to inspect the next bytes without moving the file cursor</li>
+<li><kbd>ReadByte()</kbd>: This is to read a single byte</li>
+<li><kbd>UnreadByte()</kbd>: This unreads the last byte read</li>
+<li><kbd>ReadBytes()</kbd>: This reads bytes until the specified delimiter is reached</li>
+<li><kbd>ReadString()</kbd>: This reads a string until the specified delimiter is reached</li>
+</ul>
+<p>The following example demonstrates how to use a buffered reader to get data from a file. First, it opens a file and then creates a buffered reader that wraps the file object. Once the buffered reader is ready, it shows how to use the preceding functions:</p>
+<pre>package main 
+ 
+import ( 
+   "bufio" 
+   "fmt" 
+   "log" 
+   "os" 
+) 
+ 
+func main() { 
+   // Open file and create a buffered reader on top 
+   file, err := os.Open("test.txt") 
+   if err != nil { 
+      log.Fatal(err) 
+   } 
+   bufferedReader := bufio.NewReader(file) 
+ 
+   // Get bytes without advancing pointer 
+   byteSlice := make([]byte, 5) 
+   byteSlice, err = bufferedReader.Peek(5) 
+   if err != nil { 
+      log.Fatal(err) 
+   } 
+   fmt.Printf("Peeked at 5 bytes: %s\n", byteSlice) 
+ 
+   // Read and advance pointer 
+   numBytesRead, err := bufferedReader.Read(byteSlice) 
+   if err != nil { 
+      log.Fatal(err) 
+   } 
+   fmt.Printf("Read %d bytes: %s\n", numBytesRead, byteSlice) 
+ 
+   // Ready 1 byte. Error if no byte to read 
+   myByte, err := bufferedReader.ReadByte() 
+   if err != nil { 
+      log.Fatal(err) 
+   }  
+   fmt.Printf("Read 1 byte: %c\n", myByte) 
+ 
+   // Read up to and including delimiter 
+   // Returns byte slice 
+   dataBytes, err := bufferedReader.ReadBytes('\n') 
+   if err != nil { 
+      log.Fatal(err) 
+   } 
+   fmt.Printf("Read bytes: %s\n", dataBytes) 
+ 
+   // Read up to and including delimiter 
+   // Returns string 
+   dataString, err := bufferedReader.ReadString('\n') 
+   if err != nil { 
+      log.Fatal(err) 
+   } 
+   fmt.Printf("Read string: %s\n", dataString) 
+ 
+   // This example reads a few lines so test.txt 
+   // should have a few lines of text to work correct 
+} </pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Reading with a scanner</h1>
+                
+            
+            
+                
+<p>Scanner is part of the <kbd>bufio</kbd> package. It is useful for stepping through files at specific delimiters. Commonly, the newline character is used as the delimiter to break up a file by lines. In a CSV file, commas would be the delimiter. The <kbd>os.File</kbd> object can be wrapped in a <kbd>bufio.Scanner</kbd> object just like a buffered reader. We will call <kbd>Scan()</kbd> to read up to the next delimiter, and then, use <kbd>Text()</kbd> or <kbd>Bytes()</kbd> to get the data that was read.</p>
+<p>The delimiter is not just a simple byte or character. There is actually a special function, which you have to implement, that will determine where the next delimiter is, how far forward to advance the pointer, and what data to return. If no custom <kbd>SplitFunc</kbd> type is provided, it defaults to <kbd>ScanLines</kbd>, which will split at every newline character. Other split functions included in <kbd>bufio</kbd> are <kbd>ScanRunes</kbd> and <kbd>ScanWords</kbd>.</p>
+<p>To define your own split function, define a function that matches this fingerprint:</p>
+<pre>type SplitFuncfunc(data []byte, atEOF bool) (advance int, token []byte, <br/>   err error)</pre>
+<p>Returning (<kbd>0</kbd>, <kbd>nil</kbd>, <kbd>nil</kbd>) will tell the scanner to scan again, but with a bigger buffer because it wasn't enough data to reach the delimiter.</p>
+<p>In the following example, <kbd>bufio.Scanner</kbd> is created from the file, and then the file is scanned word by word:</p>
+<pre>package main 
+ 
+import ( 
+   "bufio" 
+   "fmt" 
+   "log" 
+   "os" 
+) 
+ 
+func main() { 
+   // Open file and create scanner on top of it 
+   file, err := os.Open("test.txt") 
+   if err != nil { 
+      log.Fatal(err) 
+   } 
+   scanner := bufio.NewScanner(file) 
+ 
+   // Default scanner is bufio.ScanLines. Lets use ScanWords. 
+   // Could also use a custom function of SplitFunc type 
+   scanner.Split(bufio.ScanWords) 
+ 
+   // Scan for next token. 
+   success := scanner.Scan() 
+   if success == false { 
+      // False on error or EOF. Check error 
+      err = scanner.Err() 
+      if err == nil { 
+         log.Println("Scan completed and reached EOF") 
+      } else { 
+         log.Fatal(err) 
+      } 
+   } 
+ 
+   // Get data from scan with Bytes() or Text() 
+   fmt.Println("First word found:", scanner.Text()) 
+ 
+   // Call scanner.Scan() manually, or loop with for 
+   for scanner.Scan() { 
+      fmt.Println(scanner.Text()) 
+   } 
+} </pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Archives</h1>
+                
+            
+            
+                
+<p>Archives are a file format that stores multiple files. Two of the most common archive formats are tar balls ZIP archives. The Go standard library has both the <kbd>tar</kbd> and <kbd>zip</kbd> packages. These examples use the ZIP format, but the tar format can easily be interchanged.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Archive (ZIP) files</h1>
+                
+            
+            
+                
+<p>The following example demonstrates how to create an archive with multiple files inside. The files in the example are hard-coded with only a few bytes, but should be easily adapted to suit other needs:</p>
+<pre>// This example uses zip but standard library 
+// also supports tar archives 
+package main 
+ 
+import ( 
+   "archive/zip" 
+   "log" 
+   "os" 
+) 
+ 
+func main() { 
+   // Create a file to write the archive buffer to 
+   // Could also use an in memory buffer. 
+   outFile, err := os.Create("test.zip") 
+   if err != nil { 
+      log.Fatal(err) 
+   } 
+   defer outFile.Close() 
+ 
+   // Create a zip writer on top of the file writer 
+   zipWriter := zip.NewWriter(outFile) 
+ 
+   // Add files to archive 
+   // We use some hard coded data to demonstrate, 
+   // but you could iterate through all the files 
+   // in a directory and pass the name and contents 
+   // of each file, or you can take data from your 
+   // program and write it write in to the archive without 
+   var filesToArchive = []struct { 
+      Name, Body string 
+   }{ 
+      {"test.txt", "String contents of file"}, 
+      {"test2.txt", "\x61\x62\x63\n"}, 
+   } 
+ 
+   // Create and write files to the archive, which in turn 
+   // are getting written to the underlying writer to the 
+   // .zip file we created at the beginning 
+   for _, file := range filesToArchive { 
+      fileWriter, err := zipWriter.Create(file.Name) 
+      if err != nil { 
+         log.Fatal(err) 
+      } 
+      _, err = fileWriter.Write([]byte(file.Body)) 
+      if err != nil { 
+         log.Fatal(err) 
+      } 
+   } 
+ 
+   // Clean up 
+   err = zipWriter.Close() 
+   if err != nil { 
+      log.Fatal(err) 
+   } 
+} </pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Extracting (unzip) archived files</h1>
+                
+            
+            
+                
+<p>The following example demonstrates how to unarchive a ZIP format file. It will replicate the directory structure it finds inside the archive by creating directories if necessary:</p>
+<pre>// This example uses zip but standard library 
+// also supports tar archives 
+package main 
+ 
+import ( 
+   "archive/zip" 
+   "io" 
+   "log" 
+   "os" 
+   "path/filepath" 
+) 
+ 
+func main() { 
+   // Create a reader out of the zip archive 
+   zipReader, err := zip.OpenReader("test.zip") 
+   if err != nil { 
+      log.Fatal(err) 
+   } 
+   defer zipReader.Close() 
+ 
+   // Iterate through each file/dir found in 
+   for _, file := range zipReader.Reader.File { 
+      // Open the file inside the zip archive 
+      // like a normal file 
+      zippedFile, err := file.Open() 
+      if err != nil { 
+         log.Fatal(err) 
+      } 
+      defer zippedFile.Close() 
+ 
+      // Specify what the extracted file name should be. 
+      // You can specify a full path or a prefix 
+      // to move it to a different directory. 
+      // In this case, we will extract the file from 
+      // the zip to a file of the same name. 
+      targetDir := "./" 
+      extractedFilePath := filepath.Join( 
+         targetDir, 
+         file.Name, 
+      ) 
+ 
+      // Extract the item (or create directory) 
+      if file.FileInfo().IsDir() { 
+         // Create directories to recreate directory 
+         // structure inside the zip archive. Also 
+         // preserves permissions 
+         log.Println("Creating directory:", extractedFilePath) 
+         os.MkdirAll(extractedFilePath, file.Mode()) 
+      } else { 
+         // Extract regular file since not a directory 
+         log.Println("Extracting file:", file.Name) 
+ 
+         // Open an output file for writing 
+         outputFile, err := os.OpenFile( 
+            extractedFilePath, 
+            os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 
+            file.Mode(), 
+         ) 
+         if err != nil { 
+            log.Fatal(err) 
+         } 
+         defer outputFile.Close() 
+ 
+         // "Extract" the file by copying zipped file 
+         // contents to the output file 
+         _, err = io.Copy(outputFile, zippedFile) 
+         if err != nil { 
+            log.Fatal(err) 
+         } 
+      }  
+   } 
+} </pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Compression</h1>
+                
+            
+            
+                
+<p>The Go standard library also supports compression, which is different than archiving. Often, archiving and compressing are combined to package a large number of files in to a single compact file. The most common format is probably the <kbd>.tar.gz</kbd> file, which is a gzipped tar ball. Do not confuse zip and gzip as they are two different things.</p>
+<p>The Go standard library has support for multiple compression algorithms:</p>
+<ul>
+<li><strong>bzip2</strong>: bzip2 format</li>
+<li><strong>flate</strong>: DEFLATE (RFC 1951)</li>
+<li><strong>gzip</strong>: gzip format (RFC 1952)</li>
+<li><strong>lzw</strong>: Lempel-Ziv-Welch format from <em>A Technique for High-Performance Data Compression, Computer, 17(6) (June 1984), pp 8-19</em></li>
+<li><strong>zlib</strong>: zlib format (RFC 1950)</li>
+</ul>
+<p>Read more about each package at <a href="https://golang.org/pkg/compress/">https://golang.org/pkg/compress/</a>. These examples use gzip compression, but it should be easy to interchange any of the above packages.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Compressing a file</h1>
+                
+            
+            
+                
+<p>The following example demonstrates how to compress a file using the <kbd>gzip</kbd> package:</p>
+<pre>// This example uses gzip but standard library also 
+// supports zlib, bz2, flate, and lzw 
+package main 
+ 
+import ( 
+   "compress/gzip" 
+   "log" 
+   "os" 
+) 
+ 
+func main() { 
+   // Create .gz file to write to 
+   outputFile, err := os.Create("test.txt.gz") 
+   if err != nil { 
+      log.Fatal(err) 
+   } 
+ 
+   // Create a gzip writer on top of file writer 
+   gzipWriter := gzip.NewWriter(outputFile) 
+   defer gzipWriter.Close() 
+ 
+   // When we write to the gzip writer 
+   // it will in turn compress the contents 
+   // and then write it to the underlying 
+   // file writer as well 
+   // We don't have to worry about how all 
+   // the compression works since we just 
+   // use it as a simple writer interface 
+   // that we send bytes to 
+   _, err = gzipWriter.Write([]byte("Gophers rule!\n")) 
+   if err != nil { 
+      log.Fatal(err) 
+   } 
+ 
+   log.Println("Compressed data written to file.") 
+} </pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Uncompressing a File</h1>
+                
+            
+            
+                
+<p>The following example demonstrates how to uncompress a file using the <kbd>gzip</kbd> algorithm:</p>
+<pre>// This example uses gzip but standard library also 
+// supports zlib, bz2, flate, and lzw 
+package main 
+ 
+import ( 
+   "compress/gzip" 
+   "io" 
+   "log" 
+   "os" 
+) 
+ 
+func main() { 
+   // Open gzip file that we want to uncompress 
+   // The file is a reader, but we could use any 
+   // data source. It is common for web servers 
+   // to return gzipped contents to save bandwidth 
+   // and in that case the data is not in a file 
+   // on the file system but is in a memory buffer 
+   gzipFile, err := os.Open("test.txt.gz") 
+   if err != nil { 
+      log.Fatal(err) 
+   } 
+ 
+   // Create a gzip reader on top of the file reader 
+   // Again, it could be any type reader though 
+   gzipReader, err := gzip.NewReader(gzipFile) 
+   if err != nil { 
+      log.Fatal(err) <br/>   } 
+   defer gzipReader.Close() 
+ 
+   // Uncompress to a writer. We'll use a file writer 
+   outfileWriter, err := os.Create("unzipped.txt") 
+   if err != nil { 
+      log.Fatal(err) 
+   } 
+   defer outfileWriter.Close() 
+ 
+   // Copy contents of gzipped file to output file 
+   _, err = io.Copy(outfileWriter, gzipReader) 
+   if err != nil { 
+      log.Fatal(err) 
+   } 
+} </pre>
+<p>Before we wrap up this chapter about working with files, let's look at two more practical examples that may be useful. Temporary files and directories are useful when you don't want to create a permanent file, but need a file to work with. Additionally, a common way to obtain files is by downloading them over the internet. The next examples demonstrate these operations.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Creating temporary files and directories</h1>
+                
+            
+            
+                
+<p>The <kbd>ioutil</kbd> package provides two functions: <kbd>TempDir()</kbd> and <kbd>TempFile()</kbd>. It is the caller's responsibility to delete the temporary items when done. The only benefit these functions provide is that you can pass it an empty string for the directory, and it will automatically create the item in the system's default temporary folder (<kbd>/tmp</kbd> on Linux), since the <kbd>os.TempDir()</kbd> function will return the default system temporary directory:</p>
+<pre>package main 
+ 
+import ( 
+   "fmt" 
+   "io/ioutil" 
+   "log" 
+   "os" 
+) 
+ 
+func main() { 
+   // Create a temp dir in the system default temp folder 
+   tempDirPath, err := ioutil.TempDir("", "myTempDir") 
+   if err != nil { 
+      log.Fatal(err) 
+   } 
+   fmt.Println("Temp dir created:", tempDirPath) 
+ 
+   // Create a file in new temp directory 
+   tempFile, err := ioutil.TempFile(tempDirPath, "myTempFile.txt") 
+   if err != nil { 
+      log.Fatal(err) 
+   } 
+   fmt.Println("Temp file created:", tempFile.Name()) 
+ 
+   // ... do something with temp file/dir ... 
+ 
+   // Close file <br/>   err = tempFile.Close() 
+   if err != nil { 
+      log.Fatal(err) 
+   } 
+ 
+   // Delete the resources we created 
+   err = os.Remove(tempFile.Name()) 
+   if err != nil { 
+      log.Fatal(err) 
+   } 
+   err = os.Remove(tempDirPath) 
+   if err != nil { 
+      log.Fatal(err) 
+   } 
+}</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Downloading a file over HTTP</h1>
+                
+            
+            
+                
+<p>A common task in modern computing is downloading a file over the HTTP protocol. The following example shows how to quickly download a specific URL to a file.</p>
+<p>Other common tools that accomplish this task are <kbd>curl</kbd> and <kbd>wget</kbd>:</p>
+<pre>package main 
+ 
+import ( 
+   "io" 
+   "log" 
+   "net/http" 
+   "os" 
+) 
+ 
+func main() { 
+   // Create output file 
+   newFile, err := os.Create("devdungeon.html") 
+   if err != nil { 
+      log.Fatal(err) 
+   } 
+   defer newFile.Close() 
+ 
+   // HTTP GET request devdungeon.com 
+   url := "http://www.devdungeon.com/archive" 
+   response, err := http.Get(url) 
+   defer response.Body.Close() 
+ 
+   // Write bytes from HTTP response to file. 
+   // response.Body satisfies the reader interface. 
+   // newFile satisfies the writer interface. 
+   // That allows us to use io.Copy which accepts 
+   // any type that implements reader and writer interface 
+   numBytesWritten, err := io.Copy(newFile, response.Body) 
+   if err != nil { 
+      log.Fatal(err) 
+   } 
+   log.Printf("Downloaded %d byte file.\n", numBytesWritten) 
+} </pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Summary</h1>
+                
+            
+            
+                
+<p>After reading this chapter, you should be now familiar with some of the different ways to interact with files and feel comfortable performing basic operations. The goal is not to memorize all of these function names, but to be aware of what tools are available. This chapter can be used as a reference if you need sample code, but I encourage you to create a cookbook repository with snippets like these.</p>
+<p>The useful file functions are spread across multiple packages. The <kbd>os</kbd> package contains only the basic operations for working with files such as opening, closing, and simple reads. The <kbd>io</kbd> package provides functions that can be used on reader and writer interfaces at a higher level than the <kbd>os</kbd> package. The <kbd>ioutil</kbd> package provides even higher-level convenience functions for working with files.</p>
+<p>In the next chapter, we will cover the topic of forensics. It will cover things such as looking for anomalous files that are extremely large or recently modified. In addition to file forensics, we will cover some network forensic investigation topics, namely looking up hostnames, IPs, and MX records for a host. The forensics chapter also covers basic examples of steganography, showing how to hide data in images and how to find hidden data inside images.</p>
+
+
+            
+
+            
+        
+    </body></html>

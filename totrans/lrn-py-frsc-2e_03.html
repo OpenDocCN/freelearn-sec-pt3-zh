@@ -1,0 +1,620 @@
+<html><head></head><body>
+        
+
+                            
+                    <h1 class="header-title">Parsing Text Files</h1>
+                
+            
+            
+                
+<p>Text files, usually sourced from application or service logs, are common sources for artifacts in digital investigations. Log files can be quite large or contain data that makes human review difficult. A manual examination can devolve into a series of grep searches, which may or may not be fruitful; additionally, prebuilt tools may not have support for a specific log file format. For these instances, we will need to develop our own solution to properly parse and extract the relevant information. In this chapter, we will analyze the <kbd>setupapi.dev.log</kbd> file, which records device information on Windows machines. This log file is commonly examined, as it can extract the first connection time of USB devices on the system.</p>
+<p>We will step through several iterations of the same code through this chapter. Though redundant, we encourage writing out each iteration for yourself. By rewriting the code, we will progress through the material together and find a more fitting solution, learn about bug handling, and implement efficiency measures. Please rewrite the code for yourself and test each iteration to see the changes in the output and code handling.</p>
+<p>In this chapter, we will be covering the following topics:</p>
+<ul>
+<li>Identifying repetitive patterns in this log file for USB device entries</li>
+<li>Extracting and processing artifacts from text files</li>
+<li>Iteratively improving our script design and features</li>
+<li>Enhancing the presentation of data in a deduplicated and readable manner</li>
+</ul>
+<p>The code for this chapter is developed and tested using Python 2.7.15 and Python 3.7.1.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Setup API</h1>
+                
+            
+            
+                
+<p>The <kbd>setupapi.dev.log</kbd> file is a Windows log file that tracks connection information for a variety of devices, including USB devices. Since USB device information generally plays an important role in many investigations, our script will help identify the earliest installation time of a USB device on a machine. This log is system-wide, not user-specific, and therefore provides only the installation time of a USB device's first connection to the system. In addition to logging this timestamp, the log contains the <strong>vendor ID</strong> (<strong>VID</strong>), <strong>product ID</strong> (<strong>PID</strong>), and the serial number of the device. With this information, we can paint a better picture of removable storage activity. On Windows XP, this file can be found at <kbd>C:\Windows\setupapi.log</kbd>; on Windows 7 through 10, this file can be found at <kbd>C:\Windows\inf\setupapi.dev.log</kbd>.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Introducing our script</h1>
+                
+            
+            
+                
+<p>In this section, we will build our <kbd>setupapi_parser.py</kbd> to parse the <kbd>setupapi.dev.log</kbd> file on Windows 7. Equipped with only modules from the standard library, we will open and read a <kbd>setupapi.log</kbd> file, identify and parse relevant USB information, and display it to the user in the console. As mentioned in the introduction, we will use an iterative build process to mimic a natural development cycle. Each iteration will build upon the previous while we explore new features and methods. We encourage the development of additional iterations, and there are challenges at the end of this chapter to compliment this.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Overview</h1>
+                
+            
+            
+                
+<p>Before developing any code, let's identify the requirements and features our script must possess to accomplish the desired task. We will need to execute the following steps:</p>
+<ol>
+<li>Open the log file and read all lines</li>
+<li>In each line, check for indicators of a USB device entry</li>
+<li>Parse responsive lines for timestamp and device information</li>
+<li>Output the result to the user</li>
+</ol>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p>Now, let's examine the log file of interest to determine repetitive structures that we can use as footholds in our script to parse the relevant data. In the following sample USB entry, we can see the device information on line 1 following the text <kbd>Device Install (Hardware initiated)</kbd>. This device information contains the VID, PID, device revision, and the unique ID of the device. Each of these elements is separated by either a <kbd>&amp;</kbd> or <kbd>_</kbd> character and may contain some additional inconsequential characters. The installation time is recorded on line 2, following the <kbd>Section start</kbd> text. For our purposes, we are only interested in these two lines. All other surrounding lines will be ignored, as they relate to operating system driver information:</p>
+<pre>001 &gt;&gt;&gt;  [Setup online Device Install (Hardware initiated) - pciven_15ad&amp;dev_07a0&amp;subsys_07a015ad&amp;rev_013&amp;18d45aa6&amp;0&amp;a9]<br/>002 &gt;&gt;&gt;  Section start 2010/11/10 10:21:12.593<br/>003 ump: Creating Install Process: DrvInst.exe 10:21:12.593<br/>004 ndv: Retrieving device info...<br/>005 ndv: Setting device parameters...<br/>006 ndv: Searching Driver Store and Device Path...<br/>007 dvi: {Build Driver List} 10:21:12.640 </pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Our first iteration – setupapi_parser_v1.py</h1>
+                
+            
+            
+                
+<p>The goal of our first iteration is to develop a functional prototype that we will improve upon in later iterations. We will continue to see the following code block in all our scripts, which provides basic documentation about the script and support for printing information (line 2) and opening files (line 3) in both version 2 and 3 of Python. The following is the licensing information and basic script descriptors that can be found in all of our scripts:</p>
+<pre>001 """First iteration of the setupapi.dev.log parser."""<br/>002 from __future__ import print_function<br/>003 from io import open<br/>...<br/>033 __authors__ = ["Chapin Bryce", "Preston Miller"]<br/>034 __date__ = 20181027<br/>035 __description__ = """This scripts reads a Windows 7 Setup API<br/>036    log and prints USB Devices to the user"""</pre>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p>Our script involves three functions, which are outlined as follows. The <kbd>main()</kbd> function kicks off the script by calling the <kbd>parse_setupapi()</kbd> function. This function reads the <kbd>setupapi.dev.log</kbd> file and extracts the USB device and first installation date information. After processing, the <kbd>print_output()</kbd> function is called with the extracted information. The <kbd>print_output()</kbd> function takes the extracted information and prints it to the user in the console. These three functions work together to allow us to segment our code based on operations:</p>
+<pre>039 def main():<br/>...<br/>054 def parse_setupapi():<br/>...<br/>071 def print_output(): </pre>
+<p>To run this script, we need to provide some code that calls the <kbd>main()</kbd> function. The following code block shows a Python feature that we will use in almost every one of our scripts throughout this book. This section of code will become more complex throughout this chapter, as we will be adding the ability to allow users to control input, output, and provide optional arguments.</p>
+<p>Line 82 is simply an <kbd>if</kbd> statement that checks to see if this script is called from the command line. In more detail, the <kbd>__name__</kbd> attribute allows Python to tell us what function called the code. When <kbd>__name__</kbd> is equivalent to the <kbd>__main__</kbd> string, it indicates that it is the top-level script, and is therefore likely to be executed at the command line. This feature is especially important when designing code that may be called by another script. Someone else may import your functions into their code, and without this condition, it will likely result in our script immediately running when imported. We have the following code:</p>
+<pre>082 if __name__ == '__main__':<br/>083     # Run the program<br/>084     main()</pre>
+<p>As we can see in the following flowchart, the trunk function (our script as a whole) calls the <kbd>main()</kbd> function, which in turn calls <kbd>parse_setupapi()</kbd>, which finally calls the <kbd>print_output()</kbd> function:</p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-487 image-border" src="img/7f8802db-8038-41d3-9d2e-1100d3445b8b.png" style="width:82.75em;height:41.33em;"/></p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Designing the main() function</h1>
+                
+            
+            
+                
+<p>The <kbd>main()</kbd> function, defined on line 39, is fairly straightforward in this scenario. This function handles initial variable assignments and setup before calling <kbd>parse_setup()</kbd>. In the following code block, we create a docstring, surrounded with three double quotes where we document the purpose of the function, along with the data returned by it, as shown on lines 40 through 43. Pretty sparse, right? We'll enhance our documentation as we proceed as things might change drastically this early in development:</p>
+<pre>039 def main():<br/>040     """<br/>041     Primary controller for script.<br/>042     :return: None<br/>043     """</pre>
+<p>After the docstring, we hardcode the path to the <kbd>setupapi.dev.log</kbd> file on line 45. This means that our script can only function correctly if a log file with this name is located in the same directory as our script:</p>
+<pre>045     file_path = 'setupapi.dev.log'</pre>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p class="mceNonEditable"/>
+<p class="mceNonEditable"/>
+<p class="mceNonEditable"/>
+<p>On lines 48 through 50, we print our script information, including name and version, to the console, which notifies the user that the script is running. In addition, we print out 22 equal signs to provide a visual distinction between the setup information and any other output from the script:</p>
+<pre>047     # Print version information when the script is run<br/>048     print('='*22)<br/>049     print('SetupAPI Parser, v', __date__)<br/>050     print('='*22)</pre>
+<p>Finally, on line 51, we call our next function to parse the input file. This function expects a <kbd>str</kbd> object that represents the path to the <kbd>setupapi.dev.log</kbd>. Though it may seem to defeat the purpose of a <kbd>main()</kbd> function, we will place the majority of the functionality in a separate function. This allows us to reuse code that's dedicated to the primary functionality in other scripts and for the <kbd>main()</kbd> function to act more as a primary controller. An example of this will be shown in the final iteration of this code. See the following line of code:</p>
+<pre>051     parse_setupapi(file_path) </pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Crafting the parse_setupapi() function</h1>
+                
+            
+            
+                
+<p>The <kbd>parse_setupapi()</kbd> function, defined on line 54, takes a string input that represents the full path to the Windows 7 <kbd>setupapi.dev.log</kbd> file, as detailed by the docstring on lines 55 through 59. On line 60, we open the file path provided by the <kbd>main()</kbd> function and read the data into a variable named <kbd>in_file</kbd>. This open statement didn't specify any parameters, so it uses default settings that open the file in read-only mode. This mode prevents us from accidentally writing to the file. In fact, trying to <kbd>write()</kbd> to a file that's been opened in read-only mode results in the following error and message:</p>
+<pre>IOError: File not open for reading </pre>
+<p>Although it does not allow writing to the file, working off a copy of the source evidence or the use of write-blocking technology should be used when handling digital evidence.</p>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p>If there is any confusion regarding files and their modes, refer to <a href="8764f55f-76ef-4890-afbd-2fd1b6d39210.xhtml" target="_blank">Chapter 1</a>, <em>Now for Something Completely</em> <em>Different</em>, for additional information. See the following code:</p>
+<pre>054 def parse_setupapi(setup_file):<br/>055     """<br/>056     Interpret the file<br/>057     :param setup_file: path to the setupapi.dev.log<br/>058     :return: None<br/>059     """<br/>060     in_file = open(setup_file)</pre>
+<p>On line 61, we read each line from the <kbd>in_file</kbd> variable into a new variable named <kbd>data</kbd> using the file object's <kbd>readlines()</kbd> method. This method returns a list where each element represents a single line in the file. Each element in the list is the string of text from the file delimited by the newline (<kbd>\n</kbd> or <kbd>\r\n</kbd>) character. At this newline character, the data is broken into a new element and fed as a new entry into the data list:</p>
+<pre>061     data = in_file.readlines() </pre>
+<p>With the content of the file stored in the variable data, we begin a <kbd>for</kbd> loop to walk through each individual line. This loop uses the <kbd>enumerate()</kbd> function, which wraps our iterator with a counter that keeps track of the number of iterations. This is desirable because we want to check for the pattern that identifies a USB device entry, then read the following line to get our date value. By keeping track of what element we are currently processing, we can easily pull out the next line we need to process with <em>data [n + 1]</em>, where <em>n</em> is the enumerated count of the current line being processed:</p>
+<pre>063     for i, line in enumerate(data): </pre>
+<p>Once inside the loop, on line 64, we evaluate whether the current line contains the string <kbd>device install (hardware initiated)</kbd>. To ensure that we don't miss valuable data, we will make the current line case insensitive by using the <kbd>.lower()</kbd> method to convert all characters in the string to lower case. If responsive, we execute lines 65 through 67. On line 65, we use the current iteration count variable, <kbd>i</kbd>, to access the responsive line within the data object:</p>
+<pre>064         if 'device install (hardware initiated)' in line.lower():<br/>065             device_name = data[i].split('-')[1].strip()</pre>
+<p>After accessing the value, we call the <kbd>.split()</kbd> method on the string to split the values on the dash (<kbd>-</kbd>) character. After splitting, we access the second value in the split list and feed that string into the <kbd>strip()</kbd> function. The <kbd>.strip()</kbd> function, without any provided values, will strip whitespace characters on the left and right ends of the string. We process the responsive line so that it only contains USB identifying information.</p>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p>The following is a log entry prior to processing with line 65:</p>
+<pre>&gt;&gt;&gt; [Device Install (Hardware initiated) - pciven_8086&amp;dev_100f&amp;subsys_075015ad&amp;rev_014&amp;b70f118&amp;0&amp;0888]</pre>
+<p>The following is the log entry after processing:</p>
+<pre>pciven_8086&amp;dev_100f&amp;subsys_075015ad&amp;rev_014&amp;b70f118&amp;0&amp;0888]</pre>
+<p>After converting the first line from the <kbd>setupapi.dev.log</kbd> USB entry, we then access the data variable on line 66 to obtain the date information from the following line. Since we know the date value sits on the line after the device information data, we can add one to the iteration count variable, <kbd>i</kbd>, to access that next line and get the line that contains the date. Similarly to device line parsing, we call the <kbd>.split()</kbd> function on the <kbd>start</kbd> string and extract the second element from the split that represents the date. Before saving the value, we need to call <kbd>.strip()</kbd> to remove whitespaces on both ends of the string:</p>
+<pre>066             date = data[i+1].split('start')[1].strip()</pre>
+<p>This process removes any other characters besides the date.</p>
+<p>The following is a log entry prior to processing with line 66:</p>
+<pre>&gt;&gt;&gt;  Section start 2010/11/10 10:21:14.656</pre>
+<p>The following is the log entry after processing:</p>
+<pre>2010/11/10 10:21:14.656</pre>
+<p>On line 67, we pass our extracted <kbd>device_name</kbd> and <kbd>date</kbd> values to the <kbd>print_output()</kbd> function. This function is called repeatedly for any responsive lines found in the loop. After the loop completes, the code on line 68 executes, which closes the <kbd>setupapi.dev.log</kbd> file that we initially opened, releasing the file from Python's use:</p>
+<pre>067             print_output(device_name, date)<br/>068     in_file.close()</pre>
+<p class="mce-root"/>
+<p class="mce-root"/>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Developing the print_output() function</h1>
+                
+            
+            
+                
+<p>The <kbd>print_output()</kbd> function defined on line 71 allows us to control how the data is displayed to the user. This function requires two strings as input that represent the USB name and date, as defined by the docstring. On line 78 and 79, we print the USB data using the <kbd>.format()</kbd> method. As discussed in <a href="8764f55f-76ef-4890-afbd-2fd1b6d39210.xhtml" target="_blank">Chapter 1</a>, <em>Now for Something Completely Different</em>, this function replaces the curly brackets (<kbd>{}</kbd>) with the data provided in the method call. A simple example like this doesn't show off the full power of the <kbd>.format()</kbd> method. However, this function can allow us to perform complex string formatting with ease. After printing the input, execution returns to the called function where the script continues the next iteration of the loop, as follows:</p>
+<pre>071 def print_output(usb_name, usb_date):<br/>072     """<br/>073     Print the information discovered<br/>074     :param usb_name: String USB Name to print<br/>075     :param usb_date: String USB Date to print<br/>076     :return: None<br/>077     """<br/>078     print('Device: {}'.format(usb_name))<br/>079     print('First Install: {}'.format(usb_date))</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Running the script</h1>
+                
+            
+            
+                
+<p>We now have a script that takes a <kbd>setupapi.dev.log</kbd> file, as found on Windows 7, and outputs USB entries with their associated timestamps. The following screenshot shows how we can execute the script with a sample <kbd>setupapi.dev.log</kbd> file, which has been provided in the code bundle. Your output may vary depending on the <kbd>setupapi.dev.log</kbd> file you use the script on:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="img/fd0d7ec0-c1ba-472c-b53b-cfb780f8fa95.png" style="width:24.33em;height:14.00em;"/></p>
+<p>Since <kbd>setupapi.dev.log</kbd> has numerous entries, we have pulled out two additional snippets from our command's output that focus on USB and USBSTOR devices:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="img/e0a7af39-e28b-49c8-9e83-af8c7cdd65cf.png" style="width:32.83em;height:13.75em;"/></p>
+<p>Our second snippet shows some details from the USBSTOR entries:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="img/9f38a21a-037f-423c-b936-0f6172b92655.png" style="width:42.08em;height:26.17em;"/></p>
+<p>Our current iteration seems to generate some false positives by extracting responsive lines that do not pertain solely to USB devices; let's see how we can address that.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Our second iteration – setupapi_parser_v2.py</h1>
+                
+            
+            
+                
+<p>With a functioning prototype, we now have some cleanup work to do. The first iteration was a proof of concept to illustrate how a <kbd>setupapi.dev.log</kbd> file can be parsed for forensic artifacts. With our second revision, we will clean up and restructure the code so that it will be easier to use in the future. In addition, we will integrate a more robust command-line interface, validate any user-supplied inputs, improve processing efficiency, and display any results in a better format.</p>
+<p>On lines 2 through 6, we import the libraries that we will need for these improvements, alongside familiar cross-version support libraries. <kbd>argparse</kbd> is a library that we discussed at length in <a href="b09a5e87-9ada-41cb-ba04-bd61c744bf99.xhtml" target="_blank">Chapter 2</a>, <em>Python Fundamentals</em>, and is used to implement and structure arguments from the user. Next, we import <kbd>os</kbd>, a library we will use in this script to check the existence of input files before continuing. This will prevent us from trying to process a file that does not exist. The <kbd>os</kbd> module is used to access common operating system functionality in an operating system agnostic manner. That is to say, these functions, which may be handled differently on other operating systems, are treated the same and share the same module. We can use the <kbd>os</kbd> module to recursively walk through a directory, create new directories, and change the permissions of an object.</p>
+<p>Finally, we import <kbd>sys</kbd>, which we will use to exit the script in case an error occurs to prevent faulty or improper output. After our imports, we have kept our licensing and documentation variables from before, modifying them to provide details about the second iteration:</p>
+<pre>001 """Second iteration of the setupapi.dev.log parser."""<br/>002 from __future__ import print_function<br/>003 import argparse<br/>004 from io import open<br/>005 import os<br/>006 import sys<br/>...<br/>036 __authors__ = ["Chapin Bryce", "Preston Miller"]<br/>037 __date__ = 20181027<br/>038 __description__ = """This scripts reads a Windows 7 Setup API<br/>039 log and prints USB Devices to the user"""</pre>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p>The functions defined in our previous script are still present here. However, these functions contain new code that allows for improved handling and flows logically in a different manner. Designing our code in a modularized manner allows us to repurpose functions in new or updated scripts, limiting the need for a major overhaul. This segmentation also allows for easier debugging when reviewing an error that's raised within a function:</p>
+<pre>042 def main()<br/>...<br/>060 def parse_setupapi()<br/>...<br/>093 def print_output() </pre>
+<p>The <kbd>if</kbd> statement serves the same purpose as the prior iteration. The additional code shown within this conditional allows the user to provide input to modify the script's behavior. In line 106, we create an <kbd>ArgumentParser</kbd> object with a description, default help formatting, and <kbd>epilog</kbd> containing author, version, and date information. This, in conjunction with the argument options, allows us to display information about the script that might be helpful to the user when running the <kbd>-h</kbd> switch. See the following code:</p>
+<pre>104 if __name__ == '__main__':<br/>105     # Run this code if the script is run from the command line.<br/>106     parser = argparse.ArgumentParser(<br/>107         description=__description__,<br/>108         epilog='Built by {}. Version {}'.format(<br/>109             ", ".join(__authors__), __date__),<br/>110         formatter_class=argparse.ArgumentDefaultsHelpFormatter<br/>111     )</pre>
+<p>After defining the <kbd>ArgumentParser</kbd> object as <kbd>parser</kbd>, we add the <kbd>IN_FILE</kbd> parameter on line 113 to allow the user to specify which file to use for input. Already, this increases the usability of our script by adding flexibility in the input file path rather than hard coding the path. At line 115, we parse any provided arguments and store them in the <kbd>args</kbd> variable. Finally, we call the <kbd>main()</kbd> function on line 118, passing a string representing the file location of <kbd>setupapi.dev.log</kbd> to the function, as follows:</p>
+<pre>113     parser.add_argument('IN_FILE',<br/>114         help='Windows 7 SetupAPI file')<br/>115     args = parser.parse_args()<br/>116 <br/>117     # Run main program<br/>118     main(args.IN_FILE)</pre>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p>Note the difference in our flowchart. Our script is no longer very linear. The <kbd>main()</kbd> function calls and accepts returned data from the <kbd>parse_setupapi()</kbd> method (indicated by the dashed arrow). The <kbd>print_output()</kbd> method is called to print the parsed data to the console:</p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-488 image-border" src="img/e552b031-1dd2-4f20-b4d4-e7760da8efbf.png" style="width:82.92em;height:33.17em;"/></p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Improving the main() function</h1>
+                
+            
+            
+                
+<p>On line 42, we define the <kbd>main()</kbd> function that now accepts a new argument that we will call <kbd>in_file</kbd>. This argument, as defined by the docstring, is a string path to the <kbd>setupapi.dev.log</kbd> file to be analyzed:</p>
+<pre>042 def main(in_file):<br/>043     """<br/>044     Main function to handle operation<br/>045     :param in_file: string path to Windows 7 setupapi.dev.log<br/>046     :return: None<br/>047     """</pre>
+<p>On line 48, we perform a validation of the input file to ensure that the file path and file exists using the <kbd>os.path.isfile()</kbd> function, which will return <kbd>true</kbd> if it is a file that's accessible by the script. As an aside, the <kbd>os.path.isdir()</kbd> function can be used to perform the same style of validation for directories. These functions work well with string inputs that represent either absolute or relative paths:</p>
+<pre>048     if os.path.isfile(in_file):</pre>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p class="mceNonEditable"/>
+<p>If the file path is valid, we print the version of the script. This time, we use the <kbd>.format()</kbd> method to create our desired string. Let's look at the formatters we've used on lines 49 and 51, starting with a colon to define our specified format. The caret (<kbd>^</kbd>) symbol indicates that we want to center the supplied object and have the padding to a minimum of 22 characters, using equal signs as padding. For example, the string <kbd>Hello World!</kbd> would be sandwiched between five equal signs on both sides. In the case of our script, we supply an empty string as the object to format because we only want 22 equal signs to create visual separation from the output.</p>
+<p>Note that it is simpler to implement the <kbd>"=" * 22</kbd> logic from the prior iteration and that we have used the <kbd>format()</kbd> method to provide a demonstration of available features.</p>
+<p>On line 50, the <kbd>.format()</kbd> method is used to print the script name and version strings, as follows:</p>
+<pre>049         print('{:=^22}'.format(''))<br/>050         print('{} {}'.format('SetupAPI Parser, v', __date__))<br/>051         print('{:=^22} \n'.format(''))</pre>
+<p>On line 52, we call the <kbd>parse_setupapi()</kbd> function and pass the <kbd>setupapi.dev.log</kbd> file, which we know is available. This function returns a list of USB entries, with one entry per discovered device. Each entry in <kbd>device_information</kbd> consists of two elements, that is, the device name, and the associated date value. On line 53, we iterate through this list using a <kbd>for</kbd> loop and feed each entry to the <kbd>print_output()</kbd> function on line 54:</p>
+<pre>052         device_information = parse_setupapi(in_file)<br/>053         for device in device_information:<br/>054             print_output(device[0], device[1])</pre>
+<p>On line 55, we handle the case where the provided file is not valid. This is a common way to handle errors that have been generated from invalid paths. Within this condition, we print on line 56 that the input is not a valid file.</p>
+<p>If we wanted to use a built-in Python <kbd>Exception</kbd> class, we could raise an IOError and provide a message that the input file is not available at the specified path.</p>
+<p class="mce-root"/>
+<p>On line 57, we call <kbd>sys.exit()</kbd> to quit the program with an error of one. You may place any number here; however, since we defined this as one, we will know where the error was raised at exit:</p>
+<pre>055     else:<br/>056         print('Input is not a file.')<br/>057         sys.exit(1)</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Tuning the parse_setupapi() function</h1>
+                
+            
+            
+                
+<p>The <kbd>parse_setupapi()</kbd> function accepts the path of the <kbd>setupapi.dev.log</kbd> file as its only input. Before opening the file, we must initialize the <kbd>device_list</kbd> variable on line 68 so that we can store extracted device records in a list:</p>
+<pre>060 def parse_setupapi(setup_log):<br/>061     """<br/>062     Read data from provided file for Device Install Events for<br/>063         USB Devices<br/>064     :param setup_log: str - Path to valid setup api log<br/>065     :return: list of tuples - Tuples contain device name and date<br/>066     in that order<br/>067     """<br/>068     device_list = list()</pre>
+<p>Starting on line 69, we open the input file in a novel manner; the <kbd>with</kbd> statement opens the file as <kbd>in_file</kbd> and allows us to manipulate data within the file without having to worry about closing the file afterward. Inside this <kbd>with</kbd> loop is a <kbd>for</kbd> loop that iterates across each line, which provides superior memory management. In the previous iteration, we used the <kbd>.readlines()</kbd> method to read the entire file into a list by line; though not very noticeable on smaller files, the <kbd>.readlines()</kbd> method on a larger file would cause performance issues on systems with limited resources:</p>
+<pre>069     with open(setup_log) as in_file:<br/>070         for line in in_file:</pre>
+<p>Within the <kbd>for</kbd> loop, we leverage similar logic to determine whether the line contains our device installation indicators. If responsive, we extract the device information using the same manner as discussed previously.</p>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p>By defining the <kbd>lower_line</kbd> variable on line 74, we can truncate the remaining code by preventing continuous calls to the <kbd>.lower()</kbd> method. Please note that lines 73 through 75 reflect one line of wrapped code:</p>
+<p>On line 73, the backslash (<kbd>\</kbd>) character indicates to Python that it should ignore the newline character and continue reading on the next line. Then, at the end of line 74, we can return to anywhere without the need for the backslash, as our conditional is within parenthesis.</p>
+<pre>071             lower_line = line.lower()<br/>072             # if 'Device Install (Hardware initiated)' in line:<br/>073             if 'device install (hardware initiated)' in \<br/>074                 lower_line and ('ven' in lower_line or<br/>075                                 'vid' in lower_line):</pre>
+<p>As noted in the first iteration, a fair number of false positives were displayed in our output. That's because this log contains information related to many types of hardware devices, including those interfacing with PCI, and not just USB devices. To remove the noise, we will check to see what type of device it is.</p>
+<p>We can split on the backslash character, as shown on lines 78 and 79, to access the first split element of the <kbd>device_name</kbd> variable and see if it contains the <kbd>usb</kbd> string. As mentioned in <a href="8764f55f-76ef-4890-afbd-2fd1b6d39210.xhtml" target="_blank">Chapter 1</a>, <em>Now for Something Completely Different</em>, we need to escape a single backslash with another backslash so that Python knows to treat it as a literal backslash character. This will respond for devices labeled as USB and USBSTOR in the file. Some false positives will still exist, since mice, keyboards, and hubs will likely display as USB devices; however, we do not want to over-filter and miss relevant artifacts. If we discover that the entry does not contain the <kbd>usb</kbd> string, we execute the continue statement, telling Python to step through the next iteration of the <kbd>for</kbd> loop:</p>
+<pre>078                 if 'usb' not in device_name.split(<br/>079                         '\\')[0].lower():<br/>080                     continue</pre>
+<p>To retrieve the date, we need to use a different procedure to get the next line since we have not invoked the <kbd>enumerate()</kbd> function. To solve this challenge, we use the <kbd>next()</kbd> function on line 87 to step into the next line in the file. We then process this line in the same fashion as we discussed previously:</p>
+<pre>087                 date = next(in_file).split('start')[1].strip()</pre>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p>With the device's name and date processed, we append it to the <kbd>device_list</kbd> as a tuple, where the device's name is the first value and the date is the second. We need the double parenthesis, in this case, to ensure that our data is appended properly. The outer set is used by the <kbd>.append()</kbd> function. The inner parentheses allow us to build a tuple and append it as one value. If we did not have the inner parentheses, we would be passing the two elements as separate arguments to the <kbd>append()</kbd> function instead of a single tuple element. Once all of the lines have been processed in the <kbd>for</kbd> loop, the <kbd>with</kbd> loop will end and close the file. On line 90, the <kbd>device_list</kbd> is returned and the function exits.</p>
+<pre>088                 device_list.append((device_name, date))<br/>089<br/>090     return device_list </pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Modifying the print_output() function</h1>
+                
+            
+            
+                
+<p>This function is identical to the previous iteration, with the exception of the addition of the newline character <kbd>\n</kbd> on line 101. This helps separate entries in the console's output with an extra space. When iterating through the code, we will find that not all functions need updating to improve the user experience, accuracy, or efficiency of the code. Only by modifying an existing function will some sort of benefit be achieved:</p>
+<pre>093 def print_output(usb_name, usb_date):<br/>094     """<br/>095     Print the information discovered<br/>096     :param usb_name: String USB Name to print<br/>097     :param usb_date: String USB Date to print<br/>098     :return: None<br/>099     """<br/>100     print('Device: {}'.format(usb_name))<br/>101     print('First Install: {}\n'.format(usb_date))</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Running the script</h1>
+                
+            
+            
+                
+<p>In this iteration, we address several issues from the proof of concept. These changes include the following:</p>
+<ul>
+<li>The improvement of resource management by iterating through a file rather than reading the entire file into a variable</li>
+<li>The addition of an argument to allow the user to provide the <kbd>setupapi.dev.log</kbd> file to parse</li>
+<li>The validation of the input file from the user</li>
+<li>The filtering of responsive hits to reduce noise in the output</li>
+<li>Improved formatting of our output for ease of review</li>
+</ul>
+<p>The following screenshot shows a snippet of the output of our script upon execution:</p>
+<div><img src="img/a337f4de-28e6-4496-81c2-38c50ec4236b.png" style="width:40.67em;height:26.50em;"/></div>
+<p>Last but not least, we achieved considerable performance improvements over our previous design. The following screenshots display the impact on the machine's memory utilization. The first iteration is displayed on the left and the second is displayed on the right. The red lines highlight the start and finish time of our script. As we can see, we have reduced our resource utilization by iterating across the lines of the file with the <kbd>for</kbd> loop over the <kbd>readlines()</kbd> method. This is a small-scale example of resource management, but a larger input file would have a more dramatic impact on the system:</p>
+<div><img src="img/c36616f5-d81b-4767-be29-f2a1515bbe22.png" style="width:30.67em;height:10.83em;"/></div>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Our final iteration – setupapi_parser.py</h1>
+                
+            
+            
+                
+<p>In our final iteration, we will continue to improve the script by adding deduplication of processed entries and improving upon the output. Although the second iteration introduced the logic for filtering out non-USB devices, it does not deduplicate the responsive hits. We will deduplicate on the device name to ensure that there is only a single entry per device. In addition, we will integrate our <kbd>usb_lookup.py</kbd> script from <a href="b09a5e87-9ada-41cb-ba04-bd61c744bf99.xhtml" target="_blank">Chapter 2</a>, <em>Python Fundamentals</em>, to improve the utility of our script by displaying USB VIDs and PIDs for known devices.</p>
+<p>We had to modify the code in the <kbd>usb_lookup.py</kbd> script to properly integrate it with the <kbd>setupapi</kbd> script. The differences between the two versions are subtle and are focused on reducing the number of function calls and improving the quality of the returned data. Throughout this iteration, we will discuss how we have implemented our custom USB VID/PID lookup library to resolve USB device names. On line 4, we import the <kbd>usb_lookup</kbd> script, as follows:</p>
+<pre>001 """Third iteration of the setupapi.dev.log parser."""<br/>002 from __future__ import print_function<br/>003 import argparse<br/>004 from io import open<br/>005 import os<br/>006 import sys<br/>007 import usb_lookup<br/>...<br/>037 __authors__ = ["Chapin Bryce", "Preston Miller"]<br/>038 __date__ = 20181027<br/>039 __description__ = """This scripts reads a Windows 7 Setup API<br/>040     log and prints USB Devices to the user"""</pre>
+<p>As we can see in the following code block, we have added three new functions. Our prior functions have undergone minor modifications to accommodate new features. The majority of the modifications are in our new functions:</p>
+<ul>
+<li>The <kbd>parse_device_info()</kbd> function is responsible for splitting out the necessary information to look up the VID/PID values online and format the raw strings into a standard format for comparison</li>
+<li>The next function, <kbd>prep_usb_lookup()</kbd>, prepares and parses the database into a format that supports querying</li>
+<li>The <kbd>get_device_names()</kbd> function correlates matching device information with the database</li>
+</ul>
+<p class="mce-root"/>
+<p>With these new functions, we provide additional context for our investigators:</p>
+<pre>042 def main():<br/>...<br/>068 def parse_setupapi():<br/>...<br/>092 def parse_device_info():<br/>...<br/>137 def prep_usb_lookup():<br/>...<br/>151 def get_device_names():<br/>...<br/>171 def print_output():  </pre>
+<p>We will add one argument to our parser before calling the <kbd>main()</kbd> function. The <kbd>--local</kbd> argument defined on lines 198 and 199 allow us to specify a local <kbd>usb.ids</kbd> file that we can use for parsing in an offline environment. The following code block shows our implementation of the arguments, spaced out over several lines to make it easier to read:</p>
+<pre>187 if __name__ == '__main__':<br/>188     # Run this code if the script is run from the command line.<br/>189     parser = argparse.ArgumentParser(<br/>190         description=__description__,<br/>191         epilog='Built by {}. Version {}'.format(<br/>192             ", ".join(__authors__), __date__),<br/>193         formatter_class=argparse.ArgumentDefaultsHelpFormatter<br/>194     )<br/>195 <br/>196     parser.add_argument('IN_FILE',<br/>197         help='Windows 7 SetupAPI file')<br/>198     parser.add_argument('--local',<br/>199         help='Path to local usb.ids file')<br/>200 <br/>201     args = parser.parse_args()<br/>202 <br/>203     # Run main program<br/>204     main(args.IN_FILE, args.local)</pre>
+<p>As with our prior iterations, we have generated a flow chart to map the logical course of our script. Please note that it uses the same legend as our other flow charts, though we omitted the legend due to the width of the graphic. Our <kbd>main()</kbd> function is executed and makes direct calls to five other functions. This layout builds upon the nonlinear design from the second iteration. In each iteration, we are continuing to add more control within the <kbd>main()</kbd> function. This function leans on others to perform tasks and return data rather than doing the work itself. This offers a form of high-level organization within our script and helps keep things simple by executing one function after another in a linear fashion:</p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-489 image-border" src="img/5b1debc7-d4f9-4cbd-9fe3-531711b89505.png" style="width:153.08em;height:33.17em;"/></p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Extending the main() function</h1>
+                
+            
+            
+                
+<p>The <kbd>main()</kbd> function has remained mostly intact, only adding changes to look up the USB VID and PID information and present a superior output for the end user. One way we are facilitating this lookup is by providing a file path as the <kbd>local_usb_ids</kbd> parameter, which allows us to use an offline file for our VID/PID lookup database. To cut down on clutter in our output, we have elected to remove the script name and version printing. On line 51, a new function call to <kbd>prep_usb_info()</kbd> is made to initiate the setup of the VID/PID lookups. Our loop on line 52 has been reconfigured to hand each processed device entry to the <kbd>parse_device_info()</kbd> function on line 53. This new function is responsible for reading the raw string from the log file and attempts to split the VID and PID values for lookup:</p>
+<pre>042 def main(in_file, local_usb_ids=None):<br/>043     """<br/>044     Main function to handle operation<br/>045     :param in_file: Str - Path to setupapi log to analyze<br/>046     :return: None<br/>047     """<br/>048 <br/>049     if os.path.isfile(in_file):<br/>050         device_information = parse_setupapi(in_file)<br/>051         usb_ids = prep_usb_lookup(local_usb_ids)<br/>052         for device in device_information:<br/>053             parsed_info = parse_device_info(device)</pre>
+<p>The <kbd>if</kbd> statement on line 54 checks the value of the <kbd>parsed_info</kbd> variable to ensure that it was parsed correctly and can be compared against our known values. In the case that it is not prepared for this, the information is not queried or printed. See the following code:</p>
+<pre>054             if isinstance(parsed_info, dict):<br/>055                 parsed_info = get_device_names(usb_ids,<br/>056                     parsed_info)</pre>
+<p>Additional logic on line 57 checks to see whether the <kbd>parsed_info</kbd> value is not equivalent to <kbd>None</kbd>. A <kbd>None</kbd> value is assigned to <kbd>parsed_info</kbd> if the <kbd>parse_device_info()</kbd> function discovered that the device was not recorded as a USB, eliminating false positives:</p>
+<pre>057             if parsed_info is not None:<br/>058                 print_output(parsed_info)</pre>
+<p>Finally, on line 59, we print to the console that we have completed parsing the log file. On lines 62 through 65, we address the situation where the <kbd>setupapi.dev.log</kbd> is not valid or accessible by our script and notify the user of the situation before exiting. The message that is printed before exiting the script is more detailed than in previous iterations. The more details we can provide to our users, especially regarding potential bugs, will improve their capability to determine the error and correct it on their own:</p>
+<pre>059         print('\n\n{} parsed and printed successfully.'.format(<br/>060             in_file))
+061<br/>062     else:<br/>063         print("Input: {} was not found. Please check your path "<br/>064             "and permissions.".format(in_file))<br/>065         sys.exit(1)</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Adding to the parse_setup_api() function</h1>
+                
+            
+            
+                
+<p>This function has minor modifications that are focused on storing unique entries from the log file. We created a new variable named <kbd>unique_list</kbd> that is a <kbd>set</kbd> data type on line 76. Recall that a <kbd>set</kbd> must consist of hashable and unique elements, making it a perfect fit for this solution. Though it seems duplicative to have a list and set holding similar data, for simplicity of comparison and demonstration, we have created the second variable:</p>
+<pre>068 def parse_setupapi(setup_log):<br/>069     """<br/>070     Read data from provided file for Device Install Events for<br/>071         USB Devices<br/>072     :param setup_log: str - Path to valid setup api log<br/>073     :return: tuple of str - Device name and date<br/>074     """<br/>075     device_list = list()<br/>076     unique_list = set()<br/>077     with open(setup_log) as in_file:<br/>078         for line in in_file:</pre>
+<p>On line 79, we convert the line into lowercase to ensure that our comparisons are case-insensitive. At this point, we use the same logic to process the <kbd>device_name</kbd> and <kbd>date</kbd> values on lines 83 through 84. We have moved the code from the second iteration, which verified the device type, into our new <kbd>parse_device_info()</kbd> function:</p>
+<pre>079         lower_line = line.lower()<br/>080         if 'device install (hardware initiated)' in \<br/>081                 lower_line and ('vid' in lower_line or<br/>082                                 'ven' in lower_line):<br/>083             device_name = line.split('-')[1].strip()<br/>084             date = next(in_file).split('start')[1].strip()</pre>
+<p>Before we store the <kbd>device_name</kbd> and <kbd>date</kbd> information in our <kbd>device_list</kbd>, we check to ensure that the <kbd>device_name</kbd> does not already exist in our <kbd>unique_list</kbd>. If it doesn't, we add the tuple on line 86, which contains the <kbd>device_name</kbd> and <kbd>date</kbd>. Afterward, we prevent that same device from being processed again by adding the entry to our <kbd>unique_list</kbd>. On line 89, we return our built list of tuples for the next stage of processing:</p>
+<pre>085             if device_name not in unique_list:<br/>086                 device_list.append((device_name, date))<br/>087                 unique_list.add(device_name)<br/>088 <br/>089     return device_list</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Creating the parse_device_info() function</h1>
+                
+            
+            
+                
+<p>This function interprets the raw string from the <kbd>setupapi.dev.log</kbd> and converts it into a dictionary with VID, PID, revision, unique ID, and date values. This is described in the docstring on lines 94 through 98. After the documentation, we initialize the variables we will use in this function on lines 101 through 104. This initialization provides default placeholder values, which will prevent future issues with the dictionary in scenarios where we cannot assign a value to these variables:</p>
+<pre>092 def parse_device_info(device_info):<br/>093     """<br/>094     Parses Vendor, Product, Revision and UID from a Setup API<br/>095         entry<br/>096     :param device_info: string of device information to parse<br/>097     :return: dictionary of parsed information or original string<br/>098         if error<br/>099     """<br/>100     # Initialize variables<br/>101     vid = ''<br/>102     pid = ''<br/>103     rev = ''<br/>104     uid = ''</pre>
+<p>After initialization, we split the <kbd>device_info</kbd> value, which is passed from the <kbd>parse_setup_api()</kbd> function into segments, using a single backslash as the delimiter. We need to escape this backslash with another to interpret it as a literal backslash character. This split on line 107 separates the device type segment from the string containing the VID and PID information. Following this split, we check to ensure that the device type entry reflects a USB device. If the device is not a USB, we return <kbd>None</kbd> to ensure that it is not processed further by this function and that we do not attempt to resolve VIDs or PIDs for this device. By adding this logic, we save ourselves from spending additional time and resources processing irrelevant entries:</p>
+<pre>106     # Split string into segments on \<br/>107     segments = device_info[0].split('\\')<br/>108 <br/>109     if 'usb' not in segments[0].lower():<br/>110         return None</pre>
+<p>Next, we access the second element of the <kbd>segments</kbd> list, which contains the VID, PID, and revision data, delimited by an ampersand. Using <kbd>.split()</kbd>, we can access each of these values independently through the <kbd>for</kbd> loop on line 114. We convert the line to lower case to allow us to search in a case-insensitive fashion, through a series of conditionals, to determine what each item represents. On line 116, we check each item to see if it contains the keywords <kbd>ven</kbd> or <kbd>vid</kbd>. If the line does contain one of these indicators, we split only on the first underscore character (specified by the integer <kbd>1</kbd> as the second parameter). This allows us to extract the VID from the raw string. Note how we use <kbd>lower_item</kbd> for our comparisons and the <kbd>item</kbd> variable for storing values, preserving the original case of our data. This behavior is repeated for the <kbd>pid</kbd> variable, using the <kbd>dev</kbd>, <kbd>prod</kbd>, and <kbd>pid</kbd> indicators, and the <kbd>rev</kbd> variable, using the <kbd>rev</kbd> or <kbd>mi</kbd> indicators on lines 118 through 122, as follows:</p>
+<pre>114     for item in segments[1].split('&amp;'):<br/>115         lower_item = item.lower()<br/>116         if 'ven' in lower_item or 'vid' in lower_item:<br/>117             vid = item.split('_', 1)[-1]<br/>118         elif 'dev' in lower_item or 'pid' in lower_item or \<br/>119                 'prod' in lower_item:<br/>120             pid = item.split('_', 1)[-1]<br/>121         elif 'rev' in lower_item or 'mi' in lower_item:<br/>122             rev = item.split('_', 1)[-1]</pre>
+<p>After parsing the VID, PID, and revision information, we attempt to extract the unique ID from the segments variable, which is normally the last element in the string. Because the entire line is wrapped in brackets, we strip the closing bracket from the rightmost entry in the segment on line 125. This removes the bracket, so it will not be included in our unique ID string:</p>
+<pre>124     if len(segments) &gt;= 3:<br/>125         uid = segments[2].strip(']')</pre>
+<p>On line 127, we use an <kbd>if</kbd> statement to determine whether the <kbd>vid</kbd> or <kbd>pid</kbd> received a value after initialization, and build a dictionary if we collected new information on lines 128 through 132. If these values were not filled out, we return the original string to allow the output of the entry without the additional formatting, as seen on line 134, to ensure that we are not missing any data due to a formatting error:</p>
+<pre>127     if vid != '' or pid != '':<br/>128         return {'Vendor ID': vid.lower(),<br/>129             'Product ID': pid.lower(),<br/>130             'Revision': rev,<br/>131             'UID': uid,<br/>132             'First Installation Date': device_info[1]}<br/>133     # Unable to parse data, returning whole string<br/>134     return device_info</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Forming the prep_usb_lookup() function</h1>
+                
+            
+            
+                
+<p>In this function, we call out to the <kbd>usb_lookup.py</kbd> script's <kbd>.get_usb_file()</kbd> function. Using the <kbd>local_usb_ids</kbd> parameter that's provided, we can confirm whether there is a known <kbd>usb.ids</kbd> file path that we should use for this lookup, or whether we should reach out to the online resource at <a href="http://linux-usb.org/usb.ids">http://linux-usb.org/usb.ids</a> to read the known USB information into the <kbd>usb_file</kbd> variable on line 147. This database is an open source project that hosts the VID/PID lookup database, allowing users to reference and expand on the database:</p>
+<pre>137 def prep_usb_lookup(local_usb_ids=None):<br/>138     """<br/>139     Prepare the lookup of USB devices through accessing the most<br/>140     recent copy of the database at http://linux-usb.org/usb.ids<br/>141     or using the provided file and parsing it into a queriable<br/>142     dictionary format.<br/>143     """<br/>144     if local_usb_ids:<br/>145         usb_file = open(local_usb_ids, encoding='latin1')<br/>146     else:<br/>147         usb_file = usb_lookup.get_usb_file()</pre>
+<p>After downloading or using a local copy, we pass the file object to the <kbd>.parse_file()</kbd> function to process and then return the USB VID/PID data as a Python dictionary. Instead of creating a new variable for this functionality, we can just place the <kbd>return</kbd> keyword in front of the function call to immediately pass the value back, as shown on line 148:</p>
+<pre>148     return usb_lookup.parse_file(usb_file) </pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Constructing the get_device_names() function</h1>
+                
+            
+            
+                
+<p>This function's purpose is to pass the VID and PID information into the <kbd>usb_lookup</kbd> library and return resolved USB names. As defined by the docstring mentioned later, this function takes two dictionaries—the first contains the database of known devices from <kbd>prep_usb_lookup()</kbd>, and the second contains the extracted device entries from <kbd>parse_device_info()</kbd>. With this provided data, we will return a dictionary, updated with resolved vendor and product names:</p>
+<pre>151 def get_device_names(usb_dict, device_info):<br/>152     """<br/>153     Query `usb_lookup.py` for device information based on VID/PID.<br/>154     :param usb_dict: Dictionary from usb_lookup.py of known<br/>155         devices.<br/>156     :param device_info: Dictionary containing 'Vendor ID' and<br/>157         'Product ID' keys and values.<br/>158     :return: original dictionary with 'Vendor Name' and<br/>159         'Product Name' keys and values<br/>160     """</pre>
+<p>This function calls the <kbd>usb_lookup.search_key()</kbd> function, passing the processed online USB dictionary and a two-element list containing the device's VID and PID as the first and second element, respectively. The <kbd>.search_key()</kbd> function returns either a responsive match or the <kbd>Unknown</kbd> string if no matches are discovered. This data is returned as a tuple and assigned to the <kbd>device_name</kbd> variable on line 161. We then split the two resolved values into new keys of our <kbd>device_info</kbd> dictionary on lines 165 and 166. Once we have expanded <kbd>device_info</kbd>, we can return it so that it can be printed to the console. See the following lines:</p>
+<pre>161     device_name = usb_lookup.search_key(<br/>162         usb_dict, [device_info['Vendor ID'],<br/>163         device_info['Product ID']])<br/>164 <br/>165     device_info['Vendor Name'] = device_name[0]<br/>166     device_info['Product Name'] = device_name[1]<br/>167 <br/>168     return device_info</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Enhancing the print_output() function</h1>
+                
+            
+            
+                
+<p>In this function, we have made some adjustments to improve the output to the console. With the addition of the separator defined on 178, we now have a line of 15 dashes visually breaking each entry from the output. As we can see, we have borrowed the same format string from the first iteration to add this break:</p>
+<pre>171 def print_output(usb_information):<br/>172     """<br/>173     Print formatted information about USB Device<br/>174     :param usb_information: dictionary containing key/value<br/>175         data about each device or tuple of device information<br/>176     :return: None<br/>177     """<br/>178     print('{:-^15}'.format(''))</pre>
+<p>We have also modified the code to allow additional output for flexible fields. In this function, we need to handle two different data types, tuples and dictionaries, since some entries do not have a resolved vendor or product name. To handle this divide in formats, we must use the <kbd>isinstance()</kbd> function on line 180 to test the <kbd>usb_information</kbd> variable data type. If the value is a dictionary, we will print each of the keys and values to the console to display one key-value pair per line on line 182. This is possible through the combination of the <kbd>for</kbd> loop on line 181, which uses the <kbd>items()</kbd> method on a dictionary. This method returns a list of tuples, where the first tuple element is the key and the second is the value. Using this method, we can quickly extract the key-value pairs, as shown on lines 181 and 182:</p>
+<pre>180     if isinstance(usb_information, dict):<br/>181         for key_name, value_name in usb_information.items():<br/>182             print('{}: {}'.format(key_name, value_name))</pre>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p>If we need to print a tuple, we use two <kbd>print</kbd> statements, similar to the output from the prior iteration. Because this data is from a device that could not be parsed, it has a fixed format that is the same as our previous iteration. See the following lines:</p>
+<pre>183     elif isinstance(usb_information, tuple):<br/>184         print('Device: {}'.format(usb_information[0]))<br/>185         print('Date: {}'.format(usb_information[1]))</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Running the script</h1>
+                
+            
+            
+                
+<p>We have come a long way since our first script, as this version now does the following:</p>
+<ul>
+<li>Provides us with USB device information about the first installation time of a device on Windows 7</li>
+<li>Resolves additional device information using VID and PID data</li>
+<li>Prints output to the console in a format that is legible and informative</li>
+</ul>
+<p>The following is an example execution of the script and illustration of the output:</p>
+<div><img src="img/4b5156b8-1b52-4e1c-9d20-b362ab37cdf3.png" style="width:46.92em;height:17.00em;"/></div>
+<p>The following screenshot has been included to highlight some of our storage devices further down the output:</p>
+<div><img src="img/47a584bc-cd0b-48bf-bb76-c05874f0d5a5.png" style="width:45.08em;height:21.67em;"/></div>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Challenge</h1>
+                
+            
+            
+                
+<p>For this chapter, we propose adding support for the Windows XP format of the <kbd>setupapi.log</kbd>. The user can supply a switch at the command line to indicate which type of log will be processed. For a more difficult task, our script could automatically identify the type of log file by fingerprinting unique structures found only in Windows XP versus the Windows 7 version.</p>
+<p>Improving the deduplication process we used in this chapter would be a welcome addition. As we identified, some entries have UID values embedded in the device entry. This value is generally assigned by the manufacturer and could be used to deduplicate the entries. As you may note in the output, the UID can contain extra ampersand characters that may or may not be crucial to the UID structure and suggest their source. By applying some simple logic, possibly in a new function, we can improve deduplication based on UIDs. </p>
+<p>Lastly, we can consider our output format. While it is useful to display things in a console-friendly format, we should consider adding support for a CSV or other report. This may be a good feature to revisit after working through the rest of the chapters of this book.</p>
+<p class="mce-root"/>
+<p class="mce-root"/>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Summary</h1>
+                
+            
+            
+                
+<p>In this chapter, you learned how to parse a plain text file using Python. This process can be implemented for other log files, including those from firewalls, web servers, or other applications and services. Following these steps, we can identify repetitive data structures that lend themselves to scripts, process their data, and output results to the user. With our iterative build process, we implemented a test-then-code approach where we built a working prototype and then continually enhanced it into a viable and reliable forensic tool.</p>
+<p>In addition to the text format we explored here, some files have a more concrete structure and are stored in a serialized format. Other files, such as HTML, XML, and JSON, file structure data in a manner that can be readily converted into a series of Python objects. The code for this project can be downloaded from GitHub or Packt, as described in the <em>Preface</em>.</p>
+<p>In the next chapter, we will explore the methods in Python that we can use to parse, manipulate, and interact with these structured formats.</p>
+
+
+            
+
+            
+        
+    </body></html>

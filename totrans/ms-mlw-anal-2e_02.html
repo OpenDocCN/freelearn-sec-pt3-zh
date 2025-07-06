@@ -1,0 +1,785 @@
+<html><head></head><body>
+		<div><h1 id="_idParaDest-44" class="chapter-number"><a id="_idTextAnchor043"/>2</h1>
+			<h1 id="_idParaDest-45"><a id="_idTextAnchor044"/>A Crash Course in Assembly and Programming Basics</h1>
+			<p>Before diving deeper into the malware world, we need to have a complete understanding of the core of the machines we are analyzing malware on. For reverse engineering purposes, it makes sense to focus largely on the architecture and the <strong class="bold">operating system</strong> (<strong class="bold">OS</strong>) it supports. Of course, multiple devices and modules comprise a system, but it is mainly these two that define a set of tools and approaches that are used during the analysis. The physical representation of any architecture is a processor. A processor is like the heart of any smart device or computer in that it keeps it alive.</p>
+			<p>In this chapter, we will cover the basics of the most widely used architectures, from the well-known x86 and x64 <strong class="bold">Instruction Set Architectures</strong> (<strong class="bold">ISAs</strong>) to solutions that power multiple mobile and <strong class="bold">Internet of Things</strong> (<strong class="bold">IoT</strong>) devices, which are often misused by malware families, such as Mirai. This will set the tone for your journey into malware analysis, as static analysis is impossible without understanding assembly instructions. Although modern decompilers are becoming better and better, they don’t exist for all platforms that are targeted by malware. Besides, they will probably never be able to handle obfuscated code. Don’t be daunted by the complexity of assembly; it just takes time to get used to it, and after a while, it becomes possible to read it like any other programming language. While this chapter provides a starting point, it always makes sense to deepen your knowledge by practicing and exploring further.</p>
+			<p>In this chapter, we will cover the following topics:</p>
+			<ul>
+				<li>Basics of informatics</li>
+				<li>Architectures and their assembly</li>
+				<li>Becoming familiar with x86 (IA-32 and x64)</li>
+				<li>Exploring ARM assembly</li>
+				<li>Basics of MIPS</li>
+				<li>Covering the SuperH assembly</li>
+				<li>Working with SPARC</li>
+				<li>Moving from assembly to high-level programming languages</li>
+			</ul>
+			<h1 id="_idParaDest-46"><a id="_idTextAnchor045"/>Basics of informatics</h1>
+			<p>Before we dive deeper into the internals of the various architectures, now is a good time to revise the numeral systems, which will lay a foundation for understanding both data types and bitwise operations.</p>
+			<h2 id="_idParaDest-47"><a id="_idTextAnchor046"/>Numeral systems</h2>
+			<p>In our daily life, we use the decimal system with digits from 0 to 9, which gives us 10 different 1-digit options in total. There is a good reason for that – most of us as human beings have 10 fingers on our hands in total, which are always in front of us and are great tools for counting. However, from a data science point of view, there is nothing particular about the number 10. Using another base would allow us to store information much more efficiently.</p>
+			<p>The absolute minimum required to store some information is two different values: yes or no, true or false, and so on. This lays a foundation for the binary numeral system that uses only two digits: 0 and 1. The way we use it is the same as in the case of decimal: every time we reach the maximum digit on the right, we drop it to 0 and increment the next digit to the left from it while following the same logic. Therefore, <em class="italic">0, 1, 2, 3, 4, ... 9, 10, 11, ...</em> becomes <em class="italic">0, 1, 10, 11, 100, ..., 1001, 1010, 1011, ...</em> and so on. This approach makes it possible to efficiently encode big amounts of information to be read automatically by machines. Examples include magnetic tapes and floppy disks (lack or presence of magnetization), CD/DVD/BD (lack or presence of the indentation read by a laser), and flash memory (lack or presence of the electric charge). To not mix up binary values with decimals, it is common to use the “b” suffix for binary values (for example, 1010b).</p>
+			<p>Now, if we want to work with groups of binary digits, we need to choose the size of the group. The group of 3 (from 000 to 111) would give 2^3 = 8 possible combinations of 0 and 1, allowing us to encode eight different numbers. Similarly, the group of 4 (from 0000 to 1111) would give 2^4 = 16 possible combinations. This is why octal and hexadecimal systems started to be used: they allow you to efficiently convert binary numbers. The octal system uses the base of 8, which means it can use digits from 0 to 7. The hexadecimal system supports 16 digits, which were encoded using digits 0 to 9, followed by the first six letters of the English alphabet: A to F. Here, hexadecimal A stands for decimal 10, B stands for 11, and so on up to the maximum possible value of F, which stands for decimal 15. The way we use them is the same as for decimal and binary numeral systems: once the maximum digit on the right is reached, the next value would have dropped back to 0 and the digit to the left from it incremented while following the same logic. In this case, a decimal sequence such as <em class="italic">14, 15, 16, 17</em> will be represented as <em class="italic">E, F, 10, 11</em> in hexadecimal. To not confuse hexadecimal numbers with decimals, you can use the “0x” and “\x” prefixes or the “h” suffix to mark hexadecimal numbers (for example, 0x33, \x73, and 70h).</p>
+			<p>Converting binary values into hexadecimal is extremely easy. The whole binary value should be split into groups of four digits, where each group will represent a single hexadecimal digit. For example, 0001b = 1h and 00110001b comprising 0011b = 3h and 0001b = 1h gives us 31h.</p>
+			<p>Now, it is time to learn how different data types are encoded using this approach.</p>
+			<h2 id="_idParaDest-48"><a id="_idTextAnchor047"/>Basic data units and data types</h2>
+			<p>As we know, the<a id="_idIndexMarker145"/> smallest <a id="_idIndexMarker146"/>data storage unit should be able to store two different values – a 0 or a 1; that is, a single digit in the binary numeral system. This unit is called<a id="_idIndexMarker147"/>  a <strong class="bold">bit</strong>. A group of 8 bits comprises a <strong class="bold">byte</strong>. A single byte can be used to encode all possible combinations of zeroes and ones from 00000000b to 11111111b, which gives us 2^8 = 256 different variants in total, from 0x0 to 0xFF. Other widely used data units are <strong class="bold">word</strong> (2 bytes), <strong class="bold">dword</strong> (4 bytes), and <strong class="bold">qword</strong> (8 bytes).</p>
+			<p>Now, let’s talk about how we can encode the data that’s stored using these data units. Here are some of the most common primitive data types <a id="_idIndexMarker148"/>found in various programming languages:</p>
+			<ul>
+				<li><strong class="bold">Boolean</strong>: A binary data type that can only store two possible values: true or false.</li>
+				<li><strong class="bold">Integer</strong>: This stores whole numbers. The size varies. In some cases, it can be specified as a suffix defining the number of bits (int16, int32, and so on).</li>
+				<li><strong class="bold">Unsigned</strong>: All bits are dedicated to storing the numeric value.</li>
+				<li><strong class="bold">Signed</strong>: The most significant bit (the top left) is dedicated to storing the sign, 0 for plus and 1 for minus. So 0xFFFFFFFF = -1.</li>
+				<li><strong class="bold">Short</strong> and <strong class="bold">long</strong>: These data types are integers that are smaller or bigger than the standard integer, respectively. The size is 2 bytes for short and 4 or 8 bytes for long.</li>
+				<li><strong class="bold">Float</strong> and <strong class="bold">double</strong>: These data types are designed to store floating-point numbers (values that can have fractions). They are pretty much never used in malware.</li>
+				<li><strong class="bold">Char</strong>: Generally used to store characters of strings, each value has a size of 1 byte.</li>
+				<li><strong class="bold">String</strong>: A group of bytes that defines human-readable strings. It can utilize one or multiple bytes per character, depending on the encoding.</li>
+				<li><strong class="bold">ASCII</strong>: Defines the mappings between characters (letters, numbers, punctuation signs, and so on) and the byte values. It uses 7 bits per character:<div><img src="img/Figure_2.1_B18500.jpg" alt="Figure 2.1 – ASCII table&#13;&#10;"/></div></li>
+			</ul>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 2.1 – ASCII table</p>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 2.1 – ASCII table</p>
+			<ul>
+				<li><strong class="bold">Extended ASCII</strong>: Utilizes 8 bits per character, where the first half (0x0-0x7F) is equal to the ASCII table and the rest depend on the code page (for example, Windows-1252 encoding).</li>
+				<li><strong class="bold">UTF8</strong>: This is a Unicode encoding that uses 1 to 4 bytes per character. It’s commonly used in the *nix world. The beginning matches the ASCII table.</li>
+				<li><strong class="bold">UTF16</strong>: This is a Unicode encoding that uses 2 or 4 bytes per character. The order of the bytes depends on the endianness.</li>
+				<li><strong class="bold">Little Endian</strong>: The<a id="_idIndexMarker149"/> least significant <a id="_idIndexMarker150"/>byte goes to the lowest address (UTF16-LE, the default Unicode encoding used by the Windows OS; the corresponding strings are known as Wide strings there).</li>
+				<li><strong class="bold">Big Endian</strong>: The most significant byte goes to the lowest address (UTF16-BE):</li>
+			</ul>
+			<div><div><img src="img/Figure_2.2_B18500.jpg" alt="Figure 2.2 – Example of a UTF16-LE string&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 2.2 – Example of a UTF16-LE string</p>
+			<p>Apart from knowing how the data can be stored using bits, it is also important to understand bitwise operations as they have multiple applications in assembly.</p>
+			<h2 id="_idParaDest-49"><a id="_idTextAnchor048"/>Bitwise operations</h2>
+			<p>Bitwise operations<a id="_idIndexMarker151"/> operate at the bit level and can be unary, which means they only require one operand, and binary, which means they work with two operands and apply the corresponding logic to each pair of the aligned bits. Because they are fast to perform, bitwise operations have found multiple applications in machine code. Let’s look at the most important ones.</p>
+			<h3>AND (&amp;)</h3>
+			<p>Here, the result bit will only<a id="_idIndexMarker152"/> be set (become <a id="_idIndexMarker153"/>equal to 1) if both corresponding operand bits are equal to 1. </p>
+			<p>The following is an example:</p>
+			<p><em class="italic">10110111b</em></p>
+			<p><em class="italic">AND</em></p>
+			<p><em class="italic">11001001b</em></p>
+			<p><em class="italic">=</em></p>
+			<p><em class="italic">10000001b</em></p>
+			<p>The most common application of this operation in assembly is to separate part of the provided hexadecimal value (operand #1) by using a mask (operand #2) and nullify the rest. It is based on two features of this operation:</p>
+			<ul>
+				<li>If one operand’s bit is set to 0, the result will always be 0</li>
+				<li>If one operand’s bit is set to 1, the result will be equal to another operand’s bit</li>
+			</ul>
+			<p>Therefore, <em class="italic">0x12345678 &amp; 0x000000FF = 0x00000078</em> (as 0xFF = 11111111b).</p>
+			<h3>OR (|)</h3>
+			<p>In this case, the <a id="_idIndexMarker154"/>result bit will be equal to 1 if any <a id="_idIndexMarker155"/>of the corresponding operand bits are equal to 1.</p>
+			<p>The following is an example:</p>
+			<p><em class="italic">10100101b</em></p>
+			<p><em class="italic">OR</em></p>
+			<p><em class="italic">10001001b</em></p>
+			<p><em class="italic">=</em></p>
+			<p><em class="italic">10101101b</em></p>
+			<p>Here, the common application of this operation is setting bits by mask while preserving the rest of the value. It is based on the following features of this operation:</p>
+			<ul>
+				<li>If one operand’s bit is set to 0, the result will be equal to another operand’s bit</li>
+				<li>If one operand’s bit is set to 1, the result will always be 1</li>
+			</ul>
+			<p>This way, <em class="italic">0x12345678 &amp; 0x000000FF = 0x123456FF</em> (again, as <em class="italic">0xFF = 11111111b</em>).</p>
+			<h3>XOR (^)</h3>
+			<p>Here, the result<a id="_idIndexMarker156"/> bit will only be 1 if the<a id="_idIndexMarker157"/> corresponding operands’ bits are different. Otherwise, the result is 0.</p>
+			<p>The following is an example:</p>
+			<p><em class="italic">11101001b</em></p>
+			<p><em class="italic">XOR</em></p>
+			<p><em class="italic">10011100b</em></p>
+			<p><em class="italic">=</em></p>
+			<p><em class="italic">01110101b</em></p>
+			<p>There are two very<a id="_idIndexMarker158"/> common applications of this operation:</p>
+			<ul>
+				<li><strong class="bold">Nullification</strong>: This is based on the principle that if we use the same value for both operands, all its bits will meet equal bits, so the whole result will be 0.</li>
+				<li><strong class="bold">Encryption</strong>: This is based on the fact that applying this operation twice with the same key as one of the operands restores the original value. The actual property it is based on is that if one of the operands is 0, the result will be equal to another operand, and this is exactly what happens in the end:<ul><li><em class="italic">plain_text ^ key = encrypted_text</em></li><li><em class="italic">encrypted_text ^ key = (plain_text ^ key) ^ key = plain_text ^ (key ^ key) = plain_text ^ 0 = plain_text</em></li></ul></li>
+			</ul>
+			<p>Now let’s look at the NOT (~) operation.</p>
+			<h3>NOT (~)</h3>
+			<p>Unlike the previous <a id="_idIndexMarker159"/>operations, this operation is unary <a id="_idIndexMarker160"/>and requires only one operand, flipping all its bits to the opposite ones.</p>
+			<p>The following is an example:</p>
+			<p><em class="italic">NOT</em></p>
+			<p><em class="italic">11001010b</em></p>
+			<p><em class="italic">=</em></p>
+			<p><em class="italic">00110101b</em></p>
+			<p>The common application of this operation is to change the sign of signed integer values to the opposite one (for example, -3 to 3 or 5 to -5). The formula, in this case, will be <em class="italic">~value + 1</em>.</p>
+			<p>Now, let’s take a look at bit shifts.</p>
+			<h3>Logical shift (&lt;&lt; or &gt;&gt;)</h3>
+			<p>This operation <a id="_idIndexMarker161"/>requires the direction (left or right) to be specified, along with the actual value to change and the number of shift positions. During the shift, each bit of the original value will move to the left or right on the <a id="_idIndexMarker162"/>number of positions specified; the empty spaces on the opposite side are filled in with zeroes. All bits shifted outside of the data unit are lost.</p>
+			<p>The following are some examples:</p>
+			<p><em class="italic">10010011b &gt;&gt; 1 = 01001001b</em></p>
+			<p><em class="italic">10010011b &lt;&lt; 2 = 01001100b</em></p>
+			<p>There are two common applications of this operation:</p>
+			<ul>
+				<li>Moving the data to a particular part of the register (as you’ll see shortly)</li>
+				<li>Multiplication (shift left) or division (shift right) by a power of two for every shift position</li>
+			</ul>
+			<h3>Circular shift (Rotate)</h3>
+			<p>This bitwise <a id="_idIndexMarker163"/>shift is very <a id="_idIndexMarker164"/>similar to the logical shift with one important difference – all the bits shifted out on one side of the data unit will appear on the opposite side.</p>
+			<p>The following are some examples:</p>
+			<p><em class="italic">10010011b ROR 1 = 11001001b</em></p>
+			<p><em class="italic">10010011b ROL 2 = 01001110b</em></p>
+			<p>Because, unlike logical shift, the operation is reversible and the data is not lost, it can be used in cryptography algorithms.</p>
+			<p>Other types of shifts, such as arithmetic shift or rotate with carrying, are present much more rarely in the assembly in general and in malware in particular, so they are outside the scope of this book.</p>
+			<p>Now, it is finally time to start learning more about various architectures and their assembly instructions.</p>
+			<h1 id="_idParaDest-50"><a id="_idTextAnchor049"/>Architectures and their assembly</h1>
+			<p>Simply put, the<a id="_idIndexMarker165"/> processor, also <a id="_idIndexMarker166"/>known as <a id="_idIndexMarker167"/>the <strong class="bold">central processing unit</strong> (<strong class="bold">CPU</strong>), is quite similar to a calculator. If you look at the instructions (whatever the assembly language is), you will find many of them dealing with numbers and doing some calculations. However, multiple features differentiate processors from usual calculators. Let’s look at some examples:</p>
+			<ul>
+				<li>Modern processors support a much bigger memory space compared to traditional calculators. This memory space allows them to store billions of values, which makes it possible to perform more complex operations. Additionally, they have multiple fast and small memory storage units embedded inside the processors’ chips called registers.</li>
+				<li>Processors support many instruction types other than arithmetic instructions, such as changing the execution flow based on certain conditions.</li>
+				<li>Processors can work in conjunction with other peripheral devices such as speakers, microphones, hard disks, graphics cards, and others.</li>
+			</ul>
+			<p>Armed with such features and coupled with great flexibility, processors became the go-to universal machines to power various advanced modern technologies such as machine learning. In the following sections, we will explore these features before diving deeper into different assembly languages and how these features are manifested in these languages’ instruction sets.</p>
+			<h2 id="_idParaDest-51"><a id="_idTextAnchor050"/>Registers</h2>
+			<p>Even though processors <a id="_idIndexMarker168"/>have access to a huge memory space that can store billions of values, this storage is provided by separate RAM devices, which makes it longer for the processors to access the data. So, to speed up the processor operations, they contain small and fast internal memory storage units called registers.</p>
+			<p>Registers are built into the processor chip and can store the immediate values that are needed while performing calculations and data transfers from one place to another.</p>
+			<p>Registers may have different names, sizes, and functions, depending on the architecture. Here are some of the types that are<a id="_idIndexMarker169"/> widely used:</p>
+			<ul>
+				<li><strong class="bold">General-purpose registers</strong>: These are <a id="_idIndexMarker170"/>registers that are used to temporarily store arguments and results for various arithmetic, bitwise, and data transfer operations.</li>
+				<li><strong class="bold">Stack and frame pointers</strong>: These <a id="_idIndexMarker171"/>point to the top and a certain fixed point of the stack (as you’ll see shortly).</li>
+				<li><strong class="bold">Instruction pointer/program counter</strong>: The <a id="_idIndexMarker172"/>instruction <a id="_idIndexMarker173"/>pointer is used to point to the next instruction to be executed by the processor.</li>
+			</ul>
+			<h2 id="_idParaDest-52"><a id="_idTextAnchor051"/>Memory</h2>
+			<p>Memory plays an <a id="_idIndexMarker174"/>important role in the development of all the smart devices that we use nowadays. The ability to manage lots of values, text, images, and videos on a fast and volatile memory allows CPUs to process more information and, eventually, perform more complicated operations, such as displaying graphical interfaces in 3D and virtual reality.</p>
+			<h3>Virtual memory</h3>
+			<p>In modern OSs, whether <a id="_idIndexMarker175"/>they are 32-bit or 64-bit based, the OS creates an isolated virtual memory (in which its pages are mapped to the physical memory pages) for each process. Applications are only supposed to have the ability to access their virtual memory. They can read and write code and data and execute instructions located in virtual memory. Each memory range that comprises virtual memory pages has a set of permissions, also known as protection flags, assigned to it, which represents the types of operations the application is allowed to perform on it. Some of the most important of them are READ, WRITE, and EXECUTE, as well as their combinations.</p>
+			<p>For an application to attempt to access a value stored in memory, it needs its virtual address. Behind the scenes, the <strong class="bold">Memory Management Unit</strong> (<strong class="bold">MMU</strong>) and the<a id="_idIndexMarker176"/> OS are transparently mapping these virtual addresses to physical addresses that define where the values are stored in hardware:</p>
+			<div><div><img src="img/Figure_2.3_B18500.jpg" alt="Figure 2.3 – Virtual memory addresses&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 2.3 – Virtual memory addresses</p>
+			<p>To save the space that’s required to store and use addresses of values, the concept of the stack has been developed.</p>
+			<h3>Stack</h3>
+			<p>A stack is a pile <a id="_idIndexMarker177"/>of objects. In computer science, the stack is a data structure that helps save different values of the same size in memory in a pile structure using the <a id="_idIndexMarker178"/>principle of <strong class="bold">Last In First Out</strong> (<strong class="bold">LIFO</strong>).</p>
+			<p>The top of the stack (where the next element will be placed) is pointed to by a dedicated stack pointer, which will be discussed in greater detail shortly.</p>
+			<p>A stack is common among many assembly languages and it may serve multiple purposes. For example, it may help in solving mathematical equations, such as <em class="italic">X = 5*6 + 6*2 + 7(4 + 6)</em>, by temporarily storing each calculated value and later pulling them back to calculate the sum of all of them and saving them in a variable, <em class="italic">X</em>.</p>
+			<p>Another application for the stack is to pass arguments to functions and store local variables. Finally, on some architectures, a stack can also be used to save the address of the next instruction before calling a function. This way, once this function finishes executing, it is possible to pop this return address back from the top of the stack and transfer control to where it was called from to continue the execution.</p>
+			<p>While the stack pointer is always pointing to the current top of the stack, the frame pointer is storing the address of the top of the stack at the beginning of the function to make it possible to access passed arguments and local variables, and also restore the stack pointer value at the end of the routine. We will cover this in greater detail when we talk about calling conventions for different architectures.</p>
+			<h2 id="_idParaDest-53"><a id="_idTextAnchor052"/>Instructions (CISC and RISC)</h2>
+			<p>Instructions are <a id="_idIndexMarker179"/>machine code represented in the form of bytes that CPUs can understand and execute. For us humans, reading bytes is extremely problematic, which is why we developed assemblers to convert assembly code into instructions and disassemblers to be able to read it back.</p>
+			<p>Two big groups of architectures<a id="_idIndexMarker180"/> define assembly <a id="_idIndexMarker181"/>languages that we will cover in this section: <strong class="bold">Complex Instruction Set Computer</strong> (<strong class="bold">CISC</strong>) and <strong class="bold">Reduced Instruction Set Computer</strong> (<strong class="bold">RISC</strong>).</p>
+			<p>Without going into too many details, the main difference between CISC assemblies, such as Intel IA-32 and x64, and RISC assembly languages associated with architectures such as ARM is the complexity of their instructions.</p>
+			<p>CISC assembly languages have more complex instructions. They generally focus on completing tasks using as few lines of assembly instructions as possible. To do that, CISC assembly languages include instructions that can perform multiple operations, such as <em class="italic">mul</em> in Intel assembly, which performs data access, multiplication, and data store operations in one go.</p>
+			<p>In the RISC assembly language, assembly instructions are simple and generally perform only one operation each. This may lead to more lines of code to complete a specific task. However, it may also be more efficient, as this omits the execution of any unnecessary operations.</p>
+			<p>Overall, we can split all the<a id="_idIndexMarker182"/> instructions, regardless of the architecture, into several groups:</p>
+			<ul>
+				<li><strong class="bold">Data manipulation</strong>: This comprises arithmetic and bitwise operations.</li>
+				<li><strong class="bold">Data transfer</strong>: Allows data that may involve registers, memory, and immediate values to be moved.</li>
+				<li><strong class="bold">Control flow</strong>: This makes it possible to change the order the instructions are executed in. In every assembly language, there are multiple comparison and control flow instructions, which can be divided into the following categories:<ul><li><strong class="bold">Unconditional</strong>: This type of instruction forcefully changes the flow of the execution to another address (without any given condition).</li><li><strong class="bold">Conditional</strong>: This is like a logical gate that switches to another branch based on a given condition (such as equal to zero, greater than, or less than), as shown in the following diagram:</li></ul></li>
+			</ul>
+			<div><div><img src="img/Figure_2.4_B18500.jpg" alt="Figure 2.4 – An example of a conditional jump&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 2.4 – An example of a conditional jump</p>
+			<ul>
+				<li><strong class="bold">Subroutine call</strong>: These instructions change the execution to another function and save the return address to be restored later when necessary.</li>
+			</ul>
+			<p>Now, it is time to learn about the most common instructions that you may see when performing reverse engineering. Becoming able to read them fluently and understand the meaning of groups of them is an important step in the journey of becoming a professional malware analyst.</p>
+			<h1 id="_idParaDest-54"><a id="_idTextAnchor053"/>Becoming familiar with x86 (IA-32 and x64)</h1>
+			<p>Intel x86 (including both 32 and 64-bit versions) is the most common architecture used in PCs. It powers various types of workstations and servers, so it comes as no surprise that most of the malware samples we have at the moment support it. The 32-bit version of it, IA-32, is also commonly referred to as i386 (succeeded by i686) or even simply x86, while the 64-bit version, x64, is also known as x86-64 or AMD64. x86 is a CISC architecture, and it includes multiple complex instructions in addition to simple ones. In this section, we will introduce the most common of them and cover how the functions are organized.</p>
+			<h2 id="_idParaDest-55"><a id="_idTextAnchor054"/>Registers</h2>
+			<p>The following table shows the relationship between the registers in the IA-32 and x64 architectures:</p>
+			<div><div><img src="img/Figure_2.5_B18500.jpg" alt="Figure 2.5 – IA-32 and x64 architectures&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 2.5 – IA-32 and x64 architectures</p>
+			<p>The registers that are used in the x86 architectures (the 8 to r15 registers) are only available in x64, not IA-32, and the spl, bpl, sil, and dil registers can only be accessed in x64.</p>
+			<p>The first thing to mention is that there may be <a id="_idIndexMarker183"/>multiple interpretations of what registers should be called <strong class="bold">general-purpose registers</strong> (<strong class="bold">GPRs</strong>) and which are not since most of them may serve some particular purpose.</p>
+			<p>The first four registers (<strong class="bold">rax/eax</strong>, <strong class="bold">rbx/ebx</strong>, <strong class="bold">rcx/ecx</strong>, and <strong class="bold">rdx/edx</strong>) are GPRs. Some of them have special use cases for certain instructions:</p>
+			<ul>
+				<li><strong class="bold">rax/eax</strong>: This is <a id="_idIndexMarker184"/>commonly used to store the result of some operations and the return values of functions.</li>
+				<li><strong class="bold">rcx/ecx</strong>: This is used <a id="_idIndexMarker185"/>as a counter register in instructions that’s responsible for repeating actions.</li>
+				<li><strong class="bold">rdx/edx</strong>: This<a id="_idIndexMarker186"/> is used in multiplication and division to extend the result or the dividend, respectively.</li>
+			</ul>
+			<p>In x64, the registers from r8 to r15 were added to the list of available GPRs.</p>
+			<p><strong class="bold">rsi/esi</strong> and <strong class="bold">rdi/edi</strong> are <a id="_idIndexMarker187"/>mostly used to<a id="_idIndexMarker188"/> define addresses when copying groups of bytes in memory. The rsi/esi register always plays the role of the source, while the rdi/edi register plays the role of the destination. Both registers are non-volatile and are also GPRs.</p>
+			<p>The <strong class="bold">rsp/esp</strong> register is <a id="_idIndexMarker189"/>used as a stack pointer, which means it always points to the top of the stack. Its value decreases when a value is getting pushed to the stack, and increases when a value is getting pulled out from the stack.</p>
+			<p>The <strong class="bold">rbp/ebp</strong> register <a id="_idIndexMarker190"/>is mainly used as a base pointer that indicates a fixed place within the stack. It helps access the function’s local variables and arguments, as we will see later in this section.</p>
+			<h3>Special registers</h3>
+			<p>There are two special registers in the x86 assembly, as follows:</p>
+			<ul>
+				<li><strong class="bold">rip/eip</strong>: This is an <a id="_idIndexMarker191"/>instruction pointer that points to the next instruction to be executed. It cannot be accessed directly but there are special instructions that work with it.</li>
+				<li><strong class="bold">rflags/eflags/flags</strong>: This <a id="_idIndexMarker192"/>register contains the current state of the processor. Its flags are affected by the arithmetic and logical instructions, including comparison instructions such as <em class="italic">cmp </em>and <em class="italic">test</em>, and it’s used with conditional jumps and other instructions as well. Here are some of its flags:<ul><li><strong class="bold">Carry flag</strong> (<strong class="bold">CF</strong>): This flag is <a id="_idIndexMarker193"/>set when an arithmetic operation goes out of bounds, as follows:</li></ul></li>
+			</ul>
+			<p><code>mov al, FFh ; al = 0xFF &amp; CF = 0 </code></p>
+			<p><code>add al, 1   ; al = 0 &amp; CF = 1</code></p>
+			<ul>
+				<li><strong class="bold">Zero flag</strong> (<strong class="bold">ZF</strong>): This flag <a id="_idIndexMarker194"/>is set when the arithmetic or a logical operation’s result is zero. This can also be set by comparison instructions.</li>
+				<li><strong class="bold">Direction flag</strong> (<strong class="bold">DF</strong>): This <a id="_idIndexMarker195"/>indicates whether certain instructions such as <em class="italic">lods</em>, <em class="italic">stos</em>, <em class="italic">scas</em>, and <em class="italic">movs</em> (as you’ll see shortly) should go to higher addresses (when not set) or to lower addresses (when set).</li>
+				<li><strong class="bold">Sign flag</strong> (<strong class="bold">SF</strong>): This flag <a id="_idIndexMarker196"/>indicates that the result of the operation is negative.</li>
+				<li><strong class="bold">Overflow flag</strong> (<strong class="bold">OF</strong>): This flag<a id="_idIndexMarker197"/> indicates that an overflow occurred in an operation, leading to a change in the sign (only for signed numbers), as follows:</li>
+			</ul>
+			<p><code>mov cl, 7Fh ; cl = 0x7F (127) &amp; OF = 0 </code></p>
+			<p><code>inc cl      ; cl = 0x80 (-128) &amp; OF = 1</code></p>
+			<p>There are other registers as well, such as the MMX and FPU registers (and instructions to work with <a id="_idTextAnchor055"/>them), but they are rarely used in malware, so they are outside the scope of this book.</p>
+			<h2 id="_idParaDest-56">The i<a id="_idTextAnchor056"/>nstruction structure</h2>
+			<p>Many x86 assemblers, such as MASM and NASM, as well as disassemblers, use Intel syntax. In this case, the common structure of its instructions is <em class="italic">opcode</em>, <em class="italic">dest</em>, <em class="italic">src</em>.</p>
+			<p><em class="italic">dest</em> and <em class="italic">src</em> are commonly referred to<a id="_idIndexMarker198"/> as <strong class="bold">operands</strong>. Their numbers can vary from 0 to 3, depending on the instruction. Another option would be <strong class="bold">GNU Assembler</strong> (<strong class="bold">GAS</strong>), which uses the AT&amp;T syntax and swaps <em class="italic">dest</em> and <em class="italic">src</em> for representation. Throughout this book, we will use Intel syntax.</p>
+			<p>Now, let’s dive deeper into the meaning of each part of the instruction.</p>
+			<h3>opcod<a id="_idTextAnchor057"/>e</h3>
+			<p><code>n</code><code>op</code>, <code>pushad</code>, <code>popad</code>, and <code>movsb</code>.<em class="italic"> </em></p>
+			<p class="callout-heading">Important Note</p>
+			<p class="callout"><code>pushad</code> and <code>popad</code> are not available in x64.</p>
+			<h3><a id="_idTextAnchor058"/><a id="_idTextAnchor059"/>dest</h3>
+			<p><em class="italic">dest</em> represents <a id="_idIndexMarker200"/>the destination, or where the <a id="_idIndexMarker201"/>result of the operation will be saved, and can also become part of the calculations themselves, like so:</p>
+			<p><code>add eax, ecx ; eax = (eax + ecx) </code></p>
+			<p><code>sub rdx, rcx ; rdx = (rdx - rcx)</code></p>
+			<p><em class="italic">dest</em> could look as follows:</p>
+			<ul>
+				<li><strong class="bold">REG</strong>: A register, such as eax or edx.</li>
+				<li><strong class="bold">r/m</strong>: A place in memory, such as the following:<ul><li><em class="italic">DWORD PTR [00401000h]</em></li><li><em class="italic">BYTE PTR [EAX + 00401000h] </em></li><li><em class="italic">WORD PTR [EDX*4 + EAX+ 30]</em></li></ul></li>
+			</ul>
+			<p>The stack is also a place in memory:</p>
+			<ul>
+				<li><em class="italic">DWORD PTR [ESP+4] </em></li>
+				<li><em class="italic">DWORD PTR [EBP-8]</em></li>
+			</ul>
+			<h3>src</h3>
+			<p><em class="italic">src</em> represents<a id="_idIndexMarker202"/> the source or another<a id="_idIndexMarker203"/> value in the calculations, but it is not used to save the results there afterward. It may look like this:</p>
+			<ul>
+				<li><code>add rcx, r8</code></li>
+				<li><code>add ecx, DWORD PTR [00401000h]</code><ul><li>Here, we are adding the value of the size of DWORD located at the 00401000h address to ecx.</li></ul></li>
+				<li><code>mov eax, 00100000h</code></li>
+			</ul>
+			<p>For instructions with a single operand, it may play a role of both a source and a destination:</p>
+			<p><code>inc eax</code></p>
+			<p><code>dec ecx</code></p>
+			<p>Or, it could be only the source or the destination. This is the case for the following instructions, which save the value on the stack and then pull it back:</p>
+			<p><code>push rdx </code></p>
+			<p><code>pop rcx</code></p>
+			<h2 id="_idParaDest-57"><a id="_idTextAnchor060"/>The instruction set</h2>
+			<p>In this section, we <a id="_idIndexMarker204"/>will cover the most important instructions required to start reading the assembly.</p>
+			<h3>Data manipulation instructions</h3>
+			<p>Some of <a id="_idIndexMarker205"/>the <a id="_idIndexMarker206"/>most common arithmetic instructions are as follows:</p>
+			<div><div><img src="img/Table_2.1_B18500.jpg" alt=""/>
+				</div>
+			</div>
+			<p class="callout-heading">Important Note</p>
+			<p class="callout">For multiplication and division, which treat operands as signed integers, the corresponding instructions will be <code>imul</code> and <code>idiv</code>.</p>
+			<p>The following instructions represent logical/bitwise operations:</p>
+			<div><div><img src="img/Table_2.2_B18500.jpg" alt=""/>
+				</div>
+			</div>
+			<p>Lastly, the following instructions represent bitwise shifts and rotations:</p>
+			<div><div><img src="img/Table_2.3_B18500.jpg" alt=""/>
+				</div>
+			</div>
+			<p>To learn more <a id="_idIndexMarker207"/>about the <a id="_idIndexMarker208"/>potential applications of bitwise operations, please read <a href="B18500_01.xhtml#_idTextAnchor014"><em class="italic">Chapter 1</em></a>, <em class="italic">Cybercrime, APT Attacks, and Research Strategies</em>.</p>
+			<h3>Data transfer instructions</h3>
+			<p>The most <a id="_idIndexMarker209"/>basic instruction<a id="_idIndexMarker210"/> for moving the data is <code>mov</code>, which copies a value from <em class="italic">src</em> to <em class="italic">dest</em>. This instruction has multiple forms, as shown in the following table:</p>
+			<div><div><img src="img/Table_2.4_B18500.jpg" alt=""/>
+				</div>
+			</div>
+			<p>Here are the instructions related to the stack:</p>
+			<div><div><img src="img/Table_2.5_B18500.jpg" alt=""/>
+				</div>
+			</div>
+			<p>Here are the string manipulation instructions:</p>
+			<div><div><img src="img/Table_2.6_B18500.jpg" alt=""/>
+				</div>
+			</div>
+			<p class="callout-heading">Important Note</p>
+			<p class="callout">If the DF bit in the EFLAGS register <a id="_idIndexMarker211"/>is 0, these<a id="_idIndexMarker212"/> instructions will increase the value of the rdi/edi or rsi/esi register by the number of bytes used (1, 2, 4, or 8) and decrease if the DF bit is set (equals 1).</p>
+			<h3>Control flow instructions</h3>
+			<p>These instructions <a id="_idIndexMarker213"/>change<a id="_idIndexMarker214"/> the value of the rip/eip register so that the instructions to be executed next may not be the next ones sequentially. The most important unconditional redirections are as follows:</p>
+			<div><div><img src="img/Table_2.7_B18500.jpg" alt=""/>
+				</div>
+			</div>
+			<p>To implement the condition, some form of comparison needs to be used. There are dedicated instructions for that:</p>
+			<div><div><img src="img/Table_2.8_B18500.jpg" alt=""/>
+				</div>
+			</div>
+			<p>The following table shows some of the most important conditional redirections based on the result <a id="_idIndexMarker215"/>of <a id="_idIndexMarker216"/>this comparison:</p>
+			<div><div><img src="img/Table_2.9_B18500.jpg" alt=""/>
+				</div>
+			</div>
+			<p>Now, let’s talk<a id="_idIndexMarker217"/> about <a id="_idIndexMarker218"/>how values can be passed to functions and accessed there.</p>
+			<h2 id="_idParaDest-58"><a id="_idTextAnchor061"/>Arguments, local variables, and calling conventions (in x86 and x64)</h2>
+			<p>Arguments <a id="_idIndexMarker219"/>can be <a id="_idIndexMarker220"/>passed to<a id="_idIndexMarker221"/> functions in various ways. These ways are<a id="_idIndexMarker222"/> called <strong class="bold">calling conventions</strong>. In this section, we will cover the most common ones. We will start with the <strong class="bold">standard call</strong> (<strong class="bold">stdcall</strong>) convention, which is commonly used in IA-32, and then cover the differences between it and other conventions.</p>
+			<h3>stdcall</h3>
+			<p>The stack, together <a id="_idIndexMarker223"/>with the rsp/esp and rbp/ebp registers, does most of the work when it comes to arguments and local variables. The <code>call</code> instruction saves the return address at the top of the stack before transferring the execution to the new function, while the <code>ret</code> instruction at the end of the function returns the execution to the caller function using the return address saved in the stack.</p>
+			<h4>Arguments</h4>
+			<p>In stdcall, the arguments <a id="_idIndexMarker224"/>are pushed in the stack from the last argument to the first <em class="italic">(right to left)</em>, like this:</p>
+			<pre class="source-code">
+push Arg02 
+push Arg01 
+call Func01</pre>
+			<p>In the <code>Func01</code> function, the arguments could be accessed by <code>esp</code>, but it would be hard to always adjust the offset with every next value that’s pushed or pulled:</p>
+			<pre class="source-code">
+mov eax, [esp + 8] ; Arg01
+push eax
+mov ecx, [esp + C] ; Arg01 keeping in mind the previous push</pre>
+			<p>Fortunately, modern static analysis tools, such as <code>ebp</code>. First, the called function needs to save the<a id="_idIndexMarker225"/> current <code>esp</code> in the <code>ebp</code> register and then access it, like so:</p>
+			<pre class="source-code">
+push ebp
+mov ebp, esp
+...
+mov ecx, [ebp + 8] ; Arg01
+push eax
+mov ecx, [ebp + 8] ; still Arg01 (no changes)</pre>
+			<p>At the end of the called function, it returns the original values of <code>ebp</code> and <code>esp</code>, like this:</p>
+			<pre class="source-code">
+mov esp, ebp
+pop ebp 
+ret</pre>
+			<p>As it’s a common function epilogue, Intel created a special instruction for it, called</p>
+			<p><code>leave</code>, so it became as follows:</p>
+			<pre class="source-code">
+leave 
+ret</pre>
+			<h4>Local variables</h4>
+			<p>For local variables, the <a id="_idIndexMarker226"/>called function allocates space for them by decreasing the value of the <code>esp</code> register. To allocate space for two variables of four bytes each, use the following code:</p>
+			<pre class="source-code">
+push ebp
+mov ebp, esp 
+sub esp, 8</pre>
+			<p>Again, the end of the function will look like this:</p>
+			<pre class="source-code">
+mov ebp, esp 
+pop ebp 
+ret</pre>
+			<p>The following figure exemplifies how the stack change looks at the beginning and the end of the function:</p>
+			<div><div><img src="img/Figure_2.6_B18500.jpg" alt="Figure 2.6 – An example of a stack change at the beginning and the end of the function &#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 2.6 – An example of a stack change at the beginning and the end of the function </p>
+			<p>Additionally, if there are arguments, the <code>ret</code> instruction cleans the stack, given the number of bytes <a id="_idIndexMarker227"/>to pull out from the top of the stack, like this:</p>
+			<pre class="source-code">
+ret 8 ; 2 arguments, 4 bytes each</pre>
+			<h3>cdecl</h3>
+			<p><em class="italic">cdecl</em> (which <a id="_idIndexMarker228"/>stands for C declaration) is another calling convention that was used by many C compilers in x86. It’s very similar to stdcall, with the only difference being that the caller cleans the stack after the callee function (the called function) returns, like so:</p>
+			<pre class="source-code">
+Caller:
+  push Arg02 
+  push Arg01 
+  call Callee
+  add esp, 8 ; cleans up the stack</pre>
+			<h3>fastcall</h3>
+			<p>The <em class="italic">fastcall</em> calling<a id="_idIndexMarker229"/> convention is also widely used by different compilers, including the Microsoft C++ compiler and GCC. This calling convention passes the first two arguments in ecx and edx and passes the remaining arguments through the stack. Again, it is only used in the 32-bit version of x86.</p>
+			<h3>thiscall</h3>
+			<p>For object-oriented<a id="_idIndexMarker230"/> programming and non-static member functions (such as the classes’ functions), the C compiler needs to pass the address of the object whose attribute will be accessed or manipulated using it as an argument.</p>
+			<p>In the GCC compiler, <em class="italic">thiscall</em> is almost identical to the cdecl calling convention and it passes the current object’s address (that is, <em class="italic">this</em>) as the first argument. But in the Microsoft C++ compiler, it’s similar to stdcall and passes the object’s address in ecx. It’s common to see such patterns in some object-oriented malware families.</p>
+			<h3>Borland register</h3>
+			<p>This convention can<a id="_idIndexMarker231"/> be commonly seen in malware written in the Delphi programming language. The first three arguments are passed through the eax, edx, and ecx registers while the rest go through the stack. However, unlike other conventions, they are passed in the opposite order – <em class="italic">from left to right</em>. If necessary, it will be the <a id="_idIndexMarker232"/>callee (called function) who cleans up the stack.</p>
+			<h3>Microsoft x64 calling convention</h3>
+			<p>In x64, the calling <a id="_idIndexMarker233"/>conventions are more dependent on the registers. For Windows, the caller function passes the first four arguments to the registers in the following order: rcx, rdx, r8, r9. The rest are passed through the stack. The calling function (caller) cleans the stack in the end (if necessary).</p>
+			<h3>System V AMD64 ABI</h3>
+			<p>For other 64-bit <a id="_idIndexMarker234"/>OSs such as Linux, FreeBSD, or macOS, the first six arguments are passed to the registers in this order: rdi, rsi, rdx, rcx, r8, r9. The remaining get passed through the stack. Again, it is the caller who cleans the stack in the end, if necessary. This is the only way to do this on 64-bit OSs.</p>
+			<h1 id="_idParaDest-59"><a id="_idTextAnchor062"/>Exploring ARM assembly</h1>
+			<p>Most of you are <a id="_idIndexMarker235"/>probably more familiar with the x86 architecture, which implements the CISC design. So, you may be wondering, <em class="italic">why do we need something else?</em> The main advantage of RISC architectures is that the processors that implement them generally require fewer transistors, which eventually makes them more energy and heat-efficient and reduces the associated manufacturing costs, making them a better choice for portable devices. We have started our introduction to RISC architectures with ARM for a good reason – at the time of writing, this is the most widely used architecture in the world.</p>
+			<p>The explanation is simple – processors that implement it can be found on multiple mobile devices and appliances such as phones, video game consoles, or digital cameras, heavily outnumbering PCs. For this reason, multiple IoT malware families and mobile malware that target Android and iOS platforms have payloads for the ARM architecture; an example can be seen in the following screenshot:</p>
+			<div><div><img src="img/Figure_2.7_B18500.jpg" alt="Figure 2.7 – Disassembled IoT malware targeting ARM-based devices&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 2.7 – Disassembled IoT malware targeting ARM-based devices</p>
+			<p>Thus, to analyze<a id="_idIndexMarker236"/> them, it is necessary to understand how ARM works.</p>
+			<p>ARM originally stood for Acorn RISC Machine, and later for Advanced RISC Machine. Acorn was a British company considered by many as the British Apple, producing some of the most powerful PCs of that time. It was later split into several independent entities, with Arm Holdings (currently owned by SoftBank Group) supporting and extending the current standard.</p>
+			<p>Multiple OSs support it, including Windows, Android, iOS, various Unix/Linux distributions, and many other lesser-known embedded OSs. The support for a 64-bit address space was added in 2011 with the release of the ARMv8 standard.</p>
+			<p>Overall, the following ARM architecture profiles are available:</p>
+			<ul>
+				<li><strong class="bold">Application profiles (suffix A, for example, the Cortex-A family</strong>): These profiles implement a traditional ARM architecture and support a virtual memory system architecture based on am MMU. These profiles support both ARM and Thumb instruction sets (as discussed later).</li>
+				<li><strong class="bold">Real-time profiles (suffix R, for example, the Cortex-R family):</strong> These profiles implement a traditional ARM architecture and support a protected memory system architecture<a id="_idIndexMarker237"/> based on a <strong class="bold">Memory Protection Unit</strong> (<strong class="bold">MPU</strong>).</li>
+				<li><strong class="bold">Microcontroller profiles (suffix M, for example, the Cortex-M family)</strong>: The profiles implement a programmers’ model and are designed to be integrated<a id="_idIndexMarker238"/> into <strong class="bold">Field Programmable Gate Arrays</strong> (<strong class="bold">FPGAs</strong>).</li>
+			</ul>
+			<p>Each family has its corresponding set of associated architectures (for example, the Cortex-A 32-bit <a id="_idIndexMarker239"/>family incorporates the ARMv7-A and ARMv8-A architectures), which, in turn, incorporates several cores (for example, the ARMv7-R architecture incorporates Cortex-R4, Cortex-R5, and so on).</p>
+			<h2 id="_idParaDest-60"><a id="_idTextAnchor063"/>Basics</h2>
+			<p>In this section, we <a id="_idIndexMarker240"/>will cover both the original 32-bit and the newer 64-bit architectures. Multiple versions were released over time, starting from the ARMv1. In this book, we will focus on the recent versions of them.</p>
+			<p>ARM is a load-store architecture; it divides all instructions into the following two categories:</p>
+			<ul>
+				<li><strong class="bold">Memory access</strong>: Move <a id="_idIndexMarker241"/>data between memory and registers</li>
+				<li><strong class="bold">Arithmetic Logic Unit (ALU) operations</strong>: Do computations involving registers</li>
+			</ul>
+			<p>ARM supports the addition, subtraction, and multiplication arithmetic operations, though some new versions, starting from ARMv7, also support division. It also supports big-endian order but uses little-endian order by default.</p>
+			<p>16 registers are visible at any time on the 32-bit ARM: R0-R15. This number is convenient as it only takes 4 bits to define which register is going to be used. Out of them, 13 (sometimes referred to as 14, including R14 or 15, also including R13) are general-purpose registers: R13 and R15 each have a special function, while R14 can take it occasionally. Let’s <a id="_idIndexMarker242"/>have a look at them in greater detail:</p>
+			<ul>
+				<li><strong class="bold">R0-R7</strong>: Low registers are the same in all CPU modes.</li>
+				<li><strong class="bold">R8-R12</strong>: High registers are the same in all CPU modes except the <strong class="bold">Fast Interrupt Request</strong> (<strong class="bold">FIQ</strong>) mode, which <a id="_idIndexMarker243"/>is not accessible by 16-bit instructions.</li>
+				<li><strong class="bold">R13 (also known as SP</strong>): This is a stack pointer that points to the top of the stack. Each CPU mode has a version of it. It is discouraged to use it as a GPR.</li>
+				<li><code>BL</code> (Branch with Link) or <code>BLX</code> (Branch with Link and eXchange) instructions are executed. It can also be used as a GPR if the return address is stored on the stack. Each CPU mode has a version of it.</li>
+				<li><strong class="bold">R15 (also known as PC)</strong>: This is a program counter that points to the currently executed command. It’s not a GPR.</li>
+			</ul>
+			<p>Altogether, there are 30 general-purpose 32-bit registers on most of the ARM architectures overall, including the same name instances in different CPU modes.</p>
+			<p>Apart from these, there are several other important registers, as follows:</p>
+			<ul>
+				<li><strong class="bold">Application Program Status Register</strong> (<strong class="bold">APSR</strong>): This stores copies of the ALU status <a id="_idIndexMarker244"/>flags, also known as condition code flags. On later architectures, it also holds the Q (saturation) and the greater than or equal to (GE) flags.</li>
+				<li><strong class="bold">Current Program Status Register</strong> (<strong class="bold">CPSR</strong>): This contains APSR as well as bits that <a id="_idIndexMarker245"/>describe a current processor mode, state, endianness, and some other values.</li>
+				<li><strong class="bold">Saved Program Status Registers</strong> (<strong class="bold">SPSR</strong>): This stores the value of CPSR when the <a id="_idIndexMarker246"/>exception is taken so that it can be restored later. Each CPU mode has a version of it, except the user and system modes, as they are not exception-handling modes.</li>
+			</ul>
+			<p>The number <a id="_idIndexMarker247"/>of <strong class="bold">Floating-Point Registers</strong> (<strong class="bold">FPRs</strong>) for a 32-bit architecture may vary, depending on the core. There can be up to 32 in total.</p>
+			<p>ARMv8 (64-bit) has 31 general-purpose X0-X30 (the R0-R30 notation can also be found) and 32 FPRs accessible at all times. The lower part of each register has the W prefix and can be accessed as W0-W30.</p>
+			<p>Several registers<a id="_idIndexMarker248"/> have a particular purpose, as follows:</p>
+			<div><div><img src="img/Table_2.10_B18500.jpg" alt=""/>
+				</div>
+			</div>
+			<p>ARMv8 defines four exception levels (EL0-EL3), and each of the last three registers gets a copy of each; ELR and SPSR don’t have a separate copy of EL0.</p>
+			<p>There is no register called X31 or W31; the number 31 in many instructions represents either the zero register, ZR (WZR/XZR), or SP (for stack-related operations). X29 can be used as a frame pointer (which stores the original stack position), while X30 can be used as a link register (which stores a return value from the functions).</p>
+			<p>Regarding the calling convention, R0-R3 on the 32-bit ARM and X0-X7 on the 64-bit ARM are used to store argument values passed to functions with the remaining arguments passed through the stack – if necessary, R0-R1 and X0-X7 (and X8, also known as XR indirectly) to hold return results. If the type of the returned value is too big to fit them, then space needs to be allocated and returned as a pointer. Apart from this, R12 (32-bit) and X16- X17 (64-bit) can be used as intra-procedure-call scratch registers (by so-called veneers and procedure linkage table code) and R9 (32-bit) and X18 (64-bit) can be used as platform registers (for OS-specific purposes) if needed; otherwise, they are used the same way as other temporaries.</p>
+			<p>As mentioned previously, several CPU modes are implemented according to the official documentation, as<a id="_idIndexMarker249"/> follows:</p>
+			<div><div><img src="img/Table_2.11_B18500.jpg" alt=""/>
+				</div>
+			</div>
+			<h2 id="_idParaDest-61"><a id="_idTextAnchor064"/>Instruction sets</h2>
+			<p>Several instruction <a id="_idIndexMarker250"/>sets are available for ARM processors: ARM and Thumb. A processor that is executing ARM instructions is said to be operating in the ARM state and vice versa. ARM processors always start in the ARM state; then, a program can switch <a id="_idIndexMarker251"/>to the Thumb state by using a BX instruction. <strong class="bold">Thumb Execution Environment</strong> (<strong class="bold">ThumbEE</strong>) was introduced relatively recently in ARMv7 and is based on Thumb, with some changes and additions to facilitate dynamically generated code.</p>
+			<p>ARM instructions are 32 bits long (for both AArch32 and AArch64), while Thumb and ThumbEE instructions are either 16 or 32 bits long (originally, almost all Thumb instructions were 16-bit, while Thumb-2 introduced a mix of 16 and 32-bit instructions).</p>
+			<p>All instructions can <a id="_idIndexMarker252"/>be split into the following categories according to the official documentation:</p>
+			<div><div><img src="img/Table_2.12_B18500.jpg" alt=""/>
+				</div>
+			</div>
+			<p class="IMG---Figure"><a id="_idTextAnchor065"/></p>
+			<p>To interact with the<a id="_idIndexMarker253"/> OS, <em class="italic">syscalls</em> can be accessed using the <code>SWI</code>) instruction, which<a id="_idIndexMarker254"/> was later<a id="_idIndexMarker255"/> renamed the <code>SVC</code>) instruction.</p>
+			<p>See the official ARM documentation to get the exact syntax for any instruction. Here is an example of how it may look:</p>
+			<pre class="source-code">
+<code>SVC{cond} #imm</code></pre>
+			<p>In this case, the <em class="italic">{cond}</em> code will be a condition code. Several condition codes are supported by <a id="_idIndexMarker256"/>ARM, as follows:</p>
+			<ul>
+				<li><strong class="bold">EQ</strong>: Equal to</li>
+				<li><strong class="bold">NE</strong>: Not equal to</li>
+				<li><strong class="bold">CS/HS</strong>: Carry set or unsigned higher or both</li>
+				<li><strong class="bold">CC/LO</strong>: Carry clear or unsigned lower</li>
+				<li><strong class="bold">MI</strong>: Negative</li>
+				<li><strong class="bold">PL</strong>: Positive or zero</li>
+				<li><strong class="bold">VS</strong>: Overflow</li>
+				<li><strong class="bold">VC</strong>: No overflow</li>
+				<li><strong class="bold">HI</strong>: Unsigned higher</li>
+				<li><strong class="bold">LS</strong>: Unsigned lower or both</li>
+				<li><strong class="bold">GE</strong>: Signed greater than or equal to</li>
+				<li><strong class="bold">LT</strong>: Signed less than</li>
+				<li><strong class="bold">GT</strong>: Signed greater than</li>
+				<li><strong class="bold">LE</strong>: Signed less than or equal to</li>
+				<li><strong class="bold">AL</strong>: Always (normally omitted)</li>
+				<li><strong class="bold">imm:</strong> It stands for <a id="_idIndexMarker257"/>the immediate value</li>
+			</ul>
+			<p>Now, let's look at the basics of MIPS.</p>
+			<h1 id="_idParaDest-62"><a id="_idTextAnchor066"/>Basics of MIPS</h1>
+			<p><strong class="bold">Microprocessor without Interlocked Pipelined Stages</strong> (<strong class="bold">MIPS</strong>) was developed by MIPS <a id="_idIndexMarker258"/>Technologies (formerly MIPS computer systems). Similar to ARM, at first, it was a 32-bit architecture with 64-bit functionality added later. Taking advantage of the RISC ISA, MIPS processors are characterized by their low power and heat consumption. They can often be found in multiple embedded systems, such as routers and gateways. Several video game consoles such as Sony PlayStation also incorporated them. Unfortunately, due to the popularity of this architecture, the systems that implement it became a target of multiple IoT malware families. An example can be seen in the following screenshot:</p>
+			<div><div><img src="img/Figure_2.8_B18500.jpg" alt="Figure 2.8 – IoT malware targeting MIPS-based systems&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 2.8 – IoT malware targeting MIPS-based systems</p>
+			<p>As the architecture evolved, there were several versions of it, starting from MIPS I and going up to V, and then several releases of the more recent MIPS32/MIPS64. MIPS64 remains backward compatible with MIPS32. These base architectures can be further supplemented with optional architectural extensions, called <strong class="bold">Application-Specific Extensions</strong> (<strong class="bold">ASEs</strong>), and <a id="_idIndexMarker259"/>modules to improve performance for certain tasks that are generally not used by the malicious code much. MicroMIPS32/64 are supersets of the MIPS32 and MIPS64 architectures, respectively, with almost the same 32-bit instruction set and additional 16-bit instructions to reduce the code size. They are used where code compression is <a id="_idIndexMarker260"/>required and are designed for microcontrollers and other small embedded devices.</p>
+			<h2 id="_idParaDest-63"><a id="_idTextAnchor067"/>Basics</h2>
+			<p>MIPS supports bi-endianness. The following registers are available:</p>
+			<ul>
+				<li>32 GPRs r0-r31 – 32-bit in size on MIPS32 and 64-bit in size on MIPS64.</li>
+				<li>A special-purpose PC register that can be affected only indirectly by some instructions.</li>
+				<li>Two special-purpose registers to hold the results of integer multiplication and division (HI and LO). These registers and their related instructions were removed from the base <a id="_idIndexMarker261"/>instruction set in the release of 6 and now exist in the <strong class="bold">Digital Signal Processor</strong> (<strong class="bold">DSP</strong>) module.</li>
+			</ul>
+			<p>The reason behind 32 GPRs is simple – MIPS uses 5 bits to specify the register, so this way, we can have a maximum of 2^5 = 32 different values. Two of the GPRs have a particular purpose, as follows:</p>
+			<ul>
+				<li>Register r0 (sometimes referred to as $0 or $zero) is a constant register and always stores zero, and provides read-only access. It can be used as a /dev/null analog to discard the output of some operation, or as a fast source of a zero value.</li>
+				<li>r31 (also known as $ra) stores the return address during the procedure call branch/jump and link instructions.</li>
+			</ul>
+			<p>Other registers are generally used for particular purposes, as follows:</p>
+			<ul>
+				<li><strong class="bold">r1 (also known as $at)</strong>: Assembler temporary – used when resolving pseudo- instructions</li>
+				<li><strong class="bold">r2-r3 (also known as $v0 and $v1)</strong>: Values – hold return function values.</li>
+				<li><strong class="bold">r4-r7 (also known as $a0-$a3)</strong>: Arguments – used to deliver function arguments.</li>
+				<li><strong class="bold">r8-r15 (also known as $t0-$t7/$a4-$a7 and $t4-$t7)</strong>: Temporaries – the first four can also be used to provide function arguments in N32 and N64 calling conventions (another O32 calling convention only uses r4-r7 registers; subsequent <a id="_idIndexMarker262"/>arguments are passed on the stack).</li>
+				<li><strong class="bold">r16-r23 (also known as $s0-$s7)</strong>: Saved temporaries – preserved across function calls.</li>
+				<li><strong class="bold">r24-r25 (also known as $t8-$t9)</strong>: Temporaries.</li>
+				<li><strong class="bold">r26-r27 (also known as $k0-$k1)</strong>: Generally reserved for the OS kernel.</li>
+				<li><strong class="bold">r28 (also known as $gp)</strong>: Global pointer – points to the global area (data segment).</li>
+				<li><strong class="bold">r29 (also known as $sp)</strong>: Stack pointer.</li>
+				<li><strong class="bold">r30 (also known as $s8 or $fp)</strong>: Saved value/frame pointer – stores the original stack pointer (before the function was called).</li>
+			</ul>
+			<p>MIPS also has the<a id="_idIndexMarker263"/> following co-processors available:</p>
+			<ul>
+				<li><strong class="bold">CP0</strong>: System control</li>
+				<li><strong class="bold">CP1</strong>: FPU</li>
+				<li><strong class="bold">CP2</strong>: Implementation-specific</li>
+				<li><strong class="bold">CP3</strong>: FPU (has dedicated COP1X opcode type instructions)</li>
+			</ul>
+			<h2 id="_idParaDest-64"><a id="_idTextAnchor068"/>The instruction set</h2>
+			<p>The majority <a id="_idIndexMarker264"/>of the main instructions were introduced in MIPS I and II. MIPS III introduced 64-bit integers and addresses, and MIPS IV and V improved floating-point operations and added a new set to boost the overall efficacy. Every instruction there has the same length – that is, 32 bits (4 bytes) – and all instructions start with an opcode that takes 6 bits. The three major instruction formats that are supported are R, I, and J:</p>
+			<div><div><img src="img/Table_2.13_B18500.jpg" alt=""/>
+				</div>
+			</div>
+			<p>For the FPU-related operations, the analogous FR and FI types exist.</p>
+			<p>Apart from this, several other less common formats exist, mainly coprocessors and extension-related formats.</p>
+			<p>In the documentation, registers usually have the following suffixes: </p>
+			<ul>
+				<li>Source (s)</li>
+				<li>Target (t) </li>
+				<li>Destination (d)</li>
+			</ul>
+			<p>All instructions can be split into the following groups, depending on the functionality type:</p>
+			<ul>
+				<li><code>JR</code>: Jump register (J format)</li><li><code>BLTZ</code>: Branch on less than zero (I format) </li></ul></li>
+				<li><code>LB</code>: Load byte (I format)</li><li><code>SW</code>: Store word (I format) </li></ul></li>
+				<li><code>ADDU</code>: Add unsigned (R format)</li><li><code>XOR</code>: Exclusive or (R format)</li><li><code>SLL</code>: Shift left logical (R format)</li></ul></li>
+				<li><code>SYSCALL</code>: System call (custom format) </li><li><code>BREAK</code>: Breakpoint (custom format)</li></ul></li>
+			</ul>
+			<p>Floating-point<a id="_idIndexMarker265"/> instructions will have similar names for the same types of operations in most cases, such as <code>ADD.S</code>. Some instructions are more unique, such as Check for Equal (<code>C.EQ.D</code>).</p>
+			<p>As we can see here and later, the same basic groups can be applied to virtually any architecture, and the only difference will be in their implementation. Some common operations may get instructions to benefit from optimizations and, in this way, reduce the size of the code and improve performance.</p>
+			<p>As the MIPS instruction set is pretty minimalistic, the assembler macros, known as pseudo instructions, also exist. Here are some of the most commonly used:</p>
+			<ul>
+				<li><code>ABS</code>: Absolute value – translates into a combination of <code>ADDU</code>, <code>BGEZ</code>, and <code>SUB</code></li>
+				<li><code>BLT</code>: Branch on less than – translates into a combination of <code>SLT</code> and <code>BNE</code></li>
+				<li><code>BGT/BGE/BLE</code>: Similar to <code>BLT</code></li>
+				<li><code>LI/LA</code>: Load immediate/address – translates into a combination of <code>LUI</code> and <code>ORI</code> or <code>ADDIU</code> for a 16-bit LI</li>
+				<li><code>MOVE</code>: Moves the content of one register into another – translates into <code>ADD/ADDIU</code> with a zero value</li>
+				<li><code>NOP</code>: No operation – translates into <code>SLL</code> with zero values</li>
+				<li><code>NOT</code>: Logical NOT – translates<a id="_idIndexMarker266"/> into <code>NOR</code></li>
+			</ul>
+			<h1 id="_idParaDest-65"><a id="_idTextAnchor069"/>Diving deep into PowerPC</h1>
+			<p><strong class="bold">PowerPC</strong> stands for <strong class="bold">Performance Optimization With Enhanced RISC—Performance Computing</strong> and <a id="_idIndexMarker267"/>is <a id="_idIndexMarker268"/>sometimes spelled as PPC. It was created in the early 1990s by the alliance of Apple, IBM, and Motorola (commonly abbreviated as AIM). It was originally intended to be used in PCs and powered Apple products, including PowerBooks and iMacs, up until 2006. The CPUs that implement it can also be found in game consoles such as Sony PlayStation 3, XBOX 360, and Wii, as well as in IBM servers and multiple embedded devices, such as car and plane controllers, and even in the famous ASIMO robot. Later, the administrative responsibilities were transferred to an open standards body, Power.org, where some of the former creators remained members, such as IBM and Freescale. The latter was separated from Motorola and later acquired by NXP Semiconductors. The OpenPOWER Foundation is a newer initiative by IBM, Google, NVIDIA, Mellanox, and Tyan that aims to facilitate collaboration in the development of this technology.</p>
+			<p>PowerPC was mainly based on IBM POWER ISA. Later, a unified Power ISA was released, which combined POWER and PowerPC into a single ISA that is now used in multiple products under the Power Architecture umbrella term.</p>
+			<p>There are plenty of IoT malware families that have payloads for this architecture.</p>
+			<h2 id="_idParaDest-66"><a id="_idTextAnchor070"/>Basics</h2>
+			<p>The Power ISA is <a id="_idIndexMarker269"/>divided into several categories; each category can be found in a certain part of the specification or book. CPUs implement a set of these categories, depending on their class; only the base category is an obligatory one.</p>
+			<p>Here is a list of the main categories and their definitions in the latest second standard:</p>
+			<ul>
+				<li><strong class="bold">Base</strong>: Covered in Book I <em class="italic">(Power ISA User Instruction Set Architecture</em>) and Book II (<em class="italic">Power ISA Virtual Environment Architecture</em>)</li>
+				<li><strong class="bold">Server</strong>: Covered in Book III-S (<em class="italic">Power ISA Operating Environment Architecture –Server Environment</em>)</li>
+				<li><strong class="bold">Embedded</strong>: Covered in Book III-E (<em class="italic">Power ISA Operating Environment Architecture – Embedded Environment</em>)</li>
+			</ul>
+			<p>There are many more granular categories that cover aspects such as floating-point operations and caching for certain instructions.</p>
+			<p>Another book, Book VLE (<em class="italic">Power ISA Operating Environment Architecture – Variable Length Encoding (VLE) Instructions Architecture</em>), defines alternative instructions and definitions intended to increase the density of the code by using 16-bit instructions as opposed to the more common 32-bit ones.</p>
+			<p>Power ISA version 3 consists of three books with the same names as Books I to III of the previous standards, without distinctions between environments.</p>
+			<p>The processor starts in <a id="_idIndexMarker270"/>big-endian mode but can switch it by changing a bit in the <strong class="bold">Machine State Register</strong> (<strong class="bold">MSR</strong>) so that bi-endianness is supported.</p>
+			<p>Many sets of registers are documented in Power ISA, mainly grouped around either an associated facility or a category. Here is a basic summary of the most commonly used ones:</p>
+			<ul>
+				<li>32 GPRs for integer operations, generally used by their number only (64-bit) </li>
+				<li>64 <strong class="bold">Vector Scalar Registers</strong> (<strong class="bold">VSRs</strong>) for <a id="_idIndexMarker271"/>vector operations and floating-point operations:<ul><li>32 <strong class="bold">Vector Registers</strong> (<strong class="bold">VRs</strong>) as <a id="_idIndexMarker272"/>part of the VSRs for vector operations (128-bit)</li><li>32 FPRs as part of the VSRs for floating-point operations (64-bit) </li></ul></li>
+				<li>Special purpose fixed-point facility registers, such as the following:<ul><li>Fixed-point <strong class="bold">exception register</strong> (<strong class="bold">XER</strong>), which<a id="_idIndexMarker273"/> contains multiple status bits (64-bit)</li></ul></li>
+				<li>Branch facility registers:<ul><li><strong class="bold">Condition Register (CR)</strong>: Consists <a id="_idIndexMarker274"/>of eight 4-bit fields, CR0-CR7, involving things such as control flow and comparison (32-bit)</li><li><strong class="bold">Link Register (LR)</strong>: Provides <a id="_idIndexMarker275"/>the branch target address (64-bit)</li><li><strong class="bold">Count Register (CTR)</strong>: Holds <a id="_idIndexMarker276"/>a loop count (64-bit)</li><li><strong class="bold">Target Access Register (TAR)</strong>: Specifies<a id="_idIndexMarker277"/> the branch target address (64-bit)</li></ul></li>
+				<li>Timer facility registers:<ul><li><strong class="bold">Time Base (TB)</strong>: This is <a id="_idIndexMarker278"/>incremented periodically with the defined frequency (64-bit)</li></ul></li>
+				<li>Other special-purpose registers from a particular category, including the following:<ul><li><strong class="bold">Accumulator</strong> (<strong class="bold">ACC</strong>) (64-bit): The <strong class="bold">Signal Processing Engine</strong> (<strong class="bold">SPE</strong>) category</li></ul></li>
+			</ul>
+			<p>Generally, functions<a id="_idIndexMarker279"/> can <a id="_idIndexMarker280"/>pass all <a id="_idIndexMarker281"/>arguments in registers for non-recursive calls; additional arguments are passed on the stack.</p>
+			<h2 id="_idParaDest-67"><a id="_idTextAnchor071"/>The instruction set</h2>
+			<p>Most of the<a id="_idIndexMarker282"/> instructions are 32-bit; only the VLE group is smaller to provide a higher code density for embedded applications. All instructions are split into the following three categories:</p>
+			<ul>
+				<li><strong class="bold">Defined</strong>: All of the instructions are defined in the Power ISA books.</li>
+				<li><strong class="bold">Illegal</strong>: Available for future extensions of the Power ISA. Attempting to execute them will invoke the illegal instruction error handler.</li>
+				<li><strong class="bold">Reserved</strong>: Allocated to specific purposes that are outside the scope of the Power ISA. Attempting to execute them will either result in an implemented action or invoke the illegal instruction error handler if the implementation is not available.</li>
+			</ul>
+			<p>Bits 0 to 5 always specify the opcode, and many instructions also have an extended opcode. A large number of instruction formats are supported; here are some examples:</p>
+			<ul>
+				<li>I-FORM [OPCD+LI+AA+LK]</li>
+				<li>B-FORM [OPCD+BO+BI+BD+AA+LK]</li>
+			</ul>
+			<p>Each instruction field has an abbreviation and meaning; it makes sense to consult the official Power ISA document to get a full list of them and their corresponding formats. In terms of I-FORM, they<a id="_idIndexMarker283"/> are as follows:</p>
+			<ul>
+				<li><strong class="bold">OPCD</strong>: Opcode</li>
+				<li><strong class="bold">LI</strong>: Immediate field used to specify a 24-bit signed two’s complement integer</li>
+				<li><strong class="bold">AA</strong>: Absolute address bit</li>
+				<li><strong class="bold">LK</strong>: Link bit affecting the link register</li>
+			</ul>
+			<p>Instructions are also split into groups according to the associated facility and category, making them very similar to registers:</p>
+			<ul>
+				<li>Branch instructions:<ul><li><code>b/ba/bl/bla</code>: Branch</li><li><code>bc/bca/bcl/bcla</code>: Branch conditional</li><li><code>sc</code>: System call </li></ul></li>
+				<li>Fixed-point instructions:<ul><li><code>lbz</code>: Load byte and zero</li><li><code>stb</code>: Store byte</li><li><code>addi</code>: Add immediate</li><li><code>ori</code>: OR immediate</li></ul></li>
+				<li> Floating-point instructions:<ul><li><code>fmr</code>: Floating move register</li><li><code>lfs</code>: Load floating-point single</li><li><code>stfd</code>: Store floating-point double </li></ul></li>
+				<li>SPE instructions:<ul><li><code>brinc</code>: Bit-reversed<a id="_idIndexMarker284"/> increment</li></ul></li>
+			</ul>
+			<h1 id="_idParaDest-68"><a id="_idTextAnchor072"/>Covering the SuperH assembly</h1>
+			<p>SuperH, often<a id="_idIndexMarker285"/> abbreviated as SH, is a RISC ISA developed by Hitachi. SuperH went through several iterations, starting from SH-1 and moving up to SH-4. The more recent SH-5 has two modes of operation, one of which is identical to the user-mode instructions of SH-4, while another, SHmedia, is quite different. Each family has a market niche:</p>
+			<ul>
+				<li><strong class="bold">SH-1</strong>: Home appliances</li>
+				<li><strong class="bold">SH-2</strong>: Car controllers and video game consoles such as Sega Saturn</li>
+				<li><strong class="bold">SH-3</strong>: Mobile applications such as car navigators</li>
+				<li><strong class="bold">SH-4</strong>: Car multimedia terminals and video game consoles such as Sega Dreamcast</li>
+				<li><strong class="bold">SH-5</strong>: High-end multimedia applications</li>
+			</ul>
+			<p>Microcontrollers and CPUs that implement it are currently produced by Renesas Electronics, a joint venture of the Hitachi and Mitsubishi Semiconductor groups. As IoT malware mainly<a id="_idIndexMarker286"/> targets SH-4-based systems, we will focus on this SuperH family.</p>
+			<h2 id="_idParaDest-69"><a id="_idTextAnchor073"/>Basics</h2>
+			<p>In <a id="_idIndexMarker287"/>terms <a id="_idIndexMarker288"/>of <a id="_idIndexMarker289"/>registers, SH-4 <a id="_idIndexMarker290"/>offers <a id="_idIndexMarker291"/>the<a id="_idIndexMarker292"/> following:</p>
+			<ul>
+				<li>16 general <a id="_idIndexMarker293"/>registers R0-R15 (32-bit) </li>
+				<li>Seven <a id="_idIndexMarker294"/>control registers (32-bit):<ul><li><strong class="bold">Global Base Register</strong> (<strong class="bold">GBR</strong>)</li><li><strong class="bold">Status Register</strong> (<strong class="bold">SR</strong>)</li><li><strong class="bold">Saved Status Register</strong> (<strong class="bold">SSR</strong>) </li><li><strong class="bold">Saved Program Counter</strong> (<strong class="bold">SPC</strong>) </li><li><strong class="bold">Vector Base Counter</strong> (<strong class="bold">VBR</strong>)</li><li><strong class="bold">Saved General Register 15</strong> (<strong class="bold">SGR</strong>)</li><li><strong class="bold">Debug Base Register</strong> (<strong class="bold">DBR</strong>) (only from the privileged mode) </li></ul></li>
+				<li>Four system registers (32-bit):<ul><li><strong class="bold">MACH/MACL</strong>: Multiply-and-accumulate registers</li><li><strong class="bold">PR</strong>: Procedure register</li><li><strong class="bold">PC</strong>: Program counter</li><li><strong class="bold">FPSCR</strong>: Floating-point status/control register</li></ul></li>
+				<li>32 FPU registers – that is, FR0-FR15 (also known as DR0/2/4/... or FV0/4/...) and XF0-XF15 (also known as XD0/2/4/... or XMTRX); two banks of either 16 single-precision (32-bit) or <a id="_idIndexMarker295"/>eight double-precision (64-bit) FPRs and <strong class="bold">FPULs</strong> (<strong class="bold">floating-point communication registers</strong>) (32-bit)</li>
+			</ul>
+			<p>Usually, R4-R7 are used to pass arguments to a function with the result returned in R0. R8-R13 are saved across multiple function calls. R14 serves as the frame pointer, while R15 serves as the stack pointer.</p>
+			<p>Regarding the data formats, in SH-4, a word takes 16 bits, a long word takes 32 bits, and a quadword takes 64 bits.</p>
+			<p>Two processor <a id="_idIndexMarker296"/>modes are supported: user mode and privileged mode. SH-4 generally operates in user mode and switches to privileged mode in case of an exception or an interrupt.</p>
+			<h2 id="_idParaDest-70"><a id="_idTextAnchor074"/>The instruction set</h2>
+			<p>SH-4 features an<a id="_idIndexMarker297"/> instruction set that is upward-compatible with the SH-1, SH-2, and SH-3 families. It uses 16-bit fixed-length instructions to reduce the program code’s size. Except for <code>BF</code> and <code>BT</code>, all branch instructions and <code>RTE</code> (the return from exception instruction) implement so-called delayed branches, where the instruction following the branch is executed before the branch destination instruction.</p>
+			<p>All instructions are split into the following categories (with some examples): </p>
+			<ul>
+				<li>Fixed-point transfer instructions:<ul><li><code>MOV</code>: Move data (or particular data types specified)</li><li><code>SWAP</code>: Swap register halves </li></ul></li>
+				<li>Arithmetic operation instructions:<ul><li><code>SUB</code>: Subtract binary numbers</li><li><code>CMP/EQ</code>: Compare conditionally (in this case, on equal to)</li></ul></li>
+				<li>Logic operation instructions:<ul><li><code>AND</code>: Logical AND</li><li><code>XOR</code>: Exclusive logical OR</li></ul></li>
+				<li>Shift/rotate instructions:<ul><li><code>ROTL</code>: Rotate left</li><li><code>SHLL</code>: Shift logical left </li></ul></li>
+				<li>Branch instructions:<ul><li><code>BF</code>: Branch if false</li><li><code>JMP</code>: Jump (unconditional branch) </li></ul></li>
+				<li>System control instructions:<ul><li><code>LDC</code>: Load to control register</li><li><code>STS</code>: Store system register </li></ul></li>
+				<li>Floating-point single-precision instructions:<ul><li><code>FMOV</code>: Floating-point move</li></ul></li>
+				<li>Floating-point double-precision instructions:<ul><li><code>FABS</code>: Floating-point absolute value</li></ul></li>
+				<li>Floating-point control instructions:<ul><li><code>LDS</code>: Load to FPU system register</li></ul></li>
+				<li>Floating-point <a id="_idIndexMarker298"/>graphics acceleration instructions<ul><li><code>FIPR</code>: Floating-point inner product</li></ul></li>
+			</ul>
+			<h1 id="_idParaDest-71"><a id="_idTextAnchor075"/>Working with SPARC</h1>
+			<p><strong class="bold">Scalable Processor Architecture</strong> (<strong class="bold">SPARC</strong>) is a <a id="_idIndexMarker299"/>RISC ISA that was originally developed by Sun Microsystems (now part of the Oracle corporation). The first implementation was used in Sun’s own workstation and server systems. Later, it was licensed to multiple other manufacturers, one of them being Fujitsu. As Oracle terminated SPARC Design in 2017, all future development continued with Fujitsu as the main provider of SPARC servers.</p>
+			<p>Several fully open source implementations of the SPARC architecture exist. Multiple OSs currently support it, including Oracle Solaris, Linux, and BSD systems, and multiple IoT malware families <a id="_idIndexMarker300"/>have dedicated modules for it as well.</p>
+			<h2 id="_idParaDest-72"><a id="_idTextAnchor076"/>Basics</h2>
+			<p>According to the <a id="_idIndexMarker301"/>Oracle SPARC architecture documentation, the implementation may contain between 72 and 640 general-purpose 64-bit R registers. However, only 31/32 GPRs are immediately visible at any one time; eight are global registers, R[0] to R[7] (also known as g0-g7), with the first register, g0, hardwired to 0; 24 are associated with the following register windows:</p>
+			<ul>
+				<li><strong class="bold">Eight in registers in[0]-in[7] (R[24]-R[31])</strong>: For passing arguments and returning results</li>
+				<li><strong class="bold">Eight local registers local[0]-local[7] (R[16]-R[23])</strong>: For retaining local variables</li>
+				<li><strong class="bold">Eight out registers out[0]-out[7] (R[8]-R[15])</strong>: For passing arguments and returning results</li>
+			</ul>
+			<p>The <code>CALL</code> instruction writes its address into the out[7] (R[15]) register.</p>
+			<p>To pass arguments to the function, they must be placed in the out registers. When the function gains control, it will access them in its registers. Additional arguments can be provided through the stack. The result is placed in the first register, which then becomes the first out register when the function returns. The <code>SAVE</code> and <code>RESTORE</code> instructions are used in this switch to allocate a new register window and restore the previous one, respectively.</p>
+			<p>SPARC also has 32 single-precision FPRs (32-bit), 32 double-precision FPRs (64-bit), and 16 quad-precision FPRs (128- bit), some of which overlap.</p>
+			<p>Apart from that, many other registers serve specific purposes, including the following:</p>
+			<ul>
+				<li><strong class="bold">FPRS</strong>: Contains the FPU mode and status information</li>
+				<li><strong class="bold">Ancillary state registers (ASR 0, ASR 2-6, ASR 19-22, and ASR 24-28 are not reserved)</strong>: These serve <a id="_idIndexMarker302"/>multiple purposes, including<a id="_idIndexMarker303"/> the following:<ul><li><strong class="bold">ASR 2</strong>: <strong class="bold">Condition Codes Register (CCR)</strong></li><li><strong class="bold">ASR 5</strong>: PC</li><li><strong class="bold">ASR 6</strong>: FPRS</li><li><strong class="bold">ASR 19</strong>: <strong class="bold">General Status Register</strong> (<strong class="bold">GSR</strong>)</li></ul></li>
+				<li><strong class="bold">Register-Window PR state registers</strong> (<strong class="bold">PR 9-14</strong>): These determine the state of the register windows, including the following:<ul><li><strong class="bold">PR 9</strong>: Current Window Pointer (CWP)</li><li><strong class="bold">PR 14</strong>: Window State (WSTATE)</li></ul></li>
+				<li><strong class="bold">Non-register-Window PR state registers (PR 0-3, PR 5-8, and PR 16)</strong>: Visible only to software running in privileged mode</li>
+			</ul>
+			<p>32-bit SPARC uses big-endianness, while 64-bit SPARC uses big-endian instructions but can access data in any order. SPARC also uses the notion of traps, which implement a transfer of <a id="_idIndexMarker304"/>control to privileged software using a dedicated table that may contain the first eight instructions (32 for some frequently used traps) of each trap handler. The base address of the table is set by software<a id="_idIndexMarker305"/> in a <strong class="bold">Trap Base Address</strong> (<strong class="bold">TBA</strong>) register.</p>
+			<h2 id="_idParaDest-73"><a id="_idTextAnchor077"/>The instruction set</h2>
+			<p>The instruction <a id="_idIndexMarker306"/>from the memory location, which is specified by the PC, is fetched and executed. Then, new values are assigned to the PC <a id="_idIndexMarker307"/>and the <strong class="bold">Next Program Counter</strong> (<strong class="bold">NPC</strong>), which is a pseudo-register.</p>
+			<p>Detailed instruction formats can be found in the individual instruction descriptions. Here are the basic categories of instructions supported, with examples:</p>
+			<ul>
+				<li>Memory access:<ul><li><code>LDUB</code>: Load unsigned byte</li><li><code>ST</code>: Store </li></ul></li>
+				<li>Arithmetic/logical/shift integers:<ul><li><code>ADD</code>: Add</li><li><code>SLL</code>: Shift left logical </li></ul></li>
+				<li>Control transfer:<ul><li><code>BE</code>: Branch on equal</li><li><code>JMPL</code>: Jump and link</li><li><code>CALL</code>: Call and link</li><li><code>RETURN</code>: Return<a id="_idIndexMarker308"/> from the function </li></ul></li>
+				<li>State register access:<ul><li><code>WRCCR</code>: Write CCR</li></ul></li>
+				<li>Floating-point operations:<ul><li><code>FOR</code>: Logical OR for F registers</li></ul></li>
+				<li>Conditional move:<ul><li><code>MOVcc</code>: Move if the condition is true for the selected condition code (cc)</li></ul></li>
+				<li>Register window management:<ul><li><code>SAVE</code>: Save the caller’s window</li><li><code>FLUSHW</code>: Flush 	register windows</li></ul></li>
+				<li><code>FPSUB</code>: Partitioned integer subtraction for F registers</li></ul></li>
+			</ul>
+			<h1 id="_idParaDest-74"><a id="_idTextAnchor078"/>Moving from assembly to high-level programming languages</h1>
+			<p>Developers mostly <a id="_idIndexMarker309"/>don’t write in assembly. Instead, they write in higher-level languages, such as C or C++, and the compiler converts this high-level code into a low-level representation in assembly language. In this section, we will look at different code blocks represented in the assembly.</p>
+			<h2 id="_idParaDest-75"><a id="_idTextAnchor079"/>Arithmetic statements</h2>
+			<p>Let’s look at <a id="_idIndexMarker310"/>different C statements and <a id="_idIndexMarker311"/>how they are represented in the assembly. We will use Intel IA-32 for this example. The same concept applies to other assembly languages as well:</p>
+			<ul>
+				<li>X = 50 (assuming 0x00010000 is the address of the X variable in memory):<pre>mov eax, 50
+mov dword ptr [00010000h], eax</pre></li>
+				<li>X = Y + 50 (assuming 0x00010000 represents X and 0x00020000 represents Y):<pre>mov eax, dword ptr [00020000h]
+add eax, 50
+mov dword ptr [00010000h], eax</pre></li>
+				<li>X = Y + (50 * 2):<pre>mov eax, dword ptr [00020000h]
+push eax    ; save Y for now
+mov eax, 50 ; do the multiplication first
+mov ebx, 2
+imul ebx    ; the result is in edx:eax
+mov ecx, eax
+pop eax     ; gets back Y value
+add eax, ecx
+mov dword ptr [00010000h], eax</pre></li>
+				<li>X = Y + (50 / 2):<pre>mov eax, dword ptr [00020000h]
+push eax ; save Y for now
+mov eax, 50
+mov ebx,2
+div ebx  ; the result is in eax, and the remainder is in edx
+mov ecx, eax
+pop eax
+add eax, ecx
+mov dword ptr [00010000h], eax</pre></li>
+				<li>X = Y + (50 % 2) (% represents <a id="_idIndexMarker312"/>the <a id="_idIndexMarker313"/>modulo):<pre>mov eax, dword ptr [00020000h]
+push eax ; save Y for now
+mov eax, 50
+mov ebx, 2
+div ebx  ; the remainder is in edx
+mov ecx, edx
+pop eax
+add eax, ecx
+mov dword ptr [00010000h], eax</pre></li>
+			</ul>
+			<p>Hopefully, this explains how the compiler converts these arithmetic statements into assembly<a id="_idIndexMarker314"/> language.</p>
+			<h2 id="_idParaDest-76"><a id="_idTextAnchor080"/>If conditions</h2>
+			<p>Basic <em class="italic">if</em> statements <a id="_idIndexMarker315"/>may <a id="_idIndexMarker316"/>look like this:</p>
+			<ul>
+				<li>If (X == 50) (assuming 0x0001000 represents the X variable):<pre>mov eax, 50
+cmp dword ptr [00010000h], eax</pre></li>
+				<li>If (X &amp; 00001000b) (| represents the logical AND):<pre>mov eax, 000001000b
+test dword ptr [00010000h], eax</pre></li>
+			</ul>
+			<p>To understand the branching and flow redirection, let’s look at the following diagram, which shows how it’s manifested in pseudocode:</p>
+			<div><div><img src="img/Figure_2.9_B18500.jpg" alt="Figure 2.9 – Conditional ﬂow redirection&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 2.9 – Conditional ﬂow redirection</p>
+			<p>To apply this branching sequence in assembly, the compiler uses a mix of conditional and<a id="_idIndexMarker317"/> unconditional<a id="_idIndexMarker318"/> jumps, as follows:</p>
+			<ul>
+				<li>IF.. THEN.. ENDIF:<pre>cmp dword ptr [00010000h], 50
+jnz 3rd_Block ; if not true
+…
+Some Code
+…
+3rd_Block:
+Some code</pre></li>
+				<li>IF.. THEN.. ELSE.. ENDIF:<pre>cmp dword ptr [00010000h], 50
+jnz Else_Block ; if not true
+...
+Some code
+...
+jmp 4th_Block  ; Jump after Else
+Else_Block:
+...
+Some code
+...
+4th_Block:
+...
+Some code</pre></li>
+			</ul>
+			<h2 id="_idParaDest-77"><a id="_idTextAnchor081"/>While loop conditions</h2>
+			<p>The <em class="italic">while</em> loop<a id="_idIndexMarker319"/> conditions <a id="_idIndexMarker320"/>are quite similar to <em class="italic">if</em> conditions in terms of how they are represented in assembly:</p>
+			<table id="table001" class="No-Table-Style _idGenTablePara-1">
+				<colgroup>
+					<col/>
+					<col/>
+				</colgroup>
+				<tbody>
+					<tr class="No-Table-Style">
+						<td class="No-Table-Style">
+							<p class="Table-Paragraph">While (X == 50) {</p>
+							<p class="Table-Paragraph">…</p>
+							<p class="Table-Paragraph">}</p>
+						</td>
+						<td class="No-Table-Style">
+							<p class="Table-Paragraph"><code>1st_Block:</code></p>
+							<p class="Table-Paragraph"><code>cmp dword ptr [00010000h], 50</code></p>
+							<p class="Table-Paragraph"><code>jnz 2nd_Block ; if not true</code></p>
+							<p class="Table-Paragraph"><code>…</code></p>
+							<p class="Table-Paragraph"><code>jmp 1st_Block</code></p>
+							<p class="Table-Paragraph"><code>2nd_Block:</code></p>
+							<p class="Table-Paragraph"><code>…</code></p>
+						</td>
+					</tr>
+					<tr class="No-Table-Style">
+						<td class="No-Table-Style">
+							<p class="Table-Paragraph">Do {</p>
+							<p class="Table-Paragraph">} While(X == 50)</p>
+						</td>
+						<td class="No-Table-Style">
+							<p class="Table-Paragraph"><code>1st_Block:</code></p>
+							<p class="Table-Paragraph"><code>…</code></p>
+							<p class="Table-Paragraph"><code>cmp dword ptr [00010000h], 50</code></p>
+							<p class="Table-Paragraph"><code>jz 1st_Block ; if true</code></p>
+						</td>
+					</tr>
+				</tbody>
+			</table>
+			<h1 id="_idParaDest-78"><a id="_idTextAnchor082"/>Summary</h1>
+			<p>In this chapter, we covered the essentials of computer programming and described the universal elements that are shared between multiple CISC and RISC architectures. Then, we went through multiple assembly languages, including the ones behind Intel x86, ARM, MIPS, and others, and understood their application areas, which eventually shaped their design and structure. We also covered the fundamental basics of each of them, learned about the most important notions (such as the registers used and CPU modes supported), got an idea of how the instruction sets look, discovered what opcode formats are supported there, and explored what calling conventions are used. Finally, we went from the low-level assembly languages to their high-level representations in C or other similar languages and became familiar with a set of examples for universal blocks, such as if conditions and loops.</p>
+			<p>After reading this chapter, you should be able to read the disassembled code of different assembly languages and understand what high-level code it could represent. While not aiming to be completely comprehensive, the main goal of this chapter is to provide a strong foundation, as well as a direction that you can follow to deepen your knowledge before you analyze actual malicious code. It should be your starting point for learning how to perform static code analysis on different platforms and devices.</p>
+			<p>In <a href="B18500_03.xhtml#_idTextAnchor084"><em class="italic">Chapter 3</em></a>, <em class="italic">Basic Static and Dynamic Analysis for x86/x64</em>, we will start analyzing the actual malware for particular platforms. The instruction sets we have become familiar with will be used as languages that describe their functionality.</p>
+		</div>
+		<div><div></div>
+		</div>
+	
+
+		<div><h1 id="_idParaDest-79"><a id="_idTextAnchor083"/>Part 2 Diving Deep into Windows Malware</h1>
+		</div>
+		<div><p>With Windows remaining the most prevalent operating system for the PC, it is no surprise that the vast majority of existing malware families are focused on this platform. Moreover, the amount of attention and the high number of high-profile actors has led to Windows malware featuring multiple diverse and sophisticated techniques not common to other systems. Here, we will cover them in great detail and teach you how to analyze them using multiple real-world examples.</p>
+			<p>In this section are the following chapters:</p>
+			<ul>
+				<li><a href="B18500_03.xhtml#_idTextAnchor084"><em class="italic">Chapter 3</em></a><em class="italic">, Basic Static and Dynamic Analysis for x86/x64</em></li>
+				<li><a href="B18500_04.xhtml#_idTextAnchor238"><em class="italic">Chapter 4</em></a><em class="italic">, Unpacking, Decryption, and Deobfuscation</em></li>
+				<li><a href="B18500_05.xhtml#_idTextAnchor446"><em class="italic">Chapter 5</em></a><em class="italic">, Inspecting Process Injection and API Hooking</em></li>
+				<li><a href="B18500_06.xhtml#_idTextAnchor554"><em class="italic">Chapter 6</em></a><em class="italic">, Bypassing Anti-Reverse Engineering Techniques</em></li>
+				<li><a href="B18500_07.xhtml#_idTextAnchor669"><em class="italic">Chapter 7</em></a><em class="italic">, Understanding Kernel-Mode Rootkits</em></li>
+			</ul>
+		</div>
+		<div><div></div>
+		</div>
+		<div><div></div>
+		</div>
+		<div><div></div>
+		</div>
+	</body></html>

@@ -1,0 +1,514 @@
+<html><head></head><body>
+  <div><h1 class="chapterNumber">5</h1>
+    <h1 id="_idParaDest-103" class="chapterTitle">Computer Investigation Process</h1>
+    <p class="normal">Being a digital forensic examiner requires you to have a plan to conduct the investigation. For instance, there is the kitchen sink approach – where the person requesting the examination states, <em class="italic">I want it all</em>. However, this is not practical when the smallest drive might contain hundreds of thousands of pages or events. So while the kitchen sink approach is a plan, it may not be the most efficient.</p>
+    <p class="normal">In reality, your search method will depend on the crime you are investigating and whether there are limitations to the scope of the search. For example, in some investigations, the judicial authority may restrict an investigator’s access to digital evidence to only email messages, or you may be limited to a specific date and time within the forensic image. </p>
+    <p class="normal">This chapter will first go through timeline analysis, where a user’s activity is analyzed <em class="italic">temporally</em>. Then, we will examine the storage containers used by the user. You will also learn about string search, in which you search a dataset using matching strings of characters. Finally, in the last section, we will analyze data that has been deleted from the filesystem.</p>
+    <p class="normal">In this chapter, we will learn about the following topics:</p>
+    <ul>
+      <li class="bulletList">Timeline analysis</li>
+      <li class="bulletList">Media analysis </li>
+      <li class="bulletList">String search </li>
+      <li class="bulletList">Recovering deleted data </li>
+    </ul>
+    <h1 id="_idParaDest-104" class="heading-1">Timeline analysis</h1>
+    <p class="normal">During the<a id="_idIndexMarker454"/> investigation, you may find artifacts that appear to show the accused’s guilt or innocence. However, we cannot construe the mere presence of the artifact as a sign of the suspect’s guilt or innocence. Instead, the artifact needs to be placed within the user and system activity context. </p>
+    <p class="normal">For example, I was brought in as a consultant on a case; they accused the suspect of physically abusing their child. One piece of evidence that was considered against the suspect was the high number of Google searches about how to treat an injury. They attributed the searches to the accused, who was the father. The most challenging piece of evidence is to prove the user’s identity behind the keyboard when the contested actions occurred. Since the items were present in the internet history (we will go into much greater detail in <em class="chapterRef">Chapter 9</em>, <em class="italic">Internet Artifacts</em>), I wanted to check the context of when the searches were made. The wife was the primary owner of the laptop, but the husband was also a frequent user of the laptop. So, how do you attribute the searches to a specific user, especially when you have multiple people using the same laptop with the same user account?</p>
+    <p class="normal">A person’s internet viewing habits can almost be as distinctive as a fingerprint. As I reviewed the one million-plus lines of internet history, I could differentiate the two different users on the laptop. I could correlate social media use with each user and attribute the Google searches to the child’s mother. When she was confronted with the findings, the mother admitted that she searched for how to treat her child’s injuries. After being presented with the evidence and testimony of the mother, the jury found the client not guilty of child abuse. </p>
+    <p class="normal">Suppose they had done a timeline analysis before making the charging decision. In that case, I believe the father would not have been charged, as the only evidence against him was the digital evidence found on the wife’s laptop. </p>
+    <p class="normal">Your ability to create a timeline to analyze the system and actions of the user allows you to develop a much deeper and more thorough understanding of digital evidence. When I first started in the field, timelines were rudimentary and were typically based on the MAC times of the filesystem. <strong class="keyWord">MAC</strong> times <a id="_idIndexMarker455"/>refer to the <strong class="keyWord">Modified, Accessed, and Created</strong> times that are records created by the filesystem as created, edited, or accessed. The downside to only using MAC times for timeline analysis is that the recorded times may not be accurate. For example, this can happen when files are moved from one volume to another or if a user uses a third-party tool to change the timestamps and the timestamps are dependent on the system time. </p>
+    <p class="normal">We will now use multiple sources to help us to determine the context of what is happening on a system regarding a specific artifact. These additional sources may not be as easily manipulated as the MAC times and can determine any irregularities in the timestamps. For example, using multiple resources found within the forensic image, we can see when the user logs in, launches an executable, and accesses a file associated with the executable. This method of accessing multiple sources helps us confirm and validate the information provided by the MAC times. </p>
+    <p class="normal">Applying multiple frames of reference to the event being investigated allows us to support our hypothesis about the event. For example, can we determine whether the investigated incident results from user activity or is it a system process? In addition, using all of the available sources such as event logs, filesystem logs, or internet history captured by the system allows us to get into the small details to see the context of the event. </p>
+    <p class="normal">By gathering data points from multiple sources, you can create what Rob Lee from the SANS Institute calls a super timeline because of the sheer amount of data points you will have to sort through.</p>
+    <p class="normal">Hard drive<a id="_idIndexMarker456"/> capacity is not getting smaller. Instead, it is increasing at a phenomenal rate. Users and developers use this increased capacity to store more data and increase the number of logs that can track what occurs in a system. In some investigations, you may not need to examine the content of the files; for example, in an investigation dealing with illicit images, I need not see the visual depiction of the file. Instead, to answer whether a user knew about the existence of a specific file, I can use timeline analysis to make that determination.</p>
+    <p class="normal">Commercial forensic (and open-source) tools have made many advances when it comes to creating timelines. For example, at one time, you had to use many tools to extract data to create a timeline. Now you can use just a single tool to create a timeline.</p>
+    <div><p class="normal"><strong class="keyWord">Note</strong></p>
+      <p class="normal">In this chapter, we will be discussing date-times, which will be converted into UTC/GMT. Always be aware of which time zone your dataset is operating in and the time zone it is stored. I use GMT/UTC as a standard when conducting an examination.</p>
+    </div>
+    <p class="normal">In this chapter, I will demonstrate the use of several tools for you to see the difference in the outputs <a id="_idIndexMarker457"/>and discuss where the tools pull the information from.</p>
+    <h2 id="_idParaDest-105" class="heading-2">X-Ways</h2>
+    <p class="normal">X-Ways Forensics <a id="_idIndexMarker458"/>has a very robust timeline-creation utility built <a id="_idIndexMarker459"/>in, called an <strong class="keyWord">event list</strong>. X-Ways compiles multiple sources such as timestamps at the filesystem level, internal timestamps, browser histories, event logs, registry hives, emails, and many other sources. When you start an event list, the data will be presented chronologically, creating a timeline. The event list is a very detailed timeline with copious amounts of information, which allows you to see the sequence of events of the incident you are investigating.</p>
+    <div><p class="normal"><strong class="keyWord">Note</strong></p>
+      <p class="normal">As you explore the features of a new tool, remember to validate the tool against a known dataset. We will use a forensic image offered by Digital Corpora for this lab. You can<a id="_idIndexMarker460"/> visit <a href="https://digitalcorpora.org/">https://digitalcorpora.org/</a> and go to the 2008 M–57 Jean scenario for more information.</p>
+    </div>
+    <p class="normal">In this scenario, you are investigating a data leak. Someone has posted a spreadsheet containing an organization’s confidential information onto a competitor’s website, and the spreadsheet came from the computer of the CFO, Jean. During her interview, Jean stated that she emailed the spreadsheet to the president, Allison, at her request. The spreadsheet is <code class="inlineCode">m57plan.xls</code> and can be found on the desktop of Jean’s account. It has an MD5 hash value of <code class="inlineCode">e23a4eb7f2562f53e88c9dca8b26a153</code> and a modified time of <strong class="keyWord">2008-JUL-20 01:28:03 GMT</strong> that also corresponds to Jean’s statement regarding when she emailed the spreadsheet.</p>
+    <p class="normal">The filename and time frame give us a starting point for conducting the timeline analysis. When you are in the user environment of X-Ways Forensics, select the icon for the event list:</p>
+    <figure class="mediaobject"><img src="img/B18329_05_01.png" alt=""/></figure>
+    <p class="packt_figref">Figure 5.1: X-Ways</p>
+    <p class="normal">As you can see in the preceding screenshot, when you select the <strong class="screenText">Calendar</strong> option, it will show you the calendar interface so that you can drill down to a specific day. If I do not filter any of the results on the event list, I have over one million entries that I will need to parse through. My preferred workflow method is to start big and then filter the results to meet the needs of my investigation.</p>
+    <p class="normal">When I filter down to July 20, I have reduced my results to a much more manageable 4,052 events.</p>
+    <p class="normal">Once we filter the results, let’s search for the filename and see what activity has occurred. One of<a id="_idIndexMarker461"/> the first results shows that at 01:27:42, the system created a link file for the spreadsheet. In the following screenshot, you can see the user activity from 01:27 to 01:28. A pre-fetch file (<code class="inlineCode">EXCEL.EXE-1C75F8D6.pf</code>) was created for Excel at 01:27, which shows the user starting the Excel program and then opening the spreadsheet, which corresponds to the creation of a link file:</p>
+    <figure class="mediaobject"><img src="img/B18329_05_02.png" alt=""/></figure>
+    <p class="packt_figref">Figure 5.2: Filter results</p>
+    <p class="normal">When you view the event list, you can see where the forensic tool is getting the information that is being displayed. The creation of the pre-fetch file starts with a change in the NT <code class="inlineCode">user.dat</code> file. The tool follows along from gathering information from the internal file metadata to the operating system artifact. We can follow along and observe what occurs at the user and system levels as the user activity is being recorded.</p>
+    <p class="normal">If you look at timestamp 01:28:00, you can see that Jean sent a message out. In the <strong class="screenText">Name</strong> column, we can see the subject of the email, and when we double-click on it, we can view the <a id="_idIndexMarker462"/>email itself:</p>
+    <figure class="mediaobject"><img src="img/B18329_05_03.png" alt=""/></figure>
+    <p class="packt_figref">Figure 5.3: Jean’s email</p>
+    <p class="normal">We can see that Jean has emailed what appears to be <code class="inlineCode">allison@M57.biz</code>, but, in reality, it is going to <code class="inlineCode">tuckgorge@gmail.com</code>. We can then filter by file type, in this case, the <code class="inlineCode">.eml</code> files, and you can see the results as follows:</p>
+    <figure class="mediaobject"><img src="img/B18329_05_04.png" alt="Graphical user interface, text, application, email  Description automatically generated"/></figure>
+    <p class="packt_figref">Figure 5.4: Jean’s email header</p>
+    <p class="normal">When you look <a id="_idIndexMarker463"/>at the <strong class="screenText">Sender</strong> and <strong class="screenText">Recipients</strong> columns, and when the data is sorted chronologically, you can get a good idea about the email communication between the attacker and Jean. It appears they have compromised Allison’s account, as we can see the name “Alex” and the email account <code class="inlineCode">tuckgorge@gmail.com</code> associated with the account.</p>
+    <p class="normal">Using the event list feature of X-Ways Forensics allows us to pinpoint when the file was compromised and from what vector. Now we can direct our investigation to Allison’s computer to determine whether the attacker compromised her system. Based on these initial results, I believe the attacker targeted Jean in a phishing attack.</p>
+    <p class="normal">What I like about X-Ways Forensics is its ability to gather the dates and times from traditional sources and combine them with the actual artifacts, in this case, the emails. This gives you another level of granularity and context for your investigation.</p>
+    <p class="normal">The X-Ways Forensics documentation lists the following as sources of information for the event list feature:</p>
+    <figure class="mediaobject"><img src="img/B18329_05_05.png" alt="Table  Description automatically generated"/></figure>
+    <p class="normal">As you can see, this <a id="_idIndexMarker464"/>shows a very diverse list of sources. However, when used for analysis, it can give the investigator the confidence to rely on the date timestamps they are reporting in their investigation.</p>
+    <p class="normal">I have found that forensic suites also include timeline analysis with their products. I have discussed X-Ways Forensics and its ability to create a timeline for analysis with its event list feature. I have included a list of some additional forensic suites that you may use to analyze timeline data. The following list is not inclusive of all the forensic suites that are available:</p>
+    <ul>
+      <li class="bulletList">Belkasoft Evidence Center: <a href="https://belkasoft.com/ec">belkasoft.com/ec</a></li>
+      <li class="bulletList">Autopsy: <a href="https://www.sleuthkit.org/autopsy">www.sleuthkit.org/autopsy</a></li>
+      <li class="bulletList">Recon Lab: <a href="https://sumuri.com/software/recon-lab">sumuri.com/software/recon-lab</a></li>
+      <li class="bulletList">PALADIN: <a href="https://sumuri.com/software/paladin">sumuri.com/software/paladin</a></li>
+    </ul>
+    <p class="normal">X-Ways is not the only tool you can use to create timelines; there are also several open-source tools that you can utilize. One of the most common is <strong class="keyWord">Plaso/log2timeline</strong>, which we will discuss next.</p>
+    <h3 id="_idParaDest-106" class="heading-3">Plaso (Plaso Langar Að Safna Öllu)</h3>
+    <p class="normal">Plaso (Plaso<a id="_idIndexMarker465"/> Langar Að Safna Öllu) is a Python backend <a id="_idIndexMarker466"/>and framework for the <code class="inlineCode">log2timeline</code> tool. <code class="inlineCode">log2timeline</code> is a forensic tool that pulls out timestamps from a system and creates a database of all the events, also known as a super timeline.</p>
+    <div><p class="normal"><strong class="keyWord">Note</strong></p>
+      <p class="normal">You can <a id="_idIndexMarker467"/>download Plaso at <a href="https://github.com/log2timeline/plaso">https://github.com/log2timeline/plaso</a>.</p>
+    </div>
+    <p class="normal">Plaso will work on most operating systems and was initially designed to replace the Perl version of <code class="inlineCode">log2timeline</code>. However, the development has now shifted to modules, and they have created several CLI tools supported by the Plaso backend.</p>
+    <p class="normal">The tools supported by Plaso are activated<a id="_idIndexMarker468"/> by the <strong class="keyWord">command-line interface</strong> (<strong class="keyWord">CLI</strong>). While the CLI can intimidate the user, if you take your time and proceed slowly, you will take the mystique out of the CLI. Many open-source tools use the CLI instead <a id="_idIndexMarker469"/>of the <strong class="keyWord">graphical user interface</strong> (<strong class="keyWord">GUI</strong>). The very core of the CLI consists of two parts: the executable and the modifiers. Once you learn the specific modifiers for the CLI command, you will see that it all falls into place.</p>
+    <p class="normal">Let’s talk about the tools included with Plaso:</p>
+    <ul>
+      <li class="bulletList"><code class="inlineCode">image_export</code></li>
+      <li class="bulletList"><code class="inlineCode">log2timeline</code></li>
+      <li class="bulletList"><code class="inlineCode">pinfo</code></li>
+      <li class="bulletList"><code class="inlineCode">psort</code></li>
+      <li class="bulletList"><code class="inlineCode">psteal</code></li>
+    </ul>
+    <h4 class="heading-4">image_export</h4>
+    <p class="normal"><code class="inlineCode">image_export</code> will <a id="_idIndexMarker470"/>export file <a id="_idIndexMarker471"/>content from a device, media image, or forensic image. There are several parameters that you can use to define the information you wish to extract.</p>
+    <p class="normal">In the Windows version of the executable, the executable will end with <code class="inlineCode">.exe</code>. With macOS, you may see it end in <code class="inlineCode">.sh</code>.</p>
+    <p class="normal">Using <code class="inlineCode">–h</code> or <code class="inlineCode">--help</code> will give you the full list of parameters:</p>
+    <figure class="mediaobject"><img src="img/B18329_05_06.png" alt=""/></figure>
+    <p class="packt_figref">Figure 5.5: image_export</p>
+    <p class="normal">Further down the screen, you will see detailed explanations for the modifiers. Note that I will only cover the most used options; there is additional documentation that we will not discuss here:</p>
+    <ul>
+      <li class="bulletList"><code class="inlineCode">--names NAMES</code>: The filter on filenames. This option accepts a comma-separated <a id="_idIndexMarker472"/>string<a id="_idIndexMarker473"/> denoting all filenames, for example, <code class="inlineCode">x NTUSER.DAT,UsrClass.dat</code>.</li>
+      <li class="bulletList"><code class="inlineCode">-w PATH</code>, <code class="inlineCode">--write PATH</code>: The directory in which extracted files should be stored.</li>
+      <li class="bulletList"><code class="inlineCode">--data PATH</code>: The path to a directory containing the data files.</li>
+      <li class="bulletList"><code class="inlineCode">-x EXTENSIONS</code>, <code class="inlineCode">--extensions EXTENSIONS</code>: The filter on filename extensions. This option accepts multiple comma-separated values, for example, <code class="inlineCode">csv</code>, <code class="inlineCode">docx</code>, and <code class="inlineCode">pst</code>.</li>
+    </ul>
+    <p class="normal">If you use the following command, it will export the <code class="inlineCode">.xls</code> file to the <code class="inlineCode">files</code> folder:</p>
+    <pre class="programlisting con"><code class="hljs-con">image_export --names 'm57plan.xls' C:\tools\plaso\image\jean.001 -w C:\tools\plaso\export\files 
+</code></pre>
+    <p class="normal">You can see the breakdown of the preceding command as follows:</p>
+    <figure class="mediaobject"><img src="img/B18329_05_07.png" alt=""/></figure>
+    <p class="packt_figref">Figure 5.6: CLI map</p>
+    <p class="normal">Here, with the <code class="inlineCode">image_export</code> command, we are using the <code class="inlineCode">names</code> modifier to look for a specific file. In this case, it is <code class="inlineCode">M57plan.xls</code>. </p>
+    <p class="normal">Now, you can tell the executable where to search; in this command, we are searching in the forensic image, <code class="inlineCode">jean.001</code> (make sure that you include the full path to where the forensic image is located). Next, you can indicate where you want the exported files to be sent. The <code class="inlineCode">-w</code> modifier will specify the write location.</p>
+    <p class="normal">You will find <a id="_idIndexMarker474"/>that the modifiers have<a id="_idIndexMarker475"/> some commonality with the commands within the Plaso framework.</p>
+    <h4 class="heading-4">log2timeline</h4>
+    <p class="normal"><code class="inlineCode">log2timeline</code> is a CLI <a id="_idIndexMarker476"/>tool that is<a id="_idIndexMarker477"/> designed to extract chronological-based events from files, directories, forensic images, and devices. It will create a database file (<code class="inlineCode">.plaso</code>) that can then be analyzed by a variety of tools.</p>
+    <p class="normal">As you can see in the following screenshot, the <code class="inlineCode">-h</code> modifier (help) will display the options for the command. As before, there are detailed explanations not displayed that will give you additional context for these commands. You should be able to recognize some of them from the previous command we looked at:</p>
+    <figure class="mediaobject"><img src="img/B18329_05_08.png" alt=""/></figure>
+    <p class="packt_figref">Figure 5.7: log2timeline</p>
+    <p class="normal">Try using<a id="_idIndexMarker478"/> the <code class="inlineCode">info</code> modifier, as follows:</p>
+    <pre class="programlisting con"><code class="hljs-con">c:\tools\plaso&gt;log2timeline.exe --info 
+</code></pre>
+    <p class="normal">You will get a list of all of the supported plugins, parsers, and output modules:</p>
+    <figure class="mediaobject"><img src="img/B18329_05_09.png" alt=""/></figure>
+    <p class="packt_figref">Figure 5.8: Results of the info modifier</p>
+    <p class="normal">From the <a id="_idIndexMarker479"/>preceding output, you can <a id="_idIndexMarker480"/>see that some of the presets include collecting artifacts from many filesystems.</p>
+    <p class="normal">At a very basic level, you can use the following command structure:</p>
+    <pre class="programlisting con"><code class="hljs-con">log2timeline OUTPUT INPUT
+</code></pre>
+    <p class="normal">One idiosyncrasy of <code class="inlineCode">log2timeline</code> is that the output file is the first modifier to the executable and then you specify the input:</p>
+    <pre class="programlisting con"><code class="hljs-con">log2timeline C:\tools\plaso\export\files\jean.plaso C:\tools\plaso\image\jean.001
+</code></pre>
+    <p class="normal">When the command executes, you should see the following output on the screen:</p>
+    <figure class="mediaobject"><img src="img/B18329_05_10.png" alt=""/></figure>
+    <p class="packt_figref">Figure 5.9: Output</p>
+    <p class="normal">As the <a id="_idIndexMarker481"/>command executes, it<a id="_idIndexMarker482"/> locates the data folder that contains the dependencies for the executable, and then it searches for the files that contain the information about the artifacts that may be stored within the system. This is a default folder and is installed when you install <code class="inlineCode">plaso</code>.</p>
+    <p class="normal">We now have a <code class="inlineCode">.plaso</code> file that we can find in the <code class="inlineCode">files</code> folder. In some cases, you might not want to create the database file with every option, that is, the kitchen sink. Rather, you may wish to do a targeted examination of the timeline, in which case you would need to employ filters. Using the <code class="inlineCode">-f</code> modifier will allow you to do that.</p>
+    <div><p class="normal"><strong class="keyWord">Note</strong></p>
+      <p class="normal">If you want to download <a id="_idIndexMarker483"/>some premade filters, you can do so at <a href="https://github.com/mark-hallman/plaso_filters">https://github.com/mark-hallman/plaso_filters</a>.</p>
+    </div>
+    <p class="normal">I downloaded the premade filters and created a folder, named <code class="inlineCode">filter</code>, within the path of the <code class="inlineCode">plaso</code> installation. As you see from the following screenshot, I have installed <code class="inlineCode">plaso</code> in a folder called <code class="inlineCode">tools</code> at the root of my <code class="inlineCode">C</code> drive:</p>
+    <pre class="programlisting con"><code class="hljs-con">log2timeline -f filter_windows.txt C:\tools\plaso\export\files\jeanfilter.plaso C:\tools\plaso\image\jean.001
+</code></pre>
+    <p class="normal">And, as you can see in the following screenshot, the tool was able to locate my filter within the <code class="inlineCode">artifacts</code> folder and created a new Plaso database file:</p>
+    <figure class="mediaobject"><img src="img/B18329_05_11.png" alt=""/></figure>
+    <p class="packt_figref">Figure 5.10: Filter</p>
+    <p class="normal">So far, we <a id="_idIndexMarker484"/>have covered several<a id="_idIndexMarker485"/> commands; however, we still have more to cover. The next command in the framework is <code class="inlineCode">pinfo</code>.</p>
+    <h4 class="heading-4">pinfo</h4>
+    <p class="normal"><code class="inlineCode">pinfo</code> is a <a id="_idIndexMarker486"/>command line that is used to display<a id="_idIndexMarker487"/> information about the Plaso database file (<code class="inlineCode">.plaso</code>).</p>
+    <p class="normal">The <code class="inlineCode">plaso</code> database file will contain the following information:</p>
+    <ul>
+      <li class="bulletList">When the user executed the tool</li>
+      <li class="bulletList">What options were used when the tool was run</li>
+      <li class="bulletList">What information was obtained by the tool during the pre-processing stage</li>
+      <li class="bulletList">The database metadata</li>
+      <li class="bulletList">What was parsed and the parameters that were used</li>
+      <li class="bulletList">The number of events extracted</li>
+      <li class="bulletList">Tagged events</li>
+    </ul>
+    <p class="normal">To learn more about the preceding options, execute the command with the <code class="inlineCode">-h</code> modifier. While the options are similar, you will have a far smaller selection than with the other tools, as shown in the following screenshot:</p>
+    <figure class="mediaobject"><img src="img/B18329_05_12.png" alt=""/></figure>
+    <p class="packt_figref">Figure 5.11: pinfo</p>
+    <p class="normal">When you <a id="_idIndexMarker488"/>use the <code class="inlineCode">pinfo</code> command in its simplest form, you will get the following results:</p>
+    <pre class="programlisting con"><code class="hljs-con">---------------------------------------------------------------
+*********************** Plaso Storage Information ***********************
+Filename: jeanfilter.plaso 
+Format version: 20190309 
+Serialization format: JSON 
+---------------------------------------------------------------
+*********************************** Sessions *****************************
+276a7520-999e-428b-a6b4-11fcf9cf987d : 2019-07-19T22:19:36.092703Z 
+---------------------------------------------------------------
+</code></pre>
+    <p class="normal">As you can see in the preceding output, you get the storage information about the file and how many sessions were used to create it.</p>
+    <p class="normal">You can send the results to the standard output, that is, the monitor, or you can use the <code class="inlineCode">-w</code> modifier to create a text file with the results. The use of the additional tools on the <code class="inlineCode">.plaso</code> file will create the GUID and the date timestamp of when the analysis was conducted. </p>
+    <p class="normal">The tool can also provide system information about the source system you are now examining:</p>
+    <pre class="programlisting con"><code class="hljs-con">--------------------------------------------------------------------------
+******* System configuration: 276a7520-999e-428b-a6b4-11fcf9cf987d *******
+Hostname: N/A 
+Operating system: Windows NT 
+Operating system product: Microsoft Windows XP 
+Operating system version: 5.1 
+Code page : cp1252 
+Keyboard layout: N/A 
+Time zone: GMT 
+--------------------------------------------------------------------------
+</code></pre>
+    <p class="normal">After <a id="_idIndexMarker489"/>verifying the information in the database<a id="_idIndexMarker490"/> file, you can move on to the next command.</p>
+    <h4 class="heading-4">psort</h4>
+    <p class="normal"><code class="inlineCode">psort</code> is a CLI <a id="_idIndexMarker491"/>tool that allows you to filter, sort, and <a id="_idIndexMarker492"/>conduct analysis on the contents of the <code class="inlineCode">plaso</code> database file. Just like with the previous commands, the <code class="inlineCode">-h</code> modifier will show you all the options for the command. In the following <code class="inlineCode">psort</code> screenshot, you can see the available options, and you should be able to recognize the commonality of the options between all of the commands in the <code class="inlineCode">plaso</code> architecture:</p>
+    <figure class="mediaobject"><img src="img/B18329_05_13.png" alt=""/></figure>
+    <p class="packt_figref">Figure 5.12: psort</p>
+    <p class="normal">Let’s <a id="_idIndexMarker493"/>discuss some of the new options:</p>
+    <pre class="programlisting con"><code class="hljs-con">-o FORMAT, --output_format FORMAT, --output-format FORMAT
+</code></pre>
+    <p class="normal">Below is a list of the available output formats:</p>
+    <table id="table001-1" class="table-container">
+      <thead>
+        <tr>
+          <td class="table-cell">
+            <p class="normal"><strong class="keyWord">Name</strong></p>
+          </td>
+          <td class="table-cell">
+            <p class="normal"><strong class="keyWord">Description</strong></p>
+          </td>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="table-cell">
+            <p class="normal"><code class="inlineCode">dynamic</code></p>
+          </td>
+          <td class="table-cell">
+            <p class="normal">Output events to a delimiter (comma by default) separated value output format, that supports a dynamic selection of fields.</p>
+          </td>
+        </tr>
+        <tr>
+          <td class="table-cell">
+            <p class="normal"><code class="inlineCode">elastic</code></p>
+          </td>
+          <td class="table-cell">
+            <p class="normal">Output events to an ElasticSearch database. </p>
+            <p class="normal">Requires elasticsearch-py.</p>
+          </td>
+        </tr>
+        <tr>
+          <td class="table-cell">
+            <p class="normal"><code class="inlineCode">elastic_ts</code></p>
+          </td>
+          <td class="table-cell">
+            <p class="normal">Output events to an ElasticSearch database for use with Timesketch. Requires elasticsearch-py.</p>
+            <p class="normal">Solely intended to be used by the Timesketch backend.</p>
+          </td>
+        </tr>
+        <tr>
+          <td class="table-cell">
+            <p class="normal"><code class="inlineCode">json</code></p>
+          </td>
+          <td class="table-cell">
+            <p class="normal">Output events to JSON format.</p>
+          </td>
+        </tr>
+        <tr>
+          <td class="table-cell">
+            <p class="normal"><code class="inlineCode">json_line</code></p>
+          </td>
+          <td class="table-cell">
+            <p class="normal">Output events to JSON line format.</p>
+          </td>
+        </tr>
+        <tr>
+          <td class="table-cell">
+            <p class="normal"><code class="inlineCode">kml</code></p>
+          </td>
+          <td class="table-cell">
+            <p class="normal">Output events with geography data into a KML format.</p>
+          </td>
+        </tr>
+        <tr>
+          <td class="table-cell">
+            <p class="normal"><code class="inlineCode">l2tcsv</code></p>
+          </td>
+          <td class="table-cell">
+            <p class="normal">Output events to <code class="inlineCode">log2timeline.pl</code> legacy CSV format, with 17 fixed fields.</p>
+          </td>
+        </tr>
+        <tr>
+          <td class="table-cell">
+            <p class="normal"><code class="inlineCode">l2ttln</code></p>
+          </td>
+          <td class="table-cell">
+            <p class="normal">Output events to <code class="inlineCode">log2timeline.pl</code> extended TLN format, with 7 fixed fields.</p>
+          </td>
+        </tr>
+        <tr>
+          <td class="table-cell">
+            <p class="normal"><code class="inlineCode">null</code></p>
+          </td>
+          <td class="table-cell">
+            <p class="normal">Do not output events.</p>
+          </td>
+        </tr>
+        <tr>
+          <td class="table-cell">
+            <p class="normal"><code class="inlineCode">rawpy</code></p>
+          </td>
+          <td class="table-cell">
+            <p class="normal">Output events in “raw” (or native) Python format.</p>
+          </td>
+        </tr>
+        <tr>
+          <td class="table-cell">
+            <p class="normal"><code class="inlineCode">tln</code></p>
+          </td>
+          <td class="table-cell">
+            <p class="normal">Output events to TLN format, with 5 fixed fields.</p>
+          </td>
+        </tr>
+        <tr>
+          <td class="table-cell">
+            <p class="normal"><code class="inlineCode">xlsx</code></p>
+          </td>
+          <td class="table-cell">
+            <p class="normal">Output events to an Excel spreadsheet (XLSX).</p>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+    <p class="normal">As you are <a id="_idIndexMarker494"/>processing with <code class="inlineCode">psort</code>, you can<a id="_idIndexMarker495"/> export your findings outside of the <code class="inlineCode">plaso</code> database. There are a wide variety of options that you can use to export the data for analysis. One of the more common formats for exporting is <code class="inlineCode">l2tcsv</code>, which is the legacy format for <code class="inlineCode">log2timeline</code> and is a <code class="inlineCode">.csv</code> worksheet. </p>
+    <p class="normal">A potential issue you may run into when creating the <code class="inlineCode">.csv</code> worksheet is that if the file you create is too large, some tools may not analyze it, nor will you be able to open it with your favorite spreadsheet program.</p>
+    <p class="normal"><code class="inlineCode">--analysis list</code>: <code class="inlineCode">psort</code> comes with analysis plugins installed by default (you can still create your own custom plugins) to allow you to go through the database file and extract and analyze the contents. </p>
+    <p class="normal">You can use the <code class="inlineCode">--analysis</code> <code class="inlineCode">list</code> modifier to view the complete list of plugins:</p>
+    <figure class="mediaobject"><img src="img/B18329_05_14.png" alt=""/></figure>
+    <p class="packt_figref">Figure 5.13: List of analysis plugins</p>
+    <p class="normal">If we run the<a id="_idIndexMarker496"/> command, it will go through <a id="_idIndexMarker497"/>the <code class="inlineCode">plaso</code> database file, tagging the specific events that have been identified in the <code class="inlineCode">tag_windows.txt</code> file (which is part of the default installation and can be found in the <code class="inlineCode">data</code> directory):</p>
+    <pre class="programlisting con"><code class="hljs-con">psort -o null --analysis tagging --tagging-file tag_windows.txt c:/tools/plaso/export/files/jean.plaso
+</code></pre>
+    <p class="normal">On completion of the process, it will show you how many tags were applied to the database:</p>
+    <pre class="programlisting con"><code class="hljs-con">************************** Analysis report: 0 **************************
+String: Report generated from tagging 
+Generated on:2019-07-20T20:04:46.000000Z 
+Report text: Tagging plugin produced 9754 tags
+---------------------------------------------------------------
+</code></pre>
+    <p class="normal">Additionally, you can filter out extraneous data using the <code class="inlineCode">--slice</code> modifier. </p>
+    <div><p class="normal"><strong class="keyWord">Note</strong></p>
+      <p class="normal">5 minutes is the default value. If you want a longer or shorter time slice, you can add the amount after <code class="inlineCode">DATE TIME</code> with <code class="inlineCode">--slice_size &lt;VALUE&gt;</code>.</p>
+    </div>
+    <p class="normal">If you find the <code class="inlineCode">GET</code> event, you may want to place that event into context by observing what occurred before and afterward:</p>
+    <pre class="programlisting con"><code class="hljs-con">psort -q --slice '2008-07-20 01:26:17' c:/tools/plaso/export/files/jean.plaso -w c:/tools/plaso/export/files/jeansliceoutput.csv
+</code></pre>
+    <p class="normal">The command will create a <code class="inlineCode">csv</code> file, which contains events 5 minutes before and 5 minutes <a id="_idIndexMarker498"/>after the timestamp placed in <a id="_idIndexMarker499"/>the CLI. </p>
+    <p class="normal">The final tool in the framework is <code class="inlineCode">psteal</code>, which we will discuss next.</p>
+    <h4 class="heading-4">psteal</h4>
+    <p class="normal"><code class="inlineCode">psteal</code> is the<a id="_idIndexMarker500"/> final CLI command in <a id="_idIndexMarker501"/>the plaso framework. It combines the <code class="inlineCode">log2timeline</code> and <code class="inlineCode">psort</code> commands to extract and process events in a single step. It is very much the kitchen sink approach, otherwise known as “I want it ALLLLLL”, and it has a limited selection of modifiers when compared to the other CLI commands within the framework.</p>
+    <p class="normal">Once again, <code class="inlineCode">-h</code> will provide you with a list of options for the command, which are displayed in the following screenshot:</p>
+    <figure class="mediaobject"><img src="img/B18329_05_15.png" alt=""/></figure>
+    <p class="packt_figref">Figure 5.14: psteal</p>
+    <p class="normal">At a minimum, specify the source and the output. The process will create the plaso database file and place it in the root of the plaso installation. This location allows you to perform additional tagging, filtering, or analysis after the command completes. The naming convention for the database file created is <code class="inlineCode">&lt;timestamp&gt;-&lt;source&gt;.plaso</code>. </p>
+    <p class="normal">Here’s the command. It creates a <code class="inlineCode">.csv</code> file that is almost 1 GB in size. However, if I change the<a id="_idIndexMarker502"/> output to <code class="inlineCode">.xlsx</code>, it reduces the <a id="_idIndexMarker503"/>size to 35 MB. So, keep in mind that you are processing and analyzing your datasets:</p>
+    <pre class="programlisting con"><code class="hljs-con">psteal --source C:/tools/plaso/image/jean.001 -o l2tcsv -w c:/tools/plaso/export/files/jean.csv
+</code></pre>
+    <p class="normal">I am using a relatively small forensic image of a 20 GB hard drive. Just imagine if you were using a 500 GB or a 1 TB hard drive and it had been active for an extended period.</p>
+    <p class="normal">Now that we have created our database file and have exported the datasets we find relevant to the investigation, what do we do now? It is time to analyze the datasets to find the evidence that will either prove or disprove the allegation. The tools you use for analysis can simply be the spreadsheet reader of your favorite Office suite or a commercial open-source tool designed for that specific purpose.</p>
+    <p class="normal">It is not possible to cover all the tool options that are available to an examiner in this book. I will highlight several options that are available and summarize the tools for you. Ultimately, the analysis of the data is where the examiner eyeballs the dataset and reviews the findings. Once again, it comes back to the verification/validation of your forensic tools<a id="_idIndexMarker504"/> to ensure they are providing<a id="_idIndexMarker505"/> accurate results.</p>
+    <p class="normal">Here are a few tools:</p>
+    <ul>
+      <li class="bulletList"><strong class="keyWord">ELK stack</strong>: This can be <a id="_idIndexMarker506"/>found at <a href="https://www.elastic.co">https://www.elastic.co</a>. It is an acronym for three open-source projects: Elasticsearch, Logstash, and Kibana. Elasticsearch is the search and analytical engine. Logstash is the data processor and ingest engine, while Kibana is the visualizer. You have the option to download the three engines and install them in the operating system of your choice. You have options for macOS, Windows, and Linux. There is also the option to pay for the cloud environment if you do not wish to host the systems within your environment.</li>
+      <li class="bulletList"><strong class="keyWord">TimelineMaker Pro</strong>: This <a id="_idIndexMarker507"/>can be found at <a href="https://www.timelinemaker.com">www.timelinemaker.com</a>. It is a commercial product specifically designed for creating timeline charts. With this tool, you can import the CSV files created with the plaso framework.</li>
+      <li class="bulletList"><strong class="keyWord">TimeSketch</strong>: This <a id="_idIndexMarker508"/>can be found at <a href="https://github.com/google/timesketch">https://github.com/google/timesketch</a>. It is an open-source forensic timeline-analysis tool. It is Linux-based. I have installed it in a virtual environment so that I can use it as needed. It can also be worked on collaboratively by different members of your team. You can also import from a variety of plaso framework output options.</li>
+      <li class="bulletList"><strong class="keyWord">Aeon Timeline</strong>: This can <a id="_idIndexMarker509"/>be found at <a href="https://www.aeontimeline.com">www.aeontimeline.com</a>. It is a commercial product specifically designed for creating visual timelines. It will allow you to view relationships among events. It was initially designed for authors, but it can also be used to analyze super timelines. You can import the CSV files created using the plaso framework.</li>
+      <li class="bulletList"><strong class="keyWord">Timeline Explorer</strong>: This can <a id="_idIndexMarker510"/>be found at <a href="https://ericzimmerman.github.io#%252521index.md">ericzimmerman.github.io/#!index.md</a>. Timeline Explorer is an open-source platform created by Eric Zimmerman, who wanted a tool to read MAC time and plaso-generated CSV files without the need to use Microsoft Excel. It is not designed to examine very large CSV files; in fact, Zimmerman recommends explicitly that it is best to open smaller, targeted timelines than one giant one.</li>
+    </ul>
+    <h1 id="_idParaDest-107" class="heading-1">Media analysis</h1>
+    <p class="normal">You can use<a id="_idIndexMarker511"/> timeline analysis on several vectors, such as network analysis, media analysis, software analysis, and hardware analysis. Network analysis is where you analyze log files, trace files, and the communication content between users and their devices. Media analysis is analyzing physical storage devices such as hard drives, SSD drives, thumb drives, or optical storage disks. You will examine the content, allocated space, and slack space. Finally, when performing software analysis, you reverse-engineer malicious code and analyze the protection code for potential exports.</p>
+    <p class="normal">So, let’s look at media analysis. The primary source for your digital investigation will be the forensic images of storage devices such as hard drives, SSDs, USB devices, optical disks, and mobile devices such as smartphones. Depending on your organization, you may be the person responsible for creating the forensic image, or the forensic image may be provided to you from another part of the organization. Remember, the forensic image is a bit-for-bit copy of the source device. In most cases, you do not want to use a backup as the source of your digital forensic investigation because a backup will not contain all of the information on the storage device.</p>
+    <p class="normal">The storage device may contain four different data types that you want to examine:</p>
+    <ul>
+      <li class="bulletList"><strong class="keyWord">Allocated space</strong>: This is the<a id="_idIndexMarker512"/> space on the storage device that a file occupies. The filesystem recognizes the storage space as being used.</li>
+      <li class="bulletList"><strong class="keyWord">Unallocated space</strong>: This is the space on the storage device that is not occupied by a file. The filesystem recognizes the storage space as being available for use.</li>
+      <li class="bulletList"><strong class="keyWord">Slack space</strong>: When the data is stored in a cluster, if the file does not completely fill a cluster, the remaining space not used by the file is referred to as slack space.</li>
+      <li class="bulletList"><strong class="keyWord">Bad blocks/sectors/clusters</strong>: This is the space on the disk that has been marked bad by the filesystem because of a defect. It can also be used by a user to hide data from a casual inspection.</li>
+    </ul>
+    <p class="normal">Brian Carrier describes the progression of media analysis in his paper “Defining Digital Forensic Examination and Analysis Tools” as follows:</p>
+    <ul>
+      <li class="bulletList"><strong class="keyWord">Disk</strong>: Physical <a id="_idIndexMarker513"/>storage devices such as a hard disk drive, SSD, or flash media.</li>
+      <li class="bulletList"><strong class="keyWord">Volume</strong>: A container comprising a single disk or multiple disks. You may find numerous volumes on a single disk or a volume may span across multiple discs. You may see the term “volume” used interchangeably with the term “partition.” Brian Carrier defines a partition as being restricted to a single physical disk, whereas a volume is a collection of one or more partitions.</li>
+      <li class="bulletList"><strong class="keyWord">Filesystem</strong>: This is used within the boundaries of a volume and tracks file allocation and cluster use.</li>
+      <li class="bulletList"><strong class="keyWord">Data unit</strong>: The smallest allocation unit available to the filesystem. In most cases, this will be clusters, or, in a UNIX-based system, it will be blocks.</li>
+      <li class="bulletList"><strong class="keyWord">Metadata</strong>: This is the data about data. This includes the modified, accessed, and created date-time stamps, as well as any other information about the file that the filesystem and some applications track.</li>
+    </ul>
+    <p class="normal">The goal of media analysis in your digital forensic investigation is to find relevant artifacts that will either prove or disprove the allegations you are investigating. In addition, as you conduct the digital forensic investigation, you may find artifacts that will direct <a id="_idIndexMarker514"/>your focus to other locations.</p>
+    <p class="normal">We will now discuss some different analysis techniques that you might use during your digital forensic investigation.</p>
+    <h1 id="_idParaDest-108" class="heading-1">String search</h1>
+    <p class="normal">A search<a id="_idIndexMarker515"/> method<a id="_idIndexMarker516"/> you might use during your digital forensic investigation is a string or byte search. This search technique is utilized when you have a keyword list of specific terms that you wish to search for. Most commercial and open-source forensic tools allow for string searches and will search the allocated, unallocated, and file slack spaces. You can use specific words, symbols, or strings of letters as the search criteria. Generally, you will want to have some predefined keyword lists before you start your digital forensic investigation. </p>
+    <p class="normal">Your keyword lists will fall into one of the following categories:</p>
+    <ul>
+      <li class="bulletList"><strong class="keyWord">Generic keyword list</strong>: This is <a id="_idIndexMarker517"/>a keyword list that you will use in every case. This list can also be further categorized by the subject of the investigation. For example, you may have one keyword list for digital forensic investigations into fraudulent activity and a different keyword list for digital forensic investigations into illicit images.</li>
+      <li class="bulletList"><strong class="keyWord">Case-specific keyword list</strong>: This is a keyword list that you will use for a specific digital forensic investigation. As you prepare to conduct your digital forensic investigation, you will identify keywords based on the participants, locations, and, sometimes, the slang used by the participants. For example, you could have <a id="_idIndexMarker518"/>keywords based on usernames, email addresses, physical addresses, phone numbers, credit card numbers, and more.</li>
+    </ul>
+    <div><p class="normal"><strong class="keyWord">Note</strong></p>
+      <p class="normal">You should avoid keyword terms that are generic or have additional meanings. For example, if you were investigating a homicide, the word “kill” seems to be a valid term to search for. Unfortunately, “kill” is also a term used in the programming language(s) you will find in a computer system. This will leave you with a large number of false positives. Ideally, the goal is to have the keyword list to help filter out non-pertinent data so that you can focus your efforts efficiently.</p>
+    </div>
+    <p class="normal">You may encounter different encoding schemes as you are conducting your searches on forensic images, such as the following:</p>
+    <ul>
+      <li class="bulletList"><strong class="keyWord">American Standard Code for Information Interchange</strong> (<strong class="keyWord">ASCII</strong>) is a character-encoding<a id="_idIndexMarker519"/> scheme based initially on U.S. English <a id="_idIndexMarker520"/>and is limited to 256-character codes. </li>
+      <li class="bulletList"><strong class="keyWord">Unicode</strong> was developed to overcome the limitations of ASCII. Each character has a unique 2-byte value resulting in the ability to define over 65,000 characters.</li>
+    </ul>
+    <p class="normal">While <a id="_idIndexMarker521"/>keyword <a id="_idIndexMarker522"/>searching can be very powerful, there is a downside to this, as it is very literal when searching for content based on the keyword. For example, if you search for a word, it will not find an alternative spelling; that is, if you are searching for <code class="inlineCode">ally</code>, the filter will not find <code class="inlineCode">alley</code>. Luckily, there is an alternative search methodology known as pattern matching/regular expressions.</p>
+    <p class="normal">A regular expression uses character strings to create a search pattern, and it will find all instances that match the pattern. Here are some common symbols and their meanings when used to create a <a id="_idIndexMarker523"/>regular expression:</p>
+    <ul>
+      <li class="bulletList"><strong class="keyWord">The asterisk symbol (</strong><code class="inlineCode">*</code><strong class="keyWord">)</strong>: Match the preceding character(s) for <code class="inlineCode">X</code> amount of times. For example, <code class="inlineCode">ca*t</code> will cause positive hits for <code class="inlineCode">ct</code>, <code class="inlineCode">cat</code>, <code class="inlineCode">caat</code>, and <code class="inlineCode">caaat</code>.</li>
+      <li class="bulletList"><strong class="keyWord">The pound sign (</strong><code class="inlineCode">#</code><strong class="keyWord">)</strong>: This will match a number (0-9).</li>
+      <li class="bulletList"><strong class="keyWord">The backslash (</strong><code class="inlineCode">\</code><strong class="keyWord">)</strong>: The following character will be interpreted literally. <code class="inlineCode">\.</code> will be construed as a period.</li>
+      <li class="bulletList"><strong class="keyWord">Caret (</strong><code class="inlineCode">^</code><strong class="keyWord">)</strong>: Match the start of the text. For example, <code class="inlineCode">^123</code> will cause the positive hits to start with <code class="inlineCode">123</code>.</li>
+      <li class="bulletList"><strong class="keyWord">The dollar sign (</strong><code class="inlineCode">$</code><strong class="keyWord">)</strong>: Match the end of the text. For example, <code class="inlineCode">123$</code> will cause positive hits to end with <code class="inlineCode">123</code>.</li>
+      <li class="bulletList"><strong class="keyWord">Plus symbol (</strong><code class="inlineCode">+</code><strong class="keyWord">)</strong>: Repeat the preceding character(s) for one or more times. For example, <code class="inlineCode">ca+t</code> will cause positive hits for <code class="inlineCode">cat</code>, <code class="inlineCode">caat</code>, and <code class="inlineCode">caaat</code>.</li>
+      <li class="bulletList"><strong class="keyWord">Curly brackets </strong><code class="inlineCode">{…}</code>: Repeat the preceding character(s) for <code class="inlineCode">X</code> times (depending on the value in the bracket).</li>
+      <li class="bulletList"><strong class="keyWord">Brackets </strong><code class="inlineCode">[...]</code>: This will match a single character in the brackets. For example, <code class="inlineCode">[b,c,d]</code> will match on b, c, or d.</li>
+      <li class="bulletList"><strong class="keyWord">Brackets w/ ^ [^...]</strong>: This will match any single character not in the brackets. For example, <code class="inlineCode">[^b,c,d]</code> will match any character other than b, c, or d.</li>
+      <li class="bulletList"><strong class="keyWord">Brackets (range) [..-..]</strong>: This will match any character within the given range. <code class="inlineCode">[0-9]</code> will match any character from 0 to 9.</li>
+      <li class="bulletList"><strong class="keyWord">Dot</strong> (<code class="inlineCode">.</code>): The dot can take the place of any character.</li>
+      <li class="bulletList"><strong class="keyWord">Question mark (</strong><code class="inlineCode">?</code><strong class="keyWord">)</strong>: The preceding character may/may not be present. For example, <code class="inlineCode">.e01?</code> will return <code class="inlineCode">.e0(x)</code> values. <code class="inlineCode">x</code> shows it may find any value after<code class="inlineCode">.e0</code>.</li>
+      <li class="bulletList"><strong class="keyWord">Pipe (</strong><code class="inlineCode">|</code><strong class="keyWord">)</strong>: This <a id="_idIndexMarker524"/>matches any one-character set separated by the pipe (<code class="inlineCode">|</code>) character. For example, <code class="inlineCode">br(ead|ake|east)</code> will return matches for bread or brake or breast. </li>
+    </ul>
+    <p class="normal">The <a id="_idIndexMarker525"/>following <a id="_idIndexMarker526"/>are some common examples of pattern matching that you may find helpful.</p>
+    <p class="normal">To search for an IP address, you can use the following regular expression: </p>
+    <pre class="programlisting con"><code class="hljs-con">\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3} 
+</code></pre>
+    <p class="normal">The <code class="inlineCode">\d</code> specifies that the following will match on a digit (number). The curly brackets, <code class="inlineCode">{1,3}</code>, indicate the number can be from one to three digits. <code class="inlineCode">\.</code> specifies a search for the <code class="inlineCode">.</code> character. The <code class="inlineCode">\d{1,3}</code> pattern then repeats an additional three times until it has the value for an IPv4 address.</p>
+    <p class="normal">To search for a US phone number, you can use the following expression:</p>
+    <pre class="programlisting con"><code class="hljs-con">((\(\d{3}\) ?)|(\d{3}-))?\d{3}-\d{4} 
+</code></pre>
+    <p class="normal">The <code class="inlineCode">\(</code> will match the open bracket. <code class="inlineCode">\d{3}</code> will match on a three-digit number. <code class="inlineCode">\)</code> will match on the closed bracket. This pattern will give you the area code, <code class="inlineCode">(###)</code>, in this format. The remaining regular expression will give you the first three digits, <code class="inlineCode">\d{3}</code>, the dash, <code class="inlineCode">-</code>, and the final four digits, <code class="inlineCode">\d{4}</code>, of the US phone number. If the phone number is not formatted as <code class="inlineCode">(###) ###-####</code> or <code class="inlineCode">###-###-####</code>, you will not get a hit.</p>
+    <p class="normal">Regular expressions are a powerful tool, but they can also be very complicated to craft. I like to use the regular expression library (which can be found at <a href="http://regexlib.com/Default.aspx">http://regexlib.com/Default.aspx</a>) to help me with my regular expression skills. </p>
+    <p class="normal">So, what <a id="_idIndexMarker527"/>happens when the user deletes a file or folder <a id="_idIndexMarker528"/>from the media? Let’s discuss what happens when a file or folder is deleted next. </p>
+    <h1 id="_idParaDest-109" class="heading-1">Recovering deleted data</h1>
+    <p class="normal">When a file is <a id="_idIndexMarker529"/>deleted in the FAT filesystem, the data itself does not get changed. The first character of the directory entry will have it changed to a <code class="inlineCode">xE5</code> and the file allocation table entries are reset to <code class="inlineCode">x00</code>. When the filesystem reads the directory entries, and it encounters the <code class="inlineCode">xE5</code>, it will skip that entry and start reading from the subsequent entries.</p>
+    <p class="normal">To recover deleted files, we need to reverse the process the filesystem used to delete the files. Remember, it has not changed the file contents; they still physically reside in their assigned clusters. We now need to reverse-engineer the deletion and recreate the file entry and the entries in the file allocation table. To do this, we need to find the first cluster of the file, the size of the file, and the size of the clusters in the volume:</p>
+    <figure class="mediaobject"><img src="img/B18329_05_16.png" alt=""/></figure>
+    <p class="packt_figref">Figure 5.15: Deleted entry</p>
+    <p class="normal">In the preceding screenshot, we have a directory entry showing that a file has been deleted. We see the <code class="inlineCode">xE5</code> at the start of the directory entry. (This will require the use of a hex editor to make the changes.) Then, we have to determine the starting cluster, <code class="inlineCode">x00 x08</code> (which is shown as <code class="inlineCode">x08 x00</code>), which is cluster number <code class="inlineCode">8</code>. To determine the file size, look at the last four bytes (remember that the FAT filesystem stores data in little-endian format, which means that the least-significant byte is on the left, so we would read that value as <code class="inlineCode">x00 x00 x00 x27</code>, not as it is displayed, <code class="inlineCode">x27 x00 x00 x00</code>), and when we convert the hexadecimal value to a decimal, we get the value of 39 bytes for the file size.</p>
+    <p class="normal">Now we have to determine how many sectors make up a cluster and what the sector size is. You will need to go to the boot record to get that information. The boot record shows that there are 512 bytes per sector, and there are 8 sectors per cluster, which gives us a cluster size of 4,096 bytes:</p>
+    <figure class="mediaobject"><img src="img/B18329_05_17.png" alt=""/></figure>
+    <p class="packt_figref">Figure 5.16: Boot record</p>
+    <p class="normal">This means <a id="_idIndexMarker530"/>that our file will only occupy a single cluster. We then go to the file allocation table and look at the entry for cluster 8 and see that it is zeroed out:</p>
+    <figure class="mediaobject"><img src="img/B18329_05_18.png" alt=""/></figure>
+    <p class="packt_figref">Figure 5.17: Deleted FAT</p>
+    <p class="normal">To recover the deleted file, perform the following steps:</p>
+    <ol class="numberedList" style="list-style-type: decimal;">
+      <li class="numberedList" value="1">You need to change the entry in the file allocation table from <code class="inlineCode">x0000 x0000</code> to <code class="inlineCode">xFFFF FFF8</code> or <code class="inlineCode">xFFFF FF0F</code>. If this were a larger file, you would need to change the file allocation table entry to point to the next cluster until you reach the cluster that contains the end of the file. Should you find an entry marked as allocated before you reach the end of the file, you may be dealing with a fragmented file. Another possibility is when the clusters were made available for use when the file was deleted, the data from a new file was placed in the available space. This would cause the old data to be overwritten with the data from the new file. </li>
+      <li class="numberedList">The next step is to go back to the directory entry and replace <code class="inlineCode">xE5</code> with another character. When replacing the <code class="inlineCode">xE5</code> character of the filename in the directory entry, be careful not to guess what the character is. If you select an incorrect character, you could change the meaning or create a bias with the new filename, and that would be improper. </li>
+    </ol>
+    <p class="numberedList">I recommend that when you recover a deleted file, you replace that first character with an underscore or a dash so there is no misunderstanding about the filename.</p>
+    <p class="normal">When recovering a file with a long filename, it is important to relink the long filename to the short filename. This is because when the additional directories are created to accommodate the long filename, the system creates a checksum based on the data of the short filename. When you changed the <code class="inlineCode">xE5</code> value on the short filename entry, you also want to use the same replacement character for the subsequent <code class="inlineCode">xE5</code> entries for the long filename directory entries. The reason for linking the long filename to the short filename is that <a id="_idIndexMarker531"/>the short filename directory entry contains information such as the date and times, the starting cluster, and the file size.</p>
+    <p class="normal">As we discussed in <em class="chapterRef">Chapter 4</em>, <em class="italic">Computer Systems</em><em class="chapterRef">,</em> when a file/directory is created on an NTFS volume, the system creates an entry in the <code class="inlineCode">$MFT</code> file. The MFT record will contain the metadata about the file/directory; if the contents of the file are non-resident, then the <code class="inlineCode">$Bitmap</code> file will be updated to show the clusters occupied by the file are allocated.</p>
+    <p class="normal">When a file/directory is deleted, then the sequence count in the MFT file record’s header is incremented by one digit. The allocation status for the record will change from allocated to unallocated. If the file data is non-resident, the system will update the <code class="inlineCode">$Bitmap</code> file to show the clusters occupied by the file are now unallocated.</p>
+    <p class="normal">Every MFT file entry will start with the file signature of the file, which you can use as a search term to locate MFT file entries in unallocated space. Until the clusters containing the data on the disk are overwritten, we can recover the data.</p>
+    <p class="normal">If the MFT file record is unused, then you can reverse the steps and recover the file. You can decipher the file record, as we discussed in <em class="chapterRef">Chapter 4</em>, <em class="italic">Computer Systems</em>. If the file is resident within the file record, you will recover the data when you retrieve the MFT file record. If the data is non-resident, then you will have to decipher the MFT file record to determine whether the data runs and identify the occupied clusters.</p>
+    <p class="normal">If the system has overwritten the MFT file record, then you cannot recover the deleted MFT file record data or any resident data. You may recover the non-resident data, but that will depend on the size of the files and the fragmentation. Once the MFT record has been <a id="_idIndexMarker532"/>overwritten, you will lose any information regarding the data runs and which clusters contain the data.</p>
+    <h1 id="_idParaDest-110" class="heading-1">Summary</h1>
+    <p class="normal">In this chapter, we discussed, in detail, timeline creation and timeline analysis with open-source and commercial forensic tools. We took an in-depth look at utilizing the commercial forensic tool, X-Ways Forensics, and the open-source plaso framework for <code class="inlineCode">log2timeline</code>. We also touched upon using the kitchen sink approach or a targeted examination of the dataset. Remember, we are not analyzing the contents of files, just the timelines associated with the files and other events within the operating system and filesystems.</p>
+    <p class="normal">In the next chapter, we will discuss the contents of files, specifically, Windows artifacts.</p>
+    <h1 id="_idParaDest-111" class="heading-1">Questions</h1>
+    <ol class="numberedList" style="list-style-type: decimal;">
+      <li class="numberedList" value="1">It is important for the examiner to know the time zone in which the evidence was collected.<ol class="alphabeticList" style="list-style-type: lower-alpha;">
+          <li class="alphabeticList" value="1">True</li>
+          <li class="alphabeticList">False</li>
+        </ol>
+      </li>
+      <li class="numberedList">You can do timeline analysis with X-Way Forensics when you create a(n) ______ list.<ol class="alphabeticList" style="list-style-type: lower-alpha;">
+          <li class="alphabeticList" value="1">Timeline</li>
+          <li class="alphabeticList">Date/time</li>
+          <li class="alphabeticList">Event</li>
+          <li class="alphabeticList">Party</li>
+        </ol>
+      </li>
+      <li class="numberedList">Plaso is a framework for how many tools?<ol class="alphabeticList" style="list-style-type: lower-alpha;">
+          <li class="alphabeticList" value="1">One</li>
+          <li class="alphabeticList">Three</li>
+          <li class="alphabeticList">Five</li>
+          <li class="alphabeticList">Seven</li>
+        </ol>
+      </li>
+      <li class="numberedList"><code class="inlineCode">pinfo</code> will give you what information?<ol class="alphabeticList" style="list-style-type: lower-alpha;">
+          <li class="alphabeticList" value="1">Information about the examiner</li>
+          <li class="alphabeticList">Information about the database file</li>
+          <li class="alphabeticList">Information about the forensic machine</li>
+          <li class="alphabeticList">Information about the suspect</li>
+        </ol>
+      </li>
+      <li class="numberedList"><code class="inlineCode">log2timeline</code> is a ___________ -based tool.<ol class="alphabeticList" style="list-style-type: lower-alpha;">
+          <li class="alphabeticList" value="1">CLI</li>
+          <li class="alphabeticList">GUI</li>
+          <li class="alphabeticList">VFD</li>
+          <li class="alphabeticList">XYZ</li>
+        </ol>
+      </li>
+      <li class="numberedList"><code class="inlineCode">psort</code> will give you the ___________.<ol class="alphabeticList" style="list-style-type: lower-alpha;">
+          <li class="alphabeticList" value="1">Ability to sort</li>
+          <li class="alphabeticList">Ability to filter</li>
+          <li class="alphabeticList">Ability to connect</li>
+          <li class="alphabeticList">All of the above</li>
+        </ol>
+      </li>
+      <li class="numberedList">You can do a timeline analysis with an Excel spreadsheet.<ol class="alphabeticList" style="list-style-type: lower-alpha;">
+          <li class="alphabeticList" value="1">True</li>
+          <li class="alphabeticList">False</li>
+        </ol>
+      </li>
+    </ol>
+    <h1 id="_idParaDest-112" class="heading-1">Further reading</h1>
+    <p class="normal">You can refer to the following links for more information on the topics covered in this chapter:</p>
+    <ul>
+      <li class="bulletList"><em class="italic">T. P. P. A. (2019, July 8). Plaso Documentation. Retrieved from The Plaso Project</em>: <a href="https://buildmedia.readthedocs.org/media/pdf/plaso/latest/plaso.pdf">https://buildmedia.readthedocs.org/media/pdf/plaso/latest/plaso.pdf</a></li>
+      <li class="bulletList"><em class="italic">Carvey, H. (2014). Windows forensic analysis toolkit: Advanced analysis techniques for Windows 8; Waltham, MA: Syngress</em>. Available at: <a href="https://www.abebooks.com/servlet/SearchResults?sts=t&amp;cm_sp=SearchF-_-home-_-Results&amp;an=&amp;tn=Windows+forensic+analysis+toolkit&amp;kn=&amp;isbn= ">https://www.abebooks.com/servlet/SearchResults?sts=t&amp;cm_sp=SearchF-_-home-_-Results&amp;an=&amp;tn=Windows+forensic+analysis+toolkit&amp;kn=&amp;isbn=</a></li>
+    </ul>
+    <h1 id="_idParaDest-113" class="heading-1">Exercise</h1>
+    <h2 id="_idParaDest-114" class="heading-2">Data set</h2>
+    <p class="normal"><code class="inlineCode">Chapter 5 Emails.xlsx</code></p>
+    <p class="normal"><code class="inlineCode">Chapter 5 Carving.dd</code></p>
+    <h2 id="_idParaDest-115" class="heading-2">Software needed</h2>
+    <p class="normal">Timeline Explorer - <a href="https://ericzimmerman.github.io/#!index.md">https://ericzimmerman.github.io/#!index.md</a> </p>
+    <p class="normal">Microsoft .NET 6 or newer is required. You will get errors without at least .NET 6. When in doubt, install it! Make sure you get the <strong class="keyWord">Desktop</strong> runtime if you plan on running any of the GUI programs.</p>
+    <p class="normal">Autopsy - <a href="https://www.autopsy.com/">https://www.autopsy.com/</a></p>
+    <h2 id="_idParaDest-116" class="heading-2">Email exercise</h2>
+    <p class="normal">An individual outside of m57.biz purchased a laptop from Craigslist. The laptop the individual purchased contained child pornography and they decided to inform the police about it.</p>
+    <p class="normal">Investigators were able to trace the laptop back to m57.biz. When the police contacted the CEO of m57.biz, the CEO reported that the laptop, as well as other items, had been stolen from the m57 inventory.</p>
+    <p class="normal">The m57 CEO gave consent for the police investigators to search m57.biz and image all of the m57.biz computers, company phones, as well as USB drives.</p>
+    <p class="normal">Analyze the emails found in the <code class="inlineCode">Chapter 5 emails.xlsx</code> spreadsheet and identify potential suspects and a timeline of their activity.</p>
+    <h2 id="_idParaDest-117" class="heading-2">Data carving exercise</h2>
+    <ol class="numberedList" style="list-style-type: decimal;">
+      <li class="numberedList" value="1">Load Autopsy and start a new case.</li>
+      <li class="numberedList">Select <strong class="screenText">Disk Image</strong> or <strong class="screenText">VM file</strong> for the data source.</li>
+      <li class="numberedList">Navigate to the folder where you stored the image <code class="inlineCode">Chapter 5 Carving.dd</code>. Select only the following Ingest Modules:<ul>
+          <li class="bulletList">PhotoRec Carver Embedded File Extractor</li>
+        </ul>
+      </li>
+      <li class="numberedList">From the drop-down menu, select <strong class="screenText">All files</strong>, <strong class="screenText">Directory</strong>, and <strong class="screenText">Unallocated Space</strong>.</li>
+    </ol>
+    <p class="normal">Analyze the results.</p>
+  </div>
+  <div><h1 id="_idParaDest-118" class="heading-1">Join our community on Discord</h1>
+    <p class="normal">Join our community’s Discord space for discussions with the author and other readers:</p>
+    <p class="normal"><a href="https://packt.link/CyberSec">https://packt.link/CyberSec</a></p>
+    <p class="normal"><img src="img/QR_Code3852467292877112093.png" alt=""/></p>
+  </div>
+</body></html>

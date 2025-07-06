@@ -1,0 +1,744 @@
+<html><head></head><body>
+        
+
+                            
+                    <h1 class="header-title">Python Fundamentals</h1>
+                
+            
+            
+                
+<p>We have explored the basic concepts behind Python and fundamental elements used to construct scripts. We will now build a series of scripts throughout this book using the data types and built-in functions that we have discussed in the first chapter. Before we begin developing scripts, let's walk through some additional important features of the Python language, building upon our existing knowledge.</p>
+<p>In this chapter, we will explore more advanced features that we will utilize when building our forensic Python scripts. This includes complex data types and functions, creating our first script, handling errors, using libraries, interacting with the user, and some best practices for development. After completing this chapter, we will be ready to dive into real-world examples featuring the utility of Python in forensic casework.</p>
+<p>This chapter will cover the following topics:</p>
+<ul>
+<li>Advanced features, including iterators and <kbd>datetime</kbd> objects</li>
+<li>Installing and using modules</li>
+<li>Error handling with <kbd>try</kbd>, <kbd>except</kbd>, and <kbd>raise</kbd> statements</li>
+<li>Sanity checking and accessing user-supplied data</li>
+<li>Creating forensic scripts to find USB vendor and product information</li>
+</ul>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Advanced data types and functions</h1>
+                
+            
+            
+                
+<p>This section highlights two common features, iterators and <kbd>datetime</kbd> objects, of Python that we will frequently encounter in forensic scripts. Therefore, we will introduce these objects and functionality in more detail.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Iterators</h1>
+                
+            
+            
+                
+<p>You previously learned about several iterable objects, such as <kbd>lists</kbd>, <kbd>sets</kbd>, and <kbd>tuples</kbd>. In Python, a data type is considered an iterator if an <kbd>__iter__</kbd> method is defined or if elements can be accessed in a sequenced manner. These three data types (that is, <kbd>lists</kbd>, <kbd>sets</kbd>, and <kbd>tuples</kbd>) allow us to iterate through their contents in a simple and efficient manner. For this reason, we often use these data types when iterating through the lines in a file or through file entries within a directory listing, or when trying to identify a file based on a series of file signatures.</p>
+<p>The <kbd>iter</kbd> data type allows us to step through data in a manner that doesn't preserve the initial object. This seems undesirable; however, when working with large sets or on machines with limited resources, it is very useful. This is due to the resource allocation associated with the <kbd>iter</kbd> data type, where only active data is stored in memory. This preserves memory allocation when stepping through every line of a 3 GB file by feeding one line at a time and preventing massive memory consumption while still handling each line in order.</p>
+<p>The code block mentioned here steps through the basic usage of iterables. We use the <kbd>next()</kbd> function on an iterable to retrieve the next element. Once an object is accessed using <kbd>next()</kbd>, it is no longer available in <kbd>iter()</kbd>, as the cursor has moved past the element. If we have reached the end of the iterable object, we will receive <kbd>StopIteration</kbd> for any additional <kbd>next()</kbd> method calls. This exception allows us to gracefully exit loops with an iterator and alerts us to when we are out of content to read from the iterator:</p>
+<pre><strong>&gt;&gt;&gt; y = iter([1, 2, 3])</strong><br/><strong>&gt;&gt;&gt; next(y)</strong><br/><strong>1</strong><br/><strong>&gt;&gt;&gt; next(y)</strong><br/><strong>2</strong><br/><strong>&gt;&gt;&gt; next(y)</strong><br/><strong>3</strong><br/><strong>&gt;&gt;&gt; next(y)</strong><br/><strong>Traceback (most recent call last):</strong><br/><strong> File "&lt;stdin&gt;", line 1, in &lt;module&gt;</strong><br/><strong>StopIteration</strong> </pre>
+<p>In Python 2.7, you can use the <kbd>obj.next()</kbd> method call to get the same output as the preceding example via use of the <kbd>next()</kbd> function. For simplicity and uniformity, Python 3 renamed <kbd>obj.next()</kbd> to <kbd>obj.__next__()</kbd> and encourages the use of the <kbd>next()</kbd> function. With this, it is recommended to use <kbd>next(y)</kbd>, as shown previously, in place of <kbd>y.next()</kbd> or <kbd>y.__next__()</kbd>.</p>
+<p class="mce-root">The <kbd>reversed()</kbd> built-in function can be used to create a reversed iterator. In the following example, we reverse a list and retrieve the following object from the iterator using the <kbd>next()</kbd> function:</p>
+<pre><strong>&gt;&gt;&gt; j = reversed([7, 8, 9])</strong><br/><strong>&gt;&gt;&gt; next(j)</strong><br/><strong>9</strong><br/><strong>&gt;&gt;&gt; next(j)</strong><br/><strong>8</strong><br/><strong>&gt;&gt;&gt; next(j)</strong><br/><strong>7</strong><br/><strong>&gt;&gt;&gt; next(j)</strong><br/><strong>Traceback (most recent call last):</strong><br/><strong>  File "&lt;stdin&gt;", line 1, in &lt;module&gt;</strong><br/><strong>StopIteration</strong> </pre>
+<p>By implementing generators, we can further take advantage of the <kbd>iter</kbd> data type. Generators are a special type of function that produces iterator objects. Generators are similar to functions, as those discussed in <a href="8764f55f-76ef-4890-afbd-2fd1b6d39210.xhtml">Chapter 1</a>, <em>Now for Something Completely Different—</em>though, instead of returning objects, they <kbd>yield</kbd> iterators. Generators are best used with large datasets that would consume vast quantities of memory, similar to the use case of the <kbd>iter</kbd> data type.</p>
+<p>The code block mentioned here shows the implementation of a generator. In the <kbd>file_sigs()</kbd> function, we create a list of tuples stored in the <kbd>sigs</kbd> variable. We then loop through each element in <kbd>sigs</kbd> and yield a <kbd>tuple</kbd> data type. This creates a generator, allowing us to use the <kbd>next()</kbd> function to retrieve each tuple individually and limit the generators' memory impact. See the following code:</p>
+<pre><strong>&gt;&gt;&gt; def file_sigs():</strong><br/><strong>...     sigs = [('jpeg', 'FF D8 FF E0'),</strong><br/><strong>...             ('png', '89 50 4E 47 0D 0A 1A 0A'),</strong><br/><strong>...             ('gif', '47 49 46 38 37 61')]</strong><br/><strong>...     for s in sigs:</strong><br/><strong>...         yield s</strong><br/><br/><strong>&gt;&gt;&gt; fs = file_sigs()</strong><br/><strong>&gt;&gt;&gt; next(fs)</strong><br/><strong>('jpeg', 'FF D8 FF E0')</strong><br/><strong>&gt;&gt;&gt; next(fs)</strong><br/><strong>('png', '89 50 4E 47 0D 0A 1A 0A')</strong><br/><strong>&gt;&gt;&gt; next(fs)</strong><br/><strong>('gif', '47 49 46 38 37 61')</strong></pre>
+<p>You can find additional file signatures at <a href="http://www.garykessler.net/library/file_sigs.html">http://www.garykessler.net/library/file_sigs.html</a>.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">datetime objects</h1>
+                
+            
+            
+                
+<p>Investigators are often asked to determine when a file was deleted, when a text message was read, or the correct order for a sequence of events. Consequently, a great deal of analysis revolves around timestamps and other temporal artifacts. Understanding time can help us piece together the puzzle and further understand the context surrounding an artifact. For this, and many other reasons, let's practice handling timestamps using the <kbd>datetime</kbd> module.</p>
+<p>Python's <kbd>datetime</kbd> module supports the interpretation and formatting of timestamps. This module has many features, most notably getting the current time, determining the change (or delta) between two timestamps, and converting common timestamp formats into a human readable date. The <kbd>datetime.datetime()</kbd> method creates a <kbd>datetime</kbd> object and accepts the year, month, day, and optionally hour, minute, second, millisecond, and time zone arguments. The <kbd>timedelta()</kbd> method shows the difference between two <kbd>datetime</kbd> objects by storing the difference in days, seconds, and microseconds.</p>
+<p>First, we need to import the <kbd>datetime</kbd> library so that we can use functions from the module. We can see the current date with the <kbd>datetime.now()</kbd> method. This creates a <kbd>datetime</kbd> object, which we then manipulate. For instance, let's create a <kbd>timedelta</kbd> object by subtracting two <kbd>datetime</kbd> objects, separated by a few seconds. We can add or subtract the <kbd>timedelta</kbd> object to or from our <kbd>right_now</kbd> variable to generate another <kbd>datetime</kbd> object:</p>
+<pre><strong>&gt;&gt;&gt; import datetime</strong><br/><strong>&gt;&gt;&gt; right_now = datetime.datetime.now()</strong><br/><strong>&gt;&gt;&gt; right_now</strong><br/><strong>datetime.datetime(2018, 6, 30, 7, 48, 31, 576151)</strong><br/><br/><strong>&gt;&gt;&gt; # Subtract time</strong><br/><strong>&gt;&gt;&gt; delta = datetime.datetime.now() - right_now</strong><br/><strong>&gt;&gt;&gt; delta</strong><br/><strong>datetime.timedelta(0, 16, 303831)</strong><br/><br/><strong>&gt;&gt;&gt; # Add datetime to time delta to produce second time</strong><br/><strong>&gt;&gt;&gt; right_now + delta</strong><br/><strong>datetime.datetime(2018, 6, 30, 7, 48, 47, 879982)</strong></pre>
+<p class="mce-root"/>
+<p>The output may vary, as you are running these commands at a different time than when they were for this book.</p>
+<p>Another highly used application of the <kbd>datetime</kbd> module is <kbd>strftime()</kbd>, which allows <kbd>datetime</kbd> objects to be converted into custom-formatted strings. This function takes a string format as its input. This format string is made up of special characters beginning with the percentage sign. The following table illustrates examples of the formatters we can use with the <kbd>strftime()</kbd> function:</p>
+<table border="1" style="border-collapse: collapse;width: 45.6671%">
+<tbody>
+<tr>
+<td style="width: 24%">
+<p class="TableColumnHeadingPACKT"><strong>Description</strong></p>
+</td>
+<td style="width: 19.73%">
+<p class="TableColumnHeadingPACKT"><strong>Formatter</strong></p>
+</td>
+</tr>
+<tr>
+<td style="width: 24%">
+<p class="TableColumnContentPACKT">Year (YYYY)</p>
+</td>
+<td style="width: 19.73%">
+<p class="TableColumnContentPACKT"><kbd>%Y</kbd></p>
+</td>
+</tr>
+<tr>
+<td style="width: 24%">
+<p class="TableColumnContentPACKT">Month (MM)</p>
+</td>
+<td style="width: 19.73%">
+<p class="TableColumnContentPACKT"><kbd>%m</kbd></p>
+</td>
+</tr>
+<tr>
+<td style="width: 24%">
+<p class="TableColumnContentPACKT">Day (DD)</p>
+</td>
+<td style="width: 19.73%">
+<p class="TableColumnContentPACKT"><kbd>%d</kbd></p>
+</td>
+</tr>
+<tr>
+<td style="width: 24%">
+<p class="TableColumnContentPACKT">24 hour (HH)</p>
+</td>
+<td style="width: 19.73%">
+<p class="TableColumnContentPACKT"><kbd>%H</kbd></p>
+</td>
+</tr>
+<tr>
+<td style="width: 24%">
+<p class="TableColumnContentPACKT">12 hour (HH)</p>
+</td>
+<td style="width: 19.73%">
+<p class="TableColumnContentPACKT"><kbd>%I</kbd></p>
+</td>
+</tr>
+<tr>
+<td style="width: 24%">
+<p class="TableColumnContentPACKT">Minute (MM)</p>
+</td>
+<td style="width: 19.73%">
+<p class="TableColumnContentPACKT"><kbd>%M</kbd></p>
+</td>
+</tr>
+<tr>
+<td style="width: 24%">
+<p class="TableColumnContentPACKT">Second (SS)</p>
+</td>
+<td style="width: 19.73%">
+<p class="TableColumnContentPACKT"><kbd>%S</kbd></p>
+</td>
+</tr>
+<tr>
+<td style="width: 24%">
+<p class="TableColumnContentPACKT">Microseconds (SSSSSS)</p>
+</td>
+<td style="width: 19.73%">
+<p class="TableColumnContentPACKT"><kbd>%f</kbd></p>
+</td>
+</tr>
+<tr>
+<td style="width: 24%">
+<p class="TableColumnContentPACKT">Timezone (Z)</p>
+</td>
+<td style="width: 19.73%">
+<p class="TableColumnContentPACKT"><kbd>%z</kbd></p>
+</td>
+</tr>
+<tr>
+<td style="width: 24%">
+<p class="TableColumnContentPACKT">AM/PM</p>
+</td>
+<td style="width: 19.73%">
+<p class="TableColumnContentPACKT"><kbd>%p</kbd></p>
+</td>
+</tr>
+</tbody>
+</table>
+<p>You can find additional timestamp formatting information at <a href="http://strftime.org/">http://strftime.org/</a> or via the official documentation:<a href="https://docs.python.org/3/library/datetime.html#strftime-and-strptime-behavior"> https://docs.python.org/3/library/datetime.html#strftime-and-strptime-behavior</a>.<a href="https://docs.python.org/3/library/datetime.html#strftime-and-strptime-behavior"/></p>
+<p>In addition, the <kbd>strptime()</kbd> function, which we do not showcase here, can be used for the reverse process. The <kbd>strptime()</kbd> function will take a string containing a date and time and convert it into a <kbd>datetime</kbd> object using the formatting string. We can also interpret epoch time (also called Unix or POSIX time), represented as an integer, into a UTC <kbd>datetime</kbd> object:</p>
+<pre><strong>&gt;&gt;&gt; epoch_timestamp = 874281600</strong><br/><strong>&gt;&gt;&gt; datetime_timestamp = datetime.datetime.utcfromtimestamp(epoch_timestamp)</strong></pre>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p class="mceNonEditable"/>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p class="mceNonEditable"/>
+<p class="mce-root"/>
+<p class="mceNonEditable"/>
+<p class="mceNonEditable"/>
+<p class="mceNonEditable"/>
+<p>We can print this new object and it will be automatically converted into a string representing the <kbd>datetime</kbd> object. However, let's pretend that we do not like to separate our date by hyphens. Instead, we can use the <kbd>strftime()</kbd> method to display the date with forward slashes or using any of the defined formatters. Lastly, the <kbd>datetime</kbd> library has a few pre-built formatters such as <kbd>isoformat()</kbd>, which we can use to easily produce a standard timestamp format:</p>
+<pre><strong>&gt;&gt;&gt; from __future__ import print_function</strong><br/><strong>&gt;&gt;&gt; print(datetime_timestamp)</strong><br/><strong>1997-09-15 00:00:00</strong><br/><strong>&gt;&gt;&gt; print(datetime_timestamp.strftime('%m/%d/%Y %H:%M:%S'))</strong><br/><strong>09/15/1997 00:00:00</strong><br/><strong>&gt;&gt;&gt; print(datetime_timestamp.strftime('%A %B %d, %Y at %I:%M:%S %p'))</strong><br/><strong>Monday September 15, 1997 at 12:00:00 AM</strong><br/><strong>&gt;&gt;&gt; print(datetime_timestamp.isoformat())</strong><br/><strong>1997-09-15T00:00:00</strong></pre>
+<p>As a note, we have imported <kbd>print_function</kbd> into our interpreter to allow us to print these date values in both Python 2 and Python 3.</p>
+<p>The <kbd>datetime</kbd> library alleviates a great deal of stress involved in handling date and time values in Python. This module is also well-suited for processing time formats that are often encountered during investigations.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Libraries</h1>
+                
+            
+            
+                
+<p>Libraries, or modules, expedite the development process, making it easier to focus on the intended purpose of our script rather than developing everything from scratch. External libraries can save large amounts of developing time and, if we're being honest, they are often more accurate and efficient than any code we, as developers, can cobble together during investigations. There are two categories of libraries: standard and third-party. Standard libraries are distributed with every installation of Python and carry commonly used code that's supported by the Python Software Foundation. The number and names of the standard libraries vary between Python versions, especially as you move between Python 2 and Python 3. We will do our best to call out when a library is imported or used differently between Python 2 and 3. In the other category, third-party libraries introduce new code, add or improve functionality to the standard Python installation, and allow for the community to contribute modules.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Installing third-party libraries</h1>
+                
+            
+            
+                
+<p>We know that we do not need to install standard modules because they come with Python, but what about third-party modules? The Python Package Index is a great place to start looking for third-party libraries. This can be found at <a href="https://pypi.org/">https://pypi.org/</a>. This service allows tools, such as <kbd>pip</kbd>, to install packages automatically. If an internet connection is not available or the package is not found on PyPi, a <kbd>setup.py</kbd> file can usually be used to install the module manually. The examples of using <kbd>pip</kbd> and <kbd>setup.py</kbd> are shown later. Tools such as <kbd>pip</kbd> are very convenient as they handle the installation of dependencies, check whether items are already installed, and suggest upgrades if an older version is installed. An internet connection is required to check for online resources, such as dependencies and newer versions of a module; however, <kbd>pip</kbd> can also be used to install code on an offline machine.</p>
+<p>These commands are run in the Terminal or Command Prompt, not the Python interpreter. Please note that in the example mentioned below, full paths may be necessary if your Python executable is not included in the current environment's <kbd>PATH</kbd> variable. <kbd>pip</kbd> may need to be run from an elevated console, either using <kbd>sudo</kbd> or an elevated Windows Command Prompt. Full documentation for <kbd>pip</kbd> can be found at <a href="http://pip.pypa.io/en/stable/reference/pip/">http://pip.pypa.io/en/stable/reference/pip/</a>:</p>
+<pre><strong>$ pip install python-registry==1.0.4</strong><br/><strong>Collecting python-registry</strong><br/><strong>Collecting enum34 (from python-registry)</strong><br/><strong>  Using cached https://files.pythonhosted.org/packages/af/42/cb9355df32c69b553e72a2e28daee25d1611d2c0d9c272aa1d34204205b2/enum34-1.1.6-py3-none-any.whl</strong><br/><strong>Installing collected packages: enum34, python-registry</strong><br/><strong>Successfully installed enum34-1.1.6 python-registry-1.0.4</strong><br/><br/><strong>$ pip install yarp==1.0.17</strong><br/><strong>https://github.com/msuhanov/yarp/archive/1.0.17.tar.gz</strong><br/><strong>Collecting https://github.com/msuhanov/yarp/archive/1.0.17.tar.gz</strong><br/><strong>  Downloading https://github.com/msuhanov/yarp/archive/1.0.17.tar.gz</strong><br/><strong>     \ 716kB 12.8MB/s</strong><br/><strong>Building wheels for collected packages: yarp</strong><br/><strong>  Running setup.py bdist_wheel for yarp ... done</strong><br/><strong>  Stored in directory: C:\USERS\...\APPDATA\LOCAL\TEMP\pip-ephem-wheel-cache-78qdzfmy\wheels\........</strong><br/><strong>Successfully built yarp</strong><br/><strong>Installing collected packages: yarp</strong><br/><strong>Successfully installed yarp-1.0.17</strong></pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Libraries in this book</h1>
+                
+            
+            
+                
+<p>In this book, we use many third-party libraries that can be installed with <kbd>pip</kbd> or the <kbd>setup.py</kbd> method. However, not all third-party modules can be installed so easily and sometimes require you to search the internet. As you may have noted in the previous code block, some third-party modules, such as the <kbd>yarp</kbd> module, are hosted on source code management systems such as GitHub. GitHub and other SCM services allow us to access publicly available code and view changes made to it over time. Alternatively, Python code can sometimes be found on a blog or a self-hosted website. In this book, we will provide instructions on how to install any third-party modules that we use.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Python packages</h1>
+                
+            
+            
+                
+<p>A Python package is a directory containing Python modules and a <kbd>__init__.py</kbd> file. When we import a package, the <kbd>__init__.py</kbd> code is executed. This file contains the imports and code that's required to run other modules in the package. These packages can be nested within subdirectories. For example, the <kbd>__init__.py</kbd> file can contain <kbd>import</kbd> statements that bring in each Python file in the directory and all of the available classes or functions when the folder is imported. The following is an example directory structure and below that is the <kbd>__init__.py</kbd> file, which shows us how the two interact when imported. The last line in the following code block imports all specified items in the subdirectory's <kbd>__init__.py</kbd> file.</p>
+<p>The hypothetical folder structure is as follows:</p>
+<pre>| -- packageName/<br/>    | -- __init__.py<br/>    | -- script1.py<br/>    | -- script2.py<br/>    | -- subDirectory/<br/>         | -- __init__.py<br/>         | -- script3.py<br/>         | -- script4.py</pre>
+<p>The top-level <kbd>__init__.py</kbd> file's contents is as follows:</p>
+<pre>from script1 import *<br/>from script2 import function_name<br/>from subDirectory import *</pre>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p>The code mentioned below executes the <kbd>__init__</kbd> script we mentioned previously, and it will import all functions from <kbd>script1.py</kbd>, only <kbd>function_name</kbd> from <kbd>script2.py</kbd>, and any additional specifications from <kbd>subDirectory/__init__.py</kbd>:</p>
+<pre>import packageName  </pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Classes and object-oriented programming</h1>
+                
+            
+            
+                
+<p>Python supports <strong>object-oriented programming</strong> (<strong>OOP</strong>) using the built-in class keyword. Object-oriented programming allows advanced programming techniques and sustainable code that supports better software development. Because OOP is not commonly used in scripting and is above the introductory level, this book will implement OOP and some of its features in later chapters after we master the basic features of Python. What's important to keep in mind is almost everything in Python, including classes, functions, and variables, are objects. Classes are useful in a variety of situations, allowing us to design our own objects to interact with data in a custom manner.</p>
+<p>Let's look at the <kbd>datetime</kbd> module for an example of how we will interact with classes and their methods. This library contains several classes, such as <kbd>datetime</kbd>, <kbd>timedelta</kbd>, and <kbd>tzinfo</kbd>. Each of these classes handles different functionality associated with timestamps. The most commonly used is the <kbd>datetime</kbd> class, which can be confusing as it is a member of the <kbd>datetime</kbd> module. This class is used to represent dates as Python objects. The two other mentioned classes support the <kbd>datetime</kbd> class by allowing dates to be added or subtracted, through the <kbd>timedelta</kbd> class, and time zones represented through the <kbd>tzinfo</kbd> class.</p>
+<p>Focusing on the <kbd>datetime.datetime</kbd> class, we will look at how we can use this object to create multiple instances of dates and extract data from them. To begin, as seen in the following code block, we must import our printing statement and this library to access the <kbd>datetime</kbd> module's classes and methods. Next, we pass arguments to the <kbd>datetime</kbd> class and assign the <kbd>datetime</kbd> object to <kbd>date_1</kbd>. Our <kbd>date_1</kbd> variable contains the value to represent April Fool's Day, 2018. Since we did not specify a time value when initiating the class, the value will reflect midnight, down to the millisecond. As we can see, like functions, classes too can have arguments. Additionally, a class can contain their own functions, commonly called methods. An example of a method is the call to <kbd>now()</kbd>, allowing us to gather the current timestamp for our local machine and store the value as <kbd>date_2</kbd>. These methods allow us to manipulate data that's specific to the defined instance of the class. We can see the contents of our two date objects by printing them in the interactive prompt:</p>
+<pre><strong>&gt;&gt;&gt; from __future__ import print_function</strong><br/><strong>&gt;&gt;&gt; import datetime</strong><br/><strong>&gt;&gt;&gt; date_1 = datetime.datetime(2018,04,01)</strong><br/><strong>&gt;&gt;&gt; date_2 = datetime.datetime.now()</strong><br/><strong>&gt;&gt;&gt; print(date_1, " | ", date_2)</strong><br/><strong>2018-04-01 00:00:00.000  |  2018-04-01 15:56:10.012915</strong> </pre>
+<p>We can access the properties of our date objects by calling specific class attributes. These attributes are usually leveraged by code within the class to process the data, though we can also use these attributes to our advantage. For example, the hour or year attributes allow us to extract the hour or the year from our date objects. Though this may seem simple, it becomes more helpful in other modules when accessing the parsed or extracted data from the class instance:</p>
+<pre><strong>&gt;&gt;&gt; date_2.hour</strong><br/><strong>15</strong><br/><strong>&gt;&gt;&gt; date_1.year</strong><br/><strong>2018</strong></pre>
+<p>As mentioned previously, we can always run the <kbd>dir()</kbd> and <kbd>help()</kbd> functions to provide context on what methods and attributes are available for a given object. If we run the following code, we can see that we can extract the weekday or format the date using the ISO format. These methods provide additional information about our <kbd>datetime</kbd> objects and allow us to take full advantage of what the class object has to offer:</p>
+<pre><strong>&gt;&gt;&gt; dir(date_1)</strong><br/><strong>['__add__', '__class__', '__delattr__', '__doc__', '__eq__', '__format__', '__ge__', '__getattribute__', '__gt__', '__hash__', '__init__', '__le__', '__lt__', '__ne__', '__new__', '__radd__', '__reduce__', '__reduce_ex__', '__repr__', '__rsub__', '__setattr__', '__sizeof__', '__str__', '__sub__', '__subclasshook__', 'astime zone', 'combine', 'ctime', 'date', 'day', 'dst', 'fromordinal', 'fromtimestamp', 'hour', 'isocalendar', 'isoformat', 'isoweekday', 'max', 'microsecond', 'min', 'minute', 'month', 'now', 'replace', 'resolution', 'second', 'strftime', 'strptime', 'time', 'timetuple', 'timetz', 'today', 'toordinal', 'tzinfo', 'tzname', 'utcfromtimestamp', 'utcnow', 'utcoffset', 'utctimetuple', 'weekday', 'year']</strong><br/><strong>&gt;&gt;&gt; date_1.weekday()</strong><br/><strong>4</strong><br/><strong>&gt;&gt;&gt; date_2.isoformat()</strong><br/><strong>2016-04-01T15:56:10.012915</strong></pre>
+<p class="mce-root"/>
+<p class="mce-root"/>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Try and except</h1>
+                
+            
+            
+                
+<p>The try and except syntax is used to catch and safely handle errors that are encountered during runtime. As a new developer, you'll eventually become accustomed to having people telling you that your scripts don't work. In Python, we use the <kbd>try</kbd> and <kbd>except</kbd> blocks to stop preventable errors from crashing our code. Please use the <kbd>try</kbd> and <kbd>except</kbd> blocks in moderation. Don't use them as if they were band-aids to plug up holes in a sinking ship—instead, reconsider your original design and contemplate modifying the logic to better prevent errors. One great way to help with this is to provide instructions for use through command-line arguments, documentation, or otherwise. Using these correctly will enhance the stability of your program. However, improper usage will not add any stability and can mask underlying issues in your code. A good practice is to use as few lines of code within a <kbd>try</kbd> and <kbd>except</kbd> block as possible; this way, the error handling is focused and addressed properly.</p>
+<p>For example, say we have some code that performs a mathematical calculation on two numerical variables. If we anticipate that a user may accidentally enter non-integer or float values, we may want to wrap a <kbd>try</kbd> and <kbd>except</kbd> around the calculation to catch any <kbd>TypeError</kbd> exceptions that may arise. When we catch the error, we can try and convert the variables to integers with the class constructor method before entering the <kbd>try</kbd> and <kbd>except</kbd> block again. If successful, we have saved our code from a preventable crash and maintained specificity to prevent our program from accepting dictionary input, for example. In the case of receiving a dictionary object, we would want the script to crash and present debug information to the user.</p>
+<p>Any line that has a reasonable chance of generating an error should be handled by its own try and except block with a solution for that specific line to ensure that we are properly handling the specific error. There are a few variations of the <kbd>try</kbd> and <kbd>except</kbd> block. In short, there are catch-all, catch-as-variable, and catch-specific types of blocks. The following pseudocode shows examples of how the blocks are formed:</p>
+<pre># Basic try and except -- catch-all<br/>try:<br/>    # Line(s) of code<br/>except:<br/>    # Line(s) of error-handling code <br/><br/># Catch-As-Variable<br/>try:<br/>    # Line(s) of code<br/>except TypeError as e:<br/>    print(e.message)<br/>    # Line(s) of error-handling code<br/><br/># Catch-Specific<br/>try:<br/>    # Line(s) of code<br/>except ValueError:<br/>    # Line(s) of error-handling code for ValueError exceptions </pre>
+<p>The catch-all or bare except will catch any error. <strong>This is often regarded as a poor coding practice as it can lead to undesired program behaviors.</strong> Catching an exception as a variable is useful in a variety of situations. The error message of the exception stored in <kbd>e</kbd> can be printed or written to a log by calling <kbd>e.message</kbd>—this can be particularly useful when an error occurs within a large multi-module program. In addition, the built-in <kbd>isinstance()</kbd> function can be used to determine the type of error.</p>
+<p>For support in both Python 2 and Python 3, please use the <kbd>except Exception as error</kbd> syntax as described previously, as opposed to the <kbd>except Exception, error</kbd> syntax supported by Python 2.</p>
+<p>In the example that we'll look at next, we define two functions: <kbd>give_error()</kbd> and <kbd>error_handler()</kbd>. The <kbd>give_error()</kbd> function tries to append <kbd>5</kbd> to the <kbd>my_list</kbd> variable. This variable has not yet been instantiated and will generate a <kbd>NameError</kbd> instance. In the except clause, we are catching a base <kbd>Exception</kbd> and storing it in the <kbd>e</kbd> variable. We then pass this exception object to our <kbd>error_handler()</kbd> function, which we define later.</p>
+<p>The <kbd>error_handler()</kbd> function takes an exception object as its input. It checks whether the error is an instance of <kbd>NameError</kbd> or <kbd>TypeError</kbd>, or it passes otherwise. Based on the type of exception, it will print out the exception type and error message:</p>
+<pre><strong>&gt;&gt;&gt; from __future__ import print_function</strong><br/><strong>&gt;&gt;&gt; def give_error():</strong><br/><strong>...     try:</strong><br/><strong>...         my_list.append(5)</strong><br/><strong>...     except Exception as e:</strong><br/><strong>...         error_handler(e)</strong><br/><strong>...</strong><br/><strong>&gt;&gt;&gt; def error_handler(error):</strong><br/><strong>...     if isinstance(error, NameError):</strong><br/><strong>...         print('NameError:', error.message)</strong><br/><strong>...     elif isinstance(error, TypeError):</strong><br/><strong>...         print('TypeError:', error.message)</strong><br/><strong>...     else:</strong><br/><strong>...         pass</strong><br/><strong>...</strong><br/><strong>&gt;&gt;&gt; give_error()</strong><br/><strong>NameError: global name 'my_list' is not defined</strong></pre>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p class="mceNonEditable"/>
+<p>Finally, the catch-specific try and except block can be used to catch individual exceptions and has targeted error-handling code for that specific error. A scenario that might require a catch-specific try and except block is working with an object, such as a list or dictionary, which may or may not be instantiated at that point in the program.</p>
+<p>In the following example, the results list does not exist when it is called in the function. Fortunately, we wrapped the append operation in a <kbd>try</kbd> and <kbd>except</kbd> to catch the <kbd>NameError</kbd> exceptions. When we catch this exception, we first instantiate the results list as an empty list and then append the appropriate data before returning the list. Here is the example:</p>
+<pre><strong>&gt;&gt;&gt; def double_data(data):</strong><br/><strong>...     for x in data:</strong><br/><strong>...         double_data = x*2</strong><br/><strong>...         try:</strong><br/><strong>...             # The results list does not exist the first time</strong><br/><strong>...             # we try to append to it</strong><br/><strong>...             results.append(double_data)</strong><br/><strong>...         except NameError:</strong><br/><strong>...             results = []</strong><br/><strong>...             results.append(double_data)</strong><br/><strong>...     return results</strong><br/><strong>...</strong><br/><strong>&gt;&gt;&gt; my_results = doubleData(['a', 'b', 'c'])</strong><br/><strong>&gt;&gt;&gt; print my_results</strong><br/><strong>['aa', 'bb', 'cc']</strong> </pre>
+<p>For (hopefully) obvious reasons, the previous code sample is intended to show the handling of exceptions. We should always be sure to initiate variables before usage. </p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">The raise function</h1>
+                
+            
+            
+                
+<p>As our code can generate its own exceptions during execution, we can also manually trigger an exception to occur with the built-in <kbd>raise()</kbd> function. The <kbd>raise()</kbd> method is often used to raise an exception to the function that called it. While this may seem unnecessary, in larger programs, this can actually be quite useful.</p>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p>Imagine a function, <kbd>function_b()</kbd>, which receives parsed data in the form of a packet from <kbd>function_a()</kbd>. Our <kbd>function_b()</kbd> function does some further processing on the packet and then calls <kbd>function_c()</kbd> to continue to process the packet. If <kbd>function_c()</kbd> raises an exception back to <kbd>function_b()</kbd>, we might design some logic to alert the user of the malformed packet instead of trying to process it and producing faulty results. The following is some pseudocode representing such a scenario:</p>
+<pre>001 import module<br/>002<br/>003 def main():<br/>004     function_a(data)<br/>005<br/>006 def function_a(data_in):<br/>007     try:<br/>008         # parse data into packet<br/>009         function_b(parsed_packet)<br/>010     except Exception as e:<br/>011         if isinstance(e, ErrorA):<br/>012             # Address this type of error<br/>013             function_b(fixed_packet)<br/>014         [etc.]<br/>015 <br/>016 def function_b(packet):<br/>017     # Process packet and store in processed_packet variable<br/>018     try:<br/>019         module.function_c(processed_packet)<br/>020     except SomeError:<br/>021         # Error testing logic<br/>022         if type 1 error:<br/>023             raise ErrorA()<br/>024         elif type 2 error:<br/>025             raise ErrorB()<br/>026         [etc.]<br/>027<br/>028 if __name__ == '__main__':<br/>029     main() </pre>
+<p>In addition, raising custom or built-in exceptions can be useful when dealing with exceptions that Python doesn't recognize on its own. Let's revisit the example of the malformed packet. When the second function received the raised error, we might design some logic that tests some possible sources of error. Depending on those results, we might raise different exceptions back to the calling function, <kbd>function_a()</kbd>.</p>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p>When raising a built-in exception, make sure to use an exception that most closely matches the error. For example, if the error revolves around an index issue, use the <kbd>IndexError</kbd> exception. When raising an exception, we should pass in a string containing a description of the error. This string should be descriptive and help the developer identify the issue, unlike the following string that's used. The adage <em>do what we say, not what we do</em> applies here, as we are simply demonstrating functionality:</p>
+<pre><strong>&gt;&gt;&gt; def raise_error():</strong><br/><strong>...     raise TypeError('This is a TypeError')</strong><br/><strong>...</strong><br/><strong>&gt;&gt;&gt; raise_error()</strong><br/><strong>Traceback (most recent call last):</strong><br/><strong>  File "&lt;stdin&gt;", line 1, in &lt;module&gt;</strong><br/><strong>  File "&lt;stdin&gt;", line 2, in raise_error</strong><br/><strong>TypeError: This is a TypeError</strong> </pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Creating our first script – unix_converter.py</h1>
+                
+            
+            
+                
+<p>Our first script will perform a common timestamp conversion that will prove useful throughout this book. Named <kbd>unix_converter.py</kbd>, this script converts Unix timestamps into a human readable date and time value. Unix timestamps are generally formatted as an integer representing the number of seconds since <kbd>1970-01-01 00:00:00</kbd>.</p>
+<p>On line one, we provide a brief description of our script to the users, allowing them to quickly understand the intentions and uses of the script. Following this are import statements on lines two through four. These imports likely look familiar, providing support (in order) for printing information in Python 2 and 3, interpreting timestamp data, and accessing information about the version of Python used. The <kbd>sys</kbd> library is then used on lines 6 through 12 to check what version of Python was used to call the script to properly handle accepting user input. Python 2 uses the <kbd>raw_input</kbd> function to accept data at the Terminal for the user, while Python 3 implements the <kbd>input</kbd> function. This <kbd>if</kbd>/<kbd>elif</kbd>/<kbd>else</kbd> statement is then concluded with <kbd>NotImplementedError</kbd> for other (future) versions of Python not specified. To make things easier, we built this conditional in a manner that you can easily plug into your code. See the following for the described code:</p>
+<pre>001 """Script to convert Unix timestamps."""<br/>002 from __future__ import print_function<br/>003 import datetime<br/>004 import sys<br/>005<br/>006 if sys.version_info[0] == 3:<br/>007     get_input = input<br/>008 elif sys.version_info[0] == 2:<br/>009     get_input = raw_input<br/>010 else:<br/>011     raise NotImplementedError(<br/>012         "Unsupported version of Python used.")</pre>
+<p>After an omitted license statement (please see the source code for the MIT license information), we provide additional script information for reference by the user and to standardize our script implementation. We then move to the <kbd>main()</kbd> function, which prompts the user for a timestamp to convert and then prints the results of the transformed timestamp from our <kbd>Unix_converter()</kbd> function. To break apart line 49 a little more, let's start at the innermost component, the <kbd>get_input()</kbd> function call. This function is supplied with a string that will be displayed to the user in front of the buffer allowing user input. This <kbd>get_input()</kbd> function returns a string value of the data entered into the console by the user, although we need to convert this value into an integer. We use the <kbd>int</kbd> class to initialize an integer value that we then store in the <kbd>unix_ts</kbd> variable. </p>
+<p>Applying concepts<br/>How could we redesign line 49 to better handle the user input and any exceptions that may arise when accepting this data?<br/>
+Hint<br/> It may take more than one line.</p>
+<pre>042 __authors__ = ["Chapin Bryce", "Preston Miller"]<br/>043 __date__ = 20181027<br/>044 __description__ = """Convert Unix formatted timestamps (seconds<br/>045     since Epoch [1970-01-01 00:00:00]) to human readable."""<br/>046<br/>047<br/>048 def main():<br/>049     unix_ts = int(get_input('Unix timestamp to convert:\n&gt;&gt; '))<br/>050     print(unix_converter(unix_ts))</pre>
+<p>On line 50 in the previous code block, we call the <kbd>unix_converter()</kbd> function, providing the integer input from the user. This function then, as defined on line 53 in the following code, calls the <kbd>datetime</kbd> module and uses the <kbd>utcfromtimestamp()</kbd> method to read the integer as a <kbd>datetime</kbd> object. We are using the <kbd>utcfromtimestamp()</kbd> method here instead of the similarly named <kbd>fromtimestamp()</kbd> method, as the <kbd>utcfromtimestamp()</kbd> version does not apply time zone modifications to the provided data and leaves the timestamp in the original time zone. This returned <kbd>datetime</kbd> object is then converted into a human-readable string using the <kbd>strftime()</kbd> method and the resulting string is returned to the calling function, which ultimately prints this value to the console:</p>
+<pre>053 def unix_converter(timestamp):<br/>054     date_ts = datetime.datetime.utcfromtimestamp(timestamp)<br/>055     return date_ts.strftime('%m/%d/%Y %I:%M:%S %p')p')</pre>
+<p>Our script is concluded with two lines of code, as shown in the following snippet, which will become very frequent in the conclusions of our scripts. The first of these lines, on line 57, is a conditional that's used to check whether the script was executed as a script instead of imported as a module. This allows us to change the functionality of our code based on how it is used. In an example, a console version of our code should, generally, accept command-line arguments while a version used as a library will not need to prompt the user for those details as the calling script may only use a subset of functions within this code. This means that line 58 is the only logic we want to execute if this code is called at the command line, which starts the <kbd>main()</kbd> function. If this script is imported as a module to another script, nothing will occur as we have no further logic to run on import. If it is imported, we will be able to use the functions without worrying about other calls occurring on import:</p>
+<pre>057 if __name__ == '__main__':<br/>058     main()</pre>
+<p>We can now execute this script by calling <kbd>unix_converter.py</kbd> at the command line. This script ran, as shown in the following screenshot, until it required input from the user. Once the value was entered, the script continued execution and printed the converted timestamp to the console:</p>
+<div><img src="img/9a19d5dc-c394-4e33-930c-487382ce4ca0.png" style="width:43.42em;height:6.00em;"/></div>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">User input</h1>
+                
+            
+            
+                
+<p>Allowing user input enhances the dynamic nature of a program. It is a good practice to query the user for file paths or values rather than explicitly writing this information into the code file. Therefore, if the user wants to use the same program on a separate file, they can simply provide a different path, rather than editing the source code. In most programs, users supply input and output locations or identify which optional features or modules should be used at runtime.</p>
+<p>User input can be supplied when the program is first called or during runtime as an argument. For most projects, it is recommended to use command-line arguments because asking the user for input during runtime halts the program execution while waiting for the input.</p>
+<p class="mce-root"/>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Using the raw input method and the system module – user_input.py</h1>
+                
+            
+            
+                
+<p>Both <kbd>input()</kbd> and <kbd>sys.argv</kbd> represent basic methods of obtaining input from users. Be cognizant of the fact that both of these methods return string objects, as previously discussed for the Python 2 <kbd>raw_input()</kbd> and Python 3 <kbd>input()</kbd> functions. We can simply convert the string into the required data type using the appropriate class constructor.</p>
+<p>The <kbd>input()</kbd> function is similar to asking someone a question and waiting for their reply. During this time, the program's execution thread halts until a reply is received. We define a function later that queries the user for a number and returns the squared value. As seen in our first script, when converting Unix timestamps, we have to wait for the user to provide a value before the script can continue. While this wasn't an issue in that very short script, larger code bases or long-running scripts should avoid this delay.</p>
+<p>Arguments supplied at the command line are stored in the <kbd>sys.argv</kbd> list. As with any list, these arguments can be accessed with an index, which starts at zero. The first element is the name of the script, while any element after that represents a space-separated user-supplied input. We need to import the <kbd>sys</kbd> module to access this list.</p>
+<p>On line 39, we copy the arguments from the <kbd>sys.argv</kbd> list into a temporary list variable named <kbd>args</kbd>. This is preferred because, on line 41, we remove the first element after printing it. For the remaining items in the <kbd>args</kbd> list, we use a <kbd>for</kbd> loop and wrap our list with the built-in <kbd>enumerate()</kbd> function. This gives us a counter for our loop, <kbd>i</kbd>, to count the number of loop iterations or arguments used in this case. On lines 43 and 44, we print out each argument and its position and data type. We have the following code:</p>
+<pre>001 """Replicate user input in the console."""<br/>002 from __future__ import print_function<br/>003 import sys<br/>...<br/>033 __authors__ = ["Chapin Bryce", "Preston Miller"]<br/>034 __date__ = 20181027<br/>035 __description__ = "Replicate user input in the console"<br/>036 <br/>037 <br/>038 def main():<br/>039     args = sys.argv<br/>040     print('Script:', args[0])<br/>041     args.pop(0)<br/>042     for i, argument in enumerate(sys.argv):<br/>043         print('Argument {}: {}'.format(i, argument))<br/>044         print('Type: {}'.format(type(argument)))<br/>045 <br/>046 if __name__ == '__main__':<br/>047     main()</pre>
+<p>After saving this file as <kbd>user_input.py</kbd>, we can call it at the command line and pass in our arguments.</p>
+<p>As you can see in the following example, arguments are space delimited, therefore an argument with spaces needs to be wrapped with quotes. It is also clear in the following example that all argument values from <kbd>sys.argv</kbd> are stored as string values. The <kbd>input()</kbd> function also interprets all input as string values:</p>
+<div><img src="img/11dcec26-1ede-4643-9c05-8daa53de02c5.png" style="width:44.08em;height:9.83em;"/></div>
+<p>For smaller programs that do not have many command-line options, the <kbd>sys.argv</kbd> list is a quick and easy way to obtain user input without blocking script execution.</p>
+<p>File paths that contain a space should be double-quoted. For example, <kbd>sys.argv</kbd> would split <kbd>C:/Users/LPF/misc/my books</kbd> into <kbd>C:/Users/LPF/misc/my</kbd> and <kbd>books</kbd>. This would result in an <kbd>IOError</kbd> exception when trying to interact with this directory in a script. Additionally, watch for file paths containing the backslash character <kbd>\</kbd>; we need to escape this character to prevent our command line Terminal and our code from misunderstanding the input. This character is escaped by using a second backslash, like so: <kbd>\\</kbd>.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Understanding Argparse – argument_parser.py</h1>
+                
+            
+            
+                
+<p>Argparse is a module in the standard library and will be used throughout this book as a means of obtaining user input. Argparse can help develop more complicated command-line interfaces. By default, <kbd>argparse</kbd> creates a <kbd>-h</kbd> switch or a help switch to display help and usage information for the scripts. In this section, we will build a sample <kbd>argparse</kbd> implementation that has required, optional, and default arguments.</p>
+<p>We import the <kbd>argparse</kbd> module, following our usual <kbd>print_function</kbd> and script description. We then specify our usual script header details as <kbd>__author__</kbd>, <kbd>__date__</kbd>, and <kbd>__description__</kbd> as we will be using all three in our <kbd>argparse</kbd> implementation. On line 38, we then define an overly simple <kbd>main()</kbd> function to print the parsed argument information, as we don't have any plans for this script other than to show off some neat user argument handling. To accomplish that goal, we first need to initiate our <kbd>ArgumentParser</kbd> class instance, as shown on lines 43 through 48. Notice how we only implement this if the script is called from the command line with the conditional on line 42. </p>
+<p>On line 43, we initialize <kbd>ArgumentParser</kbd> with three optional arguments. The first is the description of the script, which we will read in from the <kbd>__description__</kbd> variable that was previously set. The second argument is the epilog or details provided at the end of the help section. This can be any arbitrary text, as can the description field, though we chose to use this to provide authorship and version information. For getting started, using date values as a version number is helpful for user reference and prevents complications with numbering schemes. The last optional argument is a formatter specification, instructing our argument parser to display any default values set by the script so that the user can know whether options will be set if they do not modify them through an argument. It is highly recommended to include this as a force of habit:</p>
+<pre>001 """Sample argparse example."""<br/>002 from __future__ import print_function<br/>003 import argparse<br/>...<br/>033 __authors__ = ["Chapin Bryce", "Preston Miller"]<br/>034 __date__ = 20181027<br/>035 __description__ = "Argparse command-line parser sample"<br/>036 <br/>037 <br/>038 def main(args):<br/>039     print(args)<br/>040 <br/>041 <br/>042 if __name__ == '__main__':<br/>043     parser = argparse.ArgumentParser(<br/>044         description=__description__, <br/>045         epilog='Built by {}. Version {}'.format(<br/>046         ", ".join(__authors__), __date__),<br/>047         formatter_class=argparse.ArgumentDefaultsHelpFormatter<br/>048     )</pre>
+<p>We can now leverage our newly instantiated parser object to add an argument specification. To start, let's discuss some healthy practices for required and optional arguments. Argparse, by default, uses the presence of one or two dashes prior to an argument name to note whether the argument should be considered optional or not. If the argument specification has a leading dash, it will be considered both optional and non-positional; the inverse, a lack of a leading dash, will instruct argparse to interpret an argument as required and positional.</p>
+<p>Use the following as an example; in this script, the <kbd>timezone</kbd> and <kbd>input_file</kbd> arguments are required and must be provided in that order. Additionally, the arguments for these two items do not require an argument specifier; instead, <kbd>argparse</kbd> will look for an unpaired value to assign to the <kbd>timezone</kbd> argument and then look for a second unpaired value to assign to the <kbd>input_file</kbd> argument. Inversely, the <kbd>--source</kbd>, <kbd>--file-type</kbd>, <kbd>-h</kbd> (or <kbd>--help</kbd>), and <kbd>-l</kbd> (or <kbd>--log</kbd>) arguments are non-positional and can be provided in any order as long as the appropriate value is immediately following, that is, paired with, with the argument specifier. </p>
+<p>To make things a little more complex, but more customizable, we can require non-positional arguments. This has an advantage, as we can now allow the user to enter the arguments in an arbitrary order, though as a disadvantage it requires additional typing for fields that are required for the script to operate. You'll notice in the following code that the <kbd>--source</kbd> argument on the second line does not have square brackets surrounding the value. This is argparse's (subtle) way of indicating that this is a required non-positional argument. It can be tricky for a user to understand this at first glance, though argparse will halt the execution of the script and alert the user if the argument is missing from the provided arguments. You may want to use non-positional required arguments in your scripts or avoid them all together—it is up to you as the developer to find the most comfortable and fitting interface for your users:</p>
+<pre>$ python argument_parser.py --help<br/>usage: argument_parser.py [-h] --source SOURCE [-l LOG]<br/> [--file-type {E01,RAW,Ex01}]<br/> timezone input_file<br/><br/>Argparse command-line parser sample<br/><br/>positional arguments:<br/> timezone timezone to apply<br/> input_file<br/><br/>optional arguments:<br/> -h, --help show this help message and exit<br/> --source SOURCE source information (default: None)<br/> -l LOG, --log LOG Path to log file (default: None)<br/> --file-type {E01,RAW,Ex01}<br/><br/>Built by Chapin Bryce, Preston Miller. Version 20181027</pre>
+<p>Mini-tangent aside, let's start adding arguments to the parser object we initiated. We will start with one of the positional arguments we previously discussed. The <kbd>timezone</kbd> argument is defined using the <kbd>add_argument()</kbd> method, allowing us to provide a string representing the argument name and optional parameters for additional detail. On line 51, we simply offer helpful information to provide context to how this argument should be used:</p>
+<pre>050     # Add positional required arguments<br/>051     parser.add_argument('timezone', help='timezone to apply')</pre>
+<p>The next argument we add, on line 54, is the non-positional required argument previously discussed. Notice how we use the <kbd>required=True</kbd> statement to indicate that, regardless of the leading dashes, this argument is required for execution:</p>
+<pre>053     # Add non-positional required argument<br/>054     parser.add_argument('--source', <br/>055         help='source information', required=True)</pre>
+<p>We now add our first non-positional and optional argument for the log file. Here, we are providing two options for how the user can specify the argument, <kbd>-l</kbd> or <kbd>--log.</kbd> This is recommended for common arguments, as it provides the frequent user shorthand and the novice user context for argument use:</p>
+<pre>057     # Add optional arguments, allowing shorthand argument<br/>058     parser.add_argument('-l', '--log', help='Path to log file')</pre>
+<p>Not all arguments need to accept a value; in some instances, we just need a Boolean answer from the argument. Additionally, we may want to allow the argument to be specified multiple times or have custom functionality when called. To support this, the <kbd>argparse</kbd> library allows for the use of actions. The actions we will commonly use in this book are demonstrated as follows.</p>
+<p>The first action that is handy is <kbd>store_true</kbd> and is the opposite of <kbd>store_false</kbd>. These are handy for getting information on enabling or disabling functionality in your script. As shown in the following code block on lines 61 through 64, we can see the action parameter being used to specify whether <kbd>True</kbd> or <kbd>False</kbd> should be stored as a result of the argument. In this case, this is duplicative, and one of these two arguments could be used to determine whether the email in this example should be sent. Additional actions are available, such as <kbd>append</kbd>, as shown on line 66 and 67, where each instance of an email address, in this example, will be added to a list that we can iterate through and use.</p>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p>The last action example in the following code is used to count the number of times an argument is called. We see this implementation primarily for increasing verbosity or debugging messages, though it can be used elsewhere in the same fashion:</p>
+<pre>060     # Using actions<br/>061     parser.add_argument('--no-email', <br/>062         help='disable emails', action="store_false")<br/>063     parser.add_argument('--send-email', <br/>064         help='enable emails', action="store_true")<br/>065     # Append values for each argument instance.<br/>066     parser.add_argument('--emails', <br/>067         help='email addresses to notify', action="append")<br/>068     # Count the number of instances. i.e. -vvv<br/>069     parser.add_argument('-v', help='add verbosity', action='count')</pre>
+<p>The <kbd>default</kbd> keyword dictates the default value of an argument. We can also use the <kbd>type</kbd> keyword to store our argument as a certain object. Instead of being stuck with strings as our only input, we can now store the input directly as the desired object, such as an integer, and remove the need for user input conversions from our scripts:</p>
+<pre>071     # Defaults<br/>072     parser.add_argument('--length', default=55, type=int)<br/>073     parser.add_argument('--name', default='Alfred', type=str)</pre>
+<p>Argparse can be used to directly open a file for reading or writing. On line 76, we open the required argument, <kbd>input_file</kbd>, in reading mode. By passing this file object into our main script, we can immediately begin to process our data of interest. This is repeated on the next line to handle opening a file for writing:</p>
+<pre>075     # Handling Files<br/>076     parser.add_argument('input_file', type=argparse.FileType('r'))<br/>077     parser.add_argument('output_file', type=argparse.FileType('w'))</pre>
+<p>The last keyword we will discuss is <kbd>choices</kbd>, which takes a list of case-sensitive options that the user can select from. When the user calls this argument, they must then provide one of the valid options. For example, <kbd>--file-type RAW</kbd> would set the <kbd>file-type</kbd> argument to the RAW choice, as follows:</p>
+<pre>079     # Allow only specified choices<br/>080     parser.add_argument('--file-type', <br/>081         choices=['E01', 'RAW', 'Ex01'])</pre>
+<p>Finally, once we have added all of our desired arguments to our <kbd>parser</kbd>, we can parse the arguments. On line 84, we call the <kbd>parse_args()</kbd> function, which creates a <kbd>Namespace</kbd> object. To access, for example, the length argument that we created on line 72, we need to call the <kbd>Namespace</kbd> object such as <kbd>arguments.length</kbd>. On line 85, we pass our arguments into our <kbd>main()</kbd> function, which prints out all of the arguments in the <kbd>Namespace</kbd> object. We have the following code:</p>
+<pre>083     # Parsing arguments into objects<br/>084     arguments = parser.parse_args()<br/>085     main(arguments)</pre>
+<p>These <kbd>Namespace</kbd> objects may be reassigned to variables for easier recall.</p>
+<p>With the basics of the <kbd>argparse</kbd> module behind us, we can now build simple and more advanced command-line arguments for our scripts. Therefore, this module is used extensively to provide command-line arguments for most of the code we will build. When running the following code with the <kbd>--help</kbd> switch, we should see our series of required and optional arguments for the script:</p>
+<div><img src="img/10198d66-121b-4449-a597-a10870d68445.png" style="width:41.17em;height:29.42em;"/></div>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Forensic scripting best practices</h1>
+                
+            
+            
+                
+<p>Forensic best practices play a big part in what we do and, traditionally, refer to handling or acquiring evidence. However, we've designated some forensic best practices of our own when it comes to programming, as follows:</p>
+<ul>
+<li>Do not modify the original data you're working with</li>
+<li>Work on copies of the original data</li>
+<li>Comment code</li>
+<li>Validate your program's results (and other application results)</li>
+<li>Maintain extensive logging</li>
+<li>Return output in an easy-to-analyze format (your users will thank you)</li>
+</ul>
+<p>The golden rule of forensics is: strongly avoid modification of the original data. Work on a verified forensic copy whenever possible. However, this may not be an option for other disciplines, such as for incident responders where the parameters and scope varies. As always, this varies on the case and circumstances, but please keep in mind the ramifications of working on live systems or with original data.</p>
+<p>In these cases, it is important to consider what the code does and how it might interact with the system at runtime. What kind of footprint does the code leave behind? Could it inadvertently destroy artifacts or references to them? Has the program been validated in similar conditions to ensure that it operates properly? These are the kinds of considerations that are necessary when it comes to running a program on a live system.</p>
+<p>We've touched on commenting code before, but it cannot hurt to overstate its value. Soon, we will create our first forensic script, <kbd>usb_lookup.py</kbd>, which is a little over 90 lines of code. Imagine being handed the code without any explanation or comments. It might take a few minutes to read and understand what it does exactly, even for an experienced developer. Now, imagine a large project's source code that has thousands of lines of code—it should be apparent how valuable comments are, not just for the developer but also those who examine the code afterwards.</p>
+<p>Validation essentially comes down to knowing the code's behavior. Obviously, bugs are going to be discovered and addressed. However, bugs have a way of frequently turning up and are ultimately unavoidable as it is impossible to test against all possible situations during development. Instead, what can be established is an understanding of the behavior of the code in a variety of environments and situations. Mastering the behavior of your code is important, not only to be able to determine if the code is up for the task at hand but also when asked to explain its function and inner workings in a courtroom.</p>
+<p class="mce-root"/>
+<p>Logging can help keep track of any potential errors during runtime and act as an audit-chain of sorts for what the program did and when. Python supplies a robust logging module in the standard library, unsurprisingly named <kbd>logging</kbd>. We will use this module and its various options throughout this book.</p>
+<p>The purpose of our scripts is to automate some of the tedious repetitive tasks in forensics and supply analysts with actionable knowledge. Oftentimes, the latter refers to storing data in a format that is easily manipulated. In most cases, a CSV file is the simplest way to achieve this so that it can be opened with a variety of different text or workbook editors. We will use the <kbd>csv</kbd> module in many of our programs.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Developing our first forensic script – usb_lookup.py</h1>
+                
+            
+            
+                
+<p>Now that we've gotten our feet wet writing our first Python script, let's write our first forensic script. During forensic investigations, it is not uncommon to see references to external devices by their <strong>vendor identifier</strong> (<strong>VID</strong>) and <strong>product identifier</strong> (<strong>PID</strong>) values; these values are represented by four hexadecimal characters. In cases where the vendor and product name are not identified, the examiner must look up this information. One such location for this information is the following web page: <a href="http://linux-usb.org/usb.ids">http://linux-usb.org/usb.ids</a>. For example, on this web page, we can see that a Kingston DataTraveler G3 has a VID of 0951 and a PID of 1643. We will use this data source when attempting to identify vendor and product names by using the defined identifiers.</p>
+<p>First, let's look at the data source we're going to be parsing. A hypothetical sample illustrating the structure of our data source is mentioned later. There are USB vendors and, for each vendor, a set of USB products. Each vendor or product has four-digit hexadecimal characters and a name. What separates vendor and product lines are tabs because products are tabbed over once under their parent vendor. As a forensic developer, you will come to love patterns and data structures, as it is a happy day when data follows a strict set of rules. Because of this, we will be able to preserve the relationship between the vendor and its products in a simple manner. Here is the afore-mentioned hypothetical sample:</p>
+<pre>0001 Vendor Name<br/>    0001 Product Name 1<br/>    0002 Product Name 2<br/>    ...<br/>    000N Product Name N</pre>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p>This script, named <kbd>usb_lookup.py</kbd>, takes a <kbd>VID</kbd> and <kbd>PID</kbd> that's supplied by the user and returns the appropriate vendor and product names. Our program uses the <kbd>urlopen</kbd> method from the <kbd>urllib</kbd> module to download the <kbd>usb.ids</kbd> database to memory and create a dictionary of VIDs and their products. Since this is one of the libraries that changed between versions 2 and 3 of Python, we have introduced some logic in a <kbd>try</kbd> and <kbd>except</kbd> block to ensure we are able to call the <kbd>urlopen</kbd> method without issue, as shown in the following code. We also import the <kbd>argparse</kbd> module to allow us to accept <kbd>VID</kbd> and <kbd>PID</kbd> information from the user:</p>
+<pre>001 """Script to lookup USB vendor and product values."""<br/>002 from __future__ import print_function<br/>003 try:<br/>004     from urllib2 import urlopen<br/>005 except ImportError:<br/>006     from urllib.request import urlopen<br/>007 import argparse</pre>
+<p>If a vendor and product combination is not found, error handling will inform the user of any partial results and exit the program gracefully.</p>
+<p>The <kbd>main()</kbd> function contains the logic to download the <kbd>usb.ids</kbd> file, store it in memory, and create the USB dictionary. The structure of the USB dictionary is somewhat complex and involves mapping a <kbd>VID</kbd> to a list, containing the name of the vendor as the first element, and a product dictionary as the second element. This product dictionary maps PIDs to their names. The following is an example of the USB dictionary containing two vendors, <kbd>VendorId_1</kbd> and <kbd>VendorId_2</kbd>, each mapped to a list containing the vendor name, and a dictionary for any product ID and name pairs:</p>
+<pre>usbs = {<br/>    VendorId_1: [<br/>        VendorName_1,<br/>        {ProductId_1: ProductName_1,<br/>         ProductId_2: ProductName_2,<br/>         ProductId_N: ProductName_N}<br/>    ], VendorId_2: [<br/>        VendorName_2,<br/>        {ProductId_1: ProductName_1}<br/>    ], ...<br/>}</pre>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p>It may be tempting to just search for <kbd>VID</kbd> and <kbd>PID</kbd> in the lines and return the names rather than creating this dictionary that links vendors to their products. However, products can share the same ID across different vendors, which could result in mistakenly returning a product from a different vendor. With our previous data structure, we can be sure that the product belongs to the associated vendor.</p>
+<p>Once the USB dictionary has been created, the <kbd>search_key()</kbd> function is responsible for querying the dictionary for a match. It first assigns the user-supplied two arguments, <kbd>VID</kbd> and <kbd>PID</kbd>, before continuing with the execution of the script. Next, it searches for a <kbd>VID</kbd> match in the outermost dictionary. If <kbd>VID</kbd> is found, the innermost dictionary is searched for the responsive <kbd>PID</kbd>. If both are found, the resolved names are printed to the console. Lastly, starting at line 81, we define our arguments for the user to provide the <kbd>VID</kbd> and <kbd>PID</kbd> values before calling the <kbd>main()</kbd> function:</p>
+<pre>042 def main():<br/>...<br/>065 def search_key():<br/>...<br/>080 if __name__ == '__main__':<br/>081     parser = argparse.ArgumentParser(<br/>082         description=__description__,<br/>083         epilog='Built by {}. Version {}'.format(<br/>084             ", ".join(__authors__), __date__),<br/>085         formatter_class=argparse.ArgumentDefaultsHelpFormatter<br/>086     )<br/>087     parser.add_argument('vid', help="VID value")<br/>088     parser.add_argument('pid', help="PID value")<br/>089     args = parser.parse_args()<br/>090     main(args.vid, args.pid)</pre>
+<p>For larger scripts, such as this, it is helpful to view a diagram that illustrates how these functions are connected together. Fortunately, a library named <kbd>code2flow</kbd>, available on GitHub (<a href="https://github.com/scottrogowski/code2flow.git">https://github.com/scottrogowski/code2flow.git</a>), exists to automate this process for us. The following schematic illustrates the flow from the <kbd>main()</kbd> function to the <kbd>search_key()</kbd> function. There are other libraries that can create similar flow charts. However, this library does a great job of creating a simple and easy to understand flowchart:</p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-465 image-border" src="img/2ed8a4fd-93ec-4620-a007-9ef795ebbab2.png" style="width:72.75em;height:33.33em;"/></p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Understanding the main() function</h1>
+                
+            
+            
+                
+<p>Let's start by examining the <kbd>main()</kbd> function, which is called on line 90, as seen in the previous code block. This function, on line 42, requires the <kbd>vid</kbd> and <kbd>pid</kbd> information supplied by the user's arguments for resolution in the <kbd>usb.ids</kbd> database. On lines 43 through 46, we create our initial variables. The <kbd>url</kbd> variable stores the URL containing the USB data source. We use the <kbd>urlopen()</kbd> function from the <kbd>urllib</kbd> module to create a list of strings from our online source. We will use a lot of string operations, such as <kbd>startswith()</kbd>, <kbd>isalnum()</kbd>, <kbd>islower()</kbd>, and <kbd>count()</kbd>, to parse the <kbd>usb.ids</kbd> file structure and store the parsed data in the <kbd>usbs</kbd> dictionary. The <kbd>curr_id</kbd> variable, defined as an empty string on line 46, will be used to keep track of which vendor we are currently processing in our script:</p>
+<pre>042 def main(vid, pid):
+043     url = 'http://www.linux-usb.org/usb.ids'<br/>044     usbs = {}<br/>045     usb_file = urlopen(url)<br/>046     curr_id = ''</pre>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p>An important concept in Python string manipulation is encoding. This is one of the most common issues when writing Python 2 and Python 3 compatible code. The following <kbd>for</kbd> loop on line 48 starts iterating over each line in the file, providing the line for review. For Python 3 support, we have to check whether the line variable is an instance of bytes, a raw data type that (in this case) is holding encoded string data. If this is the case, we must decode it using the <kbd>decode()</kbd> method and provide the proper encoding—<kbd>latin-1</kbd> in this instance, as seen on line 50. Python 2 reads data from files as strings and therefore will not enter this conditional, so we can move forward with parsing the line:</p>
+<pre>048     for line in usb_file:<br/>049         if isinstance(line, bytes):<br/>050             line = line.decode('latin-1')</pre>
+<p>Our next conditional checks for commented lines in the <kbd>usb.ids</kbd> file, skipping any blank lines (only containing a newline or tab character) and any comment lines starting with a pound character. To check for comment lines, we can use the <kbd>startswith()</kbd> string method to check whether the provided string, of one or more characters, is the same as the line we are checking. To simplify our code, we also leveraged the <kbd>in</kbd> statement, which allows us to handle an <kbd>or</kbd>-like comparison of equality for the line. This is a handy shortcut you will see in a variety of scripts. If either of these conditions is true, we will use the continue statement as seen on line 52 to step into the next loop iteration:</p>
+<pre>051         if line.startswith('#') or line in ('\n', '\t'):<br/>052             continue</pre>
+<p>The second half of our conditional handles additional validation of the line format. We want to confirm that the line we are inspecting matches the format of a vendor line, so we can include our vendor-related parsing code within it. To do this, we check to make sure the line does not start with a tab character and the first character is alphanumeric with the <kbd>isalnum()</kbd> call:</p>
+<pre>053         else:<br/>054             if not(line.startswith('\t')) and line[0].isalnum():</pre>
+<p>Knowing that the line passed our check for confirming it is a vendor informational line, we can start extracting the needed values and fill out our data structure. On line 55, we extract our two values from the line, <kbd>uid</kbd> and <kbd>name</kbd>, by stripping the line and using the <kbd>split()</kbd> method. The <kbd>split()</kbd> method is using two parameters here, one for the character to split on and the second for the number of times to split. In this case, we are splitting on a space character and only splitting after finding the first space.</p>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p>This is useful, as our vendor name may contain a space in it and we want to keep those details together. Since we anticipate two values returning, we can use the assignment seen on line 55 to simultaneously populate the <kbd>uid</kbd> and <kbd>name</kbd> variables with the correct values, though this can lead to errors if the <kbd>split()</kbd> method only returns one object. In this instance, we know our data source and have validated that this should always return two values, though this is a great spot to add a try-except block in your version of the code to handle any errors that may arise.</p>
+<p>We then assign the <kbd>uid</kbd> variable to the <kbd>curr_id</kbd> value for use while parsing <kbd>PID</kbd> details on line 56. Finally, on line 57, we add this information to our data structure, <kbd>usbs</kbd>. Since the <kbd>usbs</kbd> structure is a dictionary, we assign the VID's <kbd>uid</kbd> value as the key and set up our list with the <kbd>VID</kbd> common name as the first element and an empty dictionary for product details as a second. On line 57, we ensure that the vendor name does not have any unwanted whitespace characters on it by calling the <kbd>strip()</kbd> method on the string:</p>
+<pre>055                 uid, name = line.strip().split(' ', 1)<br/>056                 curr_id = uid<br/>057                 usbs[uid] = [name.strip(), {}]</pre>
+<p>Now that we have processed the vendor data pattern, let's turn our attention to the product data pattern. First, we will use an <kbd>elif</kbd> conditional to check that the line does start with a tab character and, using the <kbd>count()</kbd> method, ensure that it is the only tab character in the line. On line 59, we make a familiar call to strip and split the line into our required values. On line 60, we then add the product information to our data structure. As a quick refresher, <kbd>usbs</kbd> is a dictionary, where the keys are VIDs. Within a VID's value is a list where element zero is the vendor name and element one is the dictionary to store PID details. As expected, we will use the <kbd>uid</kbd> value as the key for the product details and assign the product name to the <kbd>PID</kbd> key. Notice how we use the <kbd>curr_id</kbd> value from the prior vendor line to ensure we are correlating the VIDs and PIDs properly:</p>
+<pre>058             elif line.startswith('\t') and line.count('\t') == 1:<br/>059                 uid, name = line.strip().split(' ', 1)<br/>060                 usbs[curr_id][1][uid] = name.strip()</pre>
+<p>The previous lines then repeat in a <kbd>for</kbd> loop until the end of the file is reached, parsing out the vendor and product details and adding them into the <kbd>usbs</kbd> dictionary.</p>
+<p class="mce-root"/>
+<p>We are almost there—the last part of our <kbd>main()</kbd> function is a call to the <kbd>search_key()</kbd> function, which takes the user-supplied <kbd>vid</kbd> and <kbd>pid</kbd> information, along with our newly built <kbd>usbs</kbd> dictionary for lookup. Notice how this call is indented with four spaces, placing it outside of the <kbd>for</kbd> loop and allowing us to only call this method one time, once the <kbd>usbs</kbd> lookup dictionary is complete:</p>
+<pre>062     search_key(vid, pid, usbs)</pre>
+<p>This takes care of the logic in the <kbd>main()</kbd> function. Now, let's take a look at the <kbd>search_key()</kbd> function to determine how we will lookup our VID and PID values.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Interpreting the search_key() function</h1>
+                
+            
+            
+                
+<p>The <kbd>search_key()</kbd> function, originally called on line 62 of the <kbd>main()</kbd> function, is where we search for the user-supplied vendor and product IDs, and display the resolved results to the user. In addition, all of our error handling logic is contained within this function.</p>
+<p>Let's practice accessing nested lists or dictionaries. We discussed this in the <kbd>main()</kbd> function; however, it pays to actually practice rather than take our word for it. Accessing nested structures requires us to use multiple indices rather than just one. For example, let's create a list and map that to <kbd>key_1</kbd> in a dictionary. To access elements from the nested list, we will need to supply <kbd>key_1</kbd> to access the list and then a numerical index to access elements of the list:</p>
+<pre><strong>&gt;&gt;&gt; inner_list = ['a', 'b', 'c', 'd']<br/>&gt;&gt;&gt; print(inner_list[0])<br/>a<br/>&gt;&gt;&gt; outer_dict = {'key_1': inner_list}<br/>&gt;&gt;&gt; print(outer_dict['key_1'])<br/>['a', 'b', 'c', 'd']<br/>&gt;&gt;&gt; print(outer_dict['key_1'][3])<br/>d<br/></strong></pre>
+<p>Now, let's switch gears, back to the task at hand, and leverage our new skills to search our dictionary to find vendor and product IDs. The <kbd>search_key()</kbd> function is defined on line 65 and takes the user-supplied VID and PID along with our parsed out <kbd>usb_dict</kbd> dictionary. We then start by querying <kbd>usb_dict</kbd> for the <kbd>vendor_key</kbd> value, using the <kbd>get()</kbd> method of a dictionary to attempt to get the requested key's value or return <kbd>None</kbd>, as specified on line 66, if the key is not found.</p>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p>Please note that the data returned by the <kbd>get()</kbd> call, if successful, is the entire value for that key, or in this case a list, where element zero is the vendor name and element one is the dictionary of product details. We can then check, on line 67, to see whether the key was found; if it was unavailable, we print this to the user and exit on lines 68 and 69, as shown here:</p>
+<pre>065 def search_key(vendor_key, product_key, usb_dict):<br/>066     vendor = usb_dict.get(vendor_key, None)<br/>067     if vendor is None:<br/>068         print('Vendor ID not found')<br/>069         exit()</pre>
+<p>We can then repeat this logic for looking up the product information, though we first have to navigate to the product information. On line 71, we access element one of the vendor list, containing the product details dictionary, and perform the same <kbd>get()</kbd> method call to look up any name resolution for the PID. In the same manner, we check to see if the lookup failed and provide any available details to the user; in case it fails, we can at least give the vendor information:</p>
+<pre>071     product = vendor[1].get(product_key, None)<br/>072     if product is None:<br/>073         print('Vendor: {}\nProduct Id not found.'.format(<br/>074             vendor[0]))<br/>075         exit(0)</pre>
+<p>If everything resolves successfully, we can print the output to the user and the script will complete! Notice how, on line 77, in the format statement, we have to call the first element of the vendor variable since the value of the VID key lookup was a list, whereas the value of the PID key lookup is just the product's name. This is where things can get a little confusing, though feel free to reference the earlier sample data structure and add as many intermediate print statements to help with comprehension:</p>
+<pre>077     print('Vendor: {}\nProduct: {}'.format(vendor[0], product))</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Running our first forensic script</h1>
+                
+            
+            
+                
+<p>The <kbd>usb_lookup.py</kbd> script requires two arguments—vendor and product IDs for the USB of interest. We can find this information by looking at a suspect <kbd>HKLM\SYSTEM\%CurrentControlSet%\Enum\USB</kbd> registry key. For example, supplying the vendor, <kbd>0951</kbd>, and product, <kbd>1643</kbd>, from the sub-key <kbd>VID_0951&amp;PID_1643</kbd>, results in our script identifying the device as a Kingston DataTraveler G3:</p>
+<p class="mce-root CDPAlignCenter CDPAlign"><img src="img/9cf95fc4-970a-4d46-86ab-3025ec84fbbc.png" style="width:38.08em;height:4.25em;"/></p>
+<p>Our data source is not an all-inclusive list, and if you supply a vendor or a product ID that does not exist in the data source, our script will print that the ID was not found. The full code for this and all of our scripts can be downloaded from <a href="https://packtpub.com/books/content/support">https://packtpub.com/books/content/support</a>.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Troubleshooting</h1>
+                
+            
+            
+                
+<p>At some point in your development career—probably by the time you write your first script—you will have encountered a Python error and received a <strong>Traceback</strong> message. A Traceback provides the context of the error and pinpoints the line that caused the issue. The issue itself is described as an exception, and usually provides a human-friendly message of the error.</p>
+<p>Python has a number of built-in exceptions, the purpose of which is to help the developer in diagnosing errors in their code. A full listing of built-in exceptions can be found at <a href="https://docs.python.org/3/library/exceptions.html" target="_blank">https://docs.python.org/3/library/exceptions.html</a>.</p>
+<p>Let's look at a simple example of an exception, <kbd>AttributeError</kbd>, and what the Traceback looks like in this case:</p>
+<pre><strong>&gt;&gt;&gt; import math</strong><br/><strong>&gt;&gt;&gt; print(math.noattribute(5))</strong><br/><strong>Traceback (most recent call last):</strong><br/><strong> File "&lt;stdin&gt;", line 1, in &lt;module&gt;</strong><br/><strong>AttributeError: 'module' object has no attribute 'noattribute'</strong></pre>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p class="mceNonEditable"/>
+<p>The Traceback indicates the file in which the error occurred, in this case, <kbd>stdin</kbd> or standard input, because this code was written in the interactive prompt. When working on larger projects or with a single script, the file will be the name of the script causing the error rather than <kbd>stdin</kbd>. The <kbd>in &lt;module&gt;</kbd> bit will be the name of the function that contains the faulty line of code, or <kbd>&lt;module&gt;</kbd> if the code is outside of a function.</p>
+<p>Now, let's look at a slightly more complicated issue. To do this, let's use the data structure from our prior script. In the following code block, we are not accessing the VID data with the <kbd>get()</kbd> call, but instead hoping that it exists. Temporarily replace line 66 of the <kbd>usb_lookup.py</kbd> script with the following for this example:</p>
+<pre>066     vendor = usb_dict[vendor_key]</pre>
+<p>Now, if you run this updated code with a valid vendor key, you will get an expected result, though use a key such as <kbd>ffff</kbd> and see what occurs. Check if it looks like the following:</p>
+<pre>$ python usb_lookup.py ffff 1643<br/>Traceback (most recent call last):<br/>    File "usb_lookup.py", line 90, in &lt;module&gt;<br/>        main(args.vid, args.pid)<br/>    File "usb_lookup.py", line 62, in main<br/>        search_key(vid, pid, usbs)<br/>    File "usb_lookup.py", line 66, in search_key<br/>        vendor = usb_dict[vendor_key]<br/>KeyError: 'ffff'</pre>
+<p>The traceback here has three traces in the stack. The last trace at the bottom is where our error occurred. In this case, on line 66 of the <kbd>usb_lookup.py</kbd> file, the <kbd>search_key()</kbd> function generated a <kbd>KeyError</kbd> exception. Looking up what a <kbd>KeyError</kbd> exception is in the Python documentation would indicate that this is due to the key not existing in the dictionary. Most of the time, we will need to address the error at that specific error causing line. In our case, we employed the <kbd>get()</kbd> method of a dictionary to safely access key elements. Please revert the line back to its prior state at this time to prevent this error from occurring in the future!</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Challenge</h1>
+                
+            
+            
+                
+<p>We recommend experimenting with the code to learn how it works or try to improve its functionality. For example, how can we further validate the VID and PID input to ensure they are valid? Can we perform this same check on the returned UID values on lines 55 and 59? </p>
+<p class="mce-root"/>
+<p>Another extension to our first script is to consider offline environments. How can we modify this code to allow someone to run in an air-gapped environment? What arguments can be used to change the behavior depending on the user's need for offline access?</p>
+<p>Programs are constantly evolving and are never truly finished products. There are plenty of other improvements that can be made here and we invite you to create and share the modifications to this and all of your other forensic Python scripts.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Summary</h1>
+                
+            
+            
+                
+<p>This chapter continued from where we left off in previous chapter, and helped us build a solid Python foundation for later chapters. We covered advanced data types and object-oriented programming, developed our first scripts, and dived into traceback messages. At this point, you should start to become comfortable with Python, though repeat these two chapters and manually type out the code to help strengthen your comfort level as needed. We highly recommend to practice and experiment by either testing out ideas in the interactive prompt or modifying the scripts we developed. The code for this project can be downloaded from GitHub or Packt, as described in the <em>Preface</em>.</p>
+<p>As we move away from theory and look into the core part of this book, we will start with simple scripts and work toward increasingly more complicated programs. This should allow a natural development of understanding programming and skills. In the next chapter, you will learn how to parse the <kbd>setupapi.dev.log</kbd> file on Windows systems to identify USB installation times.</p>
+
+
+            
+
+            
+        
+    </body></html>

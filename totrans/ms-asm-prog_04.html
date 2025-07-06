@@ -1,0 +1,314 @@
+<html><head></head><body>
+        
+
+                            
+                    <h1 class="header-title">Memory Addressing Modes</h1>
+                
+            
+            
+                
+<p>Thus far, we have gained some acquaintance with certain basic aspects of Assembly programming. We have covered the Intel Architecture basics, setting up the development environment of your choice, and the <strong>instruction set architecture</strong> (<strong>ISA</strong>).</p>
+<p>We know what operations we are able to perform over different types of data, but all this is of very little value as long as we don't know how to retrieve and store data. Of course, we are familiar with the <kbd>mov</kbd> instruction, but without knowing how to address the data in memory, this instruction is quite useless.</p>
+<p>Fortunately for us, Intel provides a very flexible mechanism for addressing data or code in memory. In this chapter, we will cover the following modes of memory addressing:</p>
+<ul>
+<li>Sequential addressing</li>
+<li>Direct addressing
+<ul>
+<li>Via an immediate address</li>
+<li>Via an address stored in a register</li>
+</ul>
+</li>
+<li>Indirect addressing
+<ul>
+<li>Via an address pointed by immediate</li>
+<li>Via an address pointed by a register</li>
+</ul>
+</li>
+<li>Base relative addressing
+<ul>
+<li>Base + index</li>
+<li>Base + index * scale</li>
+</ul>
+</li>
+<li>IP/RIP-based addressing</li>
+<li>Far pointers</li>
+</ul>
+<p>The preceding categorization has nothing to do with the way Intel categorizes addressing modes as we are not paying attention to address encoding within an instruction. Knowing the ways to address memory and being able to use them appropriately is what we are after. It is worth mentioning that the preceding list represents addressing modes for both data and code. Additionally, we will use 64-bit examples in this chapter in order to be able to cover all of the modes listed here.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Addressing code</h1>
+                
+            
+            
+                
+<p>When we say "addressing code," we mean the way CPU interprets the address of the next instruction to be executed, and that depends on the logic of the code itself, which tells the processor whether it should execute instructions sequentially or jump to another location.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Sequential addressing</h1>
+                
+            
+            
+                
+<p>The default addressing mode for code is <strong>sequential addressing</strong>, when the <strong>instruction pointer</strong> (<strong>IP</strong>) register (IP for 32-bit systems and RIP for 64-bit) contains the address of the instruction following the one being currently executed. There is nothing we need to do in order to put processor into this mode. The instruction pointer is set to the next instruction automatically by the CPU.</p>
+<p>For example, when executing the first instruction of the following code, the IP is already set to the address of the next one, labeled as <kbd>next_instruction</kbd>. As the first instruction is <kbd>call</kbd>, which, as we know, causes the return address to be pushed onto the stack--which, in this particular case, is also the address of <kbd>next_instruction</kbd>--the second one (the <kbd>pop</kbd> instruction) retrieves the value of the return address from the stack:</p>
+<pre>       call next_instruction <br/>    next_instruction:<br/>       pop rax<br/>       <em>; the rest of the code</em></pre>
+<p>The preceding example (or its variations) could be met in the code of different packers and protectors very often and is also used by shellcode writers as a mean of creation of position-independent code, where addresses of procedures and variables can be calculated by adding their offsets from <kbd>next_instruction</kbd> to the address of <kbd>next_instruction</kbd>.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Direct addressing</h1>
+                
+            
+            
+                
+<p>The term <em>direct addressing</em> implies the address to be directly included in the instruction is an operand. One of the examples may be a <em>far call/jmp</em>. Most of Windows, executables are loaded at address 0x00400000 with the first section, which is by default the code section being loaded at address <kbd>0x00401000</kbd>. For the sake of the example, let us imagine that we have an executable which, we are sure, is loaded at the aforementioned address, with its code section being located at offset 0x1000 from the base address (the address our executable is loaded at), and we have some sort of a special code right in the beginning of the first section. Let it be an error handler that would terminate the execution of our program in the right way. In such a case, we may direct the execution flow to that code by using either a far call or a far jump:</p>
+<pre><em>; The following call would be encoded as (address is underlined):</em><br/><em>; 0xff 0x1d 0x00 0x10 0x40 0x00</em><br/>call far [0x00401000] <br/><br/><em>; or as</em><br/><em>; 0xff 0x2d 0x00 0x10 0x40 0x00</em><br/>jmp far [0x00401000]</pre>
+<p>However, the more common example would be the register call, where the target address is stored in a register:</p>
+<pre>lea rax, [my_proc]<br/>call rax</pre>
+<p>In the preceding code, we loaded the RAX register with the address of the <kbd>my_proc</kbd> procedure that we want to call on the first line, and the second line is the call itself. Such a mode is used, for example, by compilers when translating the <kbd>switch</kbd> clause to Assembly, when the address of the code corresponding to a specific case is either loaded from the jump table or calculated using some hardcoded base (it may well be relocated at execution time) and an offset taken from the jump table.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Indirect addressing</h1>
+                
+            
+            
+                
+<p>The term "indirect addressing" is quite self-explanatory. As the name of the mode suggests, the address is somewhere in there, but is not used directly. Instead, it is referenced by a pointer, which may be a register or certain base address (immediate address). For example, the following code calls the same procedure twice. In the first call, the address is retrieved using a pointer stored in the <kbd>rax</kbd> register, while in the second call we use a variable that stores the address of the procedure we want to call:</p>
+<pre><em>; This goes into code section</em><br/> push my_proc<br/> lea    rax, [rsp]<br/> call   qword [rax]<br/> add  rsp, 8<br/> call  qword [my_proc_address]<br/> <em>;</em><br/><em> ;</em><br/> my_proc:<br/>     ret<br/> <br/> <em>; This goes into data section</em><br/> my_proc_address dq my_proc</pre>
+<p>As we can see, in both cases, the operand of the <kbd>call</kbd> instruction is a pointer to a location in memory, where the address of the <kbd>my_proc</kbd> procedure is stored. This addressing mode may be used in order to harden the obfuscation of the execution flow of a code fragment.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">RIP based addressing</h1>
+                
+            
+            
+                
+<p>IP or RIP (depending on whether we are on a 32-bit or a 64-bit platform) means addressing relative to the instruction pointer register.</p>
+<p>The best example of this addressing mode would be the <kbd>call</kbd> and <kbd>jmp</kbd> instructions. For example, consider the following code:</p>
+<pre>call my_proc<br/> <em>; or</em><br/> jmp some_label</pre>
+<p>This will not contain the addresses of <kbd>my_proc</kbd> or <kbd>some_label</kbd>. Instead, the <kbd>call</kbd> instruction would be encoded in such a way that its parameter would be the offset from the following instruction to <kbd>my_proc</kbd>. As we know, the instruction pointer register contains the address of the following instruction at the time the processor executes the current one; therefore, we may surely say that the target address is calculated relative to the value of the instruction pointer (IP on 32-bit or RIP on 64-bit platform).</p>
+<p>The same rule applies to the <kbd>jmp</kbd> instruction in the preceding example--the target address is calculated relative to the current value of the instruction pointer, which contains the address of the following instruction.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Addressing data</h1>
+                
+            
+            
+                
+<p>Data addressing modes are the same as those for code addressing, with the exception of IP-based addressing on 32-bit systems.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Sequential addressing</h1>
+                
+            
+            
+                
+<p>Yes, this is not a typo, there is sequential addressing when it comes to addressing data as well, although it does require certain setup.</p>
+<p>Remember the RSI/RDI pair (or ESI/EDI for 32-bit systems), which we have mentioned in both <a href="5d846cc5-9b26-43a8-9350-2a94c790da83.xhtml" target="_blank">Chapter 1</a>, <em>Intel Architecture</em>, and <a href="57c5447c-2cc4-4a48-9c46-6825e4a83a9c.xhtml" target="_blank">Chapter 3</a>, <em>Intel Instruction Set Architecture (ISA)</em>. This pair is a good example of sequential data addressing, where the source and/or target addresses are incremented or decremented (depending on the value of the direction flag) automatically after each instruction that uses these registers (either one of them or both) has been executed.</p>
+<p>The following example illustrates this mode by copying a text string from its location in the data section to a buffer allocated on the stack:</p>
+<pre><em> ; This portion goes into the code section.</em><br/><em> ; Assuming the RBP register contains the stack frame address</em><br/><em> ; and the size of the frame is 0x50 bytes.</em><br/> lea rdi, [rbp – 0x50]<br/> lea rsi, [my_string]<br/> mov ecx, my_string_len<br/> rep movsb<br/> <br/> <em>; And this portion goes into the data section</em><br/> my_string db ‘Just some string’,0<br/> my_string_len = $ - my_string</pre>
+<p>As we see, the RDI register is loaded with the lowest address in the stack frame, the RSI register is loaded with the address of the string, and the RCX register is loaded with the length of the string, including the terminating zero. After that, each time the <kbd>rep movsb</kbd> line is executed, both the RSI and the RDI are sequentially incremented (the size of increment is dependent, as we remember, on the <kbd>movs*</kbd> variant--1 for <kbd>movsb</kbd>, 2 for <kbd>movsw</kbd>, 4 for <kbd>movsd</kbd>, and 8 for <kbd>movsq</kbd> on a 64-bit platform).</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Direct addressing</h1>
+                
+            
+            
+                
+<p>Just as in the case of code addressing, this mode implies that the address of either the source or destination operand (depending on the instruction and intention) is explicitly specified. However, unlike code addressing, we are able to specify the address itself, except when loading it into a register first. Consider the example of loading the value of a variable into a register or storing it from register to memory:</p>
+<pre> mov al, [name_of_variable]<br/> <em>; or</em><br/> mov [name_of_another_variable], eax</pre>
+<p>In both cases, <kbd>name_of_variable</kbd> and <kbd>name_of_another_variable</kbd> are translated by the assembler into the addresses of those variables. Of course, we may also use registers for this purpose. The following example illustrates an <kbd>if…else</kbd> clause:</p>
+<pre><em>; This goes into code section.</em><br/>    xor  rax, rax<br/>    <em>; inc rax                     ; Increment RAX in order to call the second procedure</em><br/>    lea  rbx, [indices]<br/>    add  rax, rbx<br/>    lea  rbx, [my_proc_address]<br/>    add  bl, [rax]<br/>    mov rbx, [rbx]<br/>    call qword rbx<br/>    <em>; The rest of the code</em><br/><br/>   align 8<br/> my_proc0:<br/>    push rbp<br/>    mov  rbp, rsp<br/>    xor  eax, eax<br/>    mov  rsp, rbp<br/>    pop  rbp<br/>    ret<br/><br/>   align 8<br/> my_proc1:<br/>    push rbp<br/>    mov  rbp, rsp<br/>    xor  eax, eax<br/>    inc  eax<br/>    mov  rsp, rbp<br/>    pop  rbp<br/>    ret       <br/> <br/> <em>; And the following goes into data section</em><br/> indices              db 0, 8<br/>    align 8<br/>    my_proc_address      dq my_proc0, my_proc1</pre>
+<p>The first line of the code sets the <kbd>rax</kbd> register to zero, which, when the second line is commented out, causes the code to call <kbd>my_proc0</kbd>. On the other hand, if we uncomment the <kbd>inc rax</kbd> instruction, then <kbd>my_proc1</kbd> would be called instead.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Scale, index, base, and displacement</h1>
+                
+            
+            
+                
+<p>This is a very flexible addressing mode as it allows us to address memory in a manner similar to addressing data within arrays, which we are all familiar with. Despite the fact that this addressing mode is often referred to as scale/index/base (omitting the displacement part), we are not forced to make use of all of its elements at once, and we will further see that the scale/index/base/displacement scheme often gets reduced to base, base + index, or displacement + index. The latter two may come with or without scale. But, first of all, let's see who is who and which part represents what:</p>
+<ul>
+<li><strong>Displacement</strong>: Technically, this is an integer offset relative to a certain segment base (DS by default).</li>
+<li><strong>Base</strong>: This is a register containing the offset to data relative to the displacement, or the address of the start of the data if no displacement was specified (in fact, when we do not specify displacement, the assembler adds a displacement of zero).</li>
+<li><strong>Index</strong>: This is a register containing the offset into the data relative to base + displacement. This is similar to an index or an array member.</li>
+<li><strong>Scale</strong>: The CPU has no concept of type of data; it only understands sizes. Therefore, if we are operating on values larger than 1 byte, we have to scale the index value appropriately. The scale may be 1, 2, 4, or 8 for bytes, words, double words, or quad words, respectively. Obviously, there is no reason to explicitly specify the scale of 1, as it is the default value if no scale is specified.</li>
+</ul>
+<p>It is possible to explicitly specify another segment by prepending the segment prefix to the address (for example, <kbd>cs:</kbd> for CS, <kbd>es:</kbd> for ES, and so on).</p>
+<p>In order to calculate the final address, the processor takes the segment's base address (the default is DS), adds displacement, adds base and finalizes the calculation by adding the index times scale:</p>
+<div><em>segment base address + displacement + base + index * scale</em></div>
+<p>In theory, all of this looks nice and easy, so let's advance toward practice, which is nicer and much easier too. If we take another look at the example code for direct addressing, we may see that it contains a few completely redundant lines. The following would be the first one for us to deal with:</p>
+<pre>mov rbx, [rbx]</pre>
+<p>Although it provides a good example of register-based direct addressing, it may be safely removed, and the following instruction (<kbd>call</kbd>) should then be changed to (remember the indirect call?):</p>
+<pre>call qword [rbx]</pre>
+<p>However, even this line may be omitted just like most of the caller code. Taking a closer look at the problem, we see that there is an array of procedure pointers (in fact, an array of two). In terms of a high-level language, C for example, what the preceding code is intended to do is as follows:</p>
+<pre>int my_proc0()<br/> {<br/>    return 0;<br/> }<br/> <br/> int my_proc1()<br/> {<br/>    return 1;<br/> }<br/> <br/> int call_func(int selector)<br/> {<br/>    int (*funcs[])(void) = {my_proc0, my_proc1};<br/>    return funcs[selector]();<br/> }</pre>
+<p>The Intel architecture provides a similar interface for addressing data/code in an array-like fashion of base + index, yet it introduces another member of the equation--scale. As the assembler and, especially, the processor do not care about types of data we are operating, we have to help them with it ourselves.</p>
+<p>While the base part (whether it is a label or a register holding an address) is treated by the processor as an address in memory, and index is simply a number of bytes to add to that base address, in this particular case, we may, of course, scale the index ourselves, as the algorithm is fairly simple. We only have two possible values for the selector (which is the <kbd>rax</kbd> register in the preceding Assembly code), <kbd>0</kbd> and <kbd>1</kbd>, so we load, for example, the <kbd>rbx</kbd> register with the address of <kbd>my_proc_address</kbd>:</p>
+<pre>lea rbx, [my_proc_address]</pre>
+<p>Then, we shift the <kbd>rax</kbd> register three times left (doing this is equivalent to multiplying by 8 as we are on 64-bit and addresses are 8 bytes long, and as we would point into the second byte of address of <kbd>my_proc0</kbd> otherwise) and add the result to the <kbd>rbx</kbd> register. This may be good for a single iteration, but not very convenient for a code that gets executed very frequently. Even if we use an additional register to store the sum of <kbd>rbx</kbd> and <kbd>rax</kbd>--what if we need that other register for something else?</p>
+<p>This is where the scale part comes into play. Rewriting the calling code from the Assembly example would result in the following:</p>
+<pre>xor rax, rax<br/> <em>; inc rax                 ; increment RAX to call the second procedure</em><br/> lea rbx, [my_proc_address]<br/> call qword [rbx + rax * 8]<br/> <br/> <em>; or even a more convenient one</em><br/> <br/> xor rax, rax<br/> <em>; inc rax</em><br/> call qword[my_proc_address + rax * 8]</pre>
+<p>Of course, the base/index/scale mode may be used for addressing any type of array, not necessarily an array of function pointers.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">RIP addressing</h1>
+                
+            
+            
+                
+<p>RIP-based (instruction pointer register on a 64-bit platform) addressing of data was introduced with the 64-bit architecture and allows generation of a more compact code. This addressing mode follows the same idea as the base/index/scale mode, while the instruction pointer is used as the base.</p>
+<p>For example, if want to load a certain register with the address of a variable, we would write the following line in Assembly:</p>
+<pre>lea rbx, [my_variable]</pre>
+<p>The assembler would then do all the adjustments automatically, and the result encoding of the instruction would be equivalent to this:</p>
+<pre>lea rbx, [rip + (my_variable – next_instruction)]</pre>
+<p>Loading the <kbd>rbx</kbd> register with the value of the <kbd>rip</kbd> register (the address of the following instruction) plus the offset in bytes of a variable from the address of the following instruction.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Far pointers</h1>
+                
+            
+            
+                
+<p>It may be relatively safe to say that far pointers belong to the past when it comes to the application development level; however, it would not be right not to mention them here, as, after all, there are a few useful things we can do with it. Putting it simply, a far pointer combines a segment selector and an offset into the segment. Originating in the era of 16-bit modes of operation, surviving the 32-bit protected mode, far pointers have made it to the long mode, although they are hardly relevant, as, especially in long mode, all memory is considered to be a flat array and we are hardly going to use them.</p>
+<p>The instructions used (some are obsolete) for loading a far pointer into the segment register: general-purpose register pairs are as follows:</p>
+<ul>
+<li><strong>LDS</strong>: This loads the selector part of the far pointer into the DS</li>
+<li><strong>LSS</strong>: This loads the selector part of the far pointer into the SS</li>
+<li><strong>LES</strong>: This loads the selector part of the far pointer into the ES</li>
+<li><strong>LFS</strong>: This loads the selector part of the far pointer into the FS</li>
+<li><strong>LGS</strong>: This loads the selector part of the far pointer into the GS</li>
+</ul>
+<p>However, let's see how we can make use of them anyway. For the sake of simplicity, we will consider a short 32-bit example for Windows, where we are obtaining the address of the <strong>Process Environment Block</strong> (<strong>PEB</strong>):</p>
+<pre><em>; This goes into the code section</em><br/>mov   word [far_ptr + 4], fs   <em>; Store FS selector to the selector part of the far_ptr</em><br/>lgs   edx, [far_ptr]           <em>; Load the pointer</em><br/>mov   eax, [gs:edx]            <em>; Load EAX with the address of the TIB</em><br/>mov   eax, [eax + 0x30]        <em>; Load EAX with the address of the PEB</em><br/><br/><em>; This goes into the data section</em><br/>far_ptr   dp 0                 <em>; Six bytes far pointer:</em><br/><em>                               ;     four bytes offset</em><br/><em>                               ;     two bytes segment selector</em></pre>
+<p>As you may see, the code in this example is quite redundant as we already have the proper selector loaded into the FS register, but it still illustrates the mechanism. In the real world, no one would've gone this way in order to obtain the address of PEB; instead, the following instruction would have been issued:</p>
+<pre>mov   eax, [fs:0x30]</pre>
+<p>This would have loaded the <kbd>eax</kbd> register with the address of the PEB, as <kbd>fs:0x00000000</kbd> is already the far pointer pointing to TIB.</p>
+<p>The instructions LDS and LES (for use with the DS and ES registers, respectively) are obsolete.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Summary</h1>
+                
+            
+            
+                
+<p>In this chapter, we had a brief introduction to addressing modes on the modern Intel CPU. Some resources define more addressing modes, but, let me reiterate that as a huge fan of Occam's Razor, I do not see any reason to multiply things without need, as most of those additional modes are just variations of the modes already explained above.</p>
+<p>Thus far, we saw how both code and data may be addressed, which is mostly the essence of programming in the Assembly language. As you will witness while reading this book and trying the code yourself, at least 90% of writing a program in Assembly is writing how you want some data to be moved, where from and where to (the remaining 10% are actual operations on data).</p>
+<p>By getting this far, we are ready to dive deeper into Assembly programming and try to actually write working programs, rather than typing a few lines into a template and watching registers change in the debugger.</p>
+<p>The next section of this book, the <em>Practical Assembly</em> section, begins with a chapter dedicated to parallel data processing. Then, you will learn the basics of macros and get acquainted with data structures manipulation mechanisms, and we will see how our Assembly code can interact with the surrounding operating system, which is quite important.</p>
+<p class="mce-root"/>
+<p class="mce-root"/>
+
+
+            
+
+            
+        
+    </body></html>

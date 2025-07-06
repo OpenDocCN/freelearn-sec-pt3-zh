@@ -1,0 +1,442 @@
+<html><head></head><body>
+        
+
+                            
+                    <h1 class="header-title">Operating System Interface</h1>
+                
+            
+            
+                
+<p class="mce-root">While preparing to write this chapter, I remembered a real-time systems course in college. Not the whole course, of course, but one of the tasks we were given --one of the most interesting ones, if not the most interesting. We had to write a small program that would display a text string that should move from left to right and back again on the screen until a certain key was pressed on the keyboard. Two additional keys would make it possible to control the speed of the string's movement. It was 2001 or 2002, we were still using DOS for Assembly-related exercises and the task appeared to be quite simple.</p>
+<p>I personally found it extremely boring to use DOS interrupts for this purpose (I had no idea of Occam's Razor principle at the time, besides, I wanted to look smart), so I decided not to use any OS at all. My laptop had a floppy drive, so the only thing I was missing was a program to write raw sectors to a floppy diskette, which I wrote myself (guess what programming language).</p>
+<p>The program consisted of two parts:</p>
+<ul>
+<li><strong>Bootloader</strong>: This was a tiny piece of code (it had to fit into a 512-bytes sector after compilation) responsible for one thing only --loading my program from a floppy and setting it up for running</li>
+<li><strong>The program</strong>: This is actually the program for displaying a moving string</li>
+</ul>
+<p>Having proper documentation was not a big deal to implement the whole package. However, I had to take care of things we usually do not deal with. One of them was a primitive video driver, which would have handled switching to graphic mode, displaying the string at the proper location, and switching back to the text mode before the program terminated. The other one was writing a primitive keyboard driver, basically an interrupt handler to listen to the keyboard and make proper adjustments to the speed of the string's movement, or tell the program to terminate. To put it simply, I had to interface hardware myself (oh, the good old times of the real mode... everything was so simple and so complicated).</p>
+<p>In modern days, unless you are a driver developer, you are completely free from accessing hardware directly --the operating system does all the dirty work for us and we may concentrate purely on the implementation of our ideas.</p>
+<p>We are able to implement any algorithm in Assembly language thus far, we may even, provided that we have proper documentation, write our own drivers, however, doing so only introduces redundant work when trying to write a user-space application. Not to mention the fact that there are already drivers for all your hardware provided by hardware vendors, and Occam's Razor principle tells us not to multiply things without need. Modern operating systems are good at managing these drivers and providing easier and seamless access to hardware, thus allowing us to concentrate on the process of creation.</p>
+<p>In this chapter, we will see how to easily and painlessly use the power given to us by the operating system and numerous libraries already created by others. We will begin by linking third-party object files to our code, proceed through importing API from DLL/SO and finish with dynamically loading DLL/SO, and importing the API at runtime.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">The rings</h1>
+                
+            
+            
+                
+<p>Almost all modern platforms, except a few embedded ones, utilize the same security principle --the division of execution environments by security levels and privileges; in this case, this means the ability to access certain resources. On Intel-based platforms, there are four security levels known as <strong>protection rings</strong>. These rings are numbered 0 through 3, where the greater the number, the less privileged the ring. Obviously, the code running at a less privileged level cannot access memory with a higher privilege level directly. We will shortly see how data is transferred between different privilege levels.</p>
+<p>The following figure illustrates the concept of protection rings:</p>
+<div><img class="image-border" height="185" src="img/3c5463ec-283d-475d-96bc-8c48ba85616b.png" width="185"/></div>
+<p>Here's a description of the different privileges of protection rings:</p>
+<ul>
+<li><strong>Ring 0</strong> is the most privileged level where all instructions are available and all hardware is accessible. This is the grey area where the kernel resides, accompanied by kernel space drivers.</li>
+<li><strong>Ring 1</strong> and <strong>Ring 2</strong> are intended to serve as the driver execution environment, but are hardly used at all.</li>
+<li><strong>Ring 3</strong> is the user space. It is the privilege level regular software is granted, and it is the only privilege level we are interested in. Although getting deeper may be very interesting, it would not be practical for the purpose of this book, as all our code requires privilege level 3 only.</li>
+</ul>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">System call</h1>
+                
+            
+            
+                
+<p>The user-space application is of no value if it cannot make service requests to the kernel, as it is not able to even terminate properly without asking the kernel to terminate the process it is running in. All system calls may be categorized as follows:</p>
+<ul>
+<li><strong>Process control</strong>: System calls that fall into this category are responsible for the creation of processes/threads and their management, as well as memory allocation/deallocation</li>
+<li><strong>File management</strong>: These system calls are responsible for file creation, deletion, and IO</li>
+<li><strong>Device management</strong>: This category contains system calls used for device administration/access</li>
+<li><strong>Maintenance</strong>: This category contains system calls for management of date, time, and files or device attributes</li>
+<li><strong>Communication</strong>: Management of communication channels and remote devices</li>
+</ul>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">System call hardware interface</h1>
+                
+            
+            
+                
+<p>On the hardware level, the processor provides us with several ways to invoke a kernel procedure to handle a system call:</p>
+<ul>
+<li><strong>Through an interrupt</strong> (<strong>INT instruction on 32-bit systems</strong>): The operating system allocates a descriptor for an interrupt with a specific number, which points to a procedure in the kernel space that handles the interrupt in accordance with its parameters (parameters are passed via registers). One of the parameters is the index into system call table (roughly speaking, the table of pointers to specific system call handlers).</li>
+<li><strong>Using the SYSENTER instruction</strong> (<strong>32-bit systems excluding WOW64 processes</strong>): Beginning with Pentium II, we are able to use the <kbd>SYSENTER</kbd> instruction to perform fast calls to a ring 0 procedure. This instruction is accompanied by the <kbd>SYSEXIT</kbd> instruction, which returns from a system call.</li>
+<li><strong>Using the SYSCALL instruction</strong> (<strong>64-bit systems</strong>): This instruction was introduced by the x86_64 architecture and is only available in the long mode. This instruction allows faster transfer to a system call handler and does not access the interrupt descriptor table.</li>
+</ul>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Direct system calls</h1>
+                
+            
+            
+                
+<p>Using one of the preceding instructions would mean making a direct system call and bypassing all system libraries as shown in the following figure. However, this is not the best practice and we will see why in a moment:</p>
+<div><img class="image-border" height="123" src="img/b0f706b6-aee1-4da5-a275-0dfc7bd9b6e0.png" width="196"/></div>
+<p>Using the direct system call approach on Linux would, most likely, work, as Linux system calls are well documented and their numbers are well known (they may be found in <kbd>/usr/include/asm/unistd_32.h</kbd> for a 32-bit system and in <kbd>/usr/include/asm/unistd_64.h</kbd> for a 64-bit one), and those numbers do not tend to change. For example, the following code prints a <kbd>msg</kbd> string to the standard output on a 32-bit Linux system:</p>
+<pre>mov  eax, 4      <em>; 4 is the number of sys_write system call</em><br/>mov  ebx, 1      <em>; 1 is the stdout file number</em><br/>lea  ecx, [msg]  <em>; msg is the label (address) of the string to write</em><br/>mov  edx, len    <em>; length of msg in bytes</em><br/><strong>int  0x80</strong>        <em>; make syscall<br/></em></pre>
+<p>Here is its 64-bit counterpart:</p>
+<pre>mov  rax, 1      <em>; 1 is the number of sys_write on 64-bit Linux</em><br/>mov  rdi, 1      <em>; 1 is the stdout file number</em><br/>mov  rsi, msg    <em>; msg is the label (address) of the string</em><br/>mov  rdx, len    <em>; length of msg in bytes</em><br/><strong>syscall</strong>          <em>; make the system call</em></pre>
+<p>On Windows, however, despite the fact that the idea is the same, the implementation is different. To begin with, there is no publicly available official documentation of Windows system calls, which not only requires a certain portion of reverse engineering, but also gives no guarantee that the information found through reversing <kbd>ntdll.dll</kbd> would remain intact after the next update, not to mention the fact that system call numbers tend to change from version to version. However, for the sake of common education, here is the system call invocation procedure from the 32-bit <kbd>ntdll.dll</kbd>:</p>
+<pre>_KiIntSystemCall:<br/>   lea  edx, [esp + 8]      <em>; Load EDX with pointer to the parameter block</em><br/>   int  0x2e                <em>; make system call</em></pre>
+<p>Also, if the <kbd>SYSENTER</kbd> instruction is available, then we have the following:</p>
+<pre>_KiFastSystemCall:<br/>   mov  edx, esp            <em>; Load EDX with stack pointer so that kernel</em><br/>                            <em>; may access the parameter block on stack</em><br/>   sysenter                 <em>; make system call</em></pre>
+<p>Although the second variant is more promising, there is still no guarantee that the format of the parameter block would not change (though, this is not likely). In conclusion of this subsection, it is important to say that it is much advised not to make use of direct system calls unless absolutely necessary.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Indirect system calls</h1>
+                
+            
+            
+                
+<p>A more common way of making use of system services is through supporting libraries, whether system DLLs on Windows or libc on Linux, which provide a more convenient API than the raw system call interface. The process is depicted in the following diagram:</p>
+<div><img class="image-border" height="142" src="img/60f5f7fc-944f-4945-82e6-3f5248525238.png" width="228"/></div>
+<p>Although it may seem like another layer may introduce redundant complications, in reality, it is exactly the opposite, not to mention that in such cases our code would become much more portable.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Using libraries</h1>
+                
+            
+            
+                
+<p>As it has been stated earlier, the best way to interact with the operating system from a program written in Assembly is through the system API --system DLLs on Windows and libc on Linux, and the rest of the chapter is dedicated to this topic, as it will significantly make your life easier as an Assembly developer.</p>
+<p>The rest of the chapter is dedicated to the use of external libraries and DLLs if on Windows, or external libraries and shared objects if on Linux. We will try to kill two rabbits in one shot, meaning that we will not only learn how to link DLLs or system lib files to our code, but we will also cover the linking of other object files with our code.</p>
+<p>For the sake of an example, we will create a small program that prints a message to the standard output and uses the module we developed in <a href="22b2b820-0431-48f6-9ed2-8b9e0cded10a.xhtml" target="_blank">Chapter 8</a>, <em>Mixing Modules Written in Assembly and Those Written in High-Level Languages</em>, for the encryption and decryption of the message.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Windows</h1>
+                
+            
+            
+                
+<p>There are two options for how to gain access to external functionality on Windows; one would be compiling our code to an object file and linking it against other object files or libraries, and the other would be creating executable and importing functions exported by different DLLs. We will examine them both so that you will be able to select the most suitable approach when the need arises.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Linking against object and/or library files</h1>
+                
+            
+            
+                
+<p>An object file is a file that contains billets of executable code and/or data. It cannot be executed by itself (even if it contains all the code for an executable), as the information stored in such files is only used by a linker when building the final executable; otherwise, all the code and data within the file is not bound to any address, and only hints are provided. Detailed information on the Microsoft object file format, as well as the PE executable format specifications, may be obtained at <a href="http://www.microsoft.com/whdc/system/platform/firmware/PECOFF.mspx">http://www.microsoft.com/whdc/system/platform/firmware/PECOFF.mspx</a>. Visit this URL, click on the Download button, and select <kbd>pecoff.docx</kbd>.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Object file</h1>
+                
+            
+            
+                
+<p>Let's get to business and write the code for our object file, <kbd>obj_win.asm</kbd>:</p>
+<pre><em>; First we need to tell the assembler that</em><br/><em>; we expect an object file compatible with MS linker</em><br/>format MS COFF<br/><br/><em>; Then specify the external API we need</em><br/><em>; extrn means that the procedure is not in this file</em><br/><em>; the 4 after the '@' specifies size of procedure parameters</em><br/><em>; in bytes</em><br/><em>; ExitProcess is a label and dword is its size</em> <br/>extrn '__imp__ExitProcess@4' as ExitProcess:dword<br/>extrn '__imp__GetStdHandle@4' as GetStdHandle:dword<br/>extrn '__imp__WriteConsoleA@20' as WriteConsole:dword<br/><br/><em>; And, of course, our "crypto API"</em><br/>extrn '_GetPointers' as GetPointers:dword<br/><br/><em>; Define a constant for GetStdHandle()</em><br/>STD_OUTPUT_HANDLE   equal -11<br/><br/><em>; and a structure to ease the access to "crypto functions"</em><br/>struc crypto_functions<br/>{<br/>   .f_set_data_pointer  dd ?<br/>   .f_set_data_length   dd ?<br/>   .f_encrypt           dd ?<br/>   .f_decrypt           dd ?<br/>}<br/><br/><em>; The following structure makes it a bit easier </em><br/><em>; to manipulate strings and sizes thereof</em><br/>struc string [s]<br/>{<br/>   common<br/>   .      db s<br/>   .length = $ - .<br/>}</pre>
+<p>Before we implement our code, let's create the data section so that the code is easier to understand:</p>
+<pre>section '.data' data readable writeable<br/>   <em>; We will store the STDOUT handle here</em><br/>   stdout        dd ?<br/><br/>   <em>; This buffer contains the message we will operate on</em><br/>   buffer        string 'Hello from object file!', 0x0a, 0x0d<br/><br/>   <em>; Progress messages</em><br/>   msg1          string 'Encrypted', 0x0a, 0x0d<br/>   msg2          string 'Decrypted', 0x0a, 0x0d<br/><br/>   <em>; This one is required by the WriteConsole procedure</em><br/>   bytesWritten  dd ?</pre>
+<p>The data section is quite self-explanatory and we are now ready to write the code at last:</p>
+<pre>section '.text' code readable executable<br/>   <em>; We need the entry point to be accessible to the linker,</em><br/><em>   ; therefore we make it "public"</em><br/>   public _start<br/><br/>_start:<br/>   <em>; The first step would be obtaining the STDOUT handle</em><br/>   push  STD_OUTPUT_HANDLE<br/>   <em>; Since we are linking against a DLL, the GetStdHandle </em><br/><em>   ; label would refer to a location in the import section </em><br/><em>   ; which the linker will create for us. Hence we make an</em><br/><em>   ; indirect call</em><br/>   call  [GetStdHandle]<br/>   <em>; Store the handle</em><br/>   mov   [stdout], eax<br/><br/>   <em>; Print the message</em><br/>   push  0 bytesWritten buffer.length buffer eax<br/>   call  [WriteConsole]<br/><br/>   <em>; Let's play with encryption a bit</em><br/><em>   ; First get the procedure pointers. Since the GetPointers()</em><br/><em>   ; is in another object file, it would be statically linked,</em><br/><em>   ; therefore we make a direct call</em><br/>   call  GetPointers<br/>   <em>; Store the pointer to the crypto_functions structure in EBX</em><br/>   mov   ebx, eax</pre>
+<p>Remember the <kbd>virtual</kbd> directive?</p>
+<p>We, programmers, are sometimes lazy people and like things to be convenient, especially when it comes to reading our own code a week after it was written, therefore, we would prefer to address our cryptographic procedures by name, rather than by an offset from the address of the <kbd>crypto_functions</kbd> structure, and this is when the <kbd>virtual</kbd> directive comes in handy allowing us to label the location pointed by the EBX register as shown in the following code snippet:</p>
+<pre>   virtual at ebx<br/>      funcs  crypto_functions<br/>   end virtual</pre>
+<p>The <kbd>funcs</kbd> is a virtual label that refers to the location pointed to by the <kbd>ebx</kbd> register, and it will be replaced with <kbd>ebx</kbd> in compile time. Any member of the <kbd>crypto_functions</kbd> structure referred by <kbd>funcs</kbd> will be replaced by its offset within the structure. Let's now set up the crypto engine and encrypt and then decrypt the message stored at <kbd>buffer</kbd>:</p>
+<pre><em>   ; Set the pointer to data and its length</em><br/>   push  buffer<br/>   call  [funcs.f_set_data_pointer] <em>; Equivalent to 'call [ebx]'</em><br/>   push  buffer.length<br/>   call  [funcs.f_set_data_length]<br/><br/>   <em>; We have to restore the stack pointer due to the </em><br/><em>   ; fact that the above two procedures are in accordance</em><br/><em>   ; with the cdecl calling convention</em><br/>   add   esp, 8<br/><br/>   <em>; Encrypt the content of the buffer</em><br/>   call  [funcs.f_encrypt]<br/>   <br/>   <em>; Print progress message</em><br/>   push  0 bytesWritten msg1.length msg1 [stdout]<br/>   call  [WriteConsole]<br/><br/>   <em>; Decrypt the content of the buffer</em><br/>   call  [funcs.f_decrypt]<br/><br/>   <em>; Print another progress message</em><br/>   push  0 bytesWritten msg2.length msg2 [stdout]<br/>   call  [WriteConsole]<br/><br/>   <em>; Print the content of the buffer in order to verify</em><br/><em>   ; decryption</em><br/>   push  0 bytesWritten buffer.length buffer [stdout]<br/>   call  [WriteConsole]<br/><br/>   <em>; All is fine and we are free to exit</em><br/>   push  0<br/>   call  [ExitProcess]</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Producing the executable</h1>
+                
+            
+            
+                
+<p>Compiling this source file will produce the <kbd>obj_win.obj</kbd> file, which we will link to <kbd>kernel32.lib</kbd> and <kbd>crypto_w32.obj</kbd>. But where do we find the <kbd>kernel32.lib</kbd> file? This task may not be such a simple one sometimes, although not a difficult one. All system libraries may be found at <kbd>c:\Program Files\Microsoft SDKs\Windows\vX.X\Lib</kbd>, where <kbd>vX.X</kbd> stands for the version (there will, most likely, be more than one). For 64-bit Windows, the directory would be <kbd>c:\Program Files (x86)\Microsoft SDKs\Windows\vX.X\Lib</kbd>. So, let's copy the <kbd>crypto_w32.obj</kbd> file to our working directory and try to link it. Open the Developer Command Prompt for VS 2017 command window, as shown in the following screenshot, and navigate to your working directory:</p>
+<div><img class="image-border" height="221" src="img/2cd9e977-d93f-4e17-9c0c-f3b07218d2b1.png" width="275"/></div>
+<p>Type the following command:</p>
+<pre><strong>link /entry:start /subsystem:console obj_win.obj "c:\Program Files\Microsoft SDKs\Windows\v7.0A\Lib\kernel32.lib" crypto_w32.obj</strong></pre>
+<p>Once you press enter, if all went well, the Microsoft (R) Incremental Linker logo message will appear in the console followed by a new prompt, and the <kbd>obj_win.exe</kbd> file will be generated. Try to run it and you should get this output:</p>
+<pre><strong>Hello from object file!</strong><br/><strong>Encrypted</strong><br/><strong>Decrypted</strong><br/><strong>Hello from object file!</strong></pre>
+<p>Voila! We have just used external functionality in our Assembly code.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Importing procedures from DLL</h1>
+                
+            
+            
+                
+<p>The Flat Assembler provides us with yet another option for using external functionality. While with other assemblers we need a linker in order to link against DLLs, Flat Assembler makes it possible to produce an executable with all the imports defined in source code, which allows us to simply compile the source code and run the executable.</p>
+<p>The process of runtime linking dynamic link libraries to our code is fairly simple and may be illustrated with the following diagram:</p>
+<div><img class="image-border" height="467" src="img/2eae957f-1fab-4f41-8397-6ca6d6249f66.png" width="467"/></div>
+<p>Once the loader has loaded an executable, it parses its import table (if present) and identifies the requested libraries (refer to <kbd>PECOFF.docx</kbd> for the import table format specifications). For each library reference found in the import section, the loader attempts to load the library, then parses the executable's import section for the names of procedures exported by the library in question, and scans the library's export section for a match. Once a matching entry is found, the loader calculates the virtual address of the entry and writes it back to the import section of the executable. This sequence is repeated for every imported entry of every requested library.</p>
+<p>For our example, we will use the same code as with linking objects (just rename it to <kbd>dll_win.asm</kbd>) with just a few tiny modifications, and <kbd>crypto_w32.dll</kbd> instead of <kbd>crypto_w32.obj</kbd>. First of all, remove all the <kbd>extrn</kbd> and <kbd>public</kbd> declarations and then tell the assembler that this time we are expecting a console executable, rather than an object file, by changing <kbd>format MS COFF</kbd> to <kbd>format PE CONSOLE</kbd>.</p>
+<p>As we will create our own import table, we need to include the <kbd>win32a.inc</kbd> file that contains all the macros we may need for our purpose. Add this line after the format declaration:</p>
+<pre>include 'win32a.inc'</pre>
+<p>We are almost there; append the following code to the source file:</p>
+<pre>section '.idata' import data readable writeable<br/><br/>   <em>; Tell the assembler which libraries we are interested in</em><br/>   library kernel,'kernel32.dll',\<br/>           crypto,'crypto_w32.dll'<br/><br/>   <em>; Specify procedures we need from kernel32.dll</em><br/>   import kernel,\<br/>      GetStdHandle, 'GetStdHandle',\<br/>      WriteConsole, 'WriteConsoleA',\<br/>      ExitProcess, 'ExitProcess'<br/><br/>   <em>; And, finally, tell the assembler we are also</em><br/><em>   ; interested in our crypto engine</em><br/>   import crypto,\<br/>      GetPointers, 'GetPointers'</pre>
+<p>The last modification that we have to make is change <kbd>call GetPointers</kbd> to <kbd>call [GetPointers]</kbd>, as this time, the <kbd>GetPointers</kbd>; procedure will not be statically linked to our executable, but it will be imported from a dynamic link library, meaning that the <kbd>GetPointers</kbd> label will refer to an address in memory where the address of the <kbd>GerPointers</kbd> procedure will be stored.</p>
+<p>Try to compile the file and run it in the console. You should get the same output as the one with the executable we linked from multiple objects.</p>
+<p>If you get an error message saying that the executable failed to launch instead of the expected output, try adding the <kbd>section '.reloc' fixups data readable discardable</kbd> line to the <kbd>TARGET_W32_DLL</kbd> section of the <kbd>finalize</kbd> macro in the <kbd>platform.inc</kbd> file, and recompile <kbd>crypto_w32.dll</kbd>. This is correct for building a DLL in general, although it may work without this in certain circumstances.</p>
+<p>It is, of course, possible to load DLLs manually with the <kbd>LoadLibrary()</kbd> Windows API, and resolve addresses of needed procedures with <kbd>GetProcAddress()</kbd>, but that does not differ from linking against a DLL or importing APIs, as we still do need to import these two APIs. There is, however, a method that allows us to import API addresses in the so-called stealthy way.</p>
+<p>The exact same rules apply when it comes to building 64-bit executables. The only difference is the location of <kbd>kernel32.lib</kbd>, which will be <kbd>c:\Program Files\Microsoft SDKs\Windows\vX.X\Lib\x64</kbd>, and the size of pointers. Also, it is very important to remember that the calling convention used on x86_64 Windows is neither <kbd>cdecl</kbd> nor <kbd>stdcall</kbd>!</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Linux</h1>
+                
+            
+            
+                
+<p>In Linux, just like in Windows, we have the same support for both static and dynamic linking (and support for manual import too). The main difference is that in Linux (and this is my sole opinion), building software is much easier as all the development tools are integrated into the system. Well, except Flat Assembler, but its integration is not a problem --we simply copy the <kbd>fasm</kbd> executable to one of the <kbd>bin</kbd> directories that are included in the user's PATH environment variable.</p>
+<p>Fortunately for us, Flat Assembler has built-in support for generation of both object files and executables, which imports procedures from libraries on Linux just as well as it supports such methods on Windows. We will shortly see that these approaches on Linux are almost identical to those on Windows, as long as we do not start diving into the depth of the ELF specifications and format.</p>
+<p>If you want to explore the ELF format in-depth, specifications are available at<br/>
+<a href="http://refspecs.linuxbase.org/elf/elf.pdf">http://refspecs.linuxbase.org/elf/elf.pdf</a> for specifications of 32-bit ELF<br/>
+and<br/>
+<a href="http://ftp.openwatcom.org/devel/docs/elf-64-gen.pdf">http://ftp.openwatcom.org/devel/docs/elf-64-gen.pdf</a> for specifications of 64-bit ELF.<br/>
+<br/>
+You may also find these specifications with Google or any other search engine, if these links appear broken.</p>
+<p>Just like we did in the case of Windows, we will begin by linking several object files to a single executable and then proceed to create an executable ELF file with dynamic dependency linking.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Linking against object and/or library files</h1>
+                
+            
+            
+                
+<p>The structure of the <strong>Microsoft Common Object File Format</strong> (<strong>MS COFF</strong>) and that of <strong>ELF</strong> (<strong>Executable and Linkable Format</strong>, previously known as <strong>Extensible Linking Format</strong>) are very different, but for us, this difference does not matter at all. The ELF was developed by UNIX System Laboratories and was published in 1997. It was later selected as a portable object file format for the 32-bit Intel architecture. As of today, there is ELF for 32-bit systems and ELF64 for 64-bit systems.</p>
+<p>From our perspective, however, the code for Linux is very similar to the code for Windows. To be more precise, FASM is what makes it quite similar.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Object file</h1>
+                
+            
+            
+                
+<p>Just as with the object file source code for Windows, as always we will begin by telling the assembler what kind of output we are expecting, which procedures are public, and which are external:</p>
+<pre>format ELF<br/><br/><em>; As we want GCC to take care of all the startup code</em><br/><em>; we will call our procedure "main" instead of _start,</em><br/><em>; otherwise we would be using LD instead of GCC and </em><br/><em>; would have to specify all runtime libraries manually.</em><br/>public main<br/><br/><em>; The following function is linked from libc</em><br/>extrn printf<br/><br/><em>; And this one is from our crypto library</em><br/>extrn GetPointers</pre>
+<p>Then we proceed with convenience macro definition, and the suggestion is to put convenience macros into a separate include file so that they may be painlessly used with different code without the need to rewrite them:</p>
+<pre>struc crypto_functions<br/>{<br/>   .f_set_data_pointer dd ?<br/>   .f_set_data_length  dd ?<br/>   .f_encrypt          dd ?<br/>   .f_decrypt          dd ?<br/>}<br/><br/>struc string [s]<br/>{<br/>   common<br/>   .                   db s<br/>   .length = $ - .<br/>   .terminator         db 0<br/>}</pre>
+<p>The data section is almost the same as in the case of the object file for Windows, except that we do not need a variable to hold the <kbd>stdout</kbd> handle:</p>
+<pre>section '.data' writeable<br/>   buffer  string  'Hello from ELF linked from objects!', 0x0a<br/>   msg1    string  'Encrypted', 0x0a<br/>   msg2    string  'Decrypted', 0x0a</pre>
+<p>And, at last, the code section. It is logically the same code with the only difference being the use of <kbd>printf()</kbd> instead of <kbd>WriteConsoleA()</kbd>, in which case the <kbd>printf()</kbd> implementation in <kbd>libc</kbd> will make all the arrangements and invoke a <kbd>SYS_write</kbd> Linux system call for us. As we are, from GCC's point of view, only implementing the <kbd>main()</kbd> function, we do not have to terminate the process ourselves, hence there is no <kbd>exit()</kbd> procedure imported --the runtime code is automatically added and linked, and GCC will do all the rest, while we simply return from <kbd>main()</kbd>:</p>
+<pre>section '.text' executable<br/><br/><em>; Remember that we are using GCC for linking, hence the name is</em><br/><em>; main, rather than _start</em><br/>main:<br/>   <em>; Print the content of the buffer to stdout</em><br/><em>   ; As all procedures (except crypto procedures) would be</em><br/><em>   ; statically linked, we are using direct calls</em><br/>   push  buffer<br/>   call  printf<br/>   <em>; Restore stack as printf() is a cdecl function</em><br/>   add   esp, 4<br/><br/>   <em>; Get pointers to cryptographic procedures</em><br/>   call  GetPointers<br/>   mov   ebx, eax<br/>   <br/>   <em>; We will use the same trick to ease our access to cryptography</em><br/><em>   ; procedures by defining a virtual structure</em><br/>   virtual at ebx<br/>      funds   crypto_functions<br/>   end virtual<br/><br/>   <em>; Right now we will push parameters for all subsequent procedure</em><br/><em>   ; calls onto the stack in reverse order (parameter for the last </em><br/><em>   ; call is pushed first</em><br/>   push  0 buffer msg2 msg1 buffer.length buffer<br/><br/>   <em>; Set crypto library's data pointer</em><br/><em>   ; Crypto procedures are not available at link time, hence not</em><br/><em>   ; statically linked. Instead we obtain pointers thereof and this </em><br/><em>   ; is the reason for indirect call</em><br/>   call  [funcs.f_set_data_pointer]<br/>   <em>; Restore stack</em><br/>   add   esp, 4<br/><br/>   <em>; Set size of the data buffer</em><br/>   call  [funcs.f_set_data_length]<br/>   add   esp, 4<br/><br/>   <em>; Encrypt the buffer. As this procedure has no parameter, there</em><br/><em>   ; is no reason to do anything to stack following this call</em><br/>   call  [funcs.f_encrypt]<br/><br/>   <em>; Print msg1</em><br/>   call  printf<br/>   add   esp, 4<br/><br/>   <em>; Decrypt the buffer back</em><br/>   call  [funcs.f_decrypt]<br/><br/>   <em>; Print msg2</em><br/>   call  printf<br/>   add   esp, 4<br/><br/>   <em>; Print the content of the buffer to ensure correct decryption</em><br/>   call  printf<br/>   add   esp, 4<br/><br/>   <em>; All is done, so we may safely exit</em><br/>   pop   eax<br/>   ret</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Producing the executable</h1>
+                
+            
+            
+                
+<p>Save the file as <kbd>o_lin.asm</kbd> and compile it into an object file with the <kbd>fasm o_lin.asm</kbd> command in the terminal. The next step will be linking <kbd>o_lin.o</kbd> with <kbd>crypto_32.o</kbd> with the following command:</p>
+<pre><strong>gcc -o o_lin o_lin.o crypto_32.o</strong><br/><em><strong># If you are on a 64-bit system then </strong></em><br/><strong>gcc -o o_lin o_lin.o crypto_32.o -m32</strong></pre>
+<p>This will result in a <kbd>5KB o_lin</kbd> executable --quite a heavy one in relation to the size of code we used to produce. Such a huge size is due to the GCC linking C runtime into it. Try to run it and you should see this in the terminal:</p>
+<div><img class="image-border" height="72" src="img/5c3fb30f-da46-4445-887c-ef4b73369ebd.png" width="279"/></div>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Dynamic linking of ELF</h1>
+                
+            
+            
+                
+<p>It is not always suitable to statically link object files into a single executable, and Linux provides us with a mechanism to produce an ELF executable that would be linked with the required libraries (shared objects) dynamically at runtime. The Flat Assembler used to have relatively basic support for ELF, meaning one could only create an executable that would use system calls directly, or create an object file to be linked with others (exactly in the manner we did).</p>
+<p>Flat Assembler's support for ELF was extended with the release of version 1.69.05 --a few segment attributes were added along with several convenience macros, which let us manually create the import table in an ELF executable. These macros are in the Linux package under the <kbd>examples/elfexe/dynamic</kbd> directory (underlined in the following screenshot):</p>
+<div><img class="image-border" height="339" src="img/f7556984-e5eb-47a7-8eb2-a385a7f3fe85.png" width="229"/></div>
+<p>These macros may be found under the <kbd>linux_include</kbd> folder in the accompanying code for this chapter.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">The code</h1>
+                
+            
+            
+                
+<p>The code for dynamically linked ELF is almost the same as for an ELF object file, with a few tiny differences. First of all, the <kbd>formatter</kbd> directive must tell the assembler to produce an executable, rather than an object file:</p>
+<pre>format ELF executable 3    <em>; The 3 may be omitted if on Linux     </em><br/><br/><em>; Include this in order to be able to create import section</em><br/>include 'linux_include/import32.inc'<br/><br/><em>; We have to specify the entry point for the executable</em><br/>entry _start</pre>
+<p>The convenience structures we used in this chapter (<kbd>crypto_functions</kbd> and <kbd>string</kbd>) are still intact and should be placed in the file too. There is no strict definition as to where they should be placed exactly, but they should appear before they are used:</p>
+<pre><em>; The content of the data section is the same as in object file</em><br/><em>; source. The section itself is declared in a different way (in</em><br/><em>; fact, although, an ELF file is divided into sections, it is </em><br/><em>; treated a bit differently when in memory - it is divided into</em><br/><em>; segments)</em><br/>segment readable writeable<br/>   buffe  string 'Hello from dynamically linked ELF!', 0x0a<br/>   msg1   string 'Encrypted', 0x0a<br/>   msg2   string 'Decrypted', 0x0a</pre>
+<p>A new segment is introduced in order to improve the Flat Assembler's ELF support; one is the <strong>interpreter</strong> that contains the name of the loader to be used with the executable:</p>
+<pre>segment interpreter writeable<br/>   db '/lib/ld-linux.so.2',0</pre>
+<p>Another one is <strong>dynamic</strong> and serves as an import index. However, we are not going to declare this segment ourselves; instead, we will use two macros --one of them will create a list of the needed libraries and the other specifies procedures to be imported. In our case, it will look like this:</p>
+<pre><em>; In our example we only need to libraries - libc for</em><br/><em>; printf() and exit() (and we will use exit() this time)</em><br/><em>; and crypto_32.so for our cryptographic core.</em><br/>needed\<br/>   'libc-2.19.so',\<br/>   'crypto_32.so'<br/><br/><em>; Then we specify requested procedures</em><br/>import\<br/>   printf,\<br/>   exit,\<br/>   GetPointers</pre>
+<p>The rest of the code has only a few changes. First of all, the code section is declared as follows:</p>
+<pre>segment executable readable<br/>_start:</pre>
+<p>This time all procedures are called indirectly:</p>
+<pre>push  buffer<br/>call  [printf]<br/>add   esp, 4<br/><br/>call  [GetPointers]<br/>mov   ebx, eax<br/><br/>virtual at ebx<br/>   funcs  crypto_functions<br/>end virtual<br/><br/>push  0 buffer msg2 msg1 buffer.length buffer<br/><br/><em>; All procedures are cdecl, so we have to adjust </em><br/><em>; the stack pointer upon return from procedures</em><br/><em>; with parameters</em><br/><br/>call  [funcs.f_set_data_pointer]<br/>add   esp, 4<br/><br/>call  [funcs.f_set_data_length]<br/>add   esp, 4<br/><br/>call  [funcs.f_encrypt]<br/><br/>call  [printf]<br/>add   esp, 4<br/><br/>call  [funcs.f_decrypt]<br/><br/>call  [printf]<br/>add   esp, 4<br/><br/>call  [printf]<br/>add   esp, 4<br/><br/>call  [exit]</pre>
+<p>The last two instructions we replace the two lines:</p>
+<pre>pop  eax<br/>ret</pre>
+<p>with:</p>
+<pre>cal  [exit]</pre>
+<p>Save the file as <kbd>so_lin.asm</kbd>.</p>
+<p>Now, you may build and run the newly created executable:</p>
+<pre><strong>fasm  so_lin.asm</strong><br/><strong>./so_lin</strong></pre>
+<p>If everything is done right, then you should see this:</p>
+<div><img class="image-border" height="79" src="img/65a7ca6e-06f1-4dfe-b7c9-828005ecb106.png" width="283"/></div>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Summary</h1>
+                
+            
+            
+                
+<p>In this chapter, you got acquainted with system calls --an operating system's service gateway. You learned that it is much more practical and convenient to use existing libraries in order to invoke system calls indirectly, and in a much more convenient and secure way.</p>
+<p>This chapter was intentionally left without 64-bit examples, as I would like you to try and write 64-bit versions of these simple executables yourself as a small exercise to test yourself.</p>
+<p>Now we are masters. We have a firm base and are able to implement any algorithm in pure Intel Assembly, and we are even able to invoke system calls directly (on Linux at least, as it is strongly discouraged on Windows). However, as real masters, we know that there is much more to learn and explore, as a base alone is not enough.</p>
+<p class="mce-root"/>
+<p class="mce-root"/>
+
+
+            
+
+            
+        
+    </body></html>

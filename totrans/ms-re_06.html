@@ -1,0 +1,684 @@
+<html><head></head><body><div><h1 class="header-title">RE in Linux Platforms</h1>
+                
+            
+            
+                
+<p>A lot of our tools work great in Linux. In the previous chapter, we introduced a few Linux command-line tools that are already built-in by default. Linux already has Python scripting installed, as well. In this chapter, we are going to discuss a good setup for analyzing Linux files and hosting Windows sandbox clients.</p>
+<p>We are going to learn how to reverse an ELF file by exploring the reversing tools. We will end this chapter by setting up a Windows sandbox client, running a program in it, and monitoring the network traffic coming from the sandbox.</p>
+<p>Not all of us are fond of using Linux. Linux is an open source system. It is a technology that will stick with us. As a reverse engineer, no technology should be an obstacle, and it is never too late to learn this technology. The basics of using Linux systems can easily be found on the internet. As much as possible, this chapter tries to detail the steps required to install and execute what is needed in a way that you can follow.</p>
+<p>In this chapter, you will look at the following </p>
+<ul>
+<li>Understanding of linux executables</li>
+<li>Reversing an ELF file</li>
+<li>Virtualization in Linux – an analysis of a Windows executable under a Linux host</li>
+<li>Network traffic monitoring</li>
+</ul>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Setup</h1>
+                
+            
+            
+                
+<p>This chapter discusses Linux reverse engineering, so we need to have a Linux setup. For reverse engineering, it is recommended to deploy Linux on a bare-metal machine. And since most of the analysis tools that have been developed are Debian-based, let's use 32-bit Ubuntu Desktop. I chose Ubuntu because it has a strong community. Because of that, most of the issues may already have a resolution or solutions may be readily available. </p>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p class="mceNonEditable"/>
+<p>Why build our setup on a bare-metal machine? It is a better host for our sandbox clients, especially when monitoring network traffic. It also has an advantage in proper handling of Windows malware, preventing compromise due to accidental malware execution.</p>
+<p>You can go to <a href="https://www.ubuntu.com/">https://www.ubuntu.com/</a> to obtain an ISO for the Ubuntu installer. The site includes an installation guide. For additional help, you can visit the community forum at <a href="https://ubuntuforums.org/">https://ubuntuforums.org/</a>.</p>
+<p>"Bare-metal machines" refers to computers that execute code directly on the hardware. It is usually a term used to refer to hardware, as opposed to virtual machines.</p>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Linux executable – hello world</h1>
+                
+            
+            
+                
+<p>To begin with, let's create a hello world program. Before anything else, we need to make sure that the tools required to build it are installed. Open a Terminal (the Terminal is Linux's version of Windows' Command Prompt) and enter the following command. This may require you to enter your super user password:</p>
+<pre>sudo apt install gcc</pre>
+<p>The C program compiler,<strong> </strong><em><strong><kbd>gcc</kbd>,</strong> </em>is usually pre-installed in Linux.</p>
+<p>Open any text editor and type the lines of following code, saving it as <kbd><em>hello.c</em></kbd>:</p>
+<pre>#include &lt;stdio.h&gt;<br/>void main(void)<br/>{<br/>    printf ("hello world!\n");<br/>}</pre>
+<p>You can use <kbd>vim</kbd> as your text editor by running <kbd>vi</kbd> from the Terminal.   </p>
+<p>To compile and run the program, use the following commands:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="img/67c70dee-c611-4097-b882-594d24c572df.png" width="426" height="79"/></p>
+<p>The <kbd>hello</kbd> file is our Linux executable that displays a message in the console.</p>
+<p>Now, on to reversing this program.</p>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">dlroW olleH</h1>
+                
+            
+            
+                
+<p>As an example of good practice, the process of reversing a program first needs to start with proper identification. Let's start with <kbd>file</kbd>:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="img/687cf65a-6c09-4214-8afd-95e1ef643c80.png" width="734" height="108"/></p>
+<p>It is a 32-bit ELF file-type. ELF files are native executables on Linux platforms.</p>
+<p>Next stop, let's take a quick look at text strings with the <kbd>strings</kbd> command:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="img/5dff269d-cc7b-4222-a998-22af556eadd9.png" width="725" height="84"/></p>
+<p class="mce-root"/>
+<p>This command will produce something like the following output:</p>
+<pre>/lib/ld-linux.so.2<br/>libc.so.6<br/>_IO_stdin_used<br/>puts<br/>__libc_start_main<br/>__gmon_start__<br/>GLIBC_2.0<br/>PTRh<br/>UWVS<br/>t$,U<br/>[^_]<br/>hello world!<br/>;*2$"(<br/>GCC: (Ubuntu 5.4.0-6ubuntu1~16.04.10) 5.4.0 20160609<br/>crtstuff.c<br/>__JCR_LIST__<br/>deregister_tm_clones<br/>__do_global_dtors_aux<br/>completed.7209<br/>__do_global_dtors_aux_fini_array_entry<br/>frame_dummy<br/>__frame_dummy_init_array_entry<br/>hello.c<br/>__FRAME_END__<br/>__JCR_END__<br/>__init_array_end<br/>_DYNAMIC<br/>__init_array_start<br/>__GNU_EH_FRAME_HDR<br/>_GLOBAL_OFFSET_TABLE_<br/>__libc_csu_fini<br/>_ITM_deregisterTMCloneTable<br/>__x86.get_pc_thunk.bx<br/>_edata<br/>__data_start<br/>puts@@GLIBC_2.0<br/>__gmon_start__<br/>__dso_handle<br/>_IO_stdin_used<br/>__libc_start_main@@GLIBC_2.0<br/>__libc_csu_init<br/>_fp_hw<br/>__bss_start<br/>main<br/>_Jv_RegisterClasses<br/>__TMC_END__<br/>_ITM_registerTMCloneTable<br/>.symtab<br/>.strtab<br/>.shstrtab<br/>.interp<br/>.note.ABI-tag<br/>.note.gnu.build-id<br/>.gnu.hash<br/>.dynsym<br/>.dynstr<br/>.gnu.version<br/>.gnu.version_r<br/>.rel.dyn<br/>.rel.plt<br/>.init<br/>.plt.got<br/>.text<br/>.fini<br/>.rodata<br/>.eh_frame_hdr<br/>.eh_frame<br/>.init_array<br/>.fini_array<br/>.jcr<br/>.dynamic<br/>.got.plt<br/>.data<br/>.bss<br/>.comment</pre>
+<p>The strings are listed in order from the start of the file. The first portion of the list contained our message and the compiler information. The first two lines also show what libraries are used by the program:</p>
+<pre>/lib/ld-linux.so.2<br/>libc.so.6</pre>
+<p>The last portion of the list contains names of sections of the file. We only know of a few bits of text that we placed in our C code. The rest are placed there by the compiler itself, as part of its code that prepares and ends the graceful execution of our code.</p>
+<p>Disassembly in Linux is just a command line away. Using the <kbd>-d</kbd> parameter of the <kbd>objdump</kbd> command, we should be able to show the disassembly of the executable code. You might need to pipe the output to a file using this command line:</p>
+<pre>objdump -d hello &gt; disassembly.asm</pre>
+<p>The output file, <kbd>disassembly.asm</kbd>, should contain the following code:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="img/78a86ecf-24e4-4065-8b4f-4ba81794b322.png" style="width:43.08em;height:52.92em;" width="721" height="885"/></p>
+<p>If you notice, the disassembly syntax is different from the format of the Intel assembly language that we learned. What we see here is the AT&amp;T disassembly syntax. To get an Intel syntax, we need to use the <kbd>-M intel</kbd> parameter, as follows:</p>
+<pre>objdump -M intel -d hello &gt; disassembly.asm</pre>
+<p>The output should give us this disassembly result:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="img/d8d0f3ad-cda8-4b14-a64c-2b4be26bfc9d.png" style="width:47.67em;height:42.42em;" width="726" height="646"/></p>
+<p>The result shows the disassembly code of each function. In summary, there were a total of 15 functions from executable sections:</p>
+<pre>Disassembly of section .init:<br/>080482a8 &lt;_init&gt;:<br/><br/>Disassembly of section .plt:<br/>080482d0 &lt;puts@plt-0x10&gt;:<br/>080482e0 &lt;puts@plt&gt;:<br/>080482f0 &lt;__libc_start_main@plt&gt;:<br/><br/>Disassembly of section .plt.got:<br/>08048300 &lt;.plt.got&gt;:<br/><br/>Disassembly of section .text:<br/>08048310 &lt;_start&gt;:<br/>08048340 &lt;__x86.get_pc_thunk.bx&gt;:<br/>08048350 &lt;deregister_tm_clones&gt;:<br/>08048380 &lt;register_tm_clones&gt;:<br/>080483c0 &lt;__do_global_dtors_aux&gt;:<br/>080483e0 &lt;frame_dummy&gt;:<br/>0804840b &lt;main&gt;:<br/>08048440 &lt;__libc_csu_init&gt;:<br/>080484a0 &lt;__libc_csu_fini&gt;:<br/><br/>Disassembly of section .fini:<br/>080484a4 &lt;_fini&gt;:</pre>
+<p>The disassembly of our code is usually at the <kbd>.text</kbd> section. And, since this is a GCC-compiled program, we can skip all the initialization code and head straight to the <kbd>main</kbd> function where our code is at:</p>
+<p class="mce-root CDPAlignCenter CDPAlign"><img src="img/2e9ffcb2-40e0-4559-9e20-2f62b1077a57.png" style="width:45.33em;height:27.00em;" width="672" height="400"/></p>
+<p>I have highlighted the API call on <kbd>puts</kbd>. The <kbd>puts</kbd> API is also a version of <kbd>printf</kbd>. GCC was smart enough to choose <kbd>puts</kbd> over <kbd>printf</kbd> for the reason that the string was not interpreted as a <strong>C-style</strong> <strong>formatting string</strong>. A formatting string, or <kbd>formatter</kbd>, contains control characters, which are denoted with the <kbd>%</kbd> sign, such as <kbd>%d</kbd> for integer and <kbd>%s</kbd> for string. Essentially, <em>puts</em> is used for non-formatted strings, while <kbd>printf</kbd> is used for formatted strings.</p>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">What have we gathered so far?</h1>
+                
+            
+            
+                
+<p>Assuming we don't have any idea of the source code, this is the information we have gathered so far:</p>
+<ul>
+<li>The file is a 32-bit ELF executable.</li>
+<li>It was compiled using <kbd>GCC</kbd>.</li>
+<li>It has 15 executable functions, including the <kbd>main()</kbd> function.</li>
+<li>The code uses common Linux libraries: <kbd>libc.so</kbd> and <kbd>ld-linux.so</kbd>.</li>
+<li>Based on the disassembly code, the program is expected to simply show a message.</li>
+<li>The program is expected to display the message using <em>puts</em>.</li>
+</ul>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Dynamic analysis</h1>
+                
+            
+            
+                
+<p>Now let's do some dynamic analysis. Remember that dynamic analysis should be done in a sandbox environment. There are a few tools that are usually pre-installed in Linux that can be used to display more detailed information. We're introducing <kbd>ltrace</kbd>, <kbd>strace</kbd>, and <kbd>gdb</kbd> for this reversing activity.</p>
+<p>Here's how <kbd>ltrace</kbd> is used:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="img/53bee7c4-3d63-4cb3-888f-a7b5fedcb4b9.png" width="728" height="125"/></p>
+<p>The output of <kbd>ltrace</kbd> shows a readable code of what the program did. <kbd>ltrace</kbd> logged library functions that the program called and received. It called <em>puts</em> to display a message. It also received an exit status of <kbd><em>13</em></kbd> when the program terminated.</p>
+<p>The address <kbd><em>0x804840b</em></kbd> is also the address of the <kbd>main</kbd> function listed in the disassembly results.</p>
+<p class="mce-root"/>
+<p><kbd>strace</kbd> is another tool we can use, but this logs system calls. Here's the result of running <kbd>strace</kbd> on our hello world program:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="img/f0cfce27-6903-438e-b9a7-485048822f4e.png" style="width:42.83em;height:40.83em;" width="726" height="693"/></p>
+<p><kbd>strace</kbd> logged every system call that happened, starting from when it was being executed by the system. <kbd>execve</kbd> is the first system call that was logged. Calling <em>execve</em> runs a program pointed to by the filename in its function argument. open and read are system calls that are used here to read files. <kbd>mmap2</kbd>, <kbd>mprotect</kbd>, and <kbd>brk</kbd> are responsible for memory activities such as allocation, permissions, and segment boundary setting.</p>
+<p>Deep inside the code of <kbd>puts</kbd>, it eventually executes a <kbd>write</kbd> system call. <em>write</em>, in general, writes data to the object it was pointed to. Usually, it is used to write to a file. In this case, <em>write</em>'s first parameter has a value of <kbd>1</kbd>. The value of <kbd>1</kbd> denotes <kbd>STDOUT</kbd>, which is the handle for the console output. The second parameter is the message, thus, it writes the message to <kbd>STDOUT</kbd>.</p>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Going further with debugging</h1>
+                
+            
+            
+                
+<p>First, we need to install <kbd>gdb</kbd> by running the following command:</p>
+<pre>sudo apt install gdb</pre>
+<p>The installation should look something like this:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="img/b981eea0-bf56-42d4-a2c8-2ada69dc77a8.png" width="642" height="392"/></p>
+<p>Then, use <kbd>gdb</kbd> to debug the <kbd>hello</kbd> program, as follows:</p>
+<pre>gdb ./hello</pre>
+<p><kbd>gdb</kbd> can be controlled using commands. The commands are fully listed in online documentation, but simply entering <em>help</em> can aid us with the basics.</p>
+<p>You can also use <kbd>gdb</kbd> to show the disassembly of specified functions, using the <kbd>disass</kbd> command. For example, let's see what happens if we use the <kbd>disass main</kbd> command:</p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-1362 image-border" src="img/70b5fff3-cc33-4560-8105-6fc97af05e6c.png" style="width:34.67em;height:22.08em;" width="510" height="324"/></p>
+<p>Then, again we have been given the disassembly in AT&amp;T sytnax. To set <kbd>gdb</kbd> to use Intel syntax, use the following command:</p>
+<pre>set disassembly-flavor intel</pre>
+<p>This should give us the Intel assembly language syntax, as follows:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="img/dae5d1c8-b452-4953-9a17-408ebba42b02.png" style="width:42.67em;height:21.92em;" width="660" height="340"/></p>
+<p>To place a breakpoint at the <em>main</em> function, the command would be <kbd>b *main</kbd>. </p>
+<p>Take note that the asterisk (<em>*</em>) specifies an address location in the program. </p>
+<p>After placing a breakpoint, we can run the program using the <kbd>run</kbd> command. We should end up at the address of the <kbd>main</kbd> function:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="img/ca8df952-7c77-4d62-b292-cd6b31fe5ae1.png" style="width:36.50em;height:27.83em;" width="532" height="406"/></p>
+<p>To get the current values of the registers, enter <kbd>info registers</kbd>. Since we are in a 32-bit environment, the extended registers (that is, EAX, ECX, EDX, EBX, and EIP) are used. A 64-bit environment would show the registers with the R-prefix (that is, RAX, RCX, RDX, RBX, and RIP).</p>
+<p>Now that we are at the main function, we can run each instruction with step into (the <kbd>stepi</kbd> command) and step over (the <kbd>nexti</kbd> command). Usually, we follow this with the <kbd>info registers</kbd> command to see what values changed. </p>
+<p>The abbreviated command equivalent of <kbd>stepi</kbd> and <kbd>nexti</kbd> are <kbd>si</kbd> and <kbd>ni</kbd> respectively.</p>
+<p> </p>
+<p class="mce-root"/>
+<p>Keep on entering <kbd>si</kbd> and <kbd>disass main</kbd> until you reach the line containing <kbd>call   0x80482e0 &lt;puts@plt&gt;</kbd>. You should end up with these <kbd>disass</kbd> and <kbd>info registers</kbd> result:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="img/715fa4b8-b7b4-4a89-9cfe-f83f3f2fcb90.png" style="width:44.17em;height:24.67em;" width="679" height="378"/></p>
+<p>The <kbd>=&gt;</kbd> found at the left side indicates where the instruction pointer is located. The registers should look similar to this:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="img/fe08f099-3f30-41bb-b635-d513eba128c8.png" style="width:33.67em;height:19.83em;" width="523" height="307"/></p>
+<p>Before the <em>puts</em> function gets called, we can inspect what values were pushed into the stack. We can view that with <kbd>x/8x $esp</kbd>:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="img/7d9e3ec2-7058-4fdc-b797-5ca2a81da2b0.png" style="width:39.92em;height:4.00em;" width="691" height="69"/></p>
+<p>The <kbd>x</kbd> command is used to show a memory dump of the specified address. The syntax is x/FMT ADDRESS. FMT has 3 parts: the repeat count, the format letter, and the size letter. You should be able to see more information about the <kbd>x</kbd> command with <kbd>help x</kbd>. <kbd>x/8x $esp</kbd> shows 8 DWORD hexadecimal values from the address pointed by the <kbd>esp</kbd> register. Since the address space is in 32 bits, the default size letter was shown in <kbd>DWORD</kbd> size.</p>
+<p><kbd>puts</kbd> expects a single parameter. Thus, we are only interested in the first value pushed at the <kbd>0x080484c0</kbd> stack location. We expect that the parameter should be an address to where the message should be. So, entering the <kbd>x/s</kbd> command should give us the contents of the message, as follows:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="img/3340ddc8-a942-4f2b-881b-22c9873765c0.png" style="width:42.58em;height:3.08em;" width="682" height="49"/></p>
+<p>Next, we need to do a step over (<kbd>ni</kbd>) the call instruction line. This should display the following message:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="img/1d363b89-6fa1-48bc-81f0-383c6c0188b8.png" style="width:37.75em;height:21.83em;" width="679" height="393"/></p>
+<p>But if you used <kbd>si</kbd>, the instruction pointer will be in the <em>puts</em> wrapper code. We can still go back to where we left off using the <kbd>until</kbd> command, abbreviated as <kbd>u</kbd>. Simply using the <kbd>until</kbd> command steps in one instruction. You'll have to indicate the address location where it will stop. It is like a temporary breakpoint. Remember to place an asterisk before the address:</p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-1363 image-border" src="img/791b767d-655f-44aa-a05e-7b05b8dba256.png" style="width:19.42em;height:9.42em;" width="312" height="151"/></p>
+<p>The remaining <kbd>6</kbd> lines of code restore the values of <em>ebp</em> and <em>esp</em> right after entering the main function, then returning with <em>ret</em>. Remember that a call instruction would store the return address at the top of the stack, before actually jumping to the function address. The <kbd>ret</kbd> instruction will read the return value pointed to by the <em>esp</em> register.</p>
+<p>The values of <kbd>esp</kbd> and <kbd>ebp</kbd>, right after entering the main function, should be restored before the <em>ret</em> instruction. Generally, a function begins by setting up its own stack frame for use with the function's local variables. </p>
+<p>Here's a table showing the changes in the values of the <kbd>esp</kbd>, <kbd>ebp</kbd>, and <kbd>ecx</kbd> registers after the instruction at the given address. </p>
+<p>Note that the stack, denoted by the <em>esp</em> register, starts from a high address and goes down to lower addresses as it is used to store data.</p>
+<table style="border-collapse: collapse;width: 100%" border="1">
+<tbody>
+<tr>
+<td style="width: 12.7906%" class="CDPAlignCenter CDPAlign"><strong>Address</strong></td>
+<td style="width: 23.2094%" class="CDPAlignCenter CDPAlign"><strong>Instruction</strong></td>
+<td style="width: 13%" class="CDPAlignCenter CDPAlign"><strong>esp</strong></td>
+<td style="width: 10%" class="CDPAlignCenter CDPAlign"><strong>ebp</strong></td>
+<td style="width: 10%" class="CDPAlignCenter CDPAlign"><strong>ecx</strong></td>
+<td style="width: 53%" class="CDPAlignCenter CDPAlign"><strong>Remarks</strong></td>
+</tr>
+<tr>
+<td style="width: 12.7906%"><kbd>0x0804840b</kbd></td>
+<td style="width: 23.2094%"><kbd>lea ecx,[esp+0x04]</kbd></td>
+<td style="width: 13%"><kbd>0xbffff08c</kbd></td>
+<td style="width: 10%"><kbd>0</kbd></td>
+<td style="width: 10%"><kbd>0xbffff090</kbd></td>
+<td style="width: 53%">
+<p class="mce-root">Initial values after entering main. </p>
+<p class="mce-root">[0xbffff08c] = 0xb7e21637</p>
+<p class="mce-root">This is the return address. </p>
+</td>
+</tr>
+<tr>
+<td style="width: 12.7906%"><kbd>0x0804840f</kbd></td>
+<td style="width: 23.2094%"><kbd>and esp,0xfffffff0</kbd></td>
+<td style="width: 13%"><kbd>0xbffff080</kbd></td>
+<td style="width: 10%"><kbd>0</kbd></td>
+<td style="width: 10%"><kbd>0xbffff090</kbd></td>
+<td style="width: 53%">Aligns the stack in 16-byte paragraphs. In effect, this subtracts 0xc from esp.</td>
+</tr>
+<tr>
+<td style="width: 12.7906%"><kbd>0x08048412</kbd></td>
+<td style="width: 23.2094%"><kbd>push DWORD PTR [ecx-0x4]</kbd></td>
+<td style="width: 13%"><kbd>0xbffff07c</kbd></td>
+<td style="width: 10%"><kbd>0</kbd></td>
+<td style="width: 10%"><kbd>0xbffff090</kbd></td>
+<td style="width: 53%">
+<p class="mce-root">[0xbffff07c] = 0xb7e21637</p>
+<p>ecx - 4 = 0xbffff08c points to the return address.</p>
+<p>The return address is now placed in two stack addresses.</p>
+</td>
+</tr>
+<tr>
+<td style="width: 12.7906%"><kbd>0x08048415</kbd></td>
+<td style="width: 23.2094%"><kbd>push ebp</kbd></td>
+<td style="width: 13%"><kbd>0xbffff078</kbd></td>
+<td style="width: 10%"><kbd>0</kbd></td>
+<td style="width: 10%"><kbd>0xbffff090</kbd></td>
+<td style="width: 53%">
+<p class="mce-root">Begins stack frame setup.</p>
+<p>[0xbffff078] = 0</p>
+</td>
+</tr>
+<tr>
+<td style="width: 12.7906%"><kbd>0x08048416</kbd></td>
+<td style="width: 23.2094%"><kbd>mov ebp,esp</kbd></td>
+<td style="width: 13%"><kbd>0xbffff078</kbd></td>
+<td style="width: 10%"><kbd>0xbffff078</kbd></td>
+<td style="width: 10%"><kbd>0xbffff090</kbd></td>
+<td style="width: 53%">Saves esp.</td>
+</tr>
+<tr>
+<td style="width: 12.7906%"><kbd>0x08048418</kbd></td>
+<td style="width: 23.2094%"><kbd>push ecx</kbd></td>
+<td style="width: 13%"><kbd>0xbffff074</kbd></td>
+<td style="width: 10%"><kbd>0xbffff078</kbd></td>
+<td style="width: 10%"><kbd>0xbffff090</kbd></td>
+<td style="width: 53%">
+<p class="mce-root">Saves ecx.</p>
+<p>[0xbffff074] = 0xbffff090</p>
+</td>
+</tr>
+<tr>
+<td style="width: 12.7906%"><kbd>0x08048419</kbd></td>
+<td style="width: 23.2094%"><kbd>sub esp,0x4</kbd></td>
+<td style="width: 13%"><kbd>0xbffff070</kbd></td>
+<td style="width: 10%"><kbd>0xbffff078</kbd></td>
+<td style="width: 10%"><kbd>0xbffff090</kbd></td>
+<td style="width: 53%">Allocates 4 bytes for stack frame.</td>
+</tr>
+<tr>
+<td style="width: 12.7906%"><kbd>0x0804841c</kbd></td>
+<td style="width: 23.2094%"><kbd>sub esp,0xc</kbd></td>
+<td style="width: 13%"><kbd>0xbffff064</kbd></td>
+<td style="width: 10%"><kbd>0xbffff078</kbd></td>
+<td style="width: 10%"><kbd>0xbffff090</kbd></td>
+<td style="width: 53%">Allocates another 12 bytes for stack frame.</td>
+</tr>
+<tr>
+<td style="width: 12.7906%"><kbd>0x0804841f</kbd></td>
+<td style="width: 23.2094%"><kbd>push 0x80484c0</kbd></td>
+<td style="width: 13%"><kbd>0xbffff060</kbd></td>
+<td style="width: 10%"><kbd>0xbffff078</kbd></td>
+<td style="width: 10%"><kbd>0xbffff090</kbd></td>
+<td style="width: 53%">
+<p>[0xbffff060] = 0x080484c0</p>
+<p class="mce-root">[0x080484c0] = "hello world!"</p>
+</td>
+</tr>
+<tr>
+<td style="width: 12.7906%"><kbd>0x08048424</kbd></td>
+<td style="width: 23.2094%"><kbd>call 0x80482e0 &lt;puts@plt&gt;</kbd></td>
+<td style="width: 13%"><kbd>0xbffff060</kbd></td>
+<td style="width: 10%"><kbd>0xbffff078</kbd></td>
+<td style="width: 10%"><kbd>0xffffffff</kbd></td>
+<td style="width: 53%">Stack is still the same after the call.</td>
+</tr>
+<tr>
+<td style="width: 12.7906%"><kbd>0x08048429</kbd></td>
+<td style="width: 23.2094%"><kbd>add esp,0x10</kbd></td>
+<td style="width: 13%"><kbd>0xbffff070</kbd></td>
+<td style="width: 10%"><kbd>0xbffff078</kbd></td>
+<td style="width: 10%"><kbd>0xffffffff</kbd></td>
+<td style="width: 53%">Adds 0x10 to esp reducing the stack frame.</td>
+</tr>
+<tr>
+<td style="width: 12.7906%"><kbd>0x0804842c</kbd></td>
+<td style="width: 23.2094%"><kbd>nop</kbd></td>
+<td style="width: 13%"><kbd>0xbffff070</kbd></td>
+<td style="width: 10%"><kbd>0xbffff078</kbd></td>
+<td style="width: 10%"><kbd>0xffffffff</kbd></td>
+<td style="width: 53%">No operation</td>
+</tr>
+<tr>
+<td style="width: 12.7906%"><kbd>0x0804842d</kbd></td>
+<td style="width: 23.2094%"><kbd>mov ecx,DWORD PTR [ebp-0x4]</kbd></td>
+<td style="width: 13%"><kbd>0xbffff070</kbd></td>
+<td style="width: 10%"><kbd>0xbffff078</kbd></td>
+<td style="width: 10%"><kbd>0xbffff090</kbd></td>
+<td style="width: 53%">Restores the value of ecx before call.</td>
+</tr>
+<tr>
+<td style="width: 12.7906%"><kbd>0x08048430</kbd></td>
+<td style="width: 23.2094%"><kbd>leave</kbd></td>
+<td style="width: 13%"><kbd>0xbffff07c</kbd></td>
+<td style="width: 10%"><kbd>0</kbd></td>
+<td style="width: 10%"><kbd>0xbffff090</kbd></td>
+<td style="width: 53%">
+<p class="mce-root"><kbd>leave</kbd> is the equivalent of<br/>
+<kbd>mov esp, ebp</kbd><br/>
+<kbd>pop ebp</kbd></p>
+</td>
+</tr>
+<tr>
+<td style="width: 12.7906%"><kbd>0x08048431</kbd></td>
+<td style="width: 23.2094%"><kbd>lea esp,[ecx-0x4]</kbd></td>
+<td style="width: 13%"><kbd>0xbffff08c</kbd></td>
+<td style="width: 10%"><kbd>0</kbd></td>
+<td style="width: 10%"><kbd>0xbffff090</kbd></td>
+<td style="width: 53%">
+<p>ecx - 4 = 0xbffff08c</p>
+<p>[0xbffff08c] = 0xb7e21637</p>
+<p class="mce-root">The address of esp is restored back.</p>
+</td>
+</tr>
+<tr>
+<td style="width: 12.7906%"><kbd>0x08048434</kbd></td>
+<td style="width: 23.2094%"><kbd>ret</kbd></td>
+<td style="width: 13%"><kbd>-</kbd></td>
+<td style="width: 10%"><kbd>-</kbd></td>
+<td style="width: 10%"><kbd>-</kbd></td>
+<td style="width: 53%">
+<p>Returns to 0xb7e21637</p>
+</td>
+</tr>
+</tbody>
+</table>
+<p> </p>
+<p>You can either continue exploring the cleanup code after <kbd>ret</kbd>, or just make the program eventually end by using <kbd>continue</kbd> or its abbreviation, <kbd>c</kbd>, as follows:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="img/200c3f96-d71a-4a65-a6a0-b17b8f627d33.png" style="width:44.00em;height:4.50em;" width="645" height="67"/></p>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">A better debugger</h1>
+                
+            
+            
+                
+<p>Before moving to more Linux executable-reversing activities, let's explore more tools. <kbd>gdb</kbd> seems fine, but it would have been better if we were able to debug it interactively, using visual tools for debugging. In <a href="d07cbca0-a1cf-4ad3-9c69-39c1359f0209.xhtml"/><a href="d07cbca0-a1cf-4ad3-9c69-39c1359f0209.xhtml" target="_blank">Chapter 5</a>,<em> Tools of Trade</em>, we introduced the Radare, under the <em>Disassemblers</em> and <em>Debuggers</em> sections, as a tool that is capable of doing both disassembly and debugging. So, let's get a feel for using Radare.</p>
+<p class="mce-root"/>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Setup</h1>
+                
+            
+            
+                
+<p>Radare is in its second version. To install it, you'll need <em><strong>git</strong></em> to install from the GitHub repository, as follows:</p>
+<pre>git clone https://github.com/radare/radare2.git</pre>
+<p>The instructions for installing it are written in the <kbd>README</kbd> file. As of the time of writing, it is suggested that <kbd>Radare2</kbd> is installed by running the <kbd>sys/install.sh</kbd> or <kbd>sys/user.sh</kbd> shell scripts from the Terminal.</p>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Hello World in Radare2</h1>
+                
+            
+            
+                
+<p>Besides its disassembler and debugger, <kbd>Radare2</kbd> is also packed with a bunch of tools . Most of these are static analysis tools.</p>
+<p>To get the <kbd>MD5</kbd> hash of the hello world binary file, we can use <kbd>rabin2</kbd>:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="img/14d9938f-1db4-4264-ba60-11170b3493bf.png" style="width:45.17em;height:9.17em;" width="730" height="148"/></p>
+<p>With the use of the <kbd>ls</kbd> command and <kbd>rahash2</kbd>, we are able to determine these pieces of information:</p>
+<pre>filesize: 7348 bytes<br/>time stamp: July 12 21:26 of this year<br/>md5: 799554478cf399e5f87b37fcaf1c2ae6<br/>sha256: 90085dacc7fc863a2606f8ab77b049532bf454badefcdd326459585bea4dfb29</pre>
+<p><kbd>rabin2</kbd> is another tool that can extract static information from a file, such as the type of file, header information, sections, and strings.</p>
+<p>Let's get the type of file first by using the <kbd>rabin2 -I hello</kbd> command:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="img/19e3d518-6902-40e0-a205-8c73953b44d4.png" style="width:42.58em;height:30.00em;" width="672" height="474"/></p>
+<p>The <em>bintype</em>, <em>class,</em> <em>hascode,</em> and <em>os</em> fields indicate that the file is an executable 32-bit ELF file that runs in Linux. <em>arch</em>, <em>bits</em>, <em>endian,</em> and <em>machine</em> suggest that the file was built with an x86 code. In addition, the <em>lang</em> field indicates that the file was compiled from C language. This information will definitely help us prepare for what to expect during disassembly and debugging.</p>
+<p>To list imported functions, we use <kbd>rabin2 -i hello</kbd>:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="img/b69f875d-034f-4218-8bee-0a5f90d1d9f5.png" style="width:41.50em;height:6.33em;" width="662" height="100"/></p>
+<p>There are two global functions we are interested in: <kbd>puts</kbd> and <kbd>__libc_start_main. puts</kbd>, as we discussed, is used to print a message. __libc_start_main is a function that initializes the stack frame, sets up the registers and some data structures, sets up error handling, and then calls the <kbd>main()</kbd> function.</p>
+<p>To get the ELF header info, use <kbd>rabin2 -H hello</kbd>:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="img/57482507-87b8-4d5a-bf71-ff97abe09293.png" style="width:36.83em;height:8.08em;" width="619" height="136"/></p>
+<p>If we are only interested with the strings we can find from the data section, use the <kbd>rabin2 -z hello</kbd> command:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="img/1fa0a014-2c46-40a1-be5f-baba6946c0ab.png" style="width:37.83em;height:2.17em;" width="590" height="34"/></p>
+<p>With <kbd>rabin2</kbd>, we got additional information about the file, shown here:</p>
+<pre>filetype: 32-bit elf file and has executable code for Linux<br/>architecture: x86 Intel<br/>functions: imports puts and has a main function<br/>notable strings: hello world!</pre>
+<p>Let's try the <kbd>radare2</kbd> debugger itself. From the Terminal console, you can either use <kbd>radare2</kbd>'s abbreviation <kbd>r2</kbd>, or <kbd>radare2</kbd> itself, with the <kbd>-d &lt;file&gt;</kbd> as its argument:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="img/7f4d2f8b-088d-4dac-a561-9102bee56749.png" style="width:38.17em;height:7.25em;" width="695" height="132"/></p>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p>This takes you to the <kbd>radare2</kbd> console. Enclosed in square brackets, the address indicates where the current <kbd>eip</kbd> is. It is not the entry point of the hello program, but rather an address in the dynamic loader. As with <kbd>gdb</kbd>, you'll have to enter commands. To bring up help, just use <strong><em>?</em></strong> and it will show you a list of commands as follows:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="img/c9fcbae6-12b8-4e7a-9003-c55da31a5eda.png" style="width:35.92em;height:38.92em;" width="723" height="783"/></p>
+<p>We start off by using the <kbd>aaa</kbd> command. This analyzes the code for function calls, flags, references and tries to generate constructive function names:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="img/5b9d3a96-9da9-43c2-a57c-2c1f30d810d0.png" style="width:42.83em;height:7.75em;" width="668" height="122"/></p>
+<p>Using the <kbd>V!</kbd> command sets the console to visual mode. In this mode, we should be able to debug the program while having an interactive view of the registry and the stack. Entering <kbd>:</kbd> should show a command console. Pressing <em>Enter</em> should bring us back to visual mode. Type <kbd>V?</kbd> to show more visual mode commands. It is also best to maximize the Terminal window to get a better view of the debugger:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="img/5a6d0096-31f5-48dc-bc6f-fb42273bd2bc.png" width="1427" height="826"/></p>
+<p>In the command console, enter <kbd>db entry0</kbd>. This should set a breakpoint at the entry point address of our program. But, since we also know that this program has a main function, you can also enter <kbd>db sym.entry</kbd> to set a breakpoint at the main function.</p>
+<p>In visual mode, you can start the actual debugging using these keys that are available by default:</p>
+<pre>| F2 toggle breakpoint<br/>| F4 run to cursor<br/>| F7 single step<br/>| F8 step over<br/>| F9 continue</pre>
+<p>With the entry point and main function set with a breakpoint, press <em>F9</em> to run the program. We should end up in the entry point address. </p>
+<p>You'll need to refresh radare2's visual mode by reopening it to see the changes. To do that, just press <kbd>q</kbd> twice to quit visual mode. But before running <kbd>V!</kbd> again, you'll need to seek the current <em>eip</em> by using the <kbd>s eip</kbd> command.</p>
+<p>Pressing <em>F9</em> again should bring you to the main function of our program. Remember to refresh the visual mode:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="img/1bfd154d-269a-43cc-8ba7-73e7b9e793f5.png" width="1335" height="763"/></p>
+<p>Press <em>F7</em> or <em>F8</em> to trace the program while seeing the stack and registers change. The letter <strong>b</strong> at the left of the address at line <kbd>0x0804840b</kbd> indicates that the address is set with a breakpoint. </p>
+<p>So far, we have learned about the basic commands and keys. Feel free to explore the other commands and you'll definitely get more information and learn some easy ways to work around analyzing files. </p>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">What is the password?</h1>
+                
+            
+            
+                
+<p>So now that we know how to debug "<kbd>Unix style</kbd>", let's try the passcode program. You can download the passcode program from <a href="https://github.com/PacktPublishing/Mastering-Reverse-Engineering/raw/master/ch6/passcode">https://github.com/PacktPublishing/Mastering-Reverse-Engineering/raw/master/ch6/passcode</a>.</p>
+<p>Try to get some static information. Here's a list of commands you can use:</p>
+<pre>ls -l passcode<br/>rahash2 -a md5,sha256 passcode<br/>rabin2 -I passcode<br/>rabin2 -i passcode<br/>rabin2 -H passcode<br/>rabin2 -z passcode</pre>
+<p>At this point, the information we're after is as follows:</p>
+<ul>
+<li>File size: 7,520 bytes</li>
+<li>MD5 hash: <kbd>b365e87a6e532d68909fb19494168bed</kbd></li>
+<li>SHA256 hash: <kbd>68d6db63b69a7a55948e9d25065350c8e1ace9cd81e55a102bd42cc7fc527d8f</kbd></li>
+<li>The type of file: ELF
+<ul>
+<li>32-bit x86 Intel</li>
+<li>Compiled C code that has notable imported functions: <kbd>printf</kbd>, <kbd>puts</kbd>, <kbd>strlen</kbd> and <kbd>__isoc99_scanf</kbd></li>
+</ul>
+</li>
+<li>Notable strings are as follows:
+<ul>
+<li>Enter password:</li>
+<li>Correct password!</li>
+<li>Incorrect password!</li>
+</ul>
+</li>
+</ul>
+<p>Now, for a quick dynamic analysis, let's use <kbd>ltrace ./passcode</kbd>:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="img/add36a4b-6311-4548-b3b3-94e565a8b4e0.png" width="1025" height="322"/></p>
+<p>We tried a few passwords but none returned "Correct password!" The file doesn't even have a hint in the list of strings for us to use. Let's try <kbd>strace</kbd>:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="img/17b71727-34bd-41a3-af90-0d30fb47d235.png" style="width:64.25em;height:29.58em;" width="1327" height="611"/></p>
+<p>The line with <kbd>read(0, asdf123</kbd> is where the password was manually entered. The code after this goes to the exit door. Let's do a deadlisting activity based on the disassembly, but this time, we'll use <kbd>radare2</kbd>'s graphical view. Go ahead and open up <kbd>radare2</kbd> with the <kbd>radare2 -d passcode</kbd> command. In the <kbd>radare2</kbd> console, use this sequence of commands:</p>
+<pre>aaa<br/>s sym.main<br/>VVV</pre>
+<p>These should open up a graphical representation of the disassembly code blocks from the <em>main</em> function. Scroll down and you should see conditional branching where the green line denotes a <kbd>true</kbd>, while the red line denotes a <kbd>false</kbd> flow. Keep scrolling down until you see the <kbd>Correct password!</kbd> text string. We'll work backwards from there:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="img/cd9fdf03-bf07-43d5-9959-1bc333c8ae06.png" style="width:44.50em;height:38.00em;" width="794" height="678"/></p>
+<p>In the <kbd>0x80485d3</kbd> block, where the <kbd>Correct password!</kbd> string is, we see that the message was displayed using <em>puts</em>. Going to that block is a red line from the <kbd>0x80485c7</kbd> block. In the <kbd>0x80485c7</kbd> block, the value in <kbd>local_418h</kbd> was compared to <kbd>0x2de</kbd> (or 734 in decimal format). The value should be equal to 734 to make it go to the <kbd>Correct password!</kbd> block. If we were to try to decompile the C code, it would look something like this:</p>
+<pre>...<br/>if (local_418h == 734)<br/>    puts("Correct password!)<br/>...</pre>
+<p>Scroll up to see where the red line came from:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="img/3baf70f4-e296-4bff-b5e7-9d8e2cf172d4.png" width="936" height="701"/></p>
+<p>By the way this graph looks, there is a loop, and to exit the loop, it would require the value at <kbd>local_414h</kbd> to be greater than or equal to the value at <kbd>local_410h</kbd>. The loop exits to the <kbd>0x80485c7</kbd> block. At the <kbd>0x8048582</kbd> block, both values at <kbd>local_418h</kbd> and <kbd>local_414h</kbd> are initialized to 0. These values are compared in the <kbd>0x80485b9</kbd> block.</p>
+<p>Inspecting the <kbd>0x8048598</kbd> block, there are three variables of concern: <kbd>local_40ch</kbd>, <kbd>local_414h</kbd>, and <kbd>local_418h</kbd>. If we were to make a pseudo code of this block, it would look like this:</p>
+<pre>eax = byte at address [local_40ch + local_414h]<br/>add eax to local_418h <br/>increment local_414h</pre>
+<p><kbd>local_414h</kbd> seem to be a pointer of the data pointed to by <kbd>local_40c</kbd>. <kbd>local_418</kbd> starts from 0, and each byte from <kbd>local_40ch</kbd> is added. Looking at an overview, a checksum algorithm seems to be happening here:</p>
+<pre>...<br/>// unknown variables for now are local_40ch and local_410h<br/>int local_418h = 0;<br/>for (int local_414h = 0; local_414h &lt; local_410h; local_414++)<br/>{<br/>    local_418h += local_40ch[local_414h];<br/>}<br/><br/>if (local_418h == 734)<br/>    puts("Correct password!)<br/>...</pre>
+<p>Let's move further up and identify what <kbd>local_40ch</kbd> and <kbd>local_410h</kbd> should be:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="img/cda0a10d-bf1d-4487-ae47-a4aee0d4533f.png" style="width:33.08em;height:41.50em;" width="566" height="713"/></p>
+<p>This is the main block. There are three named functions here:</p>
+<ul>
+<li><kbd>printf()</kbd></li>
+<li><kbd>scanf()</kbd></li>
+<li><kbd>strlen()</kbd></li>
+</ul>
+<p><kbd>local_40ch</kbd> and <kbd>local_410h</kbd> here were used. <kbd>local_40ch</kbd> is the second parameter for <kbd>scanf</kbd>, while the data at the <kbd>0x80486b1</kbd> address should contain the format expected. <kbd>local_40ch</kbd> contains the buffer typed in. To retrieve the data at <kbd>0x80486b1</kbd>, just enter a colon (<kbd>:</kbd>), enter <kbd>s 0x80486b1</kbd>, then return back to the visual mode. Press <kbd>q</kbd> again to view the data:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="img/a3bb1b71-9c1c-4250-aa97-77185aa8c6ae.png" width="684" height="427"/></p>
+<p>The length of the data in <kbd>local_40ch</kbd> is identified and stored in <kbd>local_410h</kbd>. The value at <kbd>local_410h</kbd> is compared to 7. If equal, it follows the red line going to the <kbd>0x8048582</kbd> block, or the start of the checksum loop. If not, it follows the green line going to the <kbd>0x80485e5</kbd> block that contains code that will display Incorrect password! </p>
+<p>In summary, the code would most likely look like this:</p>
+<pre>...<br/>printf ("Enter password: ");<br/>scanf ("%s", local_40ch);<br/>local_410h = strlen(local_40ch);<br/><br/>if (local_410h != 7)<br/>    puts ("Incorrect password!);<br/>else<br/>{<br/>    int local_418h = 0;<br/>    for (int local_414h = 0; local_414h &lt; local_410h; local_414++)<br/>    {<br/>        local_418h += local_40ch[local_414h];<br/>    }<br/><br/>    if (local_418h == 734)<br/>        puts("Correct password!)<br/>}</pre>
+<p>The entered password should have a <strong>size of 7 characters</strong> and the sum of all characters in the password should be <strong>equal to 734</strong>. Therefore, the password can be anything, as long as it satisfies the given conditions.</p>
+<p>Using the ASCII table, we can determine the equivalent value of each character. If the sum is 734 from a total of 7 characters, we simply divide 734 by 7. This gives us a value of 104, or 0x68 with a remainder of 6. We can distribute the remainder, 6, to 6 of the characters, giving us this set:</p>
+<table style="border-collapse: collapse;width: 100%" border="1">
+<tbody>
+<tr>
+<td style="width: 135px" class="CDPAlignCenter CDPAlign"><strong>Decimal</strong></td>
+<td style="width: 136px" class="CDPAlignCenter CDPAlign"><strong>Hex</strong></td>
+<td style="width: 216.574px" class="CDPAlignCenter CDPAlign"><strong>ASCII character</strong></td>
+</tr>
+<tr>
+<td style="width: 135px"><kbd>105</kbd></td>
+<td style="width: 136px"><kbd>0x69</kbd></td>
+<td style="width: 216.574px"><kbd>i</kbd></td>
+</tr>
+<tr>
+<td style="width: 135px"><kbd>105</kbd></td>
+<td style="width: 136px"><kbd>0x69</kbd></td>
+<td style="width: 216.574px"><kbd>i</kbd></td>
+</tr>
+<tr>
+<td style="width: 135px"><kbd>105</kbd></td>
+<td style="width: 136px"><kbd>0x69</kbd></td>
+<td style="width: 216.574px"><kbd>i</kbd></td>
+</tr>
+<tr>
+<td style="width: 135px"><kbd>105</kbd></td>
+<td style="width: 136px"><kbd>0x69</kbd></td>
+<td style="width: 216.574px"><kbd>i</kbd></td>
+</tr>
+<tr>
+<td style="width: 135px"><kbd>105</kbd></td>
+<td style="width: 136px"><kbd>0x69</kbd></td>
+<td style="width: 216.574px"><kbd>i</kbd></td>
+</tr>
+<tr>
+<td style="width: 135px"><kbd>105</kbd></td>
+<td style="width: 136px"><kbd>0x69</kbd></td>
+<td style="width: 216.574px"><kbd>i</kbd></td>
+</tr>
+<tr>
+<td style="width: 135px"><kbd>104</kbd></td>
+<td style="width: 136px"><kbd>0x68</kbd></td>
+<td style="width: 216.574px"><kbd>h</kbd></td>
+</tr>
+</tbody>
+</table>
+<p>Let's try the password <kbd><em>iiiiiih</em></kbd> or <kbd><em>hiiiiii</em></kbd>, as follows:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="img/9662b666-050d-4866-aae5-afaa040eb512.png" width="868" height="324"/></p>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Network traffic analysis</h1>
+                
+            
+            
+                
+<p>This time, we'll work on a program that receives a network connection and sends back some data. We will be using the file available at <a href="https://github.com/PacktPublishing/Mastering-Reverse-Engineering/raw/master/ch6/server">https://github.com/PacktPublishing/Mastering-Reverse-Engineering/raw/master/ch6/server</a>. Once you have it downloaded, execute it from the Terminal as follows:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="img/f0923c75-f968-4b69-a0ee-b31f029798c8.png" width="898" height="32"/></p>
+<p>The program is a server program that waits for connections to port <kbd>9999</kbd>. To test this out, open a browser, then use the IP address of the machine where the server is running, plus the port. For example, use <kbd>127.0.0.1:9999</kbd> if you're trying this from your own machine. You might see something like the following output:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="img/9bb98eba-3bda-459c-b49a-6c759f743deb.png" width="783" height="322"/></p>
+<p>To understand network traffic, we need to capture some network packets by using tools such as <kbd>tcpdump</kbd>. <kbd>tcpdump</kbd> is usually pre-installed in Linux distributions. Open another Terminal and use the following command:</p>
+<pre>sudo tcpdump -i lo 'port 9999'  -w captured.pcap</pre>
+<p>Here's a brief explanation of the parameters used:</p>
+<p><kbd>-i lo</kbd> uses the <kbd>loopback</kbd> network interface. We have used it here since we plan on accessing the server locally.</p>
+<p><kbd>'port 9999'</kbd>, with the single quotes, filters only packets that are using port 9999.</p>
+<p><kbd>-w captured.pcap</kbd> writes data packets to a PCAP file named <kbd>captured.pcap</kbd>.</p>
+<p>Once <kbd>tcpdump</kbd> listens for data, try connecting to the server by visiting <kbd>127.0.0.1:9999</kbd> from the browser. If you wish to connect from outside the machine which holds the server, then re-run <kbd>tcpdump</kbd> without the <kbd>-i lo</kbd> parameter. This uses the default network interface instead. And instead of visiting using <kbd>127.0.0.1</kbd>, you'll have to use the IP address used by the default network interface.</p>
+<p>To stop <kbd>tcpdump</kbd>, just break it using <em>Ctrl</em> + <em>C</em>.</p>
+<p>To view the contents of <kbd>captured.pcap</kbd> in human readable form, use the following command:</p>
+<pre>sudo tcpdump -X -r captured.pcap &gt; captured.log</pre>
+<p>This command should redirect the the <kbd>tcpdump</kbd> output to <kbd>captured.log</kbd>. The <kbd>-X</kbd> parameter shows the packet data in hexadecimal and ASCII. <kbd>-r captured.pcap</kbd> means read from the <kbd>PCAP</kbd> file <kbd>captured.pcap</kbd>. Opening the <kbd>captured.log</kbd> file should look something like the following:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="img/ca234b8d-421e-479d-9ce2-eafb8c3b3965.png" width="886" height="657"/></p>
+<p>Before we proceed, let's examine some basics on the two most popular network protocols, <strong>Transmission Control Protocol </strong>(<strong>TCP</strong>) and <strong>User Datagram Protocol</strong> (<strong>UDP</strong>). TCP is a network transmission in which a communication between a sender and a receiver is established. The communication begins with a 3-way handshake, where the sender sends a SYN flag to the receiver, then the receiver sends back SYN and ACK flags to the sender, and finally, the sender sends an ACK flag to the receiver, opening the start of a communication. Further exchange of data between the sender and receiver are done in segments. Every segment has a 20-byte TCP header that contains the IP address of the sender and the receiver and any current status flags. This is followed by the size of the data being transmitted and the data itself. UDP uses a shorter header, since it only sends data and doesn't require acknowledgement from the receiver. It is not required, via UDP, to do a 3-way handshake. The primary purpose of UDP is to keep sending data to the receiver. TCP seems to be more reliable in terms of exchanging data, however. For UDP, sending data is much faster, as there are no overheads required. UDP is commonly used to transmit huge amounts of data via file transmission protocols, while TCP is used to communicate data that requires integrity.</p>
+<p>In the preceding screenshot, lines 1 to 15 show a TCP 3-way handshake. The first connection from the localhost port at <kbd>55704</kbd> (client) to the localhost port at <kbd>9999</kbd> (server) is a SYN, denoted in the flags as <kbd>S</kbd>. This was responded to by an <kbd>S.</kbd> flag, which means SYN and ACK. The last is an ACK denoted by <kbd>.</kbd> in the flags. The client port at 55704 is an ephemeral port. An ephemeral port is a system generated port for client connections. The server port at <kbd>9999</kbd> is fixed in the server program.</p>
+<p>In lines 16 to 23, we can see the actual response data from the server to the client. The server sends back a data containing a 55 character data containing the string "<em>You have connected to the Genie. Nothing to see here.</em>" and 2 new line (<kbd>0x0A</kbd>) characters to the client. The data before the 55 character string is the packet's header containing information about the packet. The packet header, when parsed, is the information described in line 16. The TCP flags are <kbd>P.</kbd>, which means PUSH and ACK. The information in the packet header structure is documented in the TCP and UDP specifications. You can start to look for these specifications at <kbd>RFC 675</kbd>, available at <a href="https://tools.ietf.org/html/rfc675">https://tools.ietf.org/html/rfc675</a>, and <kbd>RFC 768</kbd>, available at <a href="https://tools.ietf.org/html/rfc768">https://tools.ietf.org/html/rfc768</a>. To fast-track the process, we can use Wireshark, which will be discussed later, to help us parse through the packet information.</p>
+<p>In lines <kbd>24</kbd> to <kbd>28</kbd>, FIN and ACK flags, formatted as <kbd>F.</kbd>, are sent from the server to the client, saying that the server is closing the connection. Lines 29 to 33 is an ACK response, <kbd>.</kbd>, that acknowledges the connection is being closed.</p>
+<p>A better tool for capturing and viewing this graphically is <em><strong>Wireshark</strong></em>. Previously known as <em>Ethereal</em>, Wireshark has the same capabilities as <kbd>tcpdump</kbd>. Wireshark can be manually downloaded and installed from <a href="https://www.wireshark.org/">https://www.wireshark.org/</a>. It can also be installed using the following <kbd>apt</kbd> command:</p>
+<pre>sudo apt install wireshark-qt</pre>
+<p>Capturing network packets requires root privileges in order to access the network interfaces. This is the reason for our use of <kbd>sudo</kbd> when running <em><strong>tcpdump</strong></em>. The same goes when using <em><strong>Wireshark</strong></em>. So, to execute <em><strong>Wireshark</strong></em> in Linux, we use the following command:</p>
+<pre>sudo wireshark</pre>
+<p>Besides capturing traffic and showing it in real time, you can also open and view PCAP files in <em><strong>Wireshark</strong></em>:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="img/792d9e60-f28f-40cb-a2ce-4729c1a44b4b.png" width="952" height="672"/></p>
+<p>To start capturing, double-click on <kbd>any</kbd> from the list of interfaces. This essentially captures from both the default network interface and the loopback interface <em>lo</em>. What you'll see are continuous lines of network traffic packets. Wireshark has a display filter to minimize all the noise we see. For our exercise, in the filter field, enter the following display filter:</p>
+<pre>tcp.port == 9999</pre>
+<p>This should only show packets that use the TCP port at <kbd>9999</kbd>. There are more filters you can experiment on. These are documented in Wireshark's manual pages.</p>
+<p>Clicking on a packet shows parsed information that gives you a better understanding of the packet fields, as shown in the following screenshot:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="img/49370842-9097-4ffc-b20c-ddf9612b3ef4.png" width="957" height="557"/></p>
+<p>Wireshark has a wide-knowledge of standard packets. This makes Wireshark a must-have tool for every analyst.</p>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Summary</h1>
+                
+            
+            
+                
+<p>In this chapter, our discussions revolved around reverse engineering tools that are already built into Linux systems. Debian-based operating systems, such as Ubuntu, are popular for reverse engineering purposes because of the wide community and tools available. We have focused more on how to analyze Linux' native executable, the ELF file. We started off by using GCC to compile a C program source into an ELF executable. We proceeded to analyze the executable using static info-gathering tools, including <kbd>ls</kbd>, <kbd>file</kbd>, <kbd>strings</kbd>, and <kbd>objdump</kbd>. Then we used <kbd>ltrace</kbd> and <kbd>strace</kbd> to carry out a dynamic analysis. Then we used <kbd>gdb</kbd> to debug the program, showing us Intel assembly language syntax.</p>
+<p>We also introduced and explored the <kbd>radare2</kbd> toolkit. We used <kbd>rahash2</kbd> and <kbd>rabin2</kbd> to gather static information, and used <kbd>radare2</kbd> for disassembly and debugging in an interactive view. Network analysis tools were not left behind either, as we used <kbd>tcpdump</kbd> and <kbd>Wireshark</kbd>. </p>
+<p>In the information security world, most files to be analyzed are executables based on Microsoft Windows, which we're going to discuss in the next chapter. We may not encounter much analysis of Linux files in the industry, but knowing how to do it will definitely come in handy when the task requires it.  </p>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Further reading</h1>
+                
+            
+            
+                
+<p>The files and sources used in this chapter can be found at <a href="https://github.com/PacktPublishing/Mastering-Reverse-Engineering/tree/master/ch6">https://github.com/PacktPublishing/Mastering-Reverse-Engineering/tree/master/ch6</a><a href="https://github.com/PacktPublishing/Mastering-Reverse-Engineering/tree/master/ch6">.</a></p>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  </body></html>

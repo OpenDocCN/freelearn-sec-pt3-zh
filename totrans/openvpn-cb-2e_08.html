@@ -1,0 +1,352 @@
+<html><head></head><body><div><div><div><div><h1 class="title"><a id="ch08"/>Chapter 8. Performance Tuning</h1></div></div></div><p>In this chapter, we will cover the following troubleshooting topics:</p><div><ul class="itemizedlist"><li class="listitem">Optimizing performance using <code class="literal">ping</code></li><li class="listitem">Optimizing performance using <code class="literal">iperf</code></li><li class="listitem">Comparing IPv4 and IPv6 speed</li><li class="listitem">OpenSSL cipher speed</li><li class="listitem">OpenVPN in Gigabit networks</li><li class="listitem">Compression tests</li><li class="listitem">Traffic shaping</li><li class="listitem">Tuning UDP-based connections</li><li class="listitem">Tuning TCP-based connections</li><li class="listitem">Analyzing performance using <code class="literal">tcpdump</code></li></ul></div><div><div><div><div><h1 class="title"><a id="ch08lvl1sec84"/>Introduction</h1></div></div></div><p>This chapter focuses on getting the best performance out of an OpenVPN setup. There are several parameters that can be tuned on both the server side and the client side for getting the highest throughput and the lowest latency. However, the optimal settings of these parameters largely depend on the network layout. The recipes in this chapter will therefore provide guidelines on how to tune these parameters and how to measure the increase or decrease in performance. These guidelines can then be applied to other network layouts to find the optimal performance.</p></div></div>
+<div><div><div><div><h1 class="title"><a id="ch08lvl1sec85"/>Optimizing performance using ping</h1></div></div></div><p>In this recipe, we will use the low-level <code class="literal">ping</code> command to determine the optimal <strong>Maximum Transfer Unit</strong> (<strong>MTU</strong>) size for our OpenVPN setup. Finding the right MTU size can have a tremendous impact on performance, especially, when using satellite links, or even some cable/ADSL providers. Especially, broadband connections using the <strong>PPPoE</strong> (<strong>PPP over Ethernet</strong>) protocol often have a non-standard MTU size. In a regular LAN setup, it is hardly ever required to optimize the MTU size, as OpenVPN's' default settings are close to optimal.</p><div><div><div><div><h2 class="title"><a id="ch08lvl2sec315"/>Getting ready</h2></div></div></div><p>Make sure the client and the server computers are connected over a network. For this recipe, the server computer was running CentOS 6 Linux. The client was running Fedora 22 Linux, but instructions for a Windows client are given as well.</p></div><div><div><div><div><h2 class="title"><a id="ch08lvl2sec316"/>How to do it...</h2></div></div></div><div><ol class="orderedlist arabic"><li class="listitem">We first verify that we can reach the server from the client:<pre class="programlisting">
+<strong>[client]$ ping -c 2 &lt;openvpn-server-ip&gt;</strong>
+</pre><p>This will send two ICMP ping packets to the server and two replies should be returned. If not, then a firewall or <code class="literal">iptables</code> rule is blocking ICMP traffic. Ensure that the server can be reached using <code class="literal">ping</code> before proceeding.</p></li><li class="listitem">Next, try sending a large ping packet from the client to the server, with the <code class="literal">Don't Fragment</code> (<strong>DF</strong>) bit set. Strangely enough, on Linux, this is done using the parameter <code class="literal">-M do</code>.<pre class="programlisting">
+<strong>[client]$ ping -c 2 -M do -s 1600 &lt;openvpn-server-ip&gt;</strong>
+</pre><p>Normally, this command is not successful:</p><pre class="programlisting">
+<strong>From 172.30.0.128 icmp_seq=1 Frag needed and DF set (mtu = &#13;
+        1500)</strong>
+</pre><p>The maximum size of a packet that can be sent from this interface is 1500 bytes. From this, the Ethernet headers (normally 28 bytes) need to be subtracted, which means that the maximum size of an ICMP packet is 1472 bytes:</p><pre class="programlisting">
+<strong>[client]$ ping -c 2 -M do -s 1472 &lt;openvpn-server-ip&gt;</strong>
+<strong>PING 172.30.0.128 (172.30.0.128) 1472(1500) bytes of data.</strong>
+<strong>1480 bytes from 172.30.0.128: icmp_seq=1 ttl=128 time=0.630 ms</strong>
+<strong>1480 bytes from 172.30.0.128: icmp_seq=2 ttl=128 time=0.398 ms</strong>
+</pre></li><li class="listitem">For Windows clients, the syntax of the <code class="literal">ping</code> command is slightly different:<pre class="programlisting">
+<strong>[winclient]C:&gt; ping -f -l 1600 &lt;openvpn-server-ip&gt;</strong>
+<strong>Packet needs to be fragmented but DF set.</strong>
+</pre><p>And:</p><pre class="programlisting">
+<strong>[winclient]C:&gt; ping -f -l 1472 &lt;openvpn-server-ip&gt;</strong>
+<strong>Pinging 172.30.0.1 with 1472 bytes of data:</strong>
+<strong>Reply from 172.30.0.1: bytes=1472 time&lt;1ms TTL=64</strong>
+</pre><p>The payload size of 1472 bytes is actually the regular size for an Ethernet-based network, even though this recipe was performed over a cable connection.</p></li></ol><div></div><p>A good initial value for OpenVPN's' <code class="literal">tun-mtu</code> setting is the maximum payload size plus the 28 bytes that were subtracted earlier. However, it does not mean this is the optimal value, as we will see in the later recipes.</p></div><div><div><div><div><h2 class="title"><a id="ch08lvl2sec317"/>How it works...</h2></div></div></div><p>The ICMP protocol which the <code class="literal">ping</code> command uses has the option to set a flag <code class="literal">Don't Fragment</code> (DF). With this bit set, an ICMP packet may not be broken up into separate pieces before it reaches its destination. If the packet were needed to be broken up by a router before it could be transmitted, it is dropped and an ICMP error code is returned. This provides a very easy method to determine the largest packet that can be transmitted to the server and vice versa. In particular, in high-latency networks, for example, when a satellite link is used, it is very important to limit the number of packets and to maximize the size of each packet.</p><p>By smartly using the <code class="literal">ping</code> command, the maximum packet size can be determined. This size can then be used to further optimize the OpenVPN performance.</p></div><div><div><div><div><h2 class="title"><a id="ch08lvl2sec318"/>There's more...</h2></div></div></div><p>In some network setups, ICMP traffic is filtered, rendering this recipe useless. If it is possible to reach the OpenVPN server, then the tunnel can also be used to find the maximum payload size.</p><p>Start the OpenVPN server with the extra flags:</p><pre class="programlisting">cipher none &#13;
+auth none &#13;
+</pre><p>Do the same for the OpenVPN client. Make sure compression is turned off (or simply not specified) and that the <code class="literal">fragment</code> option is not used. This will start a clear-text tunnel over which we can send ICMP packets of various sizes.</p><p>Ping the remote end's VPN IP address, for example:</p><pre class="programlisting">
+<strong>[client]$ ping -c 2 -M do -s 1472 10.200.0.1</strong>
+</pre><p>When the ICMP packet becomes too large, the traffic will be dropped by an intermittent router. Lower the ICMP packet size until the ping returns successfully. From that value, the MTU size can be derived.</p></div><div><div><div><div><h2 class="title"><a id="ch08lvl2sec319"/>See also</h2></div></div></div><div><ul class="itemizedlist"><li class="listitem">The <em>Tuning UDP-based connections</em> recipe, which will explain in more detail how to tune the performance of UDP-based setups</li><li class="listitem">The <em>Tuning TCP-based connections</em> recipe, which goes deeper into the details of tuning TCP-based setups and also explains some of the intricacies of the MTU setting of the network adapter</li></ul></div></div></div>
+<div><div><div><div><h1 class="title"><a id="ch08lvl1sec86"/>Optimizing performance using iperf</h1></div></div></div><p>This recipe is not really about OpenVPN but more about how to use the network performance measurement tool <code class="literal">iperf</code> in an OpenVPN setup. The <code class="literal">iperf</code> utility can be downloaded from <a class="ulink" href="http://sourceforge.net/projects/iperf/">http://sourceforge.net/projects/iperf/</a> for Linux, Windows, and MacOS.</p><p>In this recipe, we will run <code class="literal">iperf</code> outside of OpenVPN and over the VPN tunnel itself, after which the differences in performance will be explained.</p><div><div><div><div><h2 class="title"><a id="ch08lvl2sec320"/>Getting ready</h2></div></div></div><p>We use the following network layout:</p><div><img src="img/image00394.jpeg" alt="Getting ready"/></div><p style="clear:both; height: 1em;"> </p><p>Set up the client and server certificates using the <em>Setting up the public and private keys</em> recipe from <a class="link" title="Chapter 2.  Client-server IP-only Networks" href="part0025.xhtml#aid-NQU21">Chapter 2</a>, <em>Client-server IP-only Networks</em>. For this recipe, the server computer was running CentOS 6 Linux and OpenVPN 2.3.11. The client was running Fedora 22 Linux and OpenVPN 2.3.11. Keep the configuration file <code class="literal">basic-udp-server.conf</code> from the <em>Server-side routing</em> recipe from <a class="link" title="Chapter 2.  Client-server IP-only Networks" href="part0025.xhtml#aid-NQU21">Chapter 2</a>, <em>Client-server IP-only Networks</em>, as well as the client configuration file <code class="literal">basic-udp-client.conf</code>.</p></div><div><div><div><div><h2 class="title"><a id="ch08lvl2sec321"/>How to do it...</h2></div></div></div><div><ol class="orderedlist arabic"><li class="listitem">Start the server:<pre class="programlisting">
+<strong>[root@server]# openvpn --config basic-udp-server.conf</strong>
+</pre></li><li class="listitem">Next, start the client:<pre class="programlisting">        <strong>[root@client]# openvpn --config basic-udp-client.conf</strong>&#13;
+        <strong>...</strong>&#13;
+        <strong>... Initialization Sequence Completed</strong>
+</pre></li><li class="listitem">Next, we start <code class="literal">iperf</code> on the server:<pre class="programlisting">        <strong>[server]$ iperf -s</strong>
+</pre></li><li class="listitem">First, we measure the performance outside the tunnel:<pre class="programlisting">        <strong>[client]$ iperf -l 1M -n 8M -c &lt;openvpn-server-ip&gt;</strong>&#13;
+        <strong>[  3]  0.0-15.2 sec  8 MBytes  4.1 Mbits/sec</strong>
+</pre><p>This actually measures the performance of data being sent to the server. The cable network used in this recipe has a theoretical upload limit of 4 Megabits per second (Mbps), which we are achieving in this test.</p></li><li class="listitem">Next, we measure the performance inside the tunnel:<pre class="programlisting">        <strong>[client]$ iperf -l 1M -n 8M -c 10.200.0.1</strong>&#13;
+        <strong>[  3]  0.0-17.0 sec  8 MBytes  3.95 Mbits/sec</strong>
+</pre><p>With this network setup, there is a small performance difference between traffic sent outside of the tunnel and traffic sent via the tunnel.</p></li><li class="listitem">A second test is done over a 802.11n wireless network:<pre class="programlisting">        <strong>[client]$ iperf -c &lt;openvpn-server-ip&gt;</strong>&#13;
+        <strong>[  4]  0.0-10.8 sec  7.88 MBytes  6.10 Mbits/sec </strong>
+</pre><p>Versus:</p><pre class="programlisting">        <strong>[client]$ iperf -c 10.200.0.1</strong>&#13;
+        <strong>[  5]  0.0-11.3 sec  5.25 MBytes  3.91 Mbits/sec</strong>
+</pre><p>Here, there is a noticeable drop in performance, suggesting that the OpenVPN is not configured optimally. There was a lot of noise on this wireless network, which makes it difficult to optimize.</p></li></ol><div></div></div><div><div><div><div><h2 class="title"><a id="ch08lvl2sec322"/>How it works...</h2></div></div></div><p>The <code class="literal">iperf</code> tool is very straightforward: it sets up a TCP connection (or UDP, if desired) and measures how fast it can send or receive data over this connection. Normally, traffic is tested in only one direction, although a dual test can be triggered using the <code class="literal">-r</code> flag.</p></div><div><div><div><div><h2 class="title"><a id="ch08lvl2sec323"/>There's more...</h2></div></div></div><p>Tuning network performance depends heavily on both the network latency and the available bandwidth, as is outlined in more detail here.</p><div><div><div><div><h3 class="title"><a id="ch08lvl3sec70"/>Client versus server iperf results</h3></div></div></div><p>Both the client and the server <code class="literal">iperf</code> processes report the network throughput after a <code class="literal">iperf -c</code> session has ended. Practice shows that the numbers reported by the server used in this recipe were more accurate than the numbers reported by the client. On the cable network used when writing this recipe, the maximum upload speed is about 4 Mbps. The client sometimes reported speeds larger than 4.4 Mbps, whereas the server reported a more accurate 4.1 Mbps.</p></div><div><div><div><div><h3 class="title"><a id="ch08lvl3sec71"/>Network latency</h3></div></div></div><p>One of the main reasons for the lack of performance drop over the cable network versus the performance drop over the wireless network is due to network latency. On the cable network, the latency was very stable at about 11 ms. On the wireless network, the latency varied between 2 ms and 90 ms. Especially, this variation in latency can skew the  <code class="literal">iperf</code> performance measurements, making it very hard to optimize the OpenVPN parameters.</p></div><div><div><div><div><h3 class="title"><a id="ch08lvl3sec72"/>Gigabit networks</h3></div></div></div><p>Performance tests on Gigabit networks show that the VPN itself is becoming the bottleneck. A normal TCP connection would show a transfer rate of 900 Mbps, whereas a TCP connection via an untuned OpenVPN tunnel would not perform faster than about 320 Mbps. We will come back to this later in this chapter.</p></div></div><div><div><div><div><h2 class="title"><a id="ch08lvl2sec324"/>See also</h2></div></div></div><div><ul class="itemizedlist"><li class="listitem">The recipe <em>OpenVPN in Gigabit networks</em>, which will explain in more detail how to tune OpenVPN for better performance over high-speed networks</li></ul></div></div></div>
+<div><div><div><div><h1 class="title"><a id="ch08lvl1sec87"/>Comparing IPv4 and IPv6 speed</h1></div></div></div><p>This recipe is a continuation of the previous recipe, but here we will focus on the performance difference between tunneling Pv4 traffic and IPv6 traffic. In this recipe, we will run <code class="literal">iperf</code> over the VPN tunnel using IPv4 addresses and IPv6 addresses inside the tunnel, after which the differences in performance will be explained.</p><div><div><div><div><h2 class="title"><a id="ch08lvl2sec325"/>Getting ready</h2></div></div></div><p>We use the following network layout:</p><div><img src="img/image00395.jpeg" alt="Getting ready"/></div><p style="clear:both; height: 1em;"> </p><p>Set up the client and server certificates using the <em>Setting up the public and private keys</em> recipe from <a class="link" title="Chapter 2.  Client-server IP-only Networks" href="part0025.xhtml#aid-NQU21">Chapter 2</a>, <em>Client-server IP-only Networks</em>. For this recipe, the server computer was running CentOS 6 Linux and OpenVPN 2.3.11. The client was running Fedora 22 Linux and OpenVPN 2.3.11. Keep the configuration file <code class="literal">example-2-4-server.conf</code> from the <em>Adding IPv6 support</em> recipe from <a class="link" title="Chapter 2.  Client-server IP-only Networks" href="part0025.xhtml#aid-NQU21">Chapter 2</a>, <em>Client-server IP-only Networks</em>, as well as the client configuration file <code class="literal">basic-udp-client.conf</code>.</p></div><div><div><div><div><h2 class="title"><a id="ch08lvl2sec326"/>How to do it...</h2></div></div></div><div><ol class="orderedlist arabic"><li class="listitem">Start the server:<pre class="programlisting">        <strong>[root@server]# openvpn --config example-2-4-server.conf</strong>
+</pre></li><li class="listitem">Next, start the client:<pre class="programlisting">        <strong>[root@client]# openvpn --config basic-udp-client.conf</strong>&#13;
+        <strong>...</strong>&#13;
+        <strong>... Initialization Sequence Completed</strong>
+</pre></li><li class="listitem">Next, we start <code class="literal">iperf</code> on the server:<pre class="programlisting">        <strong>[server]$ iperf -s</strong>
+</pre></li><li class="listitem">First, we measure the performance when tunneling IPv4 traffic:<pre class="programlisting">        <strong>[client]$ iperf -l 1M -n 8M -c 10.200.0.1</strong>&#13;
+        <strong>[  3]  0.0-17.0 sec  8 MBytes  3.95 Mbits/sec</strong>
+</pre></li><li class="listitem">Next, we measure the performance using IPv6 packets:<pre class="programlisting">        <strong>[client]$ iperf -l 1M -n 8M -c  2001:db8:100::1</strong>&#13;
+        <strong>[  3]  0.0-17.7 sec  8 MBytes  3.78 Mbits/sec</strong>
+</pre></li></ol><div></div><p>This shows a performance difference of roughly 5%. This difference is measured consistently over all types of networks.</p></div><div><div><div><div><h2 class="title"><a id="ch08lvl2sec327"/>How it works...</h2></div></div></div><p>An IPv6 address is longer than an IPv4 address. The source and destination addresses for all packets are stored inside the encrypted packets that go over the OpenVPN tunnel. Thus, the larger the addressing scheme used, the less bytes are left for the actual "payload". An IPv6 packet can actually carry 20 bytes less "payload" than an IPv4 packet. These 20 bytes account for the 5% performance difference. There is very little that can be done about this.</p></div><div><div><div><div><h2 class="title"><a id="ch08lvl2sec328"/>There's more...</h2></div></div></div><p>Tuning network performance depends heavily on the network characteristics, as well as the tuning tools used, as is outlined in more detail here.</p><div><div><div><div><h3 class="title"><a id="ch08lvl3sec73"/>Client versus server iperf results</h3></div></div></div><p>Both the client and the server <code class="literal">iperf</code> processes report the network throughput after an <code class="literal">iperf -c</code> session has ended. Practice shows that the numbers reported by the server used in this recipe were more accurate than the numbers reported by the client. Also, more accurate results are achieved by running <code class="literal">iperf</code> with a fixed data size instead of the default fixed time interval of 10 seconds. We specify a fixed block size (1 Megabyte) and a fixed total size (8 Megabyte) using <code class="literal">iperf -l 1M -n 8M -c &lt;IP-address&gt;</code>.</p><p>This increases accuracy and improves the consistency of the numbers reported on the client and server side.</p></div></div></div>
+<div><div><div><div><h1 class="title"><a id="ch08lvl1sec88"/>OpenSSL cipher speed</h1></div></div></div><p>OpenVPN uses OpenSSL to perform all cryptographic operations. This means that the performance of an OpenVPN client or server depends on how fast the incoming traffic can be decrypted and how fast the outgoing traffic can be encrypted. For a client with a single connection to the OpenVPN server, this is almost never an issue, but with an OpenVPN server with hundreds of clients, the cryptographic performance becomes very important. Also, when running OpenVPN over a high-speed network link (Gigabit or higher), the cryptographic performance also plays an important role.</p><p>In this recipe, we will show how to measure the performance of the OpenSSL cryptographic routines and how this measurement can be used to improve the performance of an OpenVPN server.</p><div><div><div><div><h2 class="title"><a id="ch08lvl2sec329"/>Getting ready</h2></div></div></div><p>This recipe is performed on a variety of computers:</p><div><ul class="itemizedlist"><li class="listitem">An old laptop with an Intel Core2 Duo T9300 processor running at 2.5 GHz, running Fedora Linux 22 64bit</li><li class="listitem">An older server with an Intel Xeon X5660 processor running at 2.8 GHz and with support for the AESNI instructions, running CentOS 6 64bit</li><li class="listitem">A high-end server with an Intel Xeon E5-2697A v4 processor running at 2.6 GHz and with support for the AESNI instructions, running CentOS 6 64bit</li></ul></div><p>The recipe can easily be performed on MacOS as well. Each computer had OpenVPN 2.3 installed, with the accompanying OpenSSL libraries.</p></div><div><div><div><div><h2 class="title"><a id="ch08lvl2sec330"/>How to do it...</h2></div></div></div><p>On each system, the following OpenSSL commands are run:</p><pre class="programlisting">
+<strong>$ openssl speed -evp bf-cbc</strong>
+<strong>$ openssl speed -evp aes-128-cbc</strong>
+<strong>$ openssl speed -evp aes-256-cbc</strong>
+</pre><p>The first command tests the speed of the OpenVPN default BlowFish cryptographic cipher. The second and third test the performance of the 128 and 256-bit AES ciphers, which are very commonly used to secure websites. All commands were run twice on the new high-end server: once with support for the AES-NI instruction set turned on and once with AES-NI support off using the <code class="literal">$ OPENSSL_ia32=0 openssl speed -evp &lt;cipher&gt;</code>.</p><p>The results are displayed in the following table. All numbers in the tables are the bytes per second processed when encrypting a block of data. The size of the block of data is listed in the columns.</p><p>For the <code class="literal">BlowFish</code> cipher, the following results were recorded:</p><div><table border="1"><colgroup><col/><col/><col/><col/></colgroup><tbody><tr><td>
+<p><strong>Type</strong></p>
+</td><td>
+<p><strong>256 bytes</strong></p>
+</td><td>
+<p><strong>1024 bytes</strong></p>
+</td><td>
+<p><strong>8192 bytes</strong></p>
+</td></tr><tr><td>
+<p>Laptop</p>
+</td><td>
+<p>95851.54k</p>
+</td><td>
+<p>95426.22k</p>
+</td><td>
+<p>95862.84k</p>
+</td></tr><tr><td>
+<p>Old Server</p>
+</td><td>
+<p>111466.67k</p>
+</td><td>
+<p>111849.47k</p>
+</td><td>
+<p>112162.13k</p>
+</td></tr><tr><td>
+<p>New Server</p>
+</td><td>
+<p>151329.96k</p>
+</td><td>
+<p>152054.10k</p>
+</td><td>
+<p>152428.54k</p>
+</td></tr><tr><td>
+<p>New Server, no AES-NI</p>
+</td><td>
+<p>151128.49k</p>
+</td><td>
+<p>151951.02k</p>
+</td><td>
+<p>152048.98k</p>
+</td></tr></tbody></table></div><p>For the <code class="literal">AES128</code> cipher, the following results were recorded:</p><div><table border="1"><colgroup><col/><col/><col/><col/></colgroup><tbody><tr><td>
+<p><strong>Type</strong></p>
+</td><td>
+<p><strong>256 bytes</strong></p>
+</td><td>
+<p><strong>1024 bytes</strong></p>
+</td><td>
+<p><strong>8192 bytes</strong></p>
+</td></tr><tr><td>
+<p>Laptop</p>
+</td><td>
+<p>85588.05k</p>
+</td><td>
+<p>179870.91k</p>
+</td><td>
+<p>183104.85k</p>
+</td></tr><tr><td>
+<p>Old Server</p>
+</td><td>
+<p>758884.44k</p>
+</td><td>
+<p>762378.58k</p>
+</td><td>
+<p>755960.49k</p>
+</td></tr><tr><td>
+<p>New Server</p>
+</td><td>
+<p>802229.85k</p>
+</td><td>
+<p>806787.75k</p>
+</td><td>
+<p>807682.05k</p>
+</td></tr><tr><td>
+<p>New Server, no AES-NI</p>
+</td><td>
+<p>160414.98k</p>
+</td><td>
+<p>361608.53k</p>
+</td><td>
+<p>368836.61k</p>
+</td></tr></tbody></table></div><p>And for <code class="literal">AES256</code>:</p><div><table border="1"><colgroup><col/><col/><col/><col/></colgroup><tbody><tr><td>
+<p><strong>Type</strong></p>
+</td><td>
+<p><strong>256 bytes</strong></p>
+</td><td>
+<p><strong>1024 bytes</strong></p>
+</td><td>
+<p><strong>8192 bytes</strong></p>
+</td></tr><tr><td>
+<p>Laptop</p>
+</td><td>
+<p>60698.20k</p>
+</td><td>
+<p>130553.15k</p>
+</td><td>
+<p>132085.73k</p>
+</td></tr><tr><td>
+<p>Old Server</p>
+</td><td>
+<p>560398.93k</p>
+</td><td>
+<p>562632.92k</p>
+</td><td>
+<p>564687.49k</p>
+</td></tr><tr><td>
+<p>New Server</p>
+</td><td>
+<p>577053.35k</p>
+</td><td>
+<p>578981.21k</p>
+</td><td>
+<p>579532.12k</p>
+</td></tr><tr><td>
+<p>New Server, no AES-NI</p>
+</td><td>
+<p>114444.29k</p>
+</td><td>
+<p>266473.47k</p>
+</td><td>
+<p>270030.17k</p>
+</td></tr></tbody></table></div></div><div><div><div><div><h2 class="title"><a id="ch08lvl2sec331"/>How it works...</h2></div></div></div><p>The output of the <code class="literal">openssl speed</code> command shows that the encryption and decryption performance is dependent on both the encryption key and the hardware used. Most OpenVPN packets are about 1500 bytes, so the column 1024 bytes is the most interesting column to look at.</p><p>The <code class="literal">BlowFish</code> cipher results are quite interesting if you take the processor speed into account: if you divide the <code class="literal">BlowFish</code> performance by the processor clock speed the numbers are very similar. This means that the <code class="literal">BlowFish</code> performance is bound purely by the processor clock speed. An older type processor running at a higher clock speed might actually outperform a newer processor with a slightly lower clock speed.</p><p>For the <code class="literal">AES128</code> and <code class="literal">AES256</code> ciphers, this is no longer true. Here the modern i5/i7 and Xeon architectures are much faster than the older Pentium 4 and Athlon architectures. With the AES-NI extensions, the performance jumps by a factor of 4. If an OpenVPN server is set up that must support many clients, then this cryptographic cipher is an excellent choice, provided that the server CPU supports these extensions.</p><p>This recipe also provides a simple test of whether the AES-NI instructions are available and whether they are actually picked up by the underlying OpenSSL library. If the speed results between <code class="literal">openssl</code> and <code class="literal">OPENSSL_ia32cap=0 openssl</code> do not differ, then the AES-NI instructions are not being used for encryption or decryption.</p></div><div><div><div><div><h2 class="title"><a id="ch08lvl2sec332"/>There's more...</h2></div></div></div><p>The choice of the cryptographic cipher on the performance of OpenVPN is minimal for a single client. Measurements done for this recipe indicate that the client CPU has a load of less than 8% when downloading a file at the highest speed over the VPN tunnel on a modern system. However, on the older desktop, the choice of cryptographic cipher does become important: upload speed drops from 760 kbps to 720 kbps when the <code class="literal">BlowFish</code> cipher changes to the <code class="literal">AES256</code> cipher. In particular, when older hardware or certain home router equipment is used, this can quickly become a bottleneck. Most home wireless routers capable of running OpenVPN, for example, the wireless routers that support the DD-WRT or OpenWRT distributions, have a processor speed of about 250 MHz. This processor speed can quickly become the bottleneck if this router is also used as an OpenVPN server, especially when multiple clients connect simultaneously.</p></div><div><div><div><div><h2 class="title"><a id="ch08lvl2sec333"/>See also</h2></div></div></div><div><ul class="itemizedlist"><li class="listitem">The <em>Cipher mismatches</em> recipe from <a class="link" title="Chapter 6. Troubleshooting OpenVPN - Configurations" href="part0071.xhtml#aid-23MNU1">Chapter 6</a>, <em>Troubleshooting OpenVPN - Configurations</em>, which explains in more detail how to troubleshoot cipher mismatches in the client and server configuration files.</li></ul></div></div></div>
+<div><div><div><div><h1 class="title"><a id="ch08lvl1sec89"/>OpenVPN in Gigabit networks</h1></div></div></div><p>With the advent of high-speed networks, the need for a high-speed VPN has also increased. OpenVPN is not particularly built for high speeds, but with modern hardware and the right encryption ciphers it is possible to achieve near-gigabit speeds with OpenVPN 2.4. This recipe will show you how to achieve these speeds.</p><div><div><div><div><h2 class="title"><a id="ch08lvl2sec334"/>Getting ready</h2></div></div></div><p>We use the following network layout:</p><div><img src="img/image00396.jpeg" alt="Getting ready"/></div><p style="clear:both; height: 1em;"> </p><p>The client used in this recipe was a laptop with a Core i7-4810 processor with a maximum Turboboost speed of 3.8 GHz. The server was a server with an Xeon E5-2697A v4 processor with a maximum Turboboost speed of 3.6 GHz. Connect the client and the server both to a Gigabit Ethernet switch. Set up the client and server certificates using the <em>Setting up the public and private keys</em> recipe from <a class="link" title="Chapter 2.  Client-server IP-only Networks" href="part0025.xhtml#aid-NQU21">Chapter 2</a>, <em>Client-server IP-only Networks</em>. For this recipe, the server computer was running CentOS 6 Linux and OpenVPN 2.4.0.
+ The client was running Fedora 22 Linux and OpenVPN 2.4.0. Keep the configuration file <code class="literal">basic-udp-server.conf</code> from the <em>Server-side routing</em> recipe from <a class="link" title="Chapter 2.  Client-server IP-only Networks" href="part0025.xhtml#aid-NQU21">Chapter 2</a>, <em>Client-server IP-only Networks</em>, as well as the client configuration file <code class="literal">basic-udp-client.conf</code>.</p></div><div><div><div><div><h2 class="title"><a id="ch08lvl2sec335"/>How to do it...</h2></div></div></div><div><ol class="orderedlist arabic"><li class="listitem">Start the server:<pre class="programlisting">
+<strong>[root@server]# openvpn --config basic-udp-server.conf</strong>
+</pre></li><li class="listitem">Next, start the client:<pre class="programlisting">        <strong>[root@client]# openvpn --config basic-udp-client.conf</strong>&#13;
+        <strong>...</strong>&#13;
+        <strong>... Initialization Sequence Completed</strong>
+</pre></li><li class="listitem">Next, we start <code class="literal">iperf</code> on the server:<pre class="programlisting">        <strong>[server]$ iperf -s</strong>
+</pre></li><li class="listitem">First, we measure the performance outside the tunnel:<pre class="programlisting">        <strong>[client]$ iperf -c &lt;openvpn-server-ip&gt;</strong>&#13;
+        <strong>[  3]  0.0-10.0 sec  11 GBytes  900 Mbits/sec</strong>
+</pre><p>For a Gigabit Ethernet network, this is close to the theoretical limit.</p></li><li class="listitem">Next, we measure the performance inside the tunnel:<pre class="programlisting">        <strong>[client]$ iperf -l 1M -n 8M -c 10.200.0.1</strong>&#13;
+        <strong>[  4]  0.0-10.2 sec  292 MBytes  233 Mbits/sec </strong>
+</pre><p>This is the performance of a default OpenVPN tunnel.</p></li><li class="listitem">Stop both the client and server OpenVPN processes.</li><li class="listitem">Now, we switch to an AES-256 cipher to make use of the AES-NI instructions that both processors support:<pre class="programlisting">        <strong>[server]# openvpn --config basic-udp-server.conf --cipher aes-&#13;
+        256-cbc</strong>
+</pre><p>And the client:</p><pre class="programlisting">        <strong>[client]# openvpn --config basic-udp-client.conf --cipher aes-&#13;
+        256-cbc</strong>&#13;
+        <strong>...</strong>&#13;
+        <strong>... Initialization Sequence Completed</strong>
+</pre></li><li class="listitem">Again, we measure the performance inside the tunnel, testing both directions:<pre class="programlisting">        <strong>[client]$ iperf -l 1M -n 8M -c 10.200.0.1 -r</strong>&#13;
+        <strong>[  4]  0.0-10.2 sec  762 MBytes  610 Mbits/sec </strong>&#13;
+        <strong>[  5]  0.0-10.2 sec  807 MBytes  646 Mbits/sec </strong>
+</pre><p>This clearly shows that the AES-NI instructions make a difference.</p></li><li class="listitem">Stop both the client and server OpenVPN processes again.</li><li class="listitem">Now, we switch to AES-256-GCM, a new cipher algorithm supported by OpenVPN 2.4, which is more efficient compared to an AES-256 cipher and SHA2 HMAC function:<pre class="programlisting">        <strong>[server]# openvpn --config basic-udp-server.conf --cipher aes-&#13;
+        256-gcm</strong>
+</pre><p>And the client:</p><pre class="programlisting">        <strong>[client]# openvpn --config basic-udp-client.conf --cipher aes-&#13;
+        256-gcm</strong>&#13;
+        <strong>...</strong>&#13;
+        <strong>... Initialization Sequence Completed</strong>   </pre></li><li class="listitem">Again, we measure the performance inside the tunnel, testing both directions:<pre class="programlisting">        <strong>[client]$ iperf -l 1M -n 8M -c 10.200.0.1 -r</strong>&#13;
+        <strong>[  4]  0.0-10.2 sec  1.07 GBytes  859 Mbits/sec </strong>&#13;
+        <strong>[  5]  0.0-10.2 sec  1.08 GBytes  865 Mbits/sec </strong>
+</pre></li></ol><div></div><p>The last performance numbers are actually quite close to the maximum speed that can be achieved over an OpenVPN tunnel on a Gigabit Ethernet network.</p></div><div><div><div><div><h2 class="title"><a id="ch08lvl2sec336"/>How it works...</h2></div></div></div><p>When processors are used that have a high clock speed and have support for the AES-NI instructions, OpenVPN and the operating system are capable of keeping up with the flood of packets that is coming in and needs to be sent out at Gigabit Ethernet speeds.</p><p>The new AES-256-GCM encryption cipher especially helps here, as the encryption and authentication (HMAC) are done in one step. This greatly improves performance, in part due to shorter computing time and in part due to the fact that this cipher has a smaller encryption overhead for each packet, leaving more bytes for the actual "payload".</p></div><div><div><div><div><h2 class="title"><a id="ch08lvl2sec337"/>There's more...</h2></div></div></div><p>Tuning network performance on Gigabit Ethernet depends heavily on the hardware and operating system used.</p><div><div><div><div><h3 class="title"><a id="ch08lvl3sec74"/>Plain-text tunnel</h3></div></div></div><p>Another interesting test to run is to turn off all encryption and authentication (<code class="literal">--cipher none --auth none</code>) and then run the <code class="literal">iperf</code> tests once more. With the hardware used in this recipe the following numbers were achieved:</p><pre class="programlisting">[  4]  0.0-10.2 sec  1.09 GBytes  874 Mbits/sec  &#13;
+[  5]  0.0-10.2 sec  1.10 GBytes  879 Mbits/sec  &#13;
+</pre><p>These numbers are even closer to the actual line speed, mostly due to the fact that there is no encryption overhead, leaving optimal space for the "payload".</p></div><div><div><div><div><h3 class="title"><a id="ch08lvl3sec75"/>Windows performance</h3></div></div></div><p>The <code class="literal">iperf</code> tool is also available on Windows, so the above recipe can also be done using a Windows client and/or server. The results are very different compared to the Linux client or server. We can achieve similar "raw" Ethernet speeds by using <code class="literal">[WinClient]&gt; iperf -w 128K -c &lt;openvpn-server-ip&gt;</code>.</p><p>However, performance over the OpenVPN tunnel, with or without encryption, is well below 200 Mbps, even with the fastest processors used. Most likely, this is due to a design issue in the Windows TAP driver. This issue is currently under investigation.</p></div></div></div>
+<div><div><div><div><h1 class="title"><a id="ch08lvl1sec90"/>Compression tests</h1></div></div></div><p>OpenVPN has built-in support for LZO compression if compiled properly. All Windows binaries have LZO compression available by default. In this recipe, we will show what is the performance of using LZO compression when transferring both easily compressible data (such as web pages) and non-compressible data (such as photographs or binaries).</p><div><div><div><div><h2 class="title"><a id="ch08lvl2sec338"/>Getting ready</h2></div></div></div><p>We use the following network layout:</p><div><img src="img/image00397.jpeg" alt="Getting ready"/></div><p style="clear:both; height: 1em;"> </p><p>Set up the client and server certificates using the <em>Setting up the public and private keys</em> recipe from <a class="link" title="Chapter 2.  Client-server IP-only Networks" href="part0025.xhtml#aid-NQU21">Chapter 2</a>, <em>Client-server IP-only Networks</em>. For this recipe, the server computer was running CentOS 6 Linux and OpenVPN 2.3.11. The first client was running Fedora 22 Linux and OpenVPN 2.3.11. Keep the configuration file <code class="literal">basic-udp-server.conf</code> from the <em>Server-side routing</em> recipe from <a class="link" title="Chapter 2.  Client-server IP-only Networks" href="part0025.xhtml#aid-NQU21">Chapter 2</a>, <em>Client-server IP-only Networks</em>, as well as the client configuration file <code class="literal">basic-udp-client.conf</code>. The recipe was repeated with a second client running Windows 7 64bit and OpenVPN 2.3.11. Keep the configuration file <code class="literal">basic-udp-server.conf</code> from the <em>Server-side routing</em> recipe from <a class="link" title="Chapter 2.  Client-server IP-only Networks" href="part0025.xhtml#aid-NQU21">Chapter 2</a>, <em>Client-server IP-only Networks</em>, as well as the client configuration file <code class="literal">basic-udp-client.ovpn</code> from the <em>Using an ifconfig-pool block</em> .</p></div><div><div><div><div><h2 class="title"><a id="ch08lvl2sec339"/>How to do it...</h2></div></div></div><div><ol class="orderedlist arabic"><li class="listitem">Append the following line to the <code class="literal">basic-udp-server.conf</code> file:<pre class="programlisting">
+<strong>comp-lzo</strong>
+</pre><p>Save it as <code class="literal">example8-6-server.conf</code>.</p></li><li class="listitem">Start the server:<pre class="programlisting">
+<strong>[root@server]# openvpn --config example8-6-server.conf</strong>
+</pre></li><li class="listitem">Similarly, for the client, add a line to the <code class="literal">basic-udp-client.conf</code> file:<pre class="programlisting">
+<strong>comp-lzo</strong>
+</pre><p>Save it as <code class="literal">example8-6-client.conf</code>.</p></li><li class="listitem">Start the client:<pre class="programlisting">
+<strong>[root@client]# openvpn --config example8-6-client.conf</strong>
+</pre></li><li class="listitem">Next, we start <code class="literal">iperf</code> on the server:<pre class="programlisting">
+<strong>[server]$ iperf -s</strong>
+</pre></li><li class="listitem">First, we measure the performance when transferring data outside of the tunnel:<pre class="programlisting">
+<strong>[client]$ iperf -c &lt;openvpn-server-ip&gt;</strong>
+</pre><p>This results in a throughput of about 50 Mbps over an 802.11n wireless network.</p></li><li class="listitem">Next, non-compressible data:<pre class="programlisting">
+<strong>[client]$ dd if=/dev/urandom bs=1024k count=60 of=random</strong>
+<strong>[client]$ iperf -c 10.200.0.1 -F random</strong>
+<strong>[  4]  0.0-10.0 sec  35.0 MBytes  29.3 Mbits/sec</strong>
+</pre><p>In the first step, we create a 60MB file with random data. Then, we measure the <code class="literal">iperf</code> performance when transferring this file.</p></li><li class="listitem">And finally, compressible data (a file filled with zeroes):<pre class="programlisting">
+<strong>[client]$ dd if=/dev/zeroes bs=1024k count=60 of=zeroes</strong>
+<strong>[client]$ iperf -c 10.200.0.1 -F zeroes</strong>
+<strong>[  5]  0.0- 5.9 sec  58.6 MBytes  83.3 Mbits/sec</strong>
+</pre><p>The performance of the VPN tunnel when transferring compressible data such as text files and web pages is shown.</p></li><li class="listitem">The same measurement can be made using a Windows PC. Add the following line to the <code class="literal">basic-udp-client.ovpn</code> file:<pre class="programlisting">
+<strong>comp-lzo</strong>
+</pre><p>Save it as <code class="literal">example8-6.ovpn</code>.</p></li><li class="listitem">Start the client.</li></ol><div></div><p>The results of the <code class="literal">iperf</code> measurement are slightly different:</p><div><ul class="itemizedlist"><li class="listitem">Outside the tunnel: 50 Mbps</li><li class="listitem">Non-compressible data: 16 Mbps</li><li class="listitem">Compressible data: 22 Mbps</li></ul></div><p>Clearly, the OpenVPN configuration needs to be optimized, but that is outside the scope of this recipe. These results do show that for both Windows and Linux clients, there is a significant performance boost when the data that is sent over the tunnel is easily compressible.</p></div><div><div><div><div><h2 class="title"><a id="ch08lvl2sec340"/>How it works...</h2></div></div></div><p>When compression is enabled, all packets that are sent over the tunnel are compressed before they are encrypted and transferred to the other side. Compression is done using the LZO library, which is integrated into OpenVPN. This compression is done on-the-fly, which means that the compression ratios achieved are not as good as when compressing the data in advance. When transferring text pages, the performance gain is nevertheless significant.</p></div><div><div><div><div><h2 class="title"><a id="ch08lvl2sec341"/>There's more...</h2></div></div></div><p>When the following configuration directive is used, adaptive compression is enabled by default:</p><pre class="programlisting">
+<strong>comp-lzo</strong>
+</pre><p>When OpenVPN detects that a particular piece of data is not compressible, it sends the data to the remote VPN endpoint without compressing it first. By specifying the following on both ends each packet is always compressed:</p><pre class="programlisting">
+<strong>comp-lzo yes</strong>
+</pre><p>Depending on the type of data that is transferred, the performance is slightly better.</p></div></div>
+<div><div><div><div><h1 class="title"><a id="ch08lvl1sec91"/>Traffic shaping</h1></div></div></div><p>In this recipe, we will use traffic shaping to limit the upload speed of an OpenVPN client. This can be used to throttle the bandwidth of a client to the server, or from client to client. Note that OpenVPN traffic shaping cannot be used to throttle the download speed of OpenVPN clients. Throttling download speeds can best be achieved using external traffic control tools, such as the <code class="literal">tc</code> utility on Linux, which is part of the LARTC package.</p><div><div><div><div><h2 class="title"><a id="ch08lvl2sec342"/>Getting ready</h2></div></div></div><p>We use the following network layout:</p><div><img src="img/image00398.jpeg" alt="Getting ready"/></div><p style="clear:both; height: 1em;"> </p><p>Set up the client and server certificates using the <em>Setting up the public and private keys</em> recipe from <a class="link" title="Chapter 2.  Client-server IP-only Networks" href="part0025.xhtml#aid-NQU21">Chapter 2</a>, <em>Client-server IP-only Networks</em>. For this recipe, the server computer was running CentOS 6 Linux and OpenVPN 2.3.11. The client was running Windows 7 64 bit and OpenVPN 2.3.11. Keep the configuration file <code class="literal">basic-udp-server.conf</code> from the <em>Server-side routing</em> recipe from <a class="link" title="Chapter 2.  Client-server IP-only Networks" href="part0025.xhtml#aid-NQU21">Chapter 2</a>, <em>Client-server IP-only Networks</em>, as well as the client configuration file <code class="literal">basic-udp-client.ovpn</code> from the <em>Using an ifconfig-pool block</em> recipe.</p></div><div><div><div><div><h2 class="title"><a id="ch08lvl2sec343"/>How to do it...</h2></div></div></div><div><ol class="orderedlist arabic"><li class="listitem">Append the following line to the <code class="literal">basic-udp-server.conf</code> file:<pre class="programlisting">
+<strong>push "shaper 100000"</strong>
+</pre><p>This will throttle the upload speed of the VPN clients to 100,000 bytes per second (100 kbps). Save it as <code class="literal">example8-7-server.conf</code>.</p></li><li class="listitem">Start the server:<pre class="programlisting">
+<strong>[root@server]# openvpn --config example8-7-server.conf</strong>
+</pre></li><li class="listitem">Start the client:<div><img src="img/image00399.jpeg" alt="How to do it..."/></div><p style="clear:both; height: 1em;"> </p></li><li class="listitem">Next, we start <code class="literal">iperf</code> on the server:<pre class="programlisting">
+<strong>[server]$ iperf -s</strong>
+</pre></li><li class="listitem">When we run <code class="literal">iperf</code> on the Windows PC, the performance is close to 100 KB/s:<div><img src="img/image00400.jpeg" alt="How to do it..."/></div><p style="clear:both; height: 1em;"> </p></li><li class="listitem">The PNG number of bytes being sent over the tunnel, including encryption overhead, is actually very close to 100,000 bytes per second.</li></ol><div></div></div><div><div><div><div><h2 class="title"><a id="ch08lvl2sec344"/>How it works...</h2></div></div></div><p>When the OpenVPN client connects to the server, the server pushes out an option to shape outgoing traffic over the VPN tunnel to 100 KB/s. Whenever traffic is sent over the tunnel, the OpenVPN client itself limits the outgoing traffic to a maximum of 100 KB/s. The download speed is not affected by this, and note that the following directive cannot be used on the OpenVPN server itself:</p><pre class="programlisting">shaper 100000 &#13;
+</pre><p>To throttle traffic leaving the server, more advanced traffic control tools such as <code class="literal">tc</code> for Linux should be used.</p></div></div>
+<div><div><div><div><h1 class="title"><a id="ch08lvl1sec92"/>Tuning UDP-based connections</h1></div></div></div><p>In this recipe, we focus on some of the basic techniques for optimizing UDP-based VPN tunnels. These techniques need to be applied with care, as there is no fool-proof method for optimizing OpenVPN performance. The actual performance gain varies with each network setup. Therefore, this recipe only shows some of the configuration directives that can be used for this optimization.</p><div><div><div><div><h2 class="title"><a id="ch08lvl2sec345"/>Getting ready</h2></div></div></div><p>We use the following network layout:</p><div><img src="img/image00401.jpeg" alt="Getting ready"/></div><p style="clear:both; height: 1em;"> </p><p>Set up the client and server certificates using the <em>Setting up the public and private keys</em> recipe from <a class="link" title="Chapter 2.  Client-server IP-only Networks" href="part0025.xhtml#aid-NQU21">Chapter 2</a>, <em>Client-server IP-only Networks</em>. For this recipe, the server computer was running CentOS 6 Linux and OpenVPN 2.3.11. The client was running Fedora 22 Linux and OpenVPN 2.3.11. Keep the configuration file <code class="literal">basic-udp-server.conf</code> from the <em>Server-side routing</em> recipe from <a class="link" title="Chapter 2.  Client-server IP-only Networks" href="part0025.xhtml#aid-NQU21">Chapter 2</a>, <em>Client-server IP-only Networks</em>, as well as the client configuration file <code class="literal">basic-udp-client.conf</code>.</p></div><div><div><div><div><h2 class="title"><a id="ch08lvl2sec346"/>How to do it...</h2></div></div></div><div><ol class="orderedlist arabic"><li class="listitem">Append the following line to the <code class="literal">basic-udp-server.conf</code> file:<pre class="programlisting">
+<strong>fragment 1400</strong>
+</pre></li><li class="listitem">Save it as <code class="literal">example8-8-server.conf</code>.</li><li class="listitem">Start the server:<pre class="programlisting">
+<strong>[root@server]# openvpn --config example8-8-server.conf</strong>
+</pre></li><li class="listitem">Similarly, for the client, add a line to the <code class="literal">basic-udp- client.conf</code> file:<pre class="programlisting">
+<strong>fragment 1400</strong>
+</pre></li><li class="listitem">Save it as <code class="literal">example8-8-client.conf</code>.</li><li class="listitem">Start the client:<pre class="programlisting">
+<strong>[root@client]# openvpn --config example9-6-client.conf</strong>
+</pre></li><li class="listitem">Next, we start <code class="literal">iperf</code> on the server:<pre class="programlisting">
+<strong>[server]$ iperf -s</strong>
+</pre></li><li class="listitem">First, we measure the performance outside the tunnel:<pre class="programlisting">
+<strong>[client]$ iperf -c &lt;openvpn-server-ip&gt;</strong>
+<strong>[  4]  0.0-16.7 sec  8.00 MBytes  4.03 Mbits/sec</strong>
+</pre><p>This actually measures the performance of data being sent to the server. The cable network used in this recipe has a theoretical upload limit of 4 Mbps. Note that this result is nearly the same as found in the recipe <em>Optimizing performance using iperf</em>.</p></li><li class="listitem">Next, we measure the performance inside the tunnel:<pre class="programlisting">
+<strong>[client]$ iperf -c 10.200.0.1</strong>
+<strong>[  4]  0.0-18.3 sec  8.00 MBytes  3.66 Mbits/sec</strong>
+</pre><p>A slight penalty is incurred due to the OpenVPN tunnel, but the results are nearly identical to the results found in the recipe <em>Optimizing performance using iperf</em>.</p><p>Fragmentation does have an effect on the <code class="literal">ping</code> round-trip times, however.</p></li><li class="listitem">For various values of the <code class="literal">fragment</code> option, run the <code class="literal">ping</code> command from the client to server:<pre class="programlisting">
+<strong>[client]$ ping -c 10 10.200.0.1</strong>
+</pre></li></ol><div></div><p>The results are listed in the following table:</p><div><table border="1"><colgroup><col/><col/></colgroup><tbody><tr><td>
+<p><strong>Fragmentation size</strong></p>
+</td><td>
+<p><strong>Ping result</strong></p>
+</td></tr><tr><td>
+<p>Default (1500)</p>
+</td><td>
+<p>9.4 +/- 1.0 ms</p>
+</td></tr><tr><td>
+<p>1400</p>
+</td><td>
+<p>9.9 +/- 1.5 ms</p>
+</td></tr><tr><td>
+<p>400</p>
+</td><td>
+<p>19.2 +/- 8 ms</p>
+</td></tr></tbody></table></div><p>Thus, adding the <code class="literal">fragment</code> option to the server configuration is not a viable option for this network setup. However, in other network setups, this might improve performance.</p></div><div><div><div><div><h2 class="title"><a id="ch08lvl2sec347"/>How it works...</h2></div></div></div><p>The OpenVPN configuration directive <code class="literal">fragment 1400</code> causes all encrypted packets that are larger than 1400 bytes to be fragmented. If the network latency is low enough, this does not have a noticeable effect on performance, as the <code class="literal">iperf</code> results. By lowering the fragmentation size, packets are split into more and more packets. This causes the round-trip time for larger packets to increase. If the network latency is already high, this will cause even more latency issues. Hence, the <code class="literal">fragment</code> option and associated <code class="literal">mssfix</code> option must be used with care.</p></div><div><div><div><div><h2 class="title"><a id="ch08lvl2sec348"/>There's more...</h2></div></div></div><p>The <code class="literal">fragment</code> directive is often used in conjunction with the <code class="literal">mssfix</code> directive:</p><pre class="programlisting">mssfix [maximum-segment-size] &#13;
+</pre><p>This directive announces to TCP sessions running over the tunnel that they should limit their send packet sizes so that after OpenVPN has encapsulated them; the resulting UDP packet size that OpenVPN sends to its peer will not exceed the maximum segment size. It is also used internally by OpenVPN to set the maximum segment size of outbound packets. If no maximum segment size is specified, the value from the <code class="literal">fragment</code> directive is used.</p><p>Ideally, the <code class="literal">mssfix</code> and <code class="literal">fragment</code> directives are used together, where <code class="literal">mssfix</code> will try to keep TCP from needing packet fragmentation in the first place, and if big packets come through anyhow (for example, from protocols other than TCP), the <code class="literal">fragment</code> directive will internally fragment them.</p></div><div><div><div><div><h2 class="title"><a id="ch08lvl2sec349"/>See also</h2></div></div></div><div><ul class="itemizedlist"><li class="listitem">The next recipe in this chapter, which explains how to tune TCP-based connections in a very similar manner</li></ul></div></div></div>
+<div><div><div><div><h1 class="title"><a id="ch08lvl1sec93"/>Tuning TCP-based connections</h1></div></div></div><p>In this recipe, we focus on some of the basic techniques for optimizing TCP-based VPN tunnels. In a TCP-based VPN setup, the connection between the VPN endpoints is a regular TCP connection. This has advantages and drawbacks. The main advantage is that it is often easier to set up a TCP connection than a UDP connection, mostly due to firewall restrictions. The main drawback of tunneling TCP traffic over a TCP-based tunnel is that there is chance of severe performance penalties, especially when the network connection is poor. This performance penalty is caused by the <em>tcp-over-tcp</em> syndrome. The TCP protocol guarantees the ordered delivery of packets, thus if a packet is dropped along the way, the packet will be resent. Once the new packet is received, the packet order is restored. Until that time, all packets after the <code class="literal">lost</code> packet are on hold. The problem with tunneling TCP traffic over a TCP connection is that both layers want to guarantee ordered packet delivery. This can lead to a large amount of retransmits and hence to a large performance penalty.</p><p>When tuned correctly, however, an OpenVPN tunnel over a TCP connection can achieve the same performance as an OpenVPN tunnel over a UDP connection. In this recipe, we will show some techniques for tuning such a TCP-based OpenVPN connection.</p><div><div><div><div><h2 class="title"><a id="ch08lvl2sec350"/>Getting ready</h2></div></div></div><p>We use the following network layout:</p><div><img src="img/image00402.jpeg" alt="Getting ready"/></div><p style="clear:both; height: 1em;"> </p><p>Set up the client and server certificates using the <em>Setting up the public and private keys</em> recipe from <a class="link" title="Chapter 2.  Client-server IP-only Networks" href="part0025.xhtml#aid-NQU21">Chapter 2</a>, <em>Client-server IP-only Networks</em>. For this recipe, the server computer was running CentOS 6 Linux and OpenVPN 2.3.11. The client was running Windows 7 64bit and OpenVPN 2.3.11. Keep the configuration file <code class="literal">basic-udp-server.conf</code> from the <em>Server-side routing</em> recipe from <a class="link" title="Chapter 2.  Client-server IP-only Networks" href="part0025.xhtml#aid-NQU21">Chapter 2</a>, <em>Client-server IP-only Networks</em>, as well as the client configuration file <code class="literal">basic-udp-client.ovpn</code> from the <em>Using an ifconfig-pool block </em>recipe.</p></div><div><div><div><div><h2 class="title"><a id="ch08lvl2sec351"/>How to do it...</h2></div></div></div><div><ol class="orderedlist arabic"><li class="listitem">Create the server configuration file:<pre class="programlisting">        proto tcp &#13;
+        port 1194 &#13;
+        dev tun &#13;
+        server 10.200.0.0 255.255.255.0 &#13;
+ &#13;
+        ca       /etc/openvpn/cookbook/ca.crt &#13;
+        cert     /etc/openvpn/cookbook/server.crt &#13;
+        key      /etc/openvpn/cookbook/server.key &#13;
+        dh       /etc/openvpn/cookbook/dh2048.pem &#13;
+        tls-auth /etc/openvpn/cookbook/ta.key 0 &#13;
+ &#13;
+        persist-key &#13;
+        persist-tun &#13;
+        keepalive 10 60 &#13;
+ &#13;
+        topology subnet &#13;
+ &#13;
+        user  nobody &#13;
+        group nobody &#13;
+ &#13;
+        daemon &#13;
+        log-append /var/log/openvpn.log &#13;
+ &#13;
+        tcp-nodelay &#13;
+</pre></li><li class="listitem">Save it as <code class="literal">example8-9-server.conf</code>.</li><li class="listitem">Start the server:<pre class="programlisting">
+<strong>[root@server]# openvpn --config example8-9-server.conf</strong>
+</pre></li><li class="listitem">Next, create the client configuration file:<pre class="programlisting">        client &#13;
+        proto tcp &#13;
+        remote openvpnserver.example.com &#13;
+        port 1194 &#13;
+ &#13;
+        dev tun &#13;
+        nobind &#13;
+ &#13;
+        remote-cert-tls server &#13;
+        ca       "c:/program files/openvpn/config/ca.crt" &#13;
+        cert     "c:/program files/openvpn/config/client2.crt" &#13;
+        key      "c:/program files/openvpn/config/client2.key" &#13;
+        tls-auth "c:/program files/openvpn/config/ta.key" 1 &#13;
+</pre></li><li class="listitem">Save it as <code class="literal">example8-9.ovpn</code>.</li><li class="listitem">Start the client:<div><img src="img/image00403.jpeg" alt="How to do it..."/></div><p style="clear:both; height: 1em;"> </p></li><li class="listitem">Next, start <code class="literal">iperf</code> on the server:<pre class="programlisting">
+<strong>[server]$ iperf -s</strong>
+</pre></li><li class="listitem">Then, measure the performance of the tunnel:<pre class="programlisting">
+<strong>[WinClient]&gt; iperf -c 10.200.0.1 -w 128k</strong>
+</pre></li></ol><div></div><p>On this particular network, the following settings were tested:</p><div><table border="1"><colgroup><col/><col/></colgroup><tbody><tr><td>
+<p><strong>Protocol</strong></p>
+</td><td>
+<p><strong>Result</strong></p>
+</td></tr><tr><td>
+<p>UDP</p>
+</td><td>
+<p>147 Mbits/sec</p>
+</td></tr><tr><td>
+<p>TCP</p>
+</td><td>
+<p>115 Mbits/sec</p>
+</td></tr><tr><td>
+<p>TCP with tcp-nodelay</p>
+</td><td>
+<p>146 Mbits/sec</p>
+</td></tr></tbody></table></div><p>As can be seen, the performance of running OpenVPN over TCP is almost identical to the performance of OpenVPN over UDP, when the <code class="literal">--tcp-nodelay</code> directive is used.</p></div><div><div><div><div><h2 class="title"><a id="ch08lvl2sec352"/>How it works...</h2></div></div></div><p>When OpenVPN uses TCP as its underlying protocol, all packets are transferred over a regular TCP connection. By default, TCP connections make use of the Nagle algorithm, where smaller packets are held back and collected before they are sent. For an OpenVPN tunnel, this has an adverse effect on performance in most cases, hence it makes sense to disable the Nagle algorithm. By adding the <code class="literal">--tcp-nodelay</code> directive, we disable the Nagle algorithm and we see an immediate increase in performance.</p></div><div><div><div><div><h2 class="title"><a id="ch08lvl2sec353"/>There's more...</h2></div></div></div><p>The two important parameters that can be tweaked for TCP-based connections are:</p><div><ul class="itemizedlist"><li class="listitem">The <code class="literal">--tcp-nodelay</code> directive</li><li class="listitem">The MTU size of the TUN/TAP-Win32 adapter via either the <code class="literal">--tun-mtu</code> or
+ <code class="literal">--link-mtu</code> directives</li></ul></div><p>On Linux, the MTU size of the TUN (or TAP) adapter can be adjusted on-the-fly, but on Windows, this is not as easy. OpenVPN must be configured to match the MTU size as specified on the server. Before the new MTU size is used, however, the MTU of the TAP adapter must be adjusted. Starting with Windows Vista, it is now also possible to do this on-the-fly, using the <code class="literal">netsh</code> command:</p><div><ul class="itemizedlist"><li class="listitem">First, find the right sub-interface number:<pre class="programlisting">
+<strong>[winclient]C:&gt; netsh interface ipv4 show subinterfaces</strong>
+</pre></li><li class="listitem">Next, in order to change the MTU size of a sub-interface, use:<pre class="programlisting">
+<strong>[winclient]C:&gt; netsh interface ipv4 set subinterface "1" &#13;
+        mtu=1400</strong>
+</pre></li></ul></div><p>Note that these commands must be run with elevated privileges.</p><p>If the MTU setting of the Windows TAP-Win32 adapter is larger than the MTU size configured by OpenVPN, the following message can appear in the OpenVPN log file:</p><pre class="programlisting">... read from TUN/TAP  [State=AT?c Err=[c:\src\21\tap-win32\tapdrvr.c/2447] #O=4 Tx=[29510,0] Rx=[15309,0] IrpQ=[0,1,16] PktQ=[0,22,64] InjQ=[0,1,16]]: More data is available.  (code=234) &#13;
+</pre><p>For this particular network, all changes made to the MTU size (with the appropriate Windows reboot) did not have a positive effect on performance.</p></div></div>
+<div><div><div><div><h1 class="title"><a id="ch08lvl1sec94"/>Analyzing performance using tcpdump</h1></div></div></div><p>In this recipe, we will analyze the performance of an OpenVPN setup using the <code class="literal">tcpdump</code> utility. It is also possible to use the Wireshark utility, which is available for Linux, Windows, and Mac OS X. While this recipe does not cover any new OpenVPN functionality, it is useful to show how such an analysis can be made.</p><div><div><div><div><h2 class="title"><a id="ch08lvl2sec354"/>Getting ready</h2></div></div></div><p>We use the following network layout:</p><div><img src="img/image00404.jpeg" alt="Getting ready"/></div><p style="clear:both; height: 1em;"> </p><p>Set up the client and server certificates using the <em>Setting up the public and private keys</em> recipe from <a class="link" title="Chapter 2.  Client-server IP-only Networks" href="part0025.xhtml#aid-NQU21">Chapter 2</a>, <em>Client-server IP-only Networks</em>. For this recipe, the server computer was running CentOS 6 Linux and OpenVPN 2.3.11. The client was running Fedora 22 Linux and OpenVPN 2.3.11. Keep the configuration file <code class="literal">example8-8-server.conf</code> from the <em>Tuning UDP-based connections</em> recipe from <a class="link" title="Chapter 2.  Client-server IP-only Networks" href="part0025.xhtml#aid-NQU21">Chapter 2</a>, <em>Client-server IP-only Networks</em>, as well as the client configuration, <code class="literal">example8-8-client.conf</code>, from the same recipe.</p></div><div><div><div><div><h2 class="title"><a id="ch08lvl2sec355"/>How to do it...</h2></div></div></div><div><ol class="orderedlist arabic"><li class="listitem">Start the server:<pre class="programlisting">        <strong>[root@server]# openvpn --config example8-8-server.conf</strong>
+</pre></li><li class="listitem">Next, start the client:<pre class="programlisting">        <strong>[root@client]# openvpn --config example8-8-client.conf</strong>
+</pre></li><li class="listitem">On the server, run <code class="literal">tcpdump</code> to watch for the incoming packets on the network interface (not the tunnel interface itself):<pre class="programlisting">        <strong>[root@server]# tcpdump -nnl -i eth0 udp port 1194</strong>
+</pre><p>This instructs <code class="literal">tcpdump</code> to listen on the local network interface for all UDP traffic on port <code class="literal">1194</code>, which is the OpenVPN default.</p></li><li class="listitem">From the client, ping the server's VPN IP address with two different sizes:<pre class="programlisting">        <strong>[client]$ ping -c 2 -s 1300 10.200.0.1</strong>&#13;
+        <strong>[client]$ ping -c 2 -s 1400 10.200.0.1</strong>
+</pre></li></ol><div></div><p>The following packets are seen in the <code class="literal">tcpdump</code> screen:</p><div><img src="img/image00405.jpeg" alt="How to do it..."/></div><p style="clear:both; height: 1em;"> </p><p>The first ICMP packets are sent unfragmented, as they are smaller than 1400 bytes. The second set of encrypted ICMP packets is larger than the fragment size (1400) and hence are split into two parts.</p></div><div><div><div><div><h2 class="title"><a id="ch08lvl2sec356"/>How it works...</h2></div></div></div><p>The OpenVPN configuration directive <code class="literal">fragment 1400</code> causes all the encrypted packets that are larger than 1400 bytes to be fragmented. When watching the encrypted traffic, this can be verified by pinging the OpenVPN server. Note that packets which need to be fragmented are fragmented evenly: all packets have the same size.</p><p>Also, note that the following command causes the encrypted packet to be larger than 1400 bytes:</p><pre class="programlisting">
+<strong>[client]$ ping -c 2 -s 1400 10.200.0.1</strong>
+</pre><p>The encryption needed for the secure tunnel adds extra overhead to the packets that are transmitted. This is one of the root causes for a performance penalty when using VPN tunnels (not just OpenVPN) compared to non-encrypted traffic. In most networks, this overhead is not noticed, but it always exists.</p></div><div><div><div><div><h2 class="title"><a id="ch08lvl2sec357"/>See also</h2></div></div></div><div><ul class="itemizedlist"><li class="listitem">The <em>Tuning UDP-based connections</em> recipe in this chapter, which explains how to use the <code class="literal">fragment</code> directive</li></ul></div></div></div></body></html>

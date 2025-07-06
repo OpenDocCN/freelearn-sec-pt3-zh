@@ -1,0 +1,1154 @@
+<html><head></head><body>
+        
+
+                            
+                    <h1 class="header-title">Recovering Transient Database Records</h1>
+                
+            
+            
+                
+<p>In this chapter, we will revisit SQLite databases and examine a type of journaling file called a <strong>Write Ahead Log</strong> (<strong>WAL</strong>). Due to the complexity of the underlying structure, parsing a WAL file is a more difficult task than our previous work with SQLite databases. There are no existing modules that we can leverage to directly interact with the WAL file in the same way we used <kbd>sqlite3</kbd> or <kbd>peewee</kbd> with SQLite databases. Instead, we'll rely on the struct library and our ability to understand binary files.</p>
+<p>Once we've successfully parsed the WAL file, we will leverage the regular expression library, <kbd>re</kbd>, in Python to identify potentially relevant forensic artifacts. Lastly, we briefly introduce another method of creating progress bars using the third-party <kbd>tqdm</kbd> library. With a few lines of code, we'll have a functioning progress bar that can provide feedback of program execution to the user.</p>
+<p>The WAL file can contain data that's no longer present or not yet been added to the SQLite database. It can also contain previous copies of altered records and give a forensic investigator an idea of how the database changed over time.</p>
+<p>We will explore the following topics in this chapter:</p>
+<ul>
+<li>Parsing complex binary files</li>
+<li>Learning about and utilizing regular expressions to locate specified patterns of data</li>
+<li>Creating a simple progress bar in a few lines of code</li>
+<li>Using the built-in Python debugger, <kbd>pdb</kbd>, to troubleshoot code quickly</li>
+</ul>
+<p>The code for this chapter was developed and tested using Python 2.7.15 and Python 3.7.1.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">SQLite WAL files</h1>
+                
+            
+            
+                
+<p>When analyzing SQLite databases, the examiner might come across additional temporary files. There are nine types of temporary SQLite files:</p>
+<ul>
+<li>Rollback journals </li>
+<li>Master journals </li>
+<li>Statement journals</li>
+<li>WAL</li>
+<li>Shared-memory files</li>
+<li>TEMP databases</li>
+<li>Views and subqueries materializations</li>
+<li>Transient indices </li>
+<li>Transient databases</li>
+</ul>
+<p>For more details on these files, refer to <a href="https://www.sqlite.org/tempfiles.html">https://www.sqlite.org/tempfiles.html</a>, which describes these files in greater detail. The WAL is one of these temporary files and is involved in the atomic commit and rollback scenarios. Only databases that have set their journaling mode to WAL will use the write ahead log method. The following SQLite command is required to configure a database to use WAL journaling:</p>
+<pre><strong>PRAGMA journal_mode=WAL;</strong> </pre>
+<p>The WAL file is created in the same directory as the SQLite database with <kbd>-wal</kbd> appended to the original SQLite database filename. When a connection is made to the SQLite database, a WAL file is temporarily created. This WAL file will contain any changes made to the database while leaving the original SQLite database unaffected. Advantages of using WAL files include concurrent and speedier read/write operations. Specifics on the WAL file can be read at <a href="https://www.sqlite.org/wal.html">https://www.sqlite.org/wal.html</a>:</p>
+<div><img src="img/17d1071f-ec60-467d-9b87-c01cba6889b8.png" style="width:44.33em;height:13.17em;"/></div>
+<p>By default, records within the WAL file are committed to the original database when either the WAL file reaches 1,000 pages or the last connection to the database closes.</p>
+<p>WAL files are forensically relevant for two reasons:</p>
+<ul>
+<li>Reviewing database activity overtime</li>
+<li>Recovering deleted or altered records</li>
+</ul>
+<p>The creators of Epilog, an advanced SQLite carving tool, have a well-written article detailing the specific forensic implications of WAL files at <a href="https://digitalinvestigation.wordpress.com/2012/05/04/the-forensic-implications-of-sqlites-write-ahead-log/">https://digitalinvestigation.wordpress.com/2012/05/04/the-forensic-implications-of-sqlites-write-ahead-log/</a>. With an understanding of what makes WAL files important, why they are used, and their forensic relevance, let's examine their underlying structure.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">WAL format and technical specifications</h1>
+                
+            
+            
+                
+<p>A WAL file is a collection of frames with embedded B-tree pages that correspond to pages in the actual database. We aren't going to get into the nitty-gritty of how B-trees work. Instead, let's focus on some of the important byte offsets of various structures of interest, so that we can have a better understanding of the code and, in doing so, we'll further exemplify the forensic relevance of WAL files.</p>
+<p>The main components of a WAL file include the following:</p>
+<ul>
+<li>WAL header (32 bytes)</li>
+<li>WAL frames (page size)</li>
+<li>Frame header (24 bytes)</li>
+<li>Page header (8 bytes)</li>
+<li>WAL cells (variable length)</li>
+</ul>
+<p>Note that the WAL frame size is dictated by the page size, which can be extracted from the WAL header.</p>
+<p class="mce-root">The following diagram shows the structure of a WAL file at a high level:</p>
+<div><img class="alignnone size-full wp-image-742 image-border" src="img/70061399-9032-4bf2-a136-272924866f94.png" style="width:36.67em;height:46.17em;"/></div>
+<p>Let's take a look at each of the high-level categories of the WAL file. Some of these structures are described at <a href="https://www.sqlite.org/fileformat2.html">https://www.sqlite.org/fileformat2.html</a>.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">The WAL header</h1>
+                
+            
+            
+                
+<p>The 32-byte WAL header contains properties such as the page size, number of checkpoints, size of the WAL file, and indirectly, number of frames in the WAL file. The following table details the byte offset and description of the 8 big-endian 32-bit integers stored in the header:</p>
+<table border="1" style="border-collapse: collapse;width: 100%">
+<tbody>
+<tr>
+<td>
+<p class="TableColumnHeadingPACKT"><strong>Byte offset</strong></p>
+</td>
+<td>
+<p class="TableColumnHeadingPACKT"><strong>Value</strong></p>
+</td>
+<td>
+<p class="TableColumnHeadingPACKT"><strong>Description</strong></p>
+</td>
+</tr>
+<tr>
+<td>
+<p class="TableColumnContentPACKT">0-3</p>
+</td>
+<td>
+<p class="TableColumnContentPACKT">File signature</p>
+</td>
+<td>
+<p class="TableColumnContentPACKT">This is either <kbd>0x377F0682</kbd> or <kbd>0x377F0683</kbd>.</p>
+</td>
+</tr>
+<tr>
+<td>
+<p class="TableColumnContentPACKT">4-7</p>
+</td>
+<td>
+<p class="TableColumnContentPACKT">File version</p>
+</td>
+<td>
+<p class="TableColumnContentPACKT">This is the WAL format version, which is currently 3007000.</p>
+</td>
+</tr>
+<tr>
+<td>
+<p class="TableColumnContentPACKT">8-11</p>
+</td>
+<td>
+<p class="TableColumnContentPACKT">Database page size</p>
+</td>
+<td>
+<p class="TableColumnContentPACKT">This is the size of the page within the database, which is usually 1024 or 4096.</p>
+</td>
+</tr>
+<tr>
+<td>
+<p class="TableColumnContentPACKT">12-15</p>
+</td>
+<td>
+<p class="TableColumnContentPACKT">Checkpoint number</p>
+</td>
+<td>
+<p class="TableColumnContentPACKT">This is the number of commits that have occurred.</p>
+</td>
+</tr>
+<tr>
+<td>
+<p class="TableColumnContentPACKT">16-19</p>
+</td>
+<td>
+<p class="TableColumnContentPACKT">Salt-1</p>
+</td>
+<td>
+<p class="TableColumnContentPACKT">This is a random integer that is incremented by one with each commit.</p>
+</td>
+</tr>
+<tr>
+<td>
+<p class="TableColumnContentPACKT">20-23</p>
+</td>
+<td>
+<p class="TableColumnContentPACKT">Salt-2</p>
+</td>
+<td>
+<p class="TableColumnContentPACKT">This is a random integer that changes with each commit.</p>
+</td>
+</tr>
+<tr>
+<td>
+<p class="TableColumnContentPACKT">24-27</p>
+</td>
+<td>
+<p class="TableColumnContentPACKT">Checksum-1</p>
+</td>
+<td>
+<p class="TableColumnContentPACKT">This is the first part of the header checksum.</p>
+</td>
+</tr>
+<tr>
+<td>
+<p class="TableColumnContentPACKT">28-31</p>
+</td>
+<td>
+<p class="TableColumnContentPACKT">Checksum-2</p>
+</td>
+<td>
+<p class="TableColumnContentPACKT">This is the second part of header checksum.</p>
+</td>
+</tr>
+</tbody>
+</table>
+<p> </p>
+<p>The file signature should always be either <kbd>0x377F0682</kbd> or <kbd>0x377F0683</kbd>. The database page size is a very important value as this allows us to calculate how many frames are present in the WAL file. For example, there are 5 frames in a 20,632 byte WAL file using 4,096 byte pages. To calculate the number of frames properly, we need to account for the 32 byte WAL header and the 24-byte WAL frame header in the following equation:</p>
+<pre>(WAL File Size - 32) / (WAL Page Size + 24) 
+20,600 / 4,120 = 5 frames </pre>
+<p>The checkpoint number indicates how many commits have been triggered, either automatically, or manually by executing PRAGMA <kbd>wal_checkpoint</kbd>. Now, let's focus on the Salt-1 value. When it comes to creating a timeline of database activity, this is the most important value in the header. The Salt-1 value increments with each commit. In addition to that, each frame stores the current salt values in its own header at the time of the commit. If a record was modified and recommitted, the newer record would have a larger Salt-1 value than the previous version of the record. Therefore, we might have multiple snapshots of a given record in time within the WAL file.</p>
+<p>Let's pretend we have a database containing one table, storing data related to employee names, positions, salaries, and so on. Early on, we have an entry for Peter Parker, a 23-year old freelance photographer making $45,000. A few commits later, Parker's salary changes to $150,000 and within the same commit Parker's name is updated to Spiderman:</p>
+<table border="1" style="border-collapse: collapse;width: 100%">
+<tbody>
+<tr>
+<td>
+<p class="TableColumnHeadingPACKT"><strong>Frame</strong></p>
+</td>
+<td>
+<p class="TableColumnHeadingPACKT"><strong>Salt-1</strong></p>
+</td>
+<td>
+<p class="TableColumnHeadingPACKT"><strong>Row ID</strong></p>
+</td>
+<td>
+<p class="TableColumnHeadingPACKT"><strong>Employee name</strong></p>
+</td>
+<td>
+<p class="TableColumnHeadingPACKT"><strong>Position</strong></p>
+</td>
+<td>
+<p class="TableColumnHeadingPACKT"><strong>Salary</strong></p>
+</td>
+</tr>
+<tr>
+<td>
+<p class="TableColumnContentPACKT">0</p>
+</td>
+<td>
+<p class="TableColumnContentPACKT">-977652151</p>
+</td>
+<td>
+<p class="TableColumnContentPACKT">123</p>
+</td>
+<td>
+<p class="TableColumnContentPACKT">Spiderman?</p>
+</td>
+<td>
+<p class="TableColumnContentPACKT">Freelance</p>
+</td>
+<td>
+<p class="TableColumnContentPACKT">150,000</p>
+</td>
+</tr>
+<tr>
+<td>
+<p class="TableColumnContentPACKT">1</p>
+</td>
+<td>
+<p class="TableColumnContentPACKT">-977652151</p>
+</td>
+<td>
+<p class="TableColumnContentPACKT">123</p>
+</td>
+<td>
+<p class="TableColumnContentPACKT">Peter Parker</p>
+</td>
+<td>
+<p class="TableColumnContentPACKT">Freelance</p>
+</td>
+<td>
+<p class="TableColumnContentPACKT">150,000</p>
+</td>
+</tr>
+<tr>
+<td>
+<p class="TableColumnContentPACKT">2</p>
+</td>
+<td>
+<p class="TableColumnContentPACKT">-977652150</p>
+</td>
+<td>
+<p class="TableColumnContentPACKT">123</p>
+</td>
+<td>
+<p class="TableColumnContentPACKT">Peter Parker</p>
+</td>
+<td>
+<p class="TableColumnContentPACKT">Freelance</p>
+</td>
+<td>
+<p class="TableColumnContentPACKT">45,000</p>
+</td>
+</tr>
+</tbody>
+</table>
+<p> </p>
+<p>Because these entries share the same <strong>Row ID</strong>, we know that we're dealing with three different versions of record 123 in the main table. To identify the most recent version of this record, we need to examine the Salt-1 value. Based on our discussion earlier and the Salt-1 values of the records, we know that the records in Frame 0 and 1 are the most recent records and that there have been two commits since the record was first added to the database.</p>
+<p>How do we know which of the records in Frames 0 and 1 is the most recent? Dealing with the scenario where we have two records in the same commit, the one in an earlier frame is regarded as the most recent. This is because the WAL file adds new frames to the beginning of the file rather than the end. Therefore, the record in Frame 0 is the most recent and the record in Frame 2 is the oldest.</p>
+<p>Note that you can have more than one record per frame. Newer records are found at the beginning of the frame.</p>
+<p>In the database, we'll only see the most recent version of the record, but in the WAL file, we can see previous versions. As long as the WAL file exists, we would still see this information, even if the record with Row ID of 123 is deleted from the main database.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">The WAL frame</h1>
+                
+            
+            
+                
+<p>The WAL frame is essentially a B-tree structured page with a frame header. The frame header contains 6 big-endian 32-bit integers:</p>
+<table border="1" style="border-collapse: collapse;width: 100%">
+<tbody>
+<tr>
+<td>
+<p class="TableColumnHeadingPACKT"><strong>Byte offset</strong></p>
+</td>
+<td>
+<p class="TableColumnHeadingPACKT"><strong>Value</strong></p>
+</td>
+<td>
+<p class="TableColumnHeadingPACKT"><strong>Description</strong></p>
+</td>
+</tr>
+<tr>
+<td>
+<p class="TableColumnContentPACKT">0-3</p>
+</td>
+<td>
+<p class="TableColumnContentPACKT">Page number</p>
+</td>
+<td>
+<p class="TableColumnContentPACKT">This is the frame or page number in the WAL file.</p>
+</td>
+</tr>
+<tr>
+<td>
+<p class="TableColumnContentPACKT">4-7</p>
+</td>
+<td>
+<p class="TableColumnContentPACKT">Database Size</p>
+</td>
+<td>
+<p class="TableColumnContentPACKT">This is the size of the database in pages for commit records.</p>
+</td>
+</tr>
+<tr>
+<td>
+<p class="TableColumnContentPACKT">8-11</p>
+</td>
+<td>
+<p class="TableColumnContentPACKT">Salt-1</p>
+</td>
+<td>
+<p class="TableColumnContentPACKT">This is copied from the WAL header at the time of writing the frame.</p>
+</td>
+</tr>
+<tr>
+<td>
+<p class="TableColumnContentPACKT">12-15</p>
+</td>
+<td>
+<p class="TableColumnContentPACKT">Salt-2</p>
+</td>
+<td>
+<p class="TableColumnContentPACKT">This is copied from the WAL header at the time of writing the frame.</p>
+</td>
+</tr>
+<tr>
+<td>
+<p class="TableColumnContentPACKT">16-19</p>
+</td>
+<td>
+<p class="TableColumnContentPACKT">Checksum-1</p>
+</td>
+<td>
+<p class="TableColumnContentPACKT">This is the cumulative checksum including this frame.</p>
+</td>
+</tr>
+<tr>
+<td>
+<p class="TableColumnContentPACKT">20-23</p>
+</td>
+<td>
+<p class="TableColumnContentPACKT">Checksum-2</p>
+</td>
+<td>
+<p class="TableColumnContentPACKT">This is the second part of the checksum.</p>
+</td>
+</tr>
+</tbody>
+</table>
+<p> </p>
+<p>The Salt-1 value is simply the Salt-1 value in the WAL header at the time of creating the frame. We used this value stored in the frame to determine the time of events in the previous example. The page number is an integer starting at zero, where zero is the first frame in the WAL file.</p>
+<p>Following the frame header are the contents of a single page in the database, starting with the page header. The page header consists of two 8-bit and three 16-bit big-endian integers:</p>
+<table border="1" style="border-collapse: collapse;width: 100%">
+<tbody>
+<tr>
+<td>
+<p class="TableColumnHeadingPACKT"><strong>Byte offset</strong></p>
+</td>
+<td>
+<p class="TableColumnHeadingPACKT"><strong>Value</strong></p>
+</td>
+<td>
+<p class="TableColumnHeadingPACKT"><strong>Description</strong></p>
+</td>
+</tr>
+<tr>
+<td>
+<p class="TableColumnContentPACKT">0</p>
+</td>
+<td>
+<p class="TableColumnContentPACKT">B-Tree flag</p>
+</td>
+<td>
+<p class="TableColumnContentPACKT">This is the type of B-tree node</p>
+</td>
+</tr>
+<tr>
+<td>
+<p class="TableColumnContentPACKT">1-2</p>
+</td>
+<td>
+<p class="TableColumnContentPACKT">Freeblocks</p>
+</td>
+<td>
+<p class="TableColumnContentPACKT">This is the number of freeblocks in the page.</p>
+</td>
+</tr>
+<tr>
+<td>
+<p class="TableColumnContentPACKT">3-4</p>
+</td>
+<td>
+<p class="TableColumnContentPACKT">Cell count</p>
+</td>
+<td>
+<p class="TableColumnContentPACKT">This is the number of cells in the page.</p>
+</td>
+</tr>
+<tr>
+<td>
+<p class="TableColumnContentPACKT">5-6</p>
+</td>
+<td>
+<p class="TableColumnContentPACKT">Cell offset</p>
+</td>
+<td>
+<p class="TableColumnContentPACKT">This is the byte offset to the first cell relative to the start of this header.</p>
+</td>
+</tr>
+<tr>
+<td>
+<p class="TableColumnContentPACKT">7</p>
+</td>
+<td>
+<p class="TableColumnContentPACKT">Fragments</p>
+</td>
+<td>
+<p class="TableColumnContentPACKT">These are the number of fragmented freeblocks in the page.</p>
+</td>
+</tr>
+</tbody>
+</table>
+<p> </p>
+<p>With this information, we now know how many cells we're dealing with and the offset to the first cell. Following this header are <em>N</em> big-endian 16-bit integers specifying the offset for each of the cells. The cell offsets are relative to the start of the page header.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">The WAL cell and varints</h1>
+                
+            
+            
+                
+<p>Each cell is made up of the following components:</p>
+<ul>
+<li>Payload length (varint)</li>
+<li>Row ID (varint)</li>
+<li>Payload header:
+<ul style="padding-left: 1px">
+<li>Payload header length (varint)</li>
+<li>Array of serial types (varints)</li>
+</ul>
+</li>
+<li>Payload</li>
+</ul>
+<p>The payload length describes the overall length of the cell. The Row ID is the unique key in the actual database corresponding to this record. The serial types array in the payload header contains the length and type of data in the payload. We can subtract the payload length by the payload header length to determine how many bytes of the cell is actually recorded data.</p>
+<p>Notice that most of these values are varints, or variable length integers. Varints in SQLite are integers that can be anywhere from 1 to 9 bytes in size based on the first bit of each byte. If the first bit is set, that is, a value of 1, then the next byte is a part of the varint. This continues until you have a 9 byte varint or the first bit of a byte isn't set. The first bit isn't set for all 8-bit integers less than 128. This allows large numbers to be stored flexibly within this file format. More details on varints is available at <a href="https://www.sqlite.org/src4/doc/trunk/www/varint.wiki">https://www.sqlite.org/src4/doc/trunk/www/varint.wiki</a>.</p>
+<p>For example, if the first byte that's processed is <kbd>0x03</kbd> or <kbd>0b00000011</kbd>, we know the varint is just one-byte long and has the value of 3. If the first byte that's processed is <kbd>0x9A</kbd> or <kbd>0b10011010</kbd>, then the first bit is set and the varint is at least two-bytes long depending on the next byte, using the same decision making process. For our purposes, we will only support varints up to 2 bytes in length. A detailed tutorial on parsing a WAL file can be read at <a href="http://www.forensicsfromthesausagefactory.blogspot.com/2011/05/analysis-of-record-structure-within.html">http://www.forensicsfromthesausagefactory.blogspot.com/2011/05/analysis-of-record-structure-within.html</a>. It's highly recommended to use a hex editor and parse a page by hand before attempting to develop the code. Handling varints can be a lot easier through examination in a hex editor and helps cement your understanding of the database structure.</p>
+<p>Most of the varints are found in the serial types array. This array immediately follows the payload header length and has a value of 1. The resulting table of varint values dictate the size and data type of the cells:</p>
+<table border="1" style="border-collapse: collapse;width: 65.7497%">
+<tbody>
+<tr>
+<td style="width: 18%">
+<p class="TableColumnHeadingPACKT"><strong>Varint value</strong></p>
+</td>
+<td style="width: 13%">
+<p class="TableColumnHeadingPACKT"><strong>Size (bytes)</strong></p>
+</td>
+<td style="width: 26.8402%">
+<p class="TableColumnHeadingPACKT"><strong>Data type</strong></p>
+</td>
+</tr>
+<tr>
+<td style="width: 18%">
+<p class="TableColumnContentPACKT">0</p>
+</td>
+<td style="width: 13%">
+<p class="TableColumnContentPACKT">0</p>
+</td>
+<td style="width: 26.8402%">
+<p class="TableColumnContentPACKT">Null</p>
+</td>
+</tr>
+<tr>
+<td style="width: 18%">
+<p class="TableColumnContentPACKT">1</p>
+</td>
+<td style="width: 13%">
+<p class="TableColumnContentPACKT">1</p>
+</td>
+<td style="width: 26.8402%">
+<p class="TableColumnContentPACKT">8-bit integer</p>
+</td>
+</tr>
+<tr>
+<td style="width: 18%">
+<p class="TableColumnContentPACKT">2</p>
+</td>
+<td style="width: 13%">
+<p class="TableColumnContentPACKT">2</p>
+</td>
+<td style="width: 26.8402%">
+<p class="TableColumnContentPACKT">Big-endian 16-bit integer</p>
+</td>
+</tr>
+<tr>
+<td style="width: 18%">
+<p class="TableColumnContentPACKT">3</p>
+</td>
+<td style="width: 13%">
+<p class="TableColumnContentPACKT">3</p>
+</td>
+<td style="width: 26.8402%">
+<p class="TableColumnContentPACKT">Big-endian 24-bit integer</p>
+</td>
+</tr>
+<tr>
+<td style="width: 18%">
+<p class="TableColumnContentPACKT">4</p>
+</td>
+<td style="width: 13%">
+<p class="TableColumnContentPACKT">4</p>
+</td>
+<td style="width: 26.8402%">
+<p class="TableColumnContentPACKT">Big-endian 32-bit integer</p>
+</td>
+</tr>
+<tr>
+<td style="width: 18%">
+<p class="TableColumnContentPACKT">5</p>
+</td>
+<td style="width: 13%">
+<p class="TableColumnContentPACKT">6</p>
+</td>
+<td style="width: 26.8402%">
+<p class="TableColumnContentPACKT">Big-endian 48-bit integer</p>
+</td>
+</tr>
+<tr>
+<td style="width: 18%">
+<p class="TableColumnContentPACKT">6</p>
+</td>
+<td style="width: 13%">
+<p class="TableColumnContentPACKT">8</p>
+</td>
+<td style="width: 26.8402%">
+<p class="TableColumnContentPACKT">Big-endian 64-bit integer</p>
+</td>
+</tr>
+<tr>
+<td style="width: 18%">
+<p class="TableColumnContentPACKT">7</p>
+</td>
+<td style="width: 13%">
+<p class="TableColumnContentPACKT">8</p>
+</td>
+<td style="width: 26.8402%">
+<p class="TableColumnContentPACKT">Big-endian 64-bit float</p>
+</td>
+</tr>
+<tr>
+<td style="width: 18%">
+<p class="TableColumnContentPACKT">8</p>
+</td>
+<td style="width: 13%">
+<p class="TableColumnContentPACKT">0</p>
+</td>
+<td style="width: 26.8402%">
+<p class="TableColumnContentPACKT">Integer constant: 0</p>
+</td>
+</tr>
+<tr>
+<td style="width: 18%">
+<p class="TableColumnContentPACKT">9</p>
+</td>
+<td style="width: 13%">
+<p class="TableColumnContentPACKT">0</p>
+</td>
+<td style="width: 26.8402%">
+<p class="TableColumnContentPACKT">Integer constant: 1</p>
+</td>
+</tr>
+<tr>
+<td style="width: 18%">
+<p class="TableColumnContentPACKT">10, 11</p>
+</td>
+<td style="width: 13%">
+<p class="TableColumnContentPACKT"/>
+</td>
+<td style="width: 26.8402%">
+<p class="TableColumnContentPACKT">Not used</p>
+</td>
+</tr>
+<tr>
+<td style="width: 18%">
+<p class="TableColumnContentPACKT">X &gt;= 12 and even</p>
+</td>
+<td style="width: 13%">
+<p class="TableColumnContentPACKT">(X-12)/2</p>
+</td>
+<td style="width: 26.8402%">
+<p class="TableColumnContentPACKT">BLOB of length (X-12)/2</p>
+</td>
+</tr>
+<tr>
+<td style="width: 18%">
+<p class="TableColumnContentPACKT">X &gt;= 13 and odd</p>
+</td>
+<td style="width: 13%">
+<p class="TableColumnContentPACKT">(X-13)/2</p>
+</td>
+<td style="width: 26.8402%">
+<p class="TableColumnContentPACKT">String of length (X-13)/2</p>
+</td>
+</tr>
+</tbody>
+</table>
+<p> </p>
+<p>The payload begins immediately following the final serial type. Let's look at how we can use varints to properly parse the contents of the payload properly. For example, if given the following serial types: 0, 2, 6, 8, and 25, we would expect a 16-byte payload containing a <kbd>Null</kbd> value, a 2-byte 16-bit integer, an 8-byte 64-bit integer, a constant 0, and a 6-byte string. The size of the string is calculated by the equation (25-13) / 2. The following pseudocode highlights this process:</p>
+<pre>Serial Types = 0, 2, 6, 8, and 25 
+Payload = 0x166400000009C5BA3649737069646572 
+Split_Payload = N/A , 0x1664, 0x00000009C5BA3649, N/A, 0x737069646572 
+Converted_Payload = Null, 5732, 163953206, 0, "spider" </pre>
+<p>The preceding example illustrates how the 16-byte payload would be decoded using the known serial types. We will employ this same approach when developing our program. Notice that serial types 0, 8, and 9 don't require any space in the payload as their values are static.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Manipulating large objects in Python</h1>
+                
+            
+            
+                
+<p>Before developing any script, especially one that deals with a large and complicated structure, it's vital to choose the appropriate data type to work with. For our solution, we will use dictionaries and ordered dictionaries. The difference between a dictionary and an ordered dictionary is that ordered dictionaries preserve the order in which items are added. This feature isn't essential for our script and is merely used as a convenience.</p>
+<p>A dictionary allows us to map the structures of the WAL file as key-value pairs. In the end, we'll create a large nested dictionary object, which could easily be saved as a JSON file for use with other programs. Another benefit of this data type is that we can navigate through multiple dictionaries by descriptive keys. This can be used to compartmentalize between different sections of the WAL file and will help keep processed data organized. This covers all of the high-level details we need to know about to write our WAL file parsing script. Before doing so, let's briefly introduce regular expressions and the <kbd>tqdm</kbd> progress bar module.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Regular expressions in Python</h1>
+                
+            
+            
+                
+<p>Regular expressions allow us to identify patterns of data by using generic search patterns. For example, searching for all possible phone numbers of the <kbd>XXX-XXX-XXXX</kbd> type appearing in a document can be easily accomplished by one regular expression. We're going to create a regular expression module that will run a set of default expressions or a user-supplied expression against the processed WAL data. The purpose of the default expressions will be to identify relevant forensic information such as URLs or <strong>Personally Identifiable Information</strong> (<strong>PII</strong>).</p>
+<p>While this section is not a primer on regular expression by any means, we'll briefly touch on the basics so that we can understand its advantages and the regular expressions used in the code. In Python, we use the <kbd>re</kbd> module to run regular expressions against strings. First, we must compile the regular expression and then check whether there are any matches in the string:</p>
+<pre><strong>&gt;&gt;&gt; import re</strong> 
+<strong>&gt;&gt;&gt; phone = '214-324-5555'</strong> 
+<strong>&gt;&gt;&gt; expression = r'214-324-5555'</strong> 
+<strong>&gt;&gt;&gt; re_expression = re.compile(expression)</strong> 
+<strong>&gt;&gt;&gt; if re_expression.match(phone): print(True)<br/>... </strong> 
+<strong>True</strong></pre>
+<p>Using the identical string as our expression results in a positive match. However, this would not capture other phone numbers. Regular expressions can use a variety of special characters that either represent a subgroup of characters or how the preceding elements are interpreted. We use these special characters to refer to multiple sets of characters and create a generic search pattern.</p>
+<p>Square brackets, <kbd>[]</kbd>, are used to indicate a range of characters such as <kbd>0</kbd> through <kbd>9</kbd> or <kbd>a</kbd> through <kbd>z</kbd>. Using curly braces, <kbd>{n}</kbd>, after a regular expression requires that <kbd>n</kbd> copies of the preceding regular expression must be matched to be considered valid. Using these two special characters, we can create a much more generic search pattern:</p>
+<pre><strong>&gt;&gt;&gt; expression = r'[0-9]{3}-[0-9]{3}-[0-9]{4}'</strong> </pre>
+<p>This regular expression matches anything of the <kbd>XXX-XXX-XXXX</kbd> pattern containing only integers 0 through 9. This wouldn't match phone numbers such as <kbd>+1 800.234.5555</kbd>. We can build more complicated expressions to include those types of patterns.</p>
+<p>Another example we'll take a look at is matching credit card numbers. Fortunately, there exist standard regular expressions for some of the major cards such as Visa, MasterCard, American Express, and so on. The following is the expression we could use for identifying any Visa card. The variable, <kbd>expression_1</kbd>, matches any number starting with four followed by any 15 digits (0-9). The second expression, <kbd>expression_2</kbd>, matches any number starting with 4 followed by any 15 digits (0-9) that are optionally separated by a space or dash:</p>
+<pre><strong>&gt;&gt;&gt; expression_1 = r'^4\d{15}$'</strong> 
+<strong>&gt;&gt;&gt; expression_2 = r'^4\d{3}([\ \  -]?)\d{4}\1\d{4}\1\d{4}$'</strong> </pre>
+<p>For the first expression, we've introduced three new special characters: <kbd>^</kbd>, <kbd>d</kbd>, and <kbd>$</kbd>. The caret (<kbd>^</kbd>) asserts that the starting position of the string is at the beginning. Likewise, <kbd>$</kbd> requires that the end position of the pattern is the end of the string or line. Together, this pattern would only match if our credit card is the only element on the line. The <kbd>d</kbd> character is an alias for [0-9]. This expression could capture a credit card number such as 4111111111111111. Note that, with regular expressions, we use the <kbd>r</kbd> prefix to create a raw string which ignores backslashes as Python escape characters. Because regular expressions use backslashes as an escape character, we would have to use double backslashes wherever one is present so Python doesn't interpret it as an escape character for itself.</p>
+<p>In the second expression, we use parentheses and square brackets to optionally match a space or dash between quartets. Notice the backslash, which acts as an escape for the space, and dash, which are themselves special characters in regular expressions. If we didn't use the backslash here, the interpreter wouldn't realize we meant to use the literal space and dash rather than their special meaning in regular expressions. We can use 1 after we define our pattern in parentheses rather than rewriting it each time. Again, because of <kbd>^</kbd> and <kbd>$</kbd>, this pattern will only match if it's the only element on the line or entire string. This expression would capture Visa cards such as 4111-1111-1111-1111 and capture anything <kbd>expression_1</kbd> would match.</p>
+<p>Mastering regular expressions allow a user to create very thorough and comprehensive patterns. For the purpose of this chapter, we'll stick to fairly simple expressions to accomplish our tasks. As with any pattern matching, there's the possibility of generating false positives as a result of throwing large datasets at the pattern.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">TQDM – a simpler progress bar</h1>
+                
+            
+            
+                
+<p>The  <kbd>tqdm</kbd> module (version 4.23.2) can create a progress bar with any Python iterator: </p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-743 image-border" src="img/38c6a780-ab98-4dce-b92f-d052e91611c5.png" style="width:40.58em;height:12.17em;"/></p>
+<p>In the preceding example, we wrapped an iterator that was created by <kbd>range(100)</kbd> around <kbd>tqdm</kbd>. That alone creates the progress bar that's displayed in the image. An alternative method, using the <kbd>trange()</kbd> function, makes our task even simpler. We'll use this module to create a progress bar for processing each WAL frame.</p>
+<p>The following code creates the same progress bar, as shown in the previous screenshot. <kbd>trange()</kbd> is an alias for <kbd>tqdm(xrange())</kbd> and makes creating a progress bar even simpler:</p>
+<pre><strong>&gt;&gt;&gt; from tqdm import trange</strong> 
+<strong>&gt;&gt;&gt; from time import sleep</strong> 
+<strong>&gt;&gt;&gt; for x in trange(100):</strong> 
+<strong>...     sleep(1)</strong> </pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Parsing WAL files – wal_crawler.py</h1>
+                
+            
+            
+                
+<p>Now that we understand how a WAL file is structured and what data type we'll use to store data, we can begin planning the script. As we're working with a large binary object, we'll make great use of the <kbd>struct</kbd> library. We first introduced <kbd>struct</kbd> in <a href="59414e87-5820-4942-bd47-aba762dd9f14.xhtml" target="_blank">Chapter 6</a>, <em>Extracting Artifacts from Binary Files</em>, and have used it whenever dealing with binary files. Therefore, we won't repeat the basics of <kbd>struct</kbd> in this chapter.</p>
+<p>The goal of our <kbd>wal_crawler.py</kbd> script is to parse the content of the WAL file, extract and write the cell content to a CSV file, and, optionally, run regular expression modules against the extracted data. This script is considered more advanced due to the complexity of the underlying object we're parsing. However, all we're doing here is applying what we've learned in the previous chapters at a larger scale:</p>
+<pre>002 from __future__ import print_function<br/>003 import argparse<br/>004 import binascii<br/>005 import logging<br/>006 import os<br/>007 import re<br/>008 import struct<br/>009 import sys<br/>010 from collections import namedtuple<br/>011 if sys.version_info[0] == 2:<br/>012     import unicodecsv as csv<br/>013 elif sys.version_info[0] == 3:<br/>014     import csv<br/>015 <br/>016 from tqdm import trange</pre>
+<p>As with any script we've developed, in lines 1-11 we import all modules we'll use for this script. Most of these modules we've encountered before in the previous chapters and are used in the same context. We'll use the following modules:</p>
+<ul>
+<li><kbd>binascii</kbd>: This is used to convert data that's read from the WAL file into hexadecimal format</li>
+<li><kbd>tqdm</kbd>: This is used to create a simple progress bar</li>
+<li><kbd>namedtuple</kbd>: This data structure from the collections module will simply be the process of creating multiple dictionary keys and values when using the <kbd>struct.unpack()</kbd> function</li>
+</ul>
+<p>The <kbd>main()</kbd> function will validate the WAL file input, parse the WAL file header, and then iterate through each frame and process it with the <kbd>frame_parser()</kbd> function. After all of the frames have been processed, the <kbd>main()</kbd> function optionally runs the regular expression <kbd>regular_search()</kbd> function and writes the processed data to a CSV file with the <kbd>csv_writer()</kbd> function:</p>
+<pre>055 def main() 
+... 
+133 def frame_parser(): 
+... 
+173 def cell_parser(): 
+... 
+229 def dict_helper(): 
+... 
+243 def single_varint(): 
+... 
+273 def multi_varint(): 
+... 
+298 def type_helper(): 
+... 
+371 def csv_writer(): 
+... 
+428 def regular_search(): </pre>
+<p>The <kbd>frame_parser()</kbd> function parses each frame and executes further validation by identifying the type of B-trees. There are four types of B-trees in a database: <kbd>0x0D</kbd>, <kbd>0x05</kbd>, <kbd>0x0A</kbd>, and <kbd>0x02</kbd>. In this script, we're only interested in 0x0D type frames and will not process the others. This is because <kbd>0x0D</kbd> B-trees contain both the Row ID and payload, whereas other tree types contain one or the other. After validating the frame, the <kbd>frame_parser()</kbd> function processes each cell with the <kbd>cell_parser()</kbd> function.</p>
+<p>The <kbd>cell_parser()</kbd> function is responsible for processing each cell and all of its components, including the payload length, Row ID, payload header, and payload. Both the <kbd>frame_parser()</kbd> and <kbd>cell_parser()</kbd> functions rely on various helper functions to perform their tasks.</p>
+<p>The <kbd>dict_helper()</kbd> helper function returns <kbd>OrderedDictionary</kbd> from a tuple. This function allows us to process and store struct results in a database on one line. The <kbd>single_varint()</kbd> and <kbd>multi_varint()</kbd> functions are used to process single and multiple varints, respectively. Finally, the <kbd>type_helper()</kbd> function processes the serial type array and interprets the raw data into the appropriate data types:</p>
+<pre>481 if __name__ == '__main__':<br/>482 <br/>483     parser = argparse.ArgumentParser(description=__description__,<br/>484                     epilog='Developed by ' +<br/>485                     __author__ + ' on ' +<br/>486                     __date__)<br/>487 <br/>488     parser.add_argument('WAL', help='SQLite WAL file')<br/>489     parser.add_argument('OUTPUT_DIR', help='Output Directory')<br/>490     parser.add_argument('-r', help='Custom regular expression')<br/>491     parser.add_argument('-m', help='Run regular expression module',<br/>492     action='store_true')<br/>493     parser.add_argument('-l', help='File path of log file')<br/>494     args = parser.parse_args()</pre>
+<p>On line 483, we create our argument parser, specifying the required input values, the WAL file and output directory, and optional input values, executing pre-built or custom regular expressions and log output path. On lines 496 through 508, we perform the same log setup that we used in the previous chapters:</p>
+<pre>496     if args.l:<br/>497         if not os.path.exists(args.l):<br/>498             os.makedirs(args.l)<br/>499         log_path = os.path.join(args.l, 'wal_crawler.log')<br/>500     else:<br/>501         log_path = 'wal_crawler.log'<br/>502     logging.basicConfig(filename=log_path, level=logging.DEBUG,<br/>503                         format=('%(asctime)s | %(levelname)s | '<br/>504                         '%(message)s'), filemode='a')<br/>505 <br/>506     logging.info('Starting Wal_Crawler')<br/>507     logging.debug('System ' + sys.platform)<br/>508     logging.debug('Version ' + sys.version)</pre>
+<p>Before executing the <kbd>main()</kbd> function, we perform some sanity checks and validate the supplied input. On line 510, we check and, optionally, create the output directory if it doesn't exist. Before executing the <kbd>main()</kbd> function, we validate the input file by checking whether the input actually exists and whether it's a file by using the <kbd>os.path.exists()</kbd> and <kbd>os.path.isfile()</kbd> functions. Otherwise, we write an error message to the console and log before exiting the program. Within the <kbd>main()</kbd> function, we'll further validate the WAL file:</p>
+<pre>510     if not os.path.exists(args.OUTPUT_DIR):<br/>511         os.makedirs(args.OUTPUT_DIR)<br/>512 <br/>513     if os.path.exists(args.WAL) and os.path.isfile(args.WAL):<br/>514         main(args.WAL, args.OUTPUT_DIR, r=args.r, m=args.m)<br/>515     else:<br/>516         msg = 'Supplied WAL file does not exist or isn't a file'<br/>517         print('[-]', msg)<br/>518         logging.error(msg)<br/>519         sys.exit(1)</pre>
+<p>The following flow diagram highlights the interactions between the different functions and illustrates how our code processes the WAL file:</p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-717 image-border" src="img/1cfbf3b9-85d3-40b3-9327-d19012ae5730.png" style="width:94.17em;height:56.42em;"/></p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Understanding the main() function</h1>
+                
+            
+            
+                
+<p>This function is more complicated than our typical <kbd>main()</kbd> function and starts to parse the WAL file rather than act as a controller for the script. In this function, we will perform file validation, parse the WAL file header, identify the number of frames in the file, and call the function to process those frames:</p>
+<pre>055 def main(wal_file, output_dir, **kwargs):<br/>056     """<br/>057     The main function parses the header of the input file and<br/>058     identifies the WAL file. It then splits the file into the<br/>059     appropriate frames and send them for processing. After<br/>060     processing, if applicable, the regular expression modules are<br/>061     ran. Finally the raw data output is written to a CSV file.<br/>062     :param wal_file: The filepath to the WAL file to be processed<br/>063     :param output_dir: The directory to write the CSV report to.<br/>064     :return: Nothing.<br/>065     """</pre>
+<p>On line 70, we create the <kbd>wal_attributes</kbd> dictionary, which is the dictionary that we'll expand as we parse the WAL file. Initially, it stores the file size, and two empty dictionaries for the file header and the frames. Next, we open the input file in <kbd>rb</kbd> mode, or read binary mode, and read the first 32 bytes as the file header. On line 79, we try to parse the header and add all of the keys and their values to the header dictionary. This performs another sanity check as struct will throw an error if the file is less than 32 bytes long. We use <kbd>&gt;4s7i</kbd> as our string to unpack the values pulling out a 4 byte string and seven 32-bit big-endian integers (the endianness is specified by <kbd>&gt;</kbd> in the format string):</p>
+<pre>066     msg = 'Identifying and parsing file header'<br/>067     print('[+]', msg)<br/>068     logging.info(msg)<br/>069 <br/>070     wal_attributes = {'size': os.path.getsize(wal_file),<br/>071     'header': {}, 'frames': {}}<br/>072     with open(wal_file, 'rb') as wal:<br/>073 <br/>074         # Parse 32-byte WAL header.<br/>075         header = wal.read(32)<br/>076 <br/>077         # If file is less than 32 bytes long: exit wal_crawler.<br/>078         try:<br/>079             wal_attributes['header'] = dict_helper(header,'&gt;4s7i',<br/>080             namedtuple('struct',<br/>081             'magic format pagesize checkpoint '<br/>082             'salt1 salt2 checksum1 checksum2'))<br/>083         except struct.error as e:<br/>084             logging.error('STRUCT ERROR:', e.message)<br/>085             print('[-]', e.message + '. Exiting..')<br/>086             sys.exit(2)</pre>
+<p>Notice the use of the <kbd>dict_helper()</kbd> function. We'll explain how exactly this function works in a later section, however, it allows us to parse the data read from the WAL file with struct and return <kbd>OrderedDict</kbd>, which contain the key-value pairs. This significantly cuts down the amount of code necessary to otherwise add each value in the returned struct tuple to the dictionary.</p>
+<p>After parsing the WAL header, we can compare the file magic, or signature, against the known values. We use <kbd>binascii.hexlify</kbd> to convert the raw data into hex. On line 92, we use an <kbd>if</kbd> statement to compare the <kbd>magic_hex</kbd> value. If they don't match, we stop program execution. If they do match, we note it in the log and continue processing the WAL file:</p>
+<pre>088         # Do not proceed in the program if the input file isn't a<br/>089         # WAL file.<br/>090         magic_hex = binascii.hexlify(<br/>091         wal_attributes['header']['magic']).decode('utf-8')<br/>092         if magic_hex != "377f0682" and magic_hex != "377f0683":<br/>093             logging.error(('Magic mismatch, expected 0x377f0682 '<br/>094             'or 0x377f0683 | received {}'.format(magic_hex)))<br/>095             print(('[-] File does not have appropriate signature '<br/>096             'for WAL file. Exiting...'))<br/>097             sys.exit(3)<br/>098 <br/>099         logging.info('File signature matched.')<br/>100         logging.info('Processing WAL file.')</pre>
+<p>Using the file size, we can calculate the number of frames on line 103. Note that we need to account for the 32 byte WAL header and the 24-byte frame header in addition to the page size within each frame:</p>
+<pre>102         # Calculate number of frames.<br/>103         frames = int((<br/>104         wal_attributes['size'] - 32) / (<br/>105         wal_attributes['header']['pagesize'] + 24))<br/>106         print('[+] Identified', frames, 'Frames.')</pre>
+<p>On line 111, we create our progress bar using <kbd>trange</kbd> from <kbd>tqdm</kbd> and begin processing each frame. We first create an index key, represented by <kbd>x</kbd>, and an empty dictionary for our frame on line 114. This index will ultimately point to the processed data for the frame. Next, we read the 24-byte frame header. On line 116, we parse the six 32-bit big-endian integers from the header and add the appropriate key-value pairs to the dictionary by calling our <kbd>dict_helper()</kbd> function:</p>
+<pre>108         # Parse frames in WAL file. Create progress bar using<br/>109         # trange(frames) which is an alias for tqdm(xrange(frames)).<br/>110         print('[+] Processing frames...')<br/>111         for x in trange(frames):<br/>112 <br/>113             # Parse 24-byte WAL frame header.<br/>114             wal_attributes['frames'][x] = {}<br/>115             frame_header = wal.read(24)<br/>116             wal_attributes['frames'][x]['header'] = dict_helper(<br/>117             frame_header, '&gt;6i', namedtuple('struct',<br/>118             'pagenumber commit salt1'<br/>119             ' salt2 checksum1'<br/>120             ' checksum2'))</pre>
+<p>After parsing the frame header, we read the entire frame from our WAL file on line 122. We then pass this frame to the <kbd>frame_parser()</kbd> function, along with the <kbd>wal_attributes</kbd> dictionary and <kbd>x</kbd>, which represents the index of the current frame:</p>
+<pre>121             # Parse pagesize WAL frame.<br/>122             frame = wal.read(wal_attributes['header']['pagesize'])<br/>123             frame_parser(wal_attributes, x, frame)</pre>
+<p>The <kbd>frame_parser()</kbd> function calls other functions within it, rather than return data and have <kbd>main()</kbd> call the next function. Once the parsing of the WAL file has completed parsed, the main function calls the <kbd>regular_search()</kbd> function if the user supplied the <kbd>m</kbd> or <kbd>r</kbd> switch and  calls the <kbd>csv_writer()</kbd> function to write the parsed data out to a CSV file for review:</p>
+<pre>125         # Run regular expression functions.<br/>126         if kwargs['m'] or kwargs['r']:<br/>127             regular_search(wal_attributes, kwargs)<br/>128 <br/>129         # Write WAL data to CSV file.<br/>130         csv_writer(wal_attributes, output_dir)</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Developing the frame_parser() function</h1>
+                
+            
+            
+                
+<p>The <kbd>frame_parser()</kbd> function is an intermediate function that continues parsing the frame, identifies the number of cells within the frame, and calls the <kbd>cell_parser()</kbd> function to finish the job:</p>
+<pre>133 def frame_parser(wal_dict, x, frame):<br/>134     """<br/>135     The frame_parser function processes WAL frames.<br/>136     :param wal_dict: The dictionary containing parsed WAL objects.<br/>137     :param x: An integer specifying the current frame.<br/>138     :param frame: The content within the frame read from the WAL<br/>139     file.<br/>140     :return: Nothing.<br/>141     """</pre>
+<p>As we described previously, the WAL page header is the first 8 bytes after the frame header. The page header contains two 8-bit and three 16-bit big-endian integers. In the struct string, <kbd>&gt;b3hb</kbd>, <kbd>b</kbd> will parse the 8-bit integer and <kbd>h</kbd> parses 16-bit integers. With this header parsed, we now know how many cells are within the page:</p>
+<pre>143     # Parse 8-byte WAL page header<br/>144     page_header = frame[0:8]<br/>145     wal_dict['frames'][x]['page_header'] = dict_helper(<br/>146     page_header, '&gt;b3hb', namedtuple('struct',<br/>147     'type freeblocks cells offset'<br/>148     ' fragments'))</pre>
+<p>On line 150, we check whether the type of the frame is <kbd>0x0D</kbd> (which, when interpreted as a 16-bit integer, will have the value of 13). If the frame isn't of the appropriate type, we log this information and <kbd>pop()</kbd> the frame from the dictionary before returning the function. We return the function so that it doesn't continue attempting to process a frame we have no interest in:</p>
+<pre>149     # Only want to parse 0x0D B-Tree Leaf Cells<br/>150     if wal_dict['frames'][x]['page_header']['type'] != 13:<br/>151         logging.info(('Found a non-Leaf Cell in frame {}. Popping '<br/>152         'frame from dictionary').format(x))<br/>153         wal_dict['frames'].pop(x)<br/>154         return</pre>
+<p>Regardless, on line 156, we create a new nested dictionary called cells and use it to keep track of our cells in the exact way we did with our frames. We also print the number of identified cells per frame to provide feedback to the user:</p>
+<pre>155     # Parse offsets for "X" cells<br/>156     cells = wal_dict['frames'][x]['page_header']['cells']<br/>157     wal_dict['frames'][x]['cells'] = {}<br/>158     print('[+] Identified', cells, 'cells in frame', x)<br/>159     print('[+] Processing cells...')</pre>
+<p>Lastly, on line 161, we iterate over each cell and parse their offsets before adding it to the dictionary. We know that <em>N</em> 2 byte cell offsets begin immediately following the 8-byte page header. We use the start variable, calculated on line 162 for every cell, to identify the starting offset of the cell offset values:</p>
+<pre>161     for y in range(cells):<br/>162         start = 8 + (y * 2)<br/>163         wal_dict['frames'][x]['cells'][y] = {}<br/>164 <br/>165         wal_dict['frames'][x]['cells'][y] = dict_helper(<br/>166         frame[start: start + 2], '&gt;h', namedtuple(<br/>167         'struct', 'offset'))</pre>
+<p>On line 163, we create an index key and empty dictionary for our cell. We then parse the cell offset with the <kbd>dict_helper()</kbd> function and store the contents in the specific cell dictionary. Once the offset is identified, we call the <kbd>cell_parser()</kbd> function to process the cell and its contents. We pass along the <kbd>wal_attributes</kbd> dictionary, the <kbd>frame</kbd> and cell index, <kbd>x</kbd> and <kbd>y</kbd>, respectively, and the frame data:</p>
+<pre>169         # Parse cell content<br/>170         cell_parser(wal_dict, x, y, frame)</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Processing cells with the cell_parser() function</h1>
+                
+            
+            
+                
+<p>The <kbd>cell_parser()</kbd> function is the heart of our program. It's responsible for actually extracting the data stored within the cells. As we'll see, varints add another wrinkle to the code; however, for the most part, we're still ultimately parsing binary structures using struct and making decisions based on those values:</p>
+<pre>173 def cell_parser(wal_dict, x, y, frame):<br/>174     """<br/>175     The cell_parser function processes WAL cells.<br/>176     :param wal_dict: The dictionary containing parsed WAL objects.<br/>177     :param x: An integer specifying the current frame.<br/>178     :param y: An integer specifying the current cell.<br/>179     :param frame: The content within the frame read from the WAL<br/>180     file.<br/>181     :return: Nothing.<br/>182     """</pre>
+<p>Before we begin to parse the cells, we instantiate a few variables. The index variable, which we created on line 183, is used to keep track of our current location within the cell. Remember that we're no longer dealing with the entire file itself but a subset of it representing a cell. The frame variable is the page size amount of data read from the database itself. For example, if the page size is 1,024, then the frame variable is 1,024 bytes of data, which correspond to a page in the database. The struct module requires that the data parsed is exactly the length of the data types specified in the struct string. Because of these two facts, we need to use string slicing to provide only the data we want to parse with struct:</p>
+<pre>183     index = 0 </pre>
+<p>On line 186, we create <kbd>cell_root</kbd>, which is essentially a shortcut to the nested cell dictionary within the <kbd>wal_attributes</kbd> dictionary. This isn't just about being lazy; this helps with code readability and reduce the overall clutter by referring to a variable that points to a nested dictionary rather than typing it out each time. For the same reason, we create the <kbd>cell_offset</kbd> variable on line 187:</p>
+<pre>184     # Create alias to cell_root to shorten navigating the WAL<br/>185     # dictionary structure.<br/>186     cell_root = wal_dict['frames'][x]['cells'][y]<br/>187     cell_offset = cell_root['offset']</pre>
+<p>Starting on line 191, we encounter our first varint in the cell payload length. This varint will dictate the overall size of the cell. To extract the varint, we call the <kbd>single_varint()</kbd> helper function supplying it a 9 byte slice of data. This function, which we will explain later, will check whether the first byte is greater than or equal to 128; if so, it processes the second byte. In addition to the varint, the <kbd>single_varint()</kbd> helper function also returns a count of how many bytes the varint was made up of. This allows us to keep track of our current position in the frame data. We use that returned index to parse the row ID varint in a similar fashion:</p>
+<pre>189     # Parse the payload length and rowID Varints.<br/>190     try:<br/>191         payload_len, index_a = single_varint(<br/>192         frame[cell_offset:cell_offset + 9])<br/>193         row_id, index_b = single_varint(<br/>194         frame[cell_offset + index_a: cell_offset + index_a + 9])<br/>195     except ValueError:<br/>196         logging.warn(('Found a potential three-byte or greater '<br/>197         'varint in cell {} from frame {}').format(y, x))<br/>198         return</pre>
+<p>After processing the first two varints, we add the key-value pair to the <kbd>wal_attributes</kbd> dictionary. On line 204, we update our index variable to maintain our current position in the frame data. Next, we manually extract the 8-bit payload header length value without the <kbd>dict_helper()</kbd> function. We do this for two reasons:</p>
+<ul>
+<li>We're only processing one value</li>
+<li>Setting <kbd>cell_root</kbd> equal to the output of <kbd>dict_helper()</kbd> was found to erase all other keys in the individual cell nested dictionary described by <kbd>cell_root</kbd>, which, admittedly, isn't ideal</li>
+</ul>
+<p>The following code block shows this functionality:</p>
+<pre>200     # Update the index. Following the payload length and rowID is<br/>201     # the 1-byte header length.<br/>202     cell_root['payloadlength'] = payload_len<br/>203     cell_root['rowid'] = row_id<br/>204     index += index_a + index_b<br/>205     cell_root['headerlength'] = struct.unpack('&gt;b',<br/>206     frame[cell_offset + index: cell_offset + index + 1])[0]</pre>
+<p>After parsing the payload length, row ID, and payload header length, we can now parse the serial types array. As a reminder, the serial types array contains <em>N</em> varints that is headerlength, 1 bytes long. On line 210, we update the index by 1 to account for the 1 byte header we parsed on line 205. We then extract all of the varints within the appropriate range by calling the <kbd>multi_varint()</kbd> function. This function returns a tuple containing the list of serial types and the current index. On lines 218 and 219, we update the <kbd>wal_attributes</kbd> and <kbd>index</kbd> objects, respectively:</p>
+<pre>208     # Update the index with the 1-byte header length. Next process<br/>209     # each Varint in "headerlength" - 1 bytes.<br/>210     index += 1<br/>211     try:<br/>212         types, index_a = multi_varint(<br/>213         frame[cell_offset + index:cell_offset+index+cell_root['headerlength']-1])<br/>214     except ValueError:<br/>215         logging.warn(('Found a potential three-byte or greater '<br/>216             'varint in cell {} from frame {}').format(y, x))<br/>217         return<br/>218     cell_root['types'] = types<br/>219     index += index_a</pre>
+<p>Once the serial types array has been parsed, we can begin to extract the actual data stored in the cell. Recall that the cell payload is the difference between the payload length and payload header length. This value calculated on line 224 is used to pass the remaining contents of the cell to the <kbd>type_helper()</kbd> helper function, which is responsible for parsing the data:</p>
+<pre>221     # Immediately following the end of the Varint headers begins<br/>222     # the actual data described by the headers. Process them using<br/>223     # the typeHelper function.<br/>224     diff = cell_root['payloadlength'] - cell_root['headerlength']<br/>225     cell_root['data'] = type_helper(cell_root['types'],<br/>226     frame[cell_offset + index: cell_offset + index + diff])</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Writing the dict_helper() function</h1>
+                
+            
+            
+                
+<p>The <kbd>dict_helper()</kbd> function is a one-line function, and is less than six lines of documentation. It utilizes the <kbd>named_tuple</kbd> data structure, which is passed in as the <kbd>keys</kbd> variable and calls the <kbd>_make()</kbd> and <kbd>_asdict()</kbd> functions to create our ordered dictionary after struct parses the values:</p>
+<pre>229 def dict_helper(data, format, keys):<br/>230     """<br/>231     The dict_helper function creates an OrderedDictionary from<br/>232     a struct tuple.<br/>233     :param data: The data to be processed with struct.<br/>234     :param format: The struct format string.<br/>235     :param keys: A string of the keys for the values in the struct<br/>236     tuple.<br/>237     :return: An OrderedDictionary with descriptive keys of<br/>238     struct-parsed values.<br/>239     """<br/>240     return keys._asdict(keys._make(struct.unpack(format, data)))</pre>
+<p>As with most compact one-liners, it's possible to lose the meaning of the function as readability starts to decrease when more functions are called in a single line. We're going to introduce and use the built-in Python debugger to take a look at what is going on.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">The Python debugger – pdb</h1>
+                
+            
+            
+                
+<p>Python is great for a multitude of reasons, which we don't need to rehash now. One excellent feature is a built-in debugging module called <kbd>pdb</kbd>. This module is simple yet incredibly useful for identifying troublesome bugs or to simply look at variables during execution. If you're using an IDE (highly recommended) to develop your scripts, then chances are that there is already built-in debugging support. However, if you develop your code in a simple text editor, have no fear; you can always use <kbd>pdb</kbd> to debug your code.</p>
+<p>In this instance, we're going to examine each component of <kbd>dict_helper()</kbd> to fully understand the function. We aren't going to cover all of the uses and commands of <kbd>pdb</kbd>. Instead, we'll illustrate through example, and for additional information, you can refer to <a href="https://docs.python.org/3/library/pdb.html">https://docs.python.org/3/library/pdb.html</a>.</p>
+<p>First, we need to modify the existing code and create a debug point in the code that we want to examine. On line 240, we import <kbd>pdb</kbd> and call <kbd>pdb.set_trace()</kbd> in one line:</p>
+<pre>240     import pdb; pdb.set_trace() 
+241     return keys._asdict(keys._make(struct.unpack(format, data))) </pre>
+<p>Using the semicolon allows us to separate multiple statements on a single line. Normally, we wouldn't use this as it impacts readability. However, this is just for testing and will be removed from the final code.</p>
+<p>Now, when we execute the code, we see the <kbd>pdb</kbd> prompt, as displayed in the following screenshot. The <kbd>pdb</kbd> prompt is similar to the Python interpreter. We can access current variables within scope, for example, <kbd>data</kbd>, <kbd>format</kbd>, and <kbd>keys</kbd>. We can also create our own variables and execute simple expressions:</p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-718 image-border" src="img/895f96de-2718-4051-975b-44a8046d6961.png" style="width:71.92em;height:12.33em;"/></p>
+<p>The first line of the <kbd>pdb</kbd> prompt contains the location of the file, the current line within the file, and the current function being executed. The second line is the next line of code that's about to be executed. The <kbd>Pdb</kbd> prompt has the same significance as the <kbd>&gt;&gt;&gt;</kbd> prompt in the Python interpreter, and is where we can enter our own input.</p>
+<p>In this example, we're parsing the file header as it's the first time that <kbd>dict_helper()</kbd> is called. If you recall, the struct string we used was <kbd>&gt;4s7i</kbd>. As we can see in the following example, <kbd>unpack()</kbd> returns a tuple of results. However, we want to return a dictionary matching all of the values with their associated keys so that we don't have to perform this task manually:</p>
+<pre><strong>(Pdb) struct.unpack(format, data)</strong> 
+<strong>('7x7fx06x82', 3007000, 32768, 9, -977652151, 1343711549, 670940632, 650030285)</strong> </pre>
+<p>Notice that <kbd>keys._make</kbd> creates an object with the appropriate field names set for each value. It does this by associating the field names that were supplied when we created the <kbd>keys</kbd> variable on line 41 to each value in the struct tuple:</p>
+<pre><strong>(Pdb) keys._make(struct.unpack(format, data))</strong> 
+<strong>struct(magic='7x7fx06x82', format=3007000, pagesize=32768, checkpoint=9, salt1=-977652151, salt2=1343711549, checksum1=670940632, checksum2=650030285)</strong> </pre>
+<p>Finally, we can use <kbd>pdb</kbd> to verify that the <kbd>keys._asdict()</kbd> function converts our <kbd>namedtuple</kbd> into an <kbd>OrderedDict</kbd>, which is what we return:</p>
+<pre><strong>(Pdb) keys._asdict(keys._make(struct.unpack(format, data)))</strong> 
+<strong>OrderedDict([('magic', '7x7fx06x82'), ('format', 3007000), ('pagesize', 32768), ('checkpoint', 9), ('salt1', -977652151), ('salt2', 1343711549), ('checksum1', 670940632), ('checksum2', 650030285)])</strong> </pre>
+<p>Using <kbd>pdb</kbd> in this manner allows us to visualize the current state of variables and execute functions individually. This is incredibly useful when your program encounters an error on a particular function as you can execute line by line and function by function until you identify the issue. We recommend you become familiar with <kbd>pdb</kbd> as it expedites the debugging process and is much more effective than using print statements for troubleshooting. Press q and <em>Enter</em> to exit <kbd>pdb</kbd> and make sure always to remove debug lines from your final code.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Processing varints with the single_varint() function</h1>
+                
+            
+            
+                
+<p>The <kbd>single_varint</kbd> function finds the first varint within the supplied data and uses an index to keep track of its current position. When it finds the varint, it returns the value along with the index. This tells the calling function how many bytes the varint was and is used to update its own index:</p>
+<pre>243 def single_varint(data, index=0):<br/>244     """<br/>245     The single_varint function processes a Varint and returns the<br/>246     length of that Varint.<br/>247     :param data: The data containing the Varint (maximum of 9<br/>248     bytes in length as that is the maximum size of a Varint).<br/>249     :param index: The current index within the data.<br/>250     :return: varint, the processed varint value,<br/>251     and index which is used to identify how long the Varint was.<br/>252     """</pre>
+<p>For this script, we've made a simplifying assumption that varints will never be greater than 2 bytes. This is a simplifying assumption and won't be appropriate in all situations. This leaves two possible scenarios:</p>
+<ul>
+<li>The first byte has a decimal value less than 128</li>
+<li>The first byte is greater than or equal to 128</li>
+</ul>
+<p>Based on the outcome, one of the following two things will happen. If the byte is greater than or equal to 128, the varint is 2 bytes long. Otherwise, it's only 1 byte in length. On line 256, we use the <kbd>ord()</kbd> function to convert the value of the byte into an integer:</p>
+<pre>254     # If the decimal value is =&gt; 128 -- then first bit is set and<br/>255     # need to process next byte.<br/>256     if ord(data[index:index+1]) &gt;= 128:<br/>257         # Check if there is a three or more byte varint<br/>258         if ord(data[index + 1: index + 2]) &gt;= 128:<br/>259             raise ValueError</pre>
+<p>If the value is greater than 128, we know that the second byte is also required and must apply the following generic formula, where <kbd>x</kbd> is the first byte and <kbd>y</kbd> is the second byte:</p>
+<pre>Varint = ((x - 128) * 128) + y</pre>
+<p>We return this value after incrementing the index by 2:</p>
+<pre>260         varint = (ord(data[index:index+1]) - 128) * 128 + ord(<br/>261         data[index + 1: index + 2])<br/>262         index += 2<br/>263         return varint, index</pre>
+<p>If the first byte is less than 128, all we must do is return the byte's integer value and increment the index by 1:</p>
+<pre>265     # If the decimal value is &lt; 128 -- then first bit isn't set <br/>266     # and is the only byte of the Varint.<br/>267     else:<br/>268         varint = ord(data[index:index+1])<br/>269         index += 1<br/>270         return varint, index</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Processing varints with the multi_varint() function</h1>
+                
+            
+            
+                
+<p>The <kbd>multi_varint()</kbd> function is a looping function that repeatedly calls <kbd>single_varint()</kbd> until there are no more varints in the supplied data. It returns a list of varints and an index to the parent function. On lines 282 and 283, we initialize the list of varints and set our local index variable to zero:</p>
+<pre>273 def multi_varint(data):<br/>274     """<br/>275     The multi_varint function is similar to the single_varint<br/>276     function. The difference is that it takes a range of data<br/>277     and finds all Varints within it.<br/>278     :param data: The data containing the Varints.<br/>279     :return: varints, a list containing the processed varint<br/>280     values, and index which is used to identify how long the<br/>281     Varints were.<br/>282     """<br/>283     varints = []<br/>284     index = 0</pre>
+<p>We use a <kbd>while</kbd> loop to execute until the length of data is equal to 0. In each loop, we call <kbd>single_varint()</kbd>, append the resulting varint to the list, update the index, and shorten the data using string slicing. By executing line 293 with the size of the varint returned from the <kbd>single_varint()</kbd> function, we can progressively shorten data until it has a length of 0. Upon reaching this point, we can be assured that we've extracted all varints in the string:</p>
+<pre>286     # Loop forever until all Varints are found by repeatedly<br/>287     # calling singleVarint.<br/>288     while len(data) != 0:<br/>289         varint, index_a = single_varint(data)<br/>290         varints.append(varint)<br/>291         index += index_a<br/>292         # Shorten data to exclude the most recent Varint.<br/>293         data = data[index_a:]<br/>294 <br/>295     return varints, index</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Converting serial types with the type_helper() function</h1>
+                
+            
+            
+                
+<p>The <kbd>type_helper()</kbd> function is responsible for extracting the payload based on the types of values in the data. While consisting of many lines of code, it's really no more than a series of conditional statements that, if one is <kbd>True</kbd>, dictates how the data is processed:</p>
+<pre>298 def type_helper(types, data):<br/>299     """<br/>300     The type_helper function decodes the serial type of the<br/>301     Varints in the WAL file.<br/>302     :param types: The processed values of the Varints.<br/>303     :param data: The raw data in the cell that needs to be<br/>304     properly decoded via its varint values.<br/>305     :return: cell_data, a list of the processed data.<br/>306     """</pre>
+<p>On lines 307 and 308, we create the list that will store the extracted payload data and the index. The index is used to denote the current position within the data. On line 313, we begin iterating over each serial type to check how each should be processed:</p>
+<pre>307     cell_data = []<br/>308     index = 0</pre>
+<p>The first ten types are fairly straightforward. We're using the serial types table to identify the type of data and then using struct to unpack it. Some of the types, such as 0, 8, and 9 are static and don't require us to parse the data or update our index value. Types 3 and 5 are data types that are not supported by struct and require a different method of extraction. Let's take a look at both struct supported and unsupported types to ensure we understand what's happening:</p>
+<pre>310     # Value of type dictates how the data should be processed. <br/>311     # See serial type table in chapter for list of possible<br/>312     # values.<br/>313     for type in types:<br/>314 <br/>315         if type == 0:<br/>316             cell_data.append('NULL (RowId?)')<br/>317         elif type == 1:<br/>318             cell_data.append(struct.unpack('&gt;b',<br/>319                 data[index:index + 1])[0])<br/>320             index += 1<br/>321         elif type == 2:<br/>322             cell_data.append(struct.unpack('&gt;h',<br/>323                 data[index:index + 2])[0])<br/>324             index += 2<br/>325         elif type == 3:<br/>326             # Struct does not support 24-bit integer<br/>327             cell_data.append(int(binascii.hexlify(<br/>328                 data[index:index + 3]).decode('utf-8'), 16))<br/>329             index += 3<br/>330         elif type == 4:<br/>331             cell_data.append(struct.unpack(<br/>332                 '&gt;i', data[index:index + 4])[0])<br/>333             index += 4<br/>334         elif type == 5:<br/>335             # Struct does not support 48-bit integer<br/>336             cell_data.append(int(binascii.hexlify(<br/>337                 data[index:index + 6]).decode('utf-8'), 16))<br/>338             index += 6</pre>
+<p>We know from the serial types table that type 6 (on line 339) is a 64-bit big-endian integer. The <kbd>q</kbd> character in struct parses 64-bit integers making our job relatively simple. We must make sure to supply struct only with the data that makes up the 64-bit integer. We can do this by string slicing with the current index and stopping after 8 bytes. Afterwards, we need to increment the index by 8, so the next type is at the correct starting point.</p>
+<p>If struct doesn't support the type of variable, such as is the case for type 3, a 24-bit integer, we need to extract the data in a more round-about fashion. This requires us to use the <kbd>binascii.hexlify()</kbd> function to convert our data string into hex. We then simply wrap the <kbd>int()</kbd> object constructor around the hex to convert to its integer value. Notice that we need to specifically tell the <kbd>int</kbd> function the base of the value being converted, which in this case is base 16 as the value is in hexadecimal:</p>
+<pre>339         elif type == 6:<br/>340             cell_data.append(struct.unpack(<br/>341                 '&gt;q', data[index:index + 8])[0])<br/>342             index += 8<br/>343         elif type == 7:<br/>344             cell_data.append(struct.unpack(<br/>345                 '&gt;d', data[index:index + 8])[0])<br/>346             index += 8<br/>347         # Type 8 == Constant 0 and Type 9 == Constant 1. Neither of these take up space in the actual data.<br/>348         elif type == 8:<br/>349             cell_data.append(0)<br/>350         elif type == 9:<br/>351             cell_data.append(1)<br/>352         # Types 10 and 11 are reserved and currently not implemented.</pre>
+<p>For types 12 and 13, we must first identify the actual length of the value by applying the appropriate equation. Next, we can simply append the extracted string right into the <kbd>cell_data</kbd> list. We also need to increment the index by the size of the calculated string:</p>
+<pre>353         elif type &gt; 12 and type % 2 == 0:<br/>354             b_length = int((type - 12) / 2)<br/>355             cell_data.append(data[index:index + b_length])<br/>356             index += b_length<br/>357         elif type &gt; 13 and type % 2 == 1:<br/>358             s_length = int((type - 13) / 2)<br/>359             cell_data.append(<br/>360                 data[index:index + s_length].decode('utf-8'))<br/>361             index += s_length</pre>
+<p>On line 363, we create an else case to catch any unexpected serial types and print and log the error. After all types are processed, the <kbd>cell_data</kbd> list is returned on line 368:</p>
+<pre>363         else:<br/>364             msg = 'Unexpected serial type: {}'.format(type)<br/>365             print('[-]', msg)<br/>366             logging.error(msg)<br/>367 <br/>368     return cell_data</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Writing output with the csv_writer() function</h1>
+                
+            
+            
+                
+<p>The <kbd>csv_writer()</kbd> function is similar to most of our previous CSV writers. A few special considerations need to be made due to the complexity of the data being written to the file. Additionally, we're only writing some of the data out to a file and discarding everything else. Dumping the data out to a serialized data structure, such as JSON, is left to the reader as a challenge. As with any <kbd>csv_writer</kbd>, we create a list of our headers, open <kbd>csvfile</kbd>, create our writer object, and write the headers to the first row:</p>
+<pre>371 def csv_writer(data, output_dir):<br/>372     """<br/>373     The csv_writer function writes frame, cell, and data to a CSV<br/>374     output file.<br/>375     :param data: The dictionary containing the parsed WAL file.<br/>376     :param output_dir: The directory to write the CSV report to.<br/>377     :return: Nothing.<br/>378     """<br/>379     headers = ['Frame', 'Salt-1', 'Salt-2', 'Frame Offset',<br/>380         'Cell', 'Cell Offset', 'ROWID', 'Data']<br/>381 <br/>382     out_file = os.path.join(output_dir, 'wal_crawler.csv')<br/>383 <br/>384     if sys.version_info[0] == 2:<br/>385         csvfile = open(out_file, "wb")<br/>386     elif sys.version_info[0] == 3:<br/>387         csvfile = open(out_file, "w", newline='',<br/>388             encoding='utf-8')<br/>389 <br/>390     with csvfile:<br/>391         writer = csv.writer(csvfile)<br/>392         writer.writerow(headers)</pre>
+<p>Because of our nested structure, we need to create two <kbd>for</kbd> loops to iterate through the structure. On line 399, we check to see whether the cell actually contained any data. We noticed during development that sometimes empty cells would be generated and are discarded in the output. However, it might be relevant in a particular investigation to include empty cells, in which case we'd remove the conditional statements:</p>
+<pre>394         for frame in data['frames']:<br/>395 <br/>396             for cell in data['frames'][frame]['cells']:<br/>397 <br/>398             # Only write entries for cells that have data.<br/>399             if ('data' in data['frames'][frame]['cells'][cell].keys() and<br/>400             len(data['frames'][frame]['cells'][cell]['data']) &gt; 0):</pre>
+<p>If there is data, we calculate the <kbd>frame_offset</kbd> and <kbd>cell_offset</kbd> relative to the beginning of the file. The offsets we parsed before were relative to the current position within the file. This relative value wouldn't be very helpful to an examiner who would have to backtrack to find where the relative offset position starts.</p>
+<p>For our frame offset, we need to add the file header size (32 bytes), the total page size (frames * page size), and the total frame header size (frames * 24 bytes). The cell offset is a little simpler and is the frame offset plus the frame header size, and the parsed cell offset from the <kbd>wal_attributes</kbd> dictionary:</p>
+<pre>401                 # Convert relative frame and cell offsets to<br/>402                 # file offsets.<br/>403                 frame_offset = 32 + (<br/>404                     frame * data['header']['pagesize']) + (<br/>405                     frame * 24)<br/>406                     cell_offset = frame_offset + 24 + data['frames'][frame]['cells'][cell]['offset']</pre>
+<p>Next, we create a list, <kbd>cell_identifiers</kbd>, on line 411, which will store the row data to write. This list contains the frame number, <kbd>salt-1</kbd>, <kbd>salt-2</kbd>, <kbd>frame offset</kbd>, cell number, <kbd>cell offset</kbd>, and the row ID:</p>
+<pre>408                 # Cell identifiers include the frame #, <br/>409                 # salt-1, salt-2, frame offset,<br/>410                 # cell #, cell offset, and cell rowID.<br/>411                 cell_identifiers = [frame, data['frames'][frame]['header']['salt1'],<br/>412                     data['frames'][frame]['header']['salt2'],<br/>413                     frame_offset, cell, cell_offset,<br/>414                     data['frames'][frame]['cells'][cell]['rowid']]</pre>
+<p>Finally, on line 418, we write the row along with the payload data to CSV file writer:</p>
+<pre>416                 # Write the cell_identifiers and actual data<br/>417                 # within the cell<br/>418                 writer.writerow(<br/>419                     cell_identifiers + data['frames'][frame]['cells'][cell]['data'])</pre>
+<p>If the cell had no payload, then the continue block is executed and we proceed to the next cell. Once the outer for loop finishes executing, that is, all frames are written to the CSV, we flush any remaining buffered content to the CSV and close the handle on the file:</p>
+<pre>421             else:<br/>422                 continue<br/>423 <br/>424     csvfile.flush()<br/>425     csvfile.close()</pre>
+<p>An example of the CSV output that might be generated from a WAL file is captured in the following screenshot:</p>
+<div><img class="alignnone size-full wp-image-719 image-border" src="img/2d0ccd6f-5e13-4dda-b226-5dfba4669ac0.png" style="width:148.67em;height:33.00em;"/></div>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Using regular expression in the regular_search() function</h1>
+                
+            
+            
+                
+<p>The <kbd>regular_search()</kbd> function is an optional function. If the user supplies the <kbd>-m</kbd> or <kbd>-r</kbd> switches, the function is executed. This function uses regular expressions to identify relevant information within the WAL file and, if identified, print the data to the Terminal:</p>
+<pre>428 def regular_search(data, options):<br/>429     """<br/>430     The regular_search function performs either default regular<br/>431     expression searches for personal information or custom<br/>432     searches based on a supplied regular expression string.<br/>433     :param data: The dictionary containing the parsed WAL file.<br/>434     :param options: The options dictionary contains custom or<br/>435     pre-determined regular expression searching<br/>436     :return: Nothing.<br/>437     """</pre>
+<p>We'll use a dictionary that contains the regular expression patterns to run. This will make it easy to identify what category of expression, that is, URL or phone number, had a match and print that with the data to provide context.</p>
+<p>First, we must identify which switches were specified by the user. If only <kbd>args.r</kbd> was specified, then we only need to create the regexp dictionary with the supplied custom regular expression. Because either <kbd>args.r</kbd> or <kbd>args.m</kbd> were supplied to even reach this function, we know that if the first <kbd>if</kbd> is <kbd>False</kbd>, then at least <kbd>args.m</kbd> must have been supplied:</p>
+<pre>438     msg = 'Initializing regular expression module.'<br/>439     print('\n{}\n[+]'.format('='*20), msg)<br/>440     logging.info(msg)<br/>441     if options['r'] and not options['m']:<br/>442         regexp = {'Custom': options['r']}<br/>443     else:<br/>444         # Default regular expression modules include: Credit card<br/>445         # numbers, SSNs, Phone numbers, URLs, IP Addresses.<br/>446         regexp = {'Visa Credit Card': r'^4\d{3}([\ \-]?)\d{4}\1\d{4}\1\d{4}$',<br/>447             'SSN': r'^\d{3}-\d{2}-\d{4}$',<br/>448             'Phone Number': r'^\d{3}([\ \. \-]?)\d{3}\1\d{4}$',<br/>449             'URL': r"(http[s]?://)|(www.)(?:[a-zA-Z]|[0-9]|[$-_@.&amp;+]|[!*\(\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+",<br/>450         'IP Address': r'^\d{1,3}.\d{1,3}.\d{1,3}.\d{1,3}$'}</pre>
+<p>If that's the case, we need to build our regexp dictionary containing our regular expression patterns. By default, we have included our credit card and phone number examples from before, along with the patterns for SSNs, URLs, and IP addresses. Additionally, on line 452, we need to check for the scenario where both <kbd>args.r</kbd> and <kbd>args.m</kbd> were passed. If they were, we add the custom expression to our dictionary, which already contains the <kbd>args.m</kbd> expressions:</p>
+<pre>452         if options['r']:<br/>453             regexp['Custom'] = options['r']</pre>
+<p>For each expression in our dictionary, we need to compile it before we can use the match function. As we compile each expression, we use several more loops to walk through the <kbd>wal_attributes</kbd> dictionary and check each cell for any matches:</p>
+<pre>455     # Must compile each regular expression before seeing if any<br/>456     # data "matches" it.<br/>457     for exp in regexp.keys():<br/>458         reg_exp = re.compile(regexp[exp])</pre>
+<p>Starting with lines 457, we create a triple <kbd>for</kbd> loop to get at each individual piece of data. In <kbd>csv_writer()</kbd>, we only used two <kbd>for</kbd> loops because we didn't need to interact with each data point. However, in this case, we need to do this to successfully identify matches using regular expressions.</p>
+<p>Notice the try and except wrapped around the match function. The match function expects a string or buffer. It will error out if it tries to match the expression to an integer. So, we decided to catch the error and, if encountered, skip to the next piece of data. We could have also solved the issue by casting the datum as a string using the <kbd>str()</kbd> function:</p>
+<pre>460         for frame in data['frames']:<br/>461 <br/>462             for cell in data['frames'][frame]['cells']:<br/>463 <br/>464                 for datum in range(len(<br/>465                 data['frames'][frame]['cells'][cell]['data'])):<br/>466                     # TypeError will occur for non-string objects<br/>467                     # such as integers.<br/>468                     try:<br/>469                         match = reg_exp.match(<br/>470                         data['frames'][frame]['cells'][cell]['data'][datum])<br/>471                     except TypeError:<br/>472                         continue<br/>473                     # Print any successful match to user.<br/>474                     if match:<br/>475                         msg = '{}: {}'.format(exp,<br/>476                         data['frames'][frame]['cells'][cell]['data'][datum])<br/>477                         print('[*]', msg)<br/>478     print('='*20)</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Executing wal_crawler.py</h1>
+                
+            
+            
+                
+<p>Now that we've written the script, it's time to actually run it. The simplest way of doing so is to supply the input WAL file and output directory:</p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-720 image-border" src="img/c332e006-70b9-4b05-8499-dc3475e4481e.png" style="width:43.83em;height:13.83em;"/></p>
+<p>Optionally, we can use the <kbd>-m</kbd> or <kbd>-r</kbd> switches to engage the regular expression module. The following screenshot shows an example of what the regular expression output looks like:</p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-721 image-border" src="img/90a83c10-f0ab-42df-ad96-3b74ac7b7889.png" style="width:44.08em;height:23.17em;"/></p>
+<p>Note that, when supplying a custom regular expression to run with the <kbd>-r</kbd> switch, surround the expression with double quotes. If you fail to do so, you might encounter an error due to havoc that was wreaked by the special characters in the regular expression.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Challenge</h1>
+                
+            
+            
+                
+<p>There are a few directions in which we could take this script. As we've already mentioned, there's a great deal of potentially useful data that we aren't writing out to a file. It might be useful to store the entire dictionary structure in a JSON file so that others can easily import and manipulate the data. This would allow us to utilize the parsed structure in a separate program and create additional reports from it.</p>
+<p>Another useful feature we could develop is a timeline report or graphic for the user. This report would list the current contents of each record and then show a progression from the current contents of the records to their older versions or even non-existing records. A tree-diagram or flowchart might be a good means of visualizing change for a particular database record.</p>
+<p>Finally, add in a function that supports processing of varint that can be greater than 2 bytes. In our script, we made a simplifying assumption that we were unlikely to encounter a varint greater than 2 bytes. However, it isn't impossible to encounter a larger varint and so it may be worthwhile adding in this functionality.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Summary</h1>
+                
+            
+            
+                
+<p>In this chapter, we learned the forensic significance of a WAL file and how to parse it. We also briefly touched on how to use regular expressions in Python with the <kbd>re</kbd> module to create generic search patterns. Lastly, we utilized the <kbd>tqdm</kbd> module to create a progress bar in one line of code. The code for this project can be downloaded from GitHub or Packt, as described in the <em>Preface</em>.</p>
+<p>In the next chapter, we'll be combining our knowledge from this entire book into a single framework. We'll design a framework that allows for basic pre-processing of common artifacts that we've covered. We'll demonstrate the framework design and development process and reveal the framework you've been secretly building throughout this book.</p>
+
+
+            
+
+            
+        
+    </body></html>

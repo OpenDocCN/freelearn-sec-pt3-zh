@@ -1,0 +1,420 @@
+<html><head></head><body><div><h1 class="header-title">Binary Obfuscation Techniques</h1>
+                
+            
+            
+                
+<p>Binary obfuscation is a way for developers to make the code of a program difficult to understand or reverse. It is also used to hide data from being seen easily. It can be categorized as an anti-reversing technique that increases the processing time for reversing. Obfuscation can also use encryption and decryption algorithms, along with its hardcoded or code-generated cipher key.</p>
+<p>In this chapter, we will discuss ways how data and code are obfuscated. We are going to show how obfuscation is applied in examples including simple XORs, simple arithmetic, building data in the stack, and discussions about polymorphic and metamorphic code.  </p>
+<p>In the malware world, binary obfuscation is a common technique used by viruses aiming to defeat signature-based anti-virus software. As a virus infects files, it obfuscates its code using polymorphism or metamorphism.</p>
+<p>In this chapter, we will achieve the following learning outcomes:</p>
+<ul>
+<li>Identifying data being assembled on the stack</li>
+<li>Identifying data being XORed or deobfuscated prior to use</li>
+<li>Modifying data in text or other segments, and assembling on the heap</li>
+</ul>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Data assembly on the stack</h1>
+                
+            
+            
+                
+<p>The stack is a memory space in which any data can be stored. The stack can be accessed using the stack pointer register (for 32-bit address space, the ESP register is used). Let's consider the example of the following code snippet:</p>
+<pre>push 0<br/>push 21646c72h<br/>push 6f57206fh<br/>push 6c6c6548h<br/>mov eax, esp<br/>push 74h<br/>push 6B636150h<br/>mov edx, esp<br/>push 0<br/>push eax<br/>push edx<br/>push 0<br/>mov eax, &lt;user32.MessageBoxA&gt;<br/>call eax</pre>
+<p>This will eventually display the following message box:</p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-1318 image-border" src="img/8e571e5c-7963-49f9-80a2-2b1a6139689b.png" style="width:9.75em;height:9.83em;" width="117" height="118"/></p>
+<p>How did that happen when no visible text strings were referenced? Before calling for the <kbd>MessageBoxA</kbd> function, the stack would look like this:</p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-1319 image-border" src="img/9799eb1b-2a54-472f-bc9b-e5960182cc73.png" style="width:19.25em;height:9.08em;" width="231" height="109"/></p>
+<p>These push instructions assembled the null terminated message text at the stack.</p>
+<pre>push 0<br/>push 21646c72h<br/>push 6f57206fh<br/>push 6c6c6548h</pre>
+<p>While the other string was assembled with these push instructions:</p>
+<pre>push 74h<br/>push 6B636150h</pre>
+<p>In effect, the stack dump would look like this.</p>
+<p class="CDPAlignCenter CDPAlign"><img style="font-size: 1em;border: 1em solid black;text-align: center;width:43.25em;height:4.08em;" class="alignnone size-full wp-image-1320 image-border" src="img/335bce83-2f72-4952-967f-e52b9c3f7f32.png" width="519" height="49"/></p>
+<p>Every after string assembly, the value of register ESP is stored in EAX and then EDX.  That is, EAX points to the address of the first string.  EDX points to the address of the second assembled string.</p>
+<p><kbd>MessageBoxA</kbd> accepts four parameters.  The second parameter is the message text and the third is the caption text.  From the stack dump shown above, the strings are located at  addresses <kbd>0x22FE50</kbd> and <kbd>0x22FE54</kbd>.  </p>
+<pre>push 0<br/>push eax<br/>push edx<br/>push 0<br/>mov eax, &lt;user32.MessageBoxA&gt;</pre>
+<p><kbd>MessageBoxA</kbd> has all the parameters it requires. Even though the strings were assembled at the stack, as long as data is accessible, it can be used.</p>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Code assembly</h1>
+                
+            
+            
+                
+<p>The same concept is possible in terms of code. Here's another code snippet:</p>
+<pre>push c3<br/>push 57006a52<br/>push 50006ad4<br/>push 8b6b6361<br/>push 5068746a<br/>push c48b6c6c<br/>push 6548686f<br/>push 57206f68<br/>push 21646c72<br/>push 68006a5f<br/>mov eax, esp<br/>call eax<br/>mov eax, &lt;user32.MessageBoxA&gt;<br/>call eax</pre>
+<p>This yields the same message box as before. The difference is that this code pushes <kbd>opcode</kbd> bytes into the stack, and passes code execution to it. After entering the first <kbd>call eax</kbd> instruction, the stack would look like this:</p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-1321 image-border" src="img/e04dc42e-32b2-4cbe-a65a-81dacf01396a.png" style="width:27.83em;height:8.50em;" width="396" height="121"/></p>
+<p>Remember that the value at the top of the stack should contain the return address set by the <kbd>call</kbd> instruction. And here's where our instruction pointer will be by now:</p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-1322 image-border" src="img/ec290abd-d803-4ce3-ba75-6bae6880749b.png" style="width:33.50em;height:11.92em;" width="531" height="188"/></p>
+<p>The <kbd>pop edi</kbd> instruction stores the return address to the <kbd>EDI</kbd> register. The same set of instructions that assemble the message text setup are used here. Finally, a <kbd>push edi</kbd>, followed by a <kbd>ret</kbd> instruction, should make it back to the return address.</p>
+<p>The resulting stack should look like this:</p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-1323 image-border" src="img/48d6e667-6fa8-4127-ab1a-793cbaac9e9c.png" style="width:15.67em;height:15.25em;" width="238" height="230"/></p>
+<p>This is then followed by a couple of instructions that invoke <kbd>MessageBoxA</kbd>.</p>
+<p>This technique of running code in the stack is employed by numerous malware, including software vulnerability exploits. As a course of action to prevent malware code execution, some operating systems have made security updates to bar the stack from code execution.</p>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Encrypted data identification</h1>
+                
+            
+            
+                
+<p class="mce-root">One of the main features of antivirus software is to detect malware using signatures. Signatures are sets of byte sequences unique to a given piece of malware. Although this detection technique is not thought of as effective for anti-virus nowadays, it may still play a vital role in detecting files, especially when an operating system is taken offline.</p>
+<p>Simple signature detection can easily be defeated by encrypting the data and/or code of a malware. The effect would be that a new signature gets developed from a unique portion of the encrypted data. An attacker can simply re-encrypt the same malware using a different key, which would result in another signature. But still, the malware runs with the same behavior.</p>
+<p>Of course, anti-virus software has made great improvements to defeat this technique, thereby making signature detection a technology of the past.</p>
+<p>On the other hand, this is an obfuscation technique that eats up additional time for reversing software. Under static analysis, identifying encrypted data and decryption routines informs us what to expect in the course of our analysis, especially when debugging. To start off, we'll look into a few code snippets.</p>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Loop codes</h1>
+                
+            
+            
+                
+<p>Decryption can easily be identified by inspecting code that runs in a loop:</p>
+<pre>  mov ecx, 0x10<br/>  mov esi, 0x00402000<br/>loc_00401000:<br/>  mov al, [esi]<br/>  sub al, 0x20<br/>  mov [esi], al<br/>  inc esi<br/>  dec ecx<br/>  jnz loc_00401000</pre>
+<p>This loop code is controlled by a conditional jump. To identify a decryption or an encryption code, it should have a source and a destination. In this code, the source starts at address <kbd>0x00402000</kbd>, with the destination also at the same address. Each byte in the data is modified by an algorithm. In this case, the algorithm is a simple subtraction of <kbd>0x20</kbd> from the byte being changed. The loop ends only when <kbd>0x10</kbd> bytes of data have been modified. <kbd>0x20</kbd> is identified as the encryption/decryption key.</p>
+<p>The algorithm can vary, using standard and binary or just standard arithmetic. As long as a source data is modified and written to a destination within a loop, we can say that we have identified a cryptographic routine.</p>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Simple arithmetic</h1>
+                
+            
+            
+                
+<p>Besides using bitwise operations, basic mathematical operations can also be used. If addition has a subtraction counterpart, we can encrypt a file using addition and decrypt it with subtraction, and vice-versa. The following code shows decryption using addition:</p>
+<pre> mov ecx, 0x10<br/> mov esi, 0x00402000<br/>loc_00401000:<br/> mov al, [esi]<br/> add al, 0x10<br/> mov [esi], al<br/> inc esi<br/> dec ecx<br/> jnz loc_00401000</pre>
+<p>The beauty of byte values is that they can be processed as signed numbers, if, for example, given this set of encryption information:</p>
+<pre>data = 0x00, 0x01, 0x02, 0x0a, 0x10, 0x1A, 0xFE, 0xFF<br/> key = 0x11<br/> encrypt algorithm = byte subtraction<br/> decrypt algorithm = byte addition</pre>
+<p>After each byte gets subtracted with <kbd>0x11</kbd>, the encrypted data would be the following:</p>
+<pre>encrypted data = 0xEF, 0xF0, 0xF1, 0xF9, 0xFF, 0x09, 0xED, 0xEE</pre>
+<p>To restore it, we'll have to add the same value, <kbd>0x11</kbd>, that was subtracted before:</p>
+<pre>decrypted data = 0x00, 0x01, 0x02, 0x0a, 0x10, 0x1A, 0xFE, 0xFF</pre>
+<p>If we look at the equivalent decimal values of the preceding bytes in unsigned and signed form, the data would look like the following:</p>
+<pre>data (unsigned) = 0, 1, 2, 10, 16, 26, 254, 255<br/>data (signed) = 0, 1, 2, 10, 16, 26, -2, -1</pre>
+<p>Here's the encrypted data shown in decimal values:</p>
+<pre>encrypted data (unsigned) = 239, 240, 241, 249, 255, 9, 237, 238<br/>encrypted data (signed) = -17, -16, -15, -7, -1, 9, -19, -18</pre>
+<p>To sum it up, if we were to use basic arithmetical operations, we should look at it in the value's signed form.</p>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Simple XOR decryption</h1>
+                
+            
+            
+                
+<p>XOR is the most popularly used operator when it comes to software cryptography. If we were to change the code algorithm in the previous code snippet, it would look like this:</p>
+<pre> mov ecx, 0x10<br/> mov esi, 0x00402000<br/>loc_00401000:<br/> mov al, [esi]<br/> xor al, 0x20<br/> mov [esi], al<br/> inc esi<br/> dec ecx<br/> jnz loc_00401000</pre>
+<p>What makes it popular is that the same algorithm can be used to encrypt and decrypt data. Using the same key, <kbd>XOR</kbd> can restore the original data back. Unlike when using <kbd>SUB</kbd>, the data-restoring counterpart requires an algorithm that uses <kbd>ADD</kbd>.</p>
+<p>Here's a quick demonstration:</p>
+<pre>Encryption using the key 0x20:<br/>  data:  0x46 = 01000110b<br/>   key:  0x20 = 00100000b<br/>0x46 XOR 0x20 = 01100110b = 0x66<br/><br/>Decryption using the same key:<br/>  data:  0x66 = 01100110b<br/>   key:  0x20 = 00100000b<br/>0x66 XOR 0x20 = 01000110b = 0x46</pre>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Assembly of data in other memory regions</h1>
+                
+            
+            
+                
+<p>It is possible to execute data in a different memory region out of the process' image space. Similar to how code was executed at the stack space, memory spaces, such as the heap and newly allocated space, can be used to manipulate data and run the code. This is a common technique used not only by malware, but also by legitimate applications. </p>
+<p>Accessing the heap requires calling APIs, such as <kbd>HeapAlloc</kbd> (Windows) or generally <kbd>malloc</kbd> (Windows and Linux). A default heap space is given for every process created. <kbd>Heap</kbd> is generally used when asking for a small chunk of memory space. The maximum size of a heap varies between operating systems. If the requested size of the memory space being requested for allocation doesn't fit the current heap space, <kbd>HeapAlloc</kbd> or <kbd>malloc</kbd> internally calls for <kbd>VirtualAlloc</kbd> (Windows) or <kbd>sbrk</kbd> (Linux) functions. These functions directly requests memory space from the operating system's memory manager.</p>
+<p>Allocated memory space have defined access permissions. Just like how the segments of a program are used, these can generally have read, write, and execute permissions. If the region requires code execution, the read and execute permission should be set.</p>
+<p>Check out the following code snippet with an implementation of decrypting data to the heap:</p>
+<pre>                call GetProcessHeap<br/>                push 1000h             ; dwBytes<br/>                mov edi, eax<br/>                push 8 ; dwFlags<br/>                push edi               ; hHeap<br/>                call HeapAlloc<br/>                push 1BEh              ; Size<br/>                mov esi, eax<br/>                push offset unk_403018 ; Src<br/>                push esi               ; Dst<br/>                call memcpy<br/>                add esp, 0Ch<br/>                xor ecx, ecx<br/>                nop<br/>loc_401030:<br/>                xor byte ptr [ecx+esi], 58h<br/>                inc ecx<br/>                cmp ecx, 1BEh<br/>                jl short loc_401030</pre>
+<p>The code allocates <kbd>1000h</kbd> bytes of heap space, then copies <kbd>1BEh</kbd> bytes of data from the address at <kbd>0x00403018</kbd> to the allocated heap. The decryption loop can easily be identified in this code. </p>
+<p>The algorithm uses <kbd>XOR</kbd> with a key value of <kbd>58h</kbd>. The data size is <kbd>1BEh</kbd> and the data is directly updated at the same allocated heap space. The iteration is controlled using the <kbd>ECX</kbd> register, while the location of the encrypted data, which is at the heap address, is stored in the <kbd>ESI</kbd> register.</p>
+<p>Let's see what gets decrypted using debugging tools.</p>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Decrypting with x86dbg</h1>
+                
+            
+            
+                
+<p>The preceding code snippet came from the <kbd>HeapDemo.exe</kbd> file. You can download this file from <a href="https://github.com/PacktPublishing/Mastering-Reverse-Engineering/tree/master/ch9">https://github.com/PacktPublishing/Mastering-Reverse-Engineering/tree/master/ch9</a>. Go ahead and start debugging the file using <kbd>x86dbg</kbd>. This screenshot shows the disassembly code at the <kbd>WinMain</kbd> function right after loading the file in <kbd>x86dbg</kbd>:</p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-1324 image-border" src="img/763f9026-3249-4526-85bd-a5197151b51f.png" style="width:39.25em;height:31.08em;" width="867" height="685"/></p>
+<p>From the executable's code entry point, we encounter heap allocation with the <kbd>GetProcessHeap</kbd> and <kbd>RtlAllocateHeap</kbd> APIs. This is followed by using a <kbd>_memcpy</kbd> function, which copies <kbd>0x1BE</kbd> bytes of data from the address denoted by <kbd>heapdemo.enc</kbd>. Let's take a look at the memory dump from <kbd>heapdemo.enc</kbd>. To do that, right-click on <kbd>push &lt;heapdemo.enc&gt;</kbd>, then select Follow in Dump. Click on the given address, not the Selected Address. This should change the contents in the currently focused <kbd>Dump</kbd> window:</p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-1326 image-border" src="img/004d99c5-8563-4e1f-aa64-3b63bbb06045.png" style="width:43.25em;height:14.17em;" width="519" height="170"/></p>
+<p>This should be the data that will be decrypted by the next lines of code that run in a loop. We should also see the same encrypted data at the allocated heap space right after executing <kbd>_memcpy</kbd>. The allocated heap space's address should still be stored in the register <kbd>ESI</kbd>. Right-click on the value of register <kbd>ESI</kbd> in the window containing a list of registers and flags, then select Follow in Dump. This should show the same contents of data, but at the heap address space. The dump shown in the following screenshot is the encrypted data:</p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-1327 image-border" src="img/d407fd77-d4b3-43cc-9748-d6939d5804db.png" style="width:42.92em;height:13.67em;" width="515" height="164"/></p>
+<p>Now for the interesting part—decrypting. While looking at the dump of the heap, continue doing debug steps. You should notice the values changing as the <kbd>xor byte ptr ds:[ecx+esi], 58</kbd> instruction executes:</p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-1328 image-border" src="img/e4148734-f0aa-4ca0-8822-dc39ea9c733d.png" style="width:39.83em;height:13.00em;" width="517" height="168"/></p>
+<p>As it would be tedious to step through all these bytes for 0x1BE times, we can simply place a break point at the line after the <kbd>jl</kbd> instruction and press <em><kbd>F9</kbd></em> to continue running the instructions. This should result in this decrypted dump:</p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-1329 image-border" src="img/1983a2a2-3307-44ff-a575-e7f6e1414f0b.png" style="width:39.08em;height:27.50em;" width="521" height="366"/></p>
+<p>Continue debugging the code; it concludes by cleaning up the allocated heap and exiting the process. The allocated heap is freed up using the <kbd>HeapFree</kbd> API. Usually, an <kbd>ExitProcess</kbd> API is used to exit the program. This time, it uses <kbd>GetCurrentProcess</kbd> and <kbd>TerminateProcess</kbd> to do that.</p>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Other obfuscation techniques</h1>
+                
+            
+            
+                
+<p>The obfuscation techniques we discussed are based on hiding actual strings and code using simple cryptography. Still, there are other ways to obfuscate code. As long as the concept of impeding data and code from easy extraction and analysis is present, then obfuscation still occurs. Let's discuss some more obfuscation techniques.</p>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Control flow flattening obfuscation</h1>
+                
+            
+            
+                
+<p>The aim of control flow flattening is to make a simple code look like a complicated set of conditional jumps. Let's consider this simple code:</p>
+<pre>    cmp byte ptr [esi], 0x20<br/>    jz loc_00EB100C<br/>    mov eax, 0<br/>    jmp loc_00EB1011<br/>loc_00EB100C:<br/>    mov eax, 1<br/>loc_00EB1011:<br/>    test eax, eax<br/>    ret</pre>
+<p>When obfuscated using the control flow flattening method, it would look something like this:</p>
+<pre>    mov ecx, 1<br/>    mov ebx, 0                ; initial value of control variable<br/>loc_00EB100A:<br/>    test ecx, ecx<br/>    jz loc_00EB103C           ; jump will never happen, an endless loop<br/>loc_00EB100E:<br/>    cmp ebx, 0                ; is control variable equal to 0?<br/>    jnz loc_00EB102B<br/>loc_00EB1013:<br/>    cmp byte ptr [esi], 0x20<br/>    jnz loc_00EB1024<br/>loc_00EB1018:<br/>    mov eax, 0<br/>    mov ebx, 2<br/>    jmp loc_00EB103E<br/>loc_00EB1024:<br/>    mov ebx, 1                ; set control variable to 1<br/>    jmp loc_00EB103E<br/>loc_00EB102B:<br/>    cmp ebx, 1                ; is control variable equal to 1?<br/>    jnz loc_00EB103C<br/>loc_00EB1030:<br/>    mov eax, 1<br/>    mov ebx, 2                ; set control variable to 2<br/>    jmp loc_00EB103E<br/>loc_00EB103C:<br/>    jmp loc_00EB1040          ; exit loop<br/>loc_00EB103E:<br/>    jmp loc_00EB100A          ; loop back<br/>loc_00EB1040:<br/>    test eax, eax<br/>    ret</pre>
+<p>The obfuscated code would ultimately have the same result as the original code. In a control flow flattening obfuscation, the flow of code is guided by a control variable. In the preceding code, the control variable is the <kbd>EBX</kbd> register. To graphically view the difference, here's how the original code looks:</p>
+<p style="font-size: 16px" class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-1330 image-border" src="img/9bcdc348-3fef-44fc-a572-3adc139e659d.png" style="width:37.00em;height:19.33em;" width="448" height="234"/></p>
+<p class="CDPAlignLeft CDPAlign">And here is how the code looks when obfuscation is applied:</p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-1331 image-border" src="img/b34baec3-bb40-42c2-b5ee-7ba7d4b08444.png" style="width:71.42em;height:38.67em;" width="907" height="491"/></p>
+<p>The code is placed in a loop while being controlled with the value set in the control variable, the <kbd>EBX</kbd> register. Every block of code has an ID. Before leaving the first block of code, the control variable is set with the ID of the second block of code. The flow loops around again, goes into the second block of code, and before leaving, it is set with the ID of the third block of code. The sequence goes on until the final block of code executes. Conditions in the block of code can set the control variable with the block ID it chooses to go to next. In our previous code the loop only iterates twice before it ends.</p>
+<p>Looking at the two preceding diagrams, we can see how a simple code can look complicated when obfuscated. As a reverse engineer, the challenge is how to spot a complicated code being reduced to a more understandable code. The trick here is to identify if a control variable exists.</p>
+<p class="mce-root"/>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Garbage code insertion</h1>
+                
+            
+            
+                
+<p>Garbage code insertion is a cheap way of making code look complicated. A code is simply injected with a code or a sequence of code that actually does nothing. In the following code snippet, try to identify all of the garbage codes:</p>
+<pre>    mov eax, [esi]<br/>    pushad<br/>    popad<br/>    xor eax, ffff0000h<br/>    nop<br/>    call loc_004017f<br/>    shr eax, 4<br/>    add ebx, 34h<br/>    sub ebx, 34h<br/>    push eax<br/>    ror eax, 5<br/>    and eax, 0ffffh<br/>    pop eax<br/>    jmp loc_0040180<br/>loc_004017f:<br/>    ret</pre>
+<p>Removing the garbage codes should reduce it down to this code:</p>
+<pre>    mov eax, [esi]<br/>    xor eax, ffff0000h<br/>    shr eax, 4<br/>    jmp loc_0040180</pre>
+<p>A lot of malware employs this technique to quickly generate variants of its own code. It may increase the size of code, but as a result, it makes it undetectable by signature-based anti-malware software.</p>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Code obfuscation with a metamorphic engine</h1>
+                
+            
+            
+                
+<p class="mce-root">A program can be coded in different ways. To "increment the value of a variable" means adding one to it. In assembly language, <kbd>INC EAX</kbd> would also be equivalent to <kbd>ADD EAX</kbd>, <kbd>1</kbd>. The concept of replacing the same instruction or set of instructions with an equivalent instruction relates to metamorphism.  </p>
+<p>Here are a few examples of code that can be interchanged with each other:</p>
+<table style="border-collapse: collapse;width: 100%" border="1">
+<tbody>
+<tr>
+<td>
+<pre>mov eax, 78h</pre></td>
+<td>
+<pre>push 78h<br/>pop eax</pre></td>
+</tr>
+<tr>
+<td>
+<pre>mov cl, 4<br/>mul cl</pre></td>
+<td>
+<pre>shl eax, 2</pre></td>
+</tr>
+<tr>
+<td>
+<pre>jmp 00401000h</pre></td>
+<td>
+<pre>push 00401000h<br/>ret</pre></td>
+</tr>
+<tr>
+<td>
+<pre>xchg eax, edx</pre></td>
+<td>
+<pre>xor eax, edx<br/>xor edx, eax<br/>xor eax, edx</pre></td>
+</tr>
+<tr>
+<td>
+<pre>rol eax, 7</pre></td>
+<td>
+<pre>push ebx<br/>mov ebx, eax<br/>shl eax, 7<br/>shr ebx, 25<br/>or eax, ebx<br/>pop ebx</pre></td>
+</tr>
+<tr>
+<td>
+<pre>push 1234h</pre></td>
+<td>
+<pre>sub esp, 4<br/>mov [esp], 1234h</pre></td>
+</tr>
+</tbody>
+</table>
+<p> </p>
+<p>This concept was introduced in computer viruses that are able to infect files with a different generation of itself. The computer viruses in which this concept was introduced were Zmist, Ghost, Zperm, and Regswap. The challenge that the metamorphic engines in these viruses face is to make the infected files still work like the original and prevent them from being corrupted.</p>
+<p>So, how does metamorphic code differ from a polymorphic code? First off, both techniques were brought up to thwart anti-virus software from detecting several generations of malware. Anti-virus software usually detects malware using signatures. These signatures are unique sequences of bytes found in the malware file. To prevent the anti-virus from further detection, encryption is used to hide the whole virus code, or portions of it. A stub code responsible for decrypting the self-encrypted code of the virus. The following diagram shows a representation of the file generations of a polymorphic virus:</p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-1333 image-border" src="img/77a15534-d976-46f5-abb8-13c184497a61.png" style="width:30.42em;height:12.50em;" width="627" height="258"/></p>
+<p>As we can see, the stub usually comes with the same code, but the key changes. This leaves the encrypted code different from the previous generation. In the preceding diagram, we depicted the difference by changing the encrypted code's color. If a code involves decryption and encryption, it can be called a polymorphic code. Some anti-virus software employs the use of code emulation or adds specific decryption algorithms to decrypt the virus code, enabling the signatures to be matched for detection.</p>
+<p>For metamorphic code, no encryption is involved.  The concept is about substituting a code with a different code that results with the same behavior. For each generation of the virus code, the code changes. A polymorphic code can easily be identified because of the stub code. But easy identification of metamorphic code is impossible, since it would just look like a regular set of code. Here's a representation of, file generations of a metamorphic code:</p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-1334 image-border" src="img/8e178633-5236-4589-a2e6-ce7b8c24f47f.png" style="width:39.42em;height:23.08em;" width="766" height="448"/></p>
+<p>All these metamorphic generation will yield the same result retaining its code sequence. It is hard for anti-virus signatures to detect metamorphic viruses, since the code itself changes. Metamorphic code can only be identified by comparing two variations. In metamorphic viruses, the generation of new code involves a metamorphic engine, which comes along with the code itself. Even the engine's lines of code themselves can be modified.</p>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Dynamic library loading</h1>
+                
+            
+            
+                
+<p>During static analysis, we can immediately see imported functions that are available for the program's use. It is possible to only see two API functions in the import table, but have the program use dozens of APIs. In Windows, these two API functions are <kbd>LoadLibrary</kbd> and <kbd>GetProcAddress</kbd>, while in Linux, these are <kbd>dlopen</kbd> and <kbd>dlsym</kbd>.</p>
+<p><kbd>LoadLibrary</kbd> only requires the name of the library where the desired API function name is located. <kbd>GetProcAddress</kbd> is then responsible for retrieving the address of the API function from the library with that API name. With the library loaded, a program can call the API function using the API's address.</p>
+<p>The following code snippet demonstrates how dynamic library loading is done. The code eventually displays a "<kbd>hello world</kbd> message box:</p>
+<pre><br/>; code in the .text section<br/>push 00403000h<br/>call LoadLibrary<br/>push 00403010h<br/>push eax<br/>call GetProcAddress<br/>push 0<br/>push 00403030h<br/>push 00403020h<br/>push 0<br/>call eax              ; USER32!MessageBoxA<br/><br/><br/>; data in the .data section<br/>00403000h "USER32.DLL", 0<br/>00403010h "MessageBoxA", 0<br/>00403020h "Hello World!", 0<br/>00403030h "Packt Demo", 0</pre>
+<p>Some programs have the text strings encrypted, including the name of the API functions, and get decrypted at runtime before doing dynamic import. This prevents tools such as <kbd>Strings</kbd> or <kbd>BinText</kbd> from listing down the APIs that the program might use. An analyst would be able to see these loaded functions while doing debug sessions.</p>
+<p class="mce-root"/>
+<p class="mce-root"/>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Use of PEB information</h1>
+                
+            
+            
+                
+<p>The <strong>Process Environment Block</strong> (<strong>PEB</strong>) contains useful information about the running process. This includes the list of modules loaded for the process, the chain of <strong>Structured Error Handlers</strong> (<strong>SEH</strong>), and even the program's command line parameters. Instead of using API functions, such as  <kbd>GetCommandLine</kbd> and <kbd>IsDebuggerPresent</kbd>, here, the obfuscation technique directly reads this information from PEB.</p>
+<p>For instance, the <kbd>IsDebuggerPresent</kbd> API contains the following code:</p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-1332 image-border" src="img/32dda516-68e4-4e8c-847e-e3a2474b0b0b.png" style="width:26.00em;height:16.75em;" width="277" height="179"/></p>
+<p>Using the following code alone will return a value of <kbd>1</kbd> or <kbd>0</kbd> in the <kbd>EAX</kbd> register. It is in the FS segment where the <kbd>PEB</kbd> and <strong>Thread Information Block</strong> (<strong>TIB</strong>) are found. This code shows that the debug flag can be found at offset <kbd>2</kbd> of the <kbd>PEB</kbd>.</p>
+<pre>mov eax, large fs:30h<br/>movzx eax, byte ptr [eax+2]</pre>
+<p>There are different ways for an obfuscation to be implemented. It can be implemented based on the creativity of the developer. As long as the goal of concealing the obvious is present, it will make it hard for reverse engineers to analyze the binary. A better understanding of various obfuscation techniques will definitely helps us overcome the analysis of complicated code during reversing.</p>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Summary</h1>
+                
+            
+            
+                
+<p>In this chapter, we have understood what obfuscation is all about. As a means of hiding data, simple cryptography is one of the most commonly used techniques. Identifying simple decryption algorithms requires looking for the cipher key, the data to decrypt, and the size of the data. After identifying these decryption parameters, all we need to do is place a breakpoint at the exit point of the decryption code. We can also monitor the decrypted code using the memory dump of the debugging tool.</p>
+<p>We cited a few methods used in obfuscation, such as control flow flattening, garbage code insertion, metamorphic code, dynamically importing API functions, and directly accessing the process information block. Identifying obfuscated codes and data helps us overcome the analysis of complicated code. Obfuscation was introduced as a way to conceal information.</p>
+<p>In the next chapter, we'll continue introducing the same concept, but in particular, we'll look how they are implemented in an executable file using Packer tools and encryption.</p>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  </body></html>

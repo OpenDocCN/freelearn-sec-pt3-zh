@@ -1,0 +1,379 @@
+<html><head></head><body><div><h1 class="header-title">Android Malware Analysis</h1>
+                
+            
+            
+                
+<p class="mce-root">In this chapter, we will perform dynamic and static analysis of the malicious Android application we identified in the previous chapter. We will cover the following topics:</p>
+<ul>
+<li>Dynamic analysis of malicious Android applications using an online sandbox</li>
+<li>Static analysis of malicious Android applications:
+<ul>
+<li>Unpacking Android applications</li>
+<li>Manifest file decoding and analysis</li>
+<li>Android application decompilation</li>
+<li>Viewing and analyzing decompiled code</li>
+</ul>
+</li>
+</ul>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Dynamic analysis of malicious Android applications </h1>
+                
+            
+            
+                
+<p>The easiest way to perform a malicious Android application analysis is to run it in a controlled environment. You already know how to run an emulator and install applications via ADB, so you may install a suspicious application in a clean virtual system and see what artefacts are left after you run it. For example, you can find SQLite databases with data collected by a malicious application or its configuration files.</p>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Dynamic analysis using an online sandbox</h1>
+                
+            
+            
+                
+<p>An easier and more efficient approach is to use pre-built sandboxes for malware analysis. One of these sandboxes is <strong>Joe Sandbox</strong>. It supports automated dynamic analysis of different types of applications, including Windows, macOS, Linux, iOS, and of course Android. You can register for a free account and enable 10 free analyses per month. The sandbox for Android applications can be accessed here: <a href="https://www.joesandbox.com/#android">https://www.joesandbox.com/#android</a>.</p>
+<p class="mce-root"/>
+<p>Only a few simple steps are required to run an application in the sandbox:</p>
+<ol>
+<li>First, choose the file you want to analyze using the <strong>Choose file...</strong> button.</li>
+<li>Adjust the run time; you can run the application in the sandbox from 30 to 500 seconds</li>
+<li>Accept the terms and conditions, and click the <strong>Analyze</strong> button.</li>
+</ol>
+<p>Once the analysis is complete, you will receive an email with a link to the analysis results. In our case, it was <a href="https://www.joesandbox.com/analysis/67297">https://www.joesandbox.com/analysis/67297</a>. </p>
+<p>Let's walk through the HTML report and discuss its most important parts.</p>
+<p>Joe Sandbox has its own detection mechanism based on automated analysis results. In our case, the sample got 72 points out of 100 and is classified as <strong>malicious</strong>:</p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-833 image-border" src="img/dbf2309a-e01f-4775-9546-831da8f9e609.png" style="width:89.00em;height:23.83em;" width="892" height="286"/></p>
+<p>It also uses antivirus engines and VirusTotal to scan the uploaded sample. According to the report, our sample is detected as <strong>ANDROID/Spy.Banker.YD.G</strong><strong>en</strong> by Avira, and is also detected by 51% of antivirus engines on VirusTotal, as shown in the following screenshot:</p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-837 image-border" src="img/34cca771-b32a-416e-bb88-529e0c8195f1.png" style="width:89.50em;height:17.83em;" width="732" height="208"/></p>
+<p>According to the next section, our sample attempted to escalate its privileges, requesting root rights via running a <kbd>su</kbd> command, and then tried to add a new device administrator:</p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-839 image-border" src="img/aa67ca66-b0b9-48be-928b-3900dc65b2ff.png" style="width:89.08em;height:19.92em;" width="877" height="239"/></p>
+<p>Let's look at the Networking section. It seems our sample attempted to download a new APK file, <kbd>new.apk</kbd>, from <kbd>www.poog.co.kr</kbd>, but failed to do so as the file was unavailable:</p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-841 image-border" src="img/c2839e5a-fa85-46c4-9bcc-417152493612.png" style="width:89.67em;height:20.17em;" width="1076" height="242"/></p>
+<p>Another interesting section is E-Banking Fraud. Our sample contains package name strings related to banking; they may be used for the detection of banking applications installed on the device. Also, it is able to add an overlay to other applications, and has permission to list currently running applications:</p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-384 image-border" src="img/d22aa7a5-13c5-4320-b096-6d66a389381c.png" style="width:89.50em;height:28.33em;" width="1074" height="340"/></p>
+<p class="mce-root"/>
+<p>The next section shows that the analyzed application requested permissions to perform phone calls in the background, send SMS, and write to SMS storage. Also, it's able to send SMS using SmsManager and end incoming calls; this is typical for banking Trojans:</p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-385 image-border" src="img/091aec59-9b21-40a3-8df4-df0f5cc8e5ca.png" style="width:44.50em;height:24.25em;" width="1078" height="589"/></p>
+<p>The <strong>System Summary</strong> section shows us a list of potentially dangerous permissions our sample requested:</p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-842 image-border" src="img/90f68fdd-9266-4eda-8450-b340718b2096.png" style="width:45.33em;height:21.08em;" width="847" height="498"/></p>
+<p>Let's look at each of them closely:</p>
+<ul>
+<li><kbd>CALL_PHONE</kbd>: Allows an application to initiate phone calls</li>
+<li><kbd>GET_TASKS</kbd>: Allows an application to collect information about currently running applications</li>
+<li><kbd>INTERNET</kbd>: Allows an application to open network sockets</li>
+<li><kbd>READ_CONTACTS</kbd>: Allows an application to read contacts data</li>
+<li><kbd>READ_PHONE_STATE</kbd>: Allows an application to access phone state in read-only mode, including phone number and cellular network information</li>
+<li><kbd>READ_SMS</kbd>: Allows an application to read SMS</li>
+<li><kbd>RECEIVE_SMS</kbd>: Allows an application to receive SMS</li>
+<li><kbd>SEND_SMS</kbd>: Allows an application to send SMS</li>
+<li><kbd>SYSTEM_ALERT_WINDOW</kbd>: Allows an application to create windows shown on top of all other applications</li>
+<li><kbd>WAKE_LOCK</kbd>: Allows an application to keep the processor from sleeping or the screen from dimming</li>
+<li><kbd>WRITE_CONTACTS</kbd>: Allows an application to write contact data</li>
+<li><kbd>WRITE_EXTERNAL_STORAGE</kbd>: Allows an application to write to external storage, for example, an SD card</li>
+<li><kbd>WRITE_SETTINGS</kbd>: Allows an application to read or write the system settings</li>
+<li><kbd>WRITE_SMS</kbd>: Allows an application to write SMS stored on the phone or its SIM card, or delete them</li>
+</ul>
+<p>We already know that our sample attempted to download an APK file. If we look at the <strong>Persistence and Installation Behavior</strong> section, we see that it is able not only to download applications, but also to install them:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="img/6134b9cd-9fec-457a-a252-d0ff347b4c2b.png" width="944" height="119"/></p>
+<p>To survive reboots, the sample requested permission to execute the code after the phone is rebooted (<kbd>RECEIVE_BOOT_COMPLETED</kbd>), created a new wake lock to have the device stay on, and was able to start a service for autostart purposes:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="img/e73758e9-8e69-4c5c-915e-617faa45ce61.png" width="813" height="292"/></p>
+<p>Let's dive into the <strong>Hooking and other Techniques for Hiding and Protection</strong> section. The sample is able to abort broadcast events; it helps malicious application to hide phone events, such as incoming SMS:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="img/a3c4ec4c-da51-43b5-8fd9-96bec706711e.png" width="615" height="93"/></p>
+<p>Another interesting piece of information here is that our sample requested permission to terminate background processes:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="img/4a710d47-1900-496d-909e-06c495f6aad8.png" style="width:62.50em;height:4.92em;" width="844" height="67"/></p>
+<p class="noshadow">The <strong>Language, Device and Operating System Detection</strong> section shows that the sample collects information about the SIM provider country code, service provider name, mobile country code, mobile network code, WiFi MAC address, voicemail number, operating system version, and unique device IDs, such as <strong>International Mobile Equipment Identity</strong> (<strong>IMEI</strong>), <strong>M</strong><strong>obile Equipment IDentifier</strong> (<strong>MEID</strong>), and <strong>Electronic Serial Number</strong> (<strong>ESN</strong>):</p>
+<p class="CDPAlignCenter CDPAlign"><img src="img/e5fde6bf-7902-4979-9396-ffc343433342.png" style="width:50.75em;height:43.17em;" width="872" height="742"/></p>
+<p class="mce-root"/>
+<p>The following screenshot shows the unique device IDs collected by the sample:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="img/e75da8f1-a373-4402-94a3-5643434470b3.png" style="width:53.33em;height:18.58em;" width="837" height="291"/></p>
+<p>The next section shows that the application monitors outgoing phone calls, is able to create SMS data, and checks whether a SIM card is installed:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="img/cbd61e43-0831-4a63-b56b-7f90fd1bf50b.png" style="width:51.50em;height:14.58em;" width="826" height="234"/></p>
+<p>What is more, it monitors incoming phone calls and reads originating phone numbers, parses SMS (body and originating number), and queries the list of installed applications and packages:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="img/996fa3ea-66cb-47a1-acbd-fa5815b40fa5.png" style="width:54.42em;height:40.67em;" width="988" height="739"/></p>
+<p>Finally, if we look at the <strong>URLs</strong> subsection of the <strong>Antivirus Detection</strong> section, we see that the APK file that our sample attempted to download was detected as malicious by Avira URL Cloud:</p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-387 image-border" src="img/3c6ba1c3-8db3-4960-bfee-f05398b0cb44.png" style="width:89.42em;height:26.08em;" width="1073" height="313"/></p>
+<p>You may have noticed that there are more URLs in the previous screenshot; these are potentially malware command and control servers.</p>
+<p>To sum up, let's gather together the pieces of information we got from the dynamic analysis of our sample with <strong>Joe Sandbox</strong>:</p>
+<ul>
+<li>Based on antivirus detection and the artefacts we have uncovered, the piece of malware we analyzed is a banking Trojan.</li>
+<li>It's able to download additional pieces of malware from <kbd>www.poog.co.kr</kbd>.</li>
+<li>It collects information about banking-related applications.</li>
+<li>It is able to add an overlay to other applications.</li>
+<li>It is able to monitor incoming and outgoing calls, read and write SMS messages, and intercept them.</li>
+<li>It is able to terminate the processes of other applications.</li>
+<li>It's able to collect information about the device it's running on.</li>
+<li>It requests permission to execute the code after the phone is rebooted for persistence.</li>
+<li>It potentially uses <kbd>http://rtrjkrykki.iego.net/appHome/</kbd> or <kbd>http://192.151.226.138:80/appHome/</kbd> as a command and control server.</li>
+</ul>
+<p>The next sections will walk you through the steps required to perform static analysis of Android malicious applications.</p>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Static analysis of malicious Android applications</h1>
+                
+            
+            
+                
+<p>To perform dynamic analysis of the previously identified malicious Android application, we ran it in a controlled environment with the help of Joe Sandbox. In contrast to dynamic analysis, static analysis allows an examiner to understand malware behavior without actually running it. Let's start the static analysis of our malware sample, beginning with unpacking it.</p>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Unpacking Android applications</h1>
+                
+            
+            
+                
+<p>To view the contents of an APK file, you can use any archiver. A good example is 7-Zip, a free and open source archiver, which is available here: <a href="https://www.7-zip.org/download.html">https://www.7-zip.org/download.html</a>.</p>
+<p>To unpack an APK file, right-click on it, choose <strong>7-Zip</strong>, and then <strong>Open archive</strong>:</p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-843 image-border" src="img/c1e0d50c-c566-49bd-be70-b483be267b05.png" style="width:44.33em;height:24.42em;" width="701" height="384"/></p>
+<p>Contents of an APK file</p>
+<p>Now you can browse the contents of the APK file and export its parts for further analysis. In the next section, we will focus on the Android manifest file: <kbd>AndroidManifest.xml</kbd>.</p>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Manifest file decoding and analysis</h1>
+                
+            
+            
+                
+<p>The manifest file describes essential information about an application to the Android build tools, the Android operating system, and Google Play. If you open such a file in a text editor, you will see that most of the data is encoded and can't normally be viewed. </p>
+<p>If we want to analyze its contents, we need to use an Android binary XML decoder. One such decoder is <kbd>axmldec</kbd>, which is available for download here: <a href="https://github.com/ytsutano/axmldec/releases">https://github.com/ytsutano/axmldec/releases</a>.</p>
+<p>To decode the extracted manifest file, run <kbd>axmldec</kbd> from the Command Prompt with the following argument:</p>
+<pre>axmldec.exe -i AndroidManifest.xml -o manifest_decoded.xml</pre>
+<p>The output file can be easily viewed with a text editor of your choice. The file contains lots of useful pieces of information. For example, we can get the package name:</p>
+<pre>&lt;manifest  android:versionCode="1" android:versionName="1.0" package="com.example.horsenjnj"&gt;</pre>
+<p>Also, we can get information about the main activity. It is the first screen to appear when the user launches the application. Each activity can then start another activity in order to perform different actions. In our case, the main activity is <kbd>com.cc.MainActinn</kbd>:</p>
+<pre>&lt;activity android:label="type1/2131034112" android:name="com.cc.MainActinn" android:excludeFromRecents="true"&gt;<br/>     &lt;intent-filter&gt;<br/>         &lt;action android:name="android.intent.action.MAIN"/&gt;<br/>         &lt;category android:name="android.intent.category.LAUNCHER"/&gt;<br/>     &lt;/intent-filter&gt;<br/> &lt;/activity&gt;</pre>
+<p>There is another activity – <kbd>com.cc.WebInterfaceActivity</kbd>:</p>
+<pre>&lt;activity android:theme="type1/16973835" android:name="com.cc.WebInterfaceActivity" android:screenOrientation="1"/&gt;</pre>
+<p>This activity has a number of <strong>broadcast receivers</strong>. Broadcast receivers allow applications to receive <strong>intents</strong> that are broadcast by the system or by other applications. An intent is a message defined by an intent object that describes an action to perform. When an application issues an intent to the system, the system locates an application component that can handle the intent, based on the intent filter declarations in the manifest file.</p>
+<p>Let's start from <kbd>com.cc.MyAdminReceiver</kbd>, which is used for gaining device admin privileges:</p>
+<pre>&lt;receiver android:label="type1/2131034112" android:name="com.cc.MyAdminReceiver" android:permission="android.permission.BIND_DEVICE_ADMIN" android:description="type1/2131034112"&gt;<br/>     &lt;meta-data android:name="android.app.device_admin" android:resource="type1/2130968576"/&gt;<br/>     &lt;intent-filter&gt;<br/>         &lt;action android:name="android.app.action.DEVICE_ADMIN_ENABLED"/&gt;<br/>     &lt;/intent-filter&gt;<br/> &lt;/receiver&gt;</pre>
+<p>The next broadcast receiver is <kbd>com.cc.BootRt</kbd>:</p>
+<pre>&lt;receiver android:name="com.cc.BootRt" android:enabled="true" android:exported="true"&gt;<br/>     &lt;intent-filter android:priority="2147483647"&gt;<br/>         &lt;action android:name="android.intent.action.BOOT_COMPLETED"/&gt;<br/>         &lt;action android:name="android.intent.action.ACTION_SHUTDOWN"/&gt;<br/>         &lt;action android:name="android.intent.action.USER_PRESENT"/&gt;<br/> &lt;/intent-filter&gt;<br/> &lt;/receiver&gt;</pre>
+<p>As you can see, it receives the following information:</p>
+<ul>
+<li>Whether the device finished its booting process</li>
+<li>Whether the device is shutting down</li>
+<li>Whether the user is present after the device wakes up</li>
+</ul>
+<p>Another broadcast receiver is <kbd>com.cc.A123</kbd>:</p>
+<pre>&lt;receiver android:name="com.cc.A123"&gt;<br/>     &lt;intent-filter android:priority="2147483647"&gt;<br/>         &lt;action android:name="android.intent.action.BOOT_COMPLETED"/&gt;<br/>         &lt;action android:name="android.intent.action.PHONE_STATE"/&gt;<br/>         &lt;action android:name="android.intent.action.NEW_OUTGOING_CALL"/&gt;<br/>         &lt;action android:name="android.intent.action.ACTION_POWER_CONNECTED"/&gt;<br/>         &lt;action android:name="android.intent.action.ACTION_POWER_DISCONNECTED"/&gt;<br/>         &lt;action android:name="android.intent.action.TIMEZONE_CHANGED"/&gt;<br/>         &lt;action android:name="android.intent.action.TIME_SET"/&gt;<br/>         &lt;action android:name="android.intent.action.TIME_TICK"/&gt;<br/>         &lt;action android:name="android.intent.action.UID_REMOVED"/&gt;<br/>         &lt;action android:name="android.intent.action.UMS_CONNECTED"/&gt;<br/>         &lt;action android:name="android.intent.action.UMS_DISCONNECTED"/&gt;<br/>         &lt;action android:name="android.intent.action.PACKAGE_ADDED"/&gt;<br/>         &lt;action android:name="android.intent.action.PACKAGE_CHANGED"/&gt;<br/>         &lt;action android:name="android.intent.action.PACKAGE_DATA_CLEARED"/&gt;<br/>         &lt;action android:name="android.intent.action.PACKAGE_FIRST_LAUNCH"/&gt;<br/>         &lt;action android:name="android.intent.action.PACKAGE_FULLY_REMOVED"/&gt;<br/>         &lt;action android:name="android.intent.action.PACKAGE_INSTALL"/&gt;<br/>         &lt;action android:name="android.intent.action.PACKAGE_NEEDS_VERIFICATION"/&gt;<br/>         &lt;action android:name="android.intent.action.PACKAGE_REPLACED"/&gt;<br/>         &lt;action android:name="android.intent.action.PACKAGE_REMOVED"/&gt;<br/>         &lt;action android:name="android.intent.action.PACKAGE_RESTARTED"/&gt;<br/>         &lt;action android:name="android.intent.action.MY_PACKAGE_REPLACED"/&gt;<br/>         &lt;action android:name="android.intent.action.MEDIA_UNMOUNTED"/&gt;<br/>         &lt;action android:name="android.intent.action.MEDIA_UNMOUNTABLE"/&gt;<br/>         &lt;action android:name="android.intent.action.PACKAGE_REMOVED"/&gt;<br/>         &lt;action android:name="android.intent.action.MANAGE_PACKAGE_STORAGE"/&gt;<br/>         &lt;action android:name="android.intent.action.MEDIA_BAD_REMOVAL"/&gt;<br/>         &lt;action android:name="android.intent.action.MEDIA_BUTTON"/&gt;<br/>         &lt;action android:name="android.intent.action.MEDIA_CHECKING"/&gt;<br/>         &lt;action android:name="android.intent.action.MEDIA_EJECT"/&gt;<br/>         &lt;action android:name="android.intent.action.MEDIA_MOUNTED"/&gt;<br/>         &lt;action android:name="android.intent.action.MEDIA_NOFS"/&gt;<br/>         &lt;action android:name="android.intent.action.MEDIA_REMOVED"/&gt;<br/>         &lt;action android:name="android.intent.action.MEDIA_SCANNER_FINISHED"/&gt;<br/>         &lt;action android:name="android.intent.action.MEDIA_SCANNER_SCAN_FILE"/&gt;<br/>         &lt;action android:name="android.intent.action.MEDIA_SCANNER_STARTED"/&gt;<br/>         &lt;action android:name="android.intent.action.MEDIA_SHARED"/&gt;<br/>         &lt;action android:name="android.intent.action.LOCALE_CHANGED"/&gt;<br/>         &lt;action android:name="android.intent.action.INPUT_METHOD_CHANGED"/&gt;<br/>         &lt;action android:name="android.intent.action.HEADSET_PLUG"/&gt;<br/>         &lt;action android:name="android.intent.action.GTALK_DISCONNECTED"/&gt;<br/>         &lt;action android:name="android.intent.action.GTALK_CONNECTED"/&gt;<br/>         &lt;action android:name="android.intent.action.EXTERNAL_APPLICATIONS_UNAVAILABLE"/&gt;<br/>         &lt;action android:name="android.intent.action.EXTERNAL_APPLICATIONS_AVAILABLE"/&gt;<br/>         &lt;action android:name="android.intent.action.DOCK_EVENT"/&gt;<br/>         &lt;action android:name="android.intent.action.DEVICE_STORAGE_OK"/&gt;<br/>         &lt;action android:name="android.intent.action.DEVICE_STORAGE_LOW"/&gt;<br/>         &lt;action android:name="android.intent.action.DATE_CHANGED"/&gt;<br/>         &lt;action android:name="android.intent.action.CLOSE_SYSTEM_DIALOGS"/&gt;<br/>         &lt;action android:name="android.intent.action.CAMERA_BUTTON"/&gt;<br/>         &lt;action android:name="android.intent.action.BATTERY_OKAY"/&gt;<br/>         &lt;action android:name="android.intent.action.BATTERY_LOW"/&gt;<br/>         &lt;action android:name="android.intent.action.BATTERY_CHANGED"/&gt;<br/>         &lt;action android:name="android.intent.action.AIRPLANE_MODE"/&gt;<br/>         &lt;action android:name="android.intent.action.PROVIDER_CHANGED"/&gt;<br/>         &lt;action android:name="android.intent.action.ACTION_SHUTDOWN"/&gt;<br/>         &lt;action android:name="android.intent.action.USER_PRESENT"/&gt;<br/>         &lt;action android:name="android.intent.action.WALLPAPER_CHANGED"/&gt;<br/>         &lt;action android:name="android.net.wifi.WIFI_STATE_CHANGED"/&gt;<br/>         &lt;action android:name="com.noshufou.android.su.REQUEST"/&gt;<br/>         &lt;action android:name="android.net.conn.CONNECTIVITY_CHANGE"/&gt;<br/>         &lt;action android:name="android.provider.Telephony.SMS_RECEIVED"/&gt;<br/>         &lt;category android:name="android.intent.category.HOME"/&gt;<br/>     &lt;/intent-filter&gt;<br/> &lt;/receiver&gt;</pre>
+<p>It receives the following information/performs the following actions:</p>
+<ul>
+<li>If the device finished its booting process the phone state</li>
+<li>If it starts a new outgoing call</li>
+<li>If it's connected to a power source</li>
+<li>If it's disconnected from a power source</li>
+<li>If the timezone changed</li>
+<li>If the time was set</li>
+<li>If the time has changed</li>
+<li>If a user ID has been removed</li>
+<li>If the device has entered USB Mass Storage mode</li>
+<li>If the device has exited USB Mass Storage mode</li>
+<li>If a new application package has been installed</li>
+<li>If an existing application package has been changed</li>
+<li>If the user has cleared the data of a package</li>
+<li>If an application is first launched</li>
+<li>If an application has been completely removed from the device</li>
+<li>If an application has been downloaded and installed</li>
+<li>If a package needs to be verified</li>
+<li>If a new version of an application package has been installed</li>
+<li>If an application has been fully or only partially uninstalled</li>
+<li>If the user has restarted a package</li>
+<li>If a new version of a current application has been installed over an existing one</li>
+<li>If external media is present but cannot be mounted</li>
+<li>If package management should be started due to a low-memory condition</li>
+<li>If external media was removed from a SD card slot, but the mount point was not unmounted</li>
+<li>If the <strong>Media Button</strong> was pressed</li>
+<li>If external media is present and being disk checked</li>
+<li>If the user has expressed the desire to remove the external storage media</li>
+<li>If external media is present and mounted</li>
+<li>If external media is present, but is using an incompatible filesystem or is blank</li>
+<li>If external media has been removed</li>
+<li>If the media scanner has finished scanning a directory</li>
+<li>Requests the media scanner scans a file and adds it to the media database</li>
+<li>If the media scanner has started scanning a directory</li>
+<li>If external media is unmounted because it is being shared via USB Mass Storage</li>
+<li>If the current device's locale has changed</li>
+<li>If an input method has been changed</li>
+<li>If a wired headset has been plugged in or unplugged</li>
+<li>If a GTalk connection has been disconnected</li>
+<li>If a GTalk connection has been established</li>
+<li>If the resources for a set of packages are currently unavailable since the media on which they exist is unavailable</li>
+<li>If the resources for a set of packages are currently available</li>
+<li>If there are changes in the physical docking state of the device</li>
+<li>If a low storage space condition on the device no longer exists</li>
+<li>If there is a low storage space condition on the device</li>
+<li>If the date has changed</li>
+<li>If a user action should request a temporary system dialog to dismiss</li>
+<li>If the Camera Button was pressed</li>
+<li>If the battery is now okay after being low</li>
+<li>If the device has been in a low battery condition</li>
+<li>Charging state, level, and other information about the battery</li>
+<li>If the user has switched the phone into or out of Airplane Mode</li>
+<li>If a provider's data has changed, for example, the number of unread emails changes</li>
+<li>If the device is shutting down</li>
+<li>If the user is present after the device wakes up</li>
+<li>If the current system wallpaper has changed</li>
+<li>If Wi-Fi is enabled, disabled, enabling, disabling, or unknown</li>
+<li>Calls the <kbd>su</kbd> binary to get root access</li>
+<li>If a change in network connectivity has occurred</li>
+<li>If a new text-based SMS message has been received by the device</li>
+</ul>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p>Also, we have information about three services in our malicious application's manifest file, <kbd>com.cc.service.Int</kbd>, <kbd>com.cc.service.Ir</kbd>, and <kbd>com.cc.service.Hearttttt</kbd>:</p>
+<pre>&lt;service android:name="com.cc.service.Int" android:persistent="true" android:enabled="true"&gt;<br/>     &lt;intent-filter&gt;<br/>         &lt;action android:name="android.intent.action.BOOT_COMPLETED"/&gt;<br/>     &lt;/intent-filter&gt;<br/> &lt;/service&gt;<br/> &lt;service android:name="com.cc.service.Ir" android:persistent="true" android:enabled="true"&gt;<br/>     &lt;intent-filter&gt;<br/>         &lt;action android:name="android.intent.action.BOOT_COMPLETED"/&gt;<br/>     &lt;/intent-filter&gt;<br/> &lt;/service&gt;<br/> &lt;service android:name="com.cc.service.Hearttttt" android:persistent="true" android:enabled="true"&gt;<br/>     &lt;intent-filter&gt;<br/>         &lt;action android:name="android.intent.action.BOOT_COMPLETED"/&gt;<br/>     &lt;/intent-filter&gt;<br/> &lt;/service&gt;</pre>
+<p>Unlike activities, services do not have a visual user interface. If you look at their intent filters, you will notice that each service receives a broadcast once the device finishes its booting process, so it can be started automatically in the background.</p>
+<p>The last section of the manifest file contains the permissions the application uses:</p>
+<pre>&lt;uses-permission android:name="android.permission.VIBRATE"/&gt;<br/> &lt;uses-permission android:name="android.permission.READ_SMS"/&gt;<br/> &lt;uses-permission android:name="android.permission.WRITE_SMS"/&gt;<br/> &lt;uses-permission android:name="android.permission.RECEIVE_SMS"/&gt;<br/> &lt;uses-permission android:name="android.permission.SEND_SMS"/&gt;<br/> &lt;uses-permission android:name="android.permission.READ_CONTACTS"/&gt;<br/> &lt;uses-permission android:name="android.permission.WRITE_CONTACTS"/&gt;<br/> &lt;uses-permission android:name="android.permission.WRITE_SETTINGS"/&gt;<br/> &lt;uses-permission android:name="android.permission.READ_PHONE_STATE"/&gt;<br/> &lt;uses-permission android:name="android.permission.CALL_PHONE"/&gt;<br/> &lt;uses-permission android:name="android.permission.READ_CALL_LOG"/&gt;<br/> &lt;uses-permission android:name="android.permission.WRITE_CALL_LOG"/&gt;<br/> &lt;uses-permission android:name="android.permission.INTERNET"/&gt;<br/> &lt;uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/&gt;<br/> &lt;uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/&gt;<br/> &lt;uses-permission android:name="android.permission.READ_PHONE_STATE"/&gt;<br/> &lt;uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/&gt;<br/> &lt;uses-permission android:name="android.permission.UPDATE_APP_OPS_STATS"/&gt;<br/> &lt;uses-permission android:name="android.permission.GET_TASKS"/&gt;<br/> &lt;uses-permission android:name="android.permission.VIBRATE"/&gt;<br/> &lt;uses-permission android:name="android.permission.KILL_BACKGROUND_PROCESSES"/&gt;<br/> &lt;uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/&gt;<br/> &lt;uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/&gt;<br/> &lt;uses-permission android:name="android.permission.WAKE_LOCK"/&gt;</pre>
+<p>We have already discussed permissions in the dynamic analysis section, so we won't cover them here again. Let's dive even deeper and start working on code decompilation.</p>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Android application decompilation</h1>
+                
+            
+            
+                
+<p>For this step, we will need another file from the APK file: <kbd>classes.dex</kbd>. To convert <kbd>.dex</kbd> (Dalvik Executable) to <kbd>.class</kbd> files in a <kbd>.jar</kbd> container, we need to perform decompilation. We can use <kbd>dex2jar</kbd> to solve this task, which is available here: <a href="https://github.com/pxb1988/dex2jar">https://github.com/pxb1988/dex2jar</a>.</p>
+<p>To decompile <kbd>classes.dex</kbd>, run <kbd>d2j-dex2jar.bat</kbd> from the Command Prompt with the following argument:</p>
+<pre><strong>d2j-dex2jar.bat classes.dex -o classes.jar</strong></pre>
+<p>This is it. Now, we have a <kbd>classes.jar</kbd> file that contains all of the Java classes from <kbd>classes.dex</kbd>. We will view and analyze this <kbd>.jar</kbd> file in the following section.</p>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Viewing and analyzing decompiled code</h1>
+                
+            
+            
+                
+<p>Now we can view and analyze the data we unpacked and decompiled in the previous steps. We can use JD-GUI to do this. JD-GUI is a free utility that is able to display the Java source codes of <kbd>.class</kbd> files. You can download this tool here: <a href="http://jd.benow.ca/">http://jd.benow.ca/</a>.</p>
+<p>Here are the contents of <kbd>classes.jar</kbd> displayed by JD-GUI:</p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-844 image-border" src="img/504e6253-9391-429b-87f0-6129b4f22693.png" style="width:20.58em;height:46.08em;" width="247" height="553"/></p>
+<p>The contents of classes.jar</p>
+<p>We already know a lot about our banking Trojan; let's try to learn something new from code analysis. We identified two suspicious URLs as the result of dynamic analysis, <kbd>rtrjkrykki.iego.net/appHome/</kbd> and <kbd>192.151.226.138:80/appHome/</kbd>. Most likely this is the same server, so let's try to find at least one of the URLs in the code using JD-GUI:</p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-845 image-border" src="img/ed826477-6013-4b1e-b39f-2707e9306fc8.png" style="width:35.42em;height:26.67em;" width="425" height="320"/></p>
+<p>Searching for URL with JD-GUI</p>
+<p>Okay, now we know that the URL is found in <kbd>ConstantDatas.class</kbd>. Let's look inside:</p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-846 image-border" src="img/8a3c4026-7f41-4089-b19f-e8eccb3cc532.png" style="width:27.58em;height:6.42em;" width="357" height="81"/></p>
+<p>A part of the ConstantDatas.class contents</p>
+<p>If we search for <kbd>BANKURL</kbd>, we will find that it's used in <kbd>MainActinn.class</kbd>:</p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-848 image-border" src="img/e572e059-3d73-479e-a273-32b876ea4ee2.png" style="width:65.83em;height:32.08em;" width="790" height="385"/></p>
+<p>A part of the MainActinn.class contents</p>
+<p> </p>
+<p>Look at the following line: <kbd>"ConstantDatas.URL = ConstantDatas.BANKURL;"</kbd>. Let's search for <kbd>ConstantDatas.URL</kbd> now. We'll find a good hit in <kbd>Hearttttt.class</kbd>:</p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-849 image-border" src="img/405dcae8-8b94-4553-be09-828ff7329e88.png" style="width:88.25em;height:17.75em;" width="1059" height="213"/></p>
+<p>A part of the Hearttttt.class contents</p>
+<p>Here, you can see that the application collects information about the device it's installed on and its operating system, installed banking applications, mobile country code and mobile network code, unique subscriber ID, and so on, and posts this data in JSON format to <kbd>192.151.226.138:80/appHome/servlet/OnLine</kbd>.</p>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p>As you can see, you can get a lot of additional information from static code analysis; sometimes it's relatively easy, sometimes it's not, as a malware sample can be highly obfuscated. </p>
+<p>To analyze code with a higher rate of success, we highly recommend you start learning Android programming. Refer to the books provided in the <em>Further reading</em> section.</p>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Summary</h1>
+                
+            
+            
+                
+<p>This chapter introduced you to dynamic and static analysis of malicious Android applications. You've learned how to use an online sandbox to perform dynamic analysis, unpack an Android application, analyze its manifest file, and decompile its code. Finally, you've been introduced to the concepts of decompiled code analysis.</p>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Further reading</h1>
+                
+            
+            
+                
+<p>Please refer to the following references:</p>
+<ul>
+<li><em>Documentation for app developers</em>: <a href="https://developer.android.com/docs/">https://developer.android.com/docs/</a><a href="https://developer.android.com/docs/"/></li>
+<li><em>John Horton, Android Programming for Beginners - Second Edition</em>: <a href="https://www.packtpub.com/application-development/android-programming-beginners-second-edition">https://www.packtpub.com/application-development/android-programming-beginners-second-edition</a></li>
+</ul>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  </body></html>

@@ -1,0 +1,556 @@
+<html><head></head><body>
+		<div><h1 id="_idParaDest-410" class="chapter-number"><a id="_idTextAnchor1503"/><a id="_idTextAnchor1504"/><a id="_idTextAnchor1505"/><a id="_idTextAnchor1506"/>13</h1>
+			<h1 id="_idParaDest-411"><a id="_idTextAnchor1507"/>Analyzing Android Malware Samples</h1>
+			<p>With the rise of mobile devices, the name Android has become well-known to most people, even to those far from the IT world. It was originally developed by Android Inc. and later acquired by Google in 2005. The Android name is derived from the nickname of the founder of the company, Andy Rubin. This open source operating system is based on a modified version of the Linux kernel and there are several variants of it, such as Wear OS for wearable devices, and Android TV, which can be found on multiple smart TVs.</p>
+			<p>As mobile devices store and can provide access to more and more sensitive information, it’s no surprise that mobile platforms are increasingly becoming targets for attackers who are exploring ways to leverage their power for malicious purposes. In this chapter, we are going to dive into the internals of the most popular mobile operating system in the world, explore existing and potential attack vectors, and provide detailed guidelines on how to analyze malware targeting Android users.</p>
+			<p>To facilitate learning, this chapter is divided into the following main sections: </p>
+			<ul>
+				<li>(Ab)using the Android internals</li>
+				<li>Understanding Dalvik and ART</li>
+				<li>File formats and APIs</li>
+				<li>Malware behavior patterns</li>
+				<li>Static and dynamic analysis of threats</li>
+			</ul>
+			<p>Let’s get started!</p>
+			<h1 id="_idParaDest-412"><a id="_idTextAnchor1508"/><a id="_idTextAnchor1509"/><a id="_idTextAnchor1510"/>(Ab)using the Android internals</h1>
+			<p>Before analyzing<a id="_idIndexMarker2113"/> the actual malware, let’s become familiar with the system itself first and understand the principles it is based on. This knowledge is vital when performing analysis, as it allows the engineer to better understand the logic behind malicious code and not miss<a id="_idTextAnchor1511"/> any important part of its functionality.<a id="_idTextAnchor1512"/></p>
+			<h2 id="_idParaDest-413"><a id="_idTextAnchor1513"/>The file hierarchy</h2>
+			<p>As Android <a id="_idIndexMarker2114"/>is based on the modified Linux kernel, its file structure resembles the one that can be found in various Linux distributions. The file hierarchy is a single tree, with the top of it called the root directory or root (generally specified with the <code>/</code> symbol), and multiple standard Linux directories, such as <code>/proc</code>, <code>/sbin</code>, and others. The Android kernel is shipped with multiple supported filesystems; the exact selection varies depending on the version of the OS and the device’s manufacturer. It has used EXT4 as the default main filesystem since Android 2.3, but prior to that, YAFFS was used. External storage and SD cards are usually formatted using FAT32 to maintain compatibility with Windows.</p>
+			<p>In terms of the specifics of the directory structure, the official Android documentation defines the following data storage options:</p>
+			<ul>
+				<li><code>/data/data/</code> directory and its symlink, the <code>/data/user/0</code> directory.</li>
+			</ul>
+			<p>Its main purpose is to securely store files privately from apps. What this means is that no other apps, or even the user, have direct access to them. Each app gets its own folder, and if the user uninstalls the application, all its content will be deleted. Thus, the usual applications don’t store anything that should persist independently of them here (for example, photos taken by a user with an app’s help). Later, we will see what the corresponding behavior of malicious apps i<a id="_idTextAnchor1514"/>s.</p>
+			<ul>
+				<li><code>/storage/emulated/0</code> path. In this case, <code>/storage/self/primary</code> is a main symlink to it, which, in turn, has <code>/sdcard</code> and <code>/mnt/sdcard</code> symlinks pointing to it. <code>/mnt/user/0/primary</code> is another common symlink pointing to <code>/storage/emulated/0</code>. This space is shared across all apps and is world-readable, including for the end user. This is where users see well-known folders such as <code>Downloads</code> or <code>DCIM</code>. For the apps themselves, its presence is not actually guaranteed, so its availability should be checked each time that it is accessed. In addition, apps have the option to have their own app-specific directory (in case they need more space), which will be deleted with the app once it is<a id="_idIndexMarker2116"/> uninstalled. The main location for this data on modern forms of Android is <code>/storage/emulated/0/Android/data/&lt;app_name&gt;</code>. Again, this location is world-accessible.</li>
+			</ul>
+			<p>In addition, the documentation describes shared preferences and databases, which are outside the scope <a id="_idIndexMarker2117"/>of this book.</p>
+			<p>There may be a considerable level of confusion here in terms of naming, as many file-manager apps call the external file storage internal when they want to distinguish it from SD cards (which are treated by the OS in pretty much the same way as the embedded phone’s external storage). The truth is, unless the device is rooted, the internal storage can’t be accessed and therefore won’t be visible to a normal user:</p>
+			<div><div><img src="img/Figure_13.1_B18500.jpg" alt="Figure 13.1 – The file manager referring to external storage as internal&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 13.1 – The file manager referring to external storage as inter<a id="_idTextAnchor1515"/>nal</p>
+			<p>Apart from this, here<a id="_idIndexMarker2118"/> are some of the other important file paths unique to Android:</p>
+			<ul>
+				<li><code>/data/app</code> and its modern symlink, <code>/factory</code>: Contains APK and ODEX files for installed apps.</li>
+				<li><code>/data/dalvik-cache</code>: The optimized bytecode for installed apps.</li>
+				<li><code>/system</code>: This is the location of the operating system itself. It contains directories that are normally found in the root directory.</li>
+				<li><code>/vendor</code>: A symbolic link to <code>/system/vendor</code>. This path contains vendor-specific files.</li>
+				<li><code>/system/app/</code>: Contains pre-installed Android system apps, for example, to interact with the camera or messages.</li>
+				<li><code>/data/local/tmp/</code>: A directory where temporary files can be stored.</li>
+			</ul>
+			<div><div><img src="img/Figure_13.2_B18500.jpg" alt="Figure 13.2 – Android’s root directory&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 13.2 – Android’s root direct<a id="_idTextAnchor1516"/>ory</p>
+			<p>Later, we will <a id="_idIndexMarker2119"/>see which paths malware generally uses during the deploym<a id="_idTextAnchor1517"/>ent.</p>
+			<h2 id="_idParaDest-414"><a id="_idTextAnchor1518"/>The Android security model</h2>
+			<p>There are multiple <a id="_idIndexMarker2120"/>mechanisms implemented in Android in order to complicate the lives of attackers. The system has evolved gradually over time and the latest versions differ quite significantly from the earlier editions in terms of security. In addition, modern An<a id="_idTextAnchor1519"/>droid systems are based on the newer Linux kernel 4.x+ starting from version 7.0. Let’s talk about some of the most important aspects of <a id="_idTextAnchor1520"/>them.</p>
+			<h3>Process management</h3>
+			<p>Android <a id="_idIndexMarker2121"/>implements <strong class="bold">Mandatory Access Control</strong> (<strong class="bold">MAC</strong>) over<a id="_idIndexMarker2122"/> all processes and uses<a id="_idIndexMarker2123"/> the <strong class="bold">Security-Enhanced Linux</strong> (<strong class="bold">SELinux</strong>) model to enforce it. SELinux is based on the deny-by-default principle, where everything that is not explicitly allowed is forbidden. Its implementation has evolved over different versions of Android; the enforcing mode was enabled in Android 5.0.</p>
+			<p>On Android, each app runs as an individual process and its own user is created. This is how process sandboxing is implemented: to ensure that no process can access the data of another one. An example of the generated username in this case is <code>u2_a84</code>, where <code>2</code> is the actual user ID, with the offset <code>100000</code> (the actual value will be <code>100002</code>), and <code>84</code> is the app ID, with the offset <code>10000</code> (which means the value itself is <code>10084</code>). The mappings between apps and their corresponding user IDs can be found in the <code>/data/system/packages.xml</code> file (see the <code>userId</code> XML attribute), as well as in the matching, more concise <code>packages.li<a id="_idTextAnchor1521"/>st</code> file.</p>
+			<p>In addition to actual users, Android has many system accounts with predefined IDs. Apart from <code>AID_ROOT</code> (0), which is used to run some native daemons, here are some other examples:</p>
+			<ul>
+				<li><code>AID_SYSTEM</code> (1000): This is a regular user account with special permissions to interact with system services.</li>
+				<li><code>AID_VPN</code> (1016): This is associated<a id="_idIndexMarker2124"/> with the <strong class="bold">Virtual Private Network</strong> (<strong class="bold">VPN</strong>) system.</li>
+				<li><code>AID_SHELL</code> (2000): This is the account the user gets when they use the <code>adb</code> tool with the <code>shell</code> argument.</li>
+				<li><code>AID_INET</code> (3003): This can create <code>AF_INET</code> or <code>AF_INET6</code> sockets.</li>
+			</ul>
+			<p>A full, up-to-date list of these can be found in the <code>android_filesystem_config.h</code> file in the Android source code, which is easily accessible online.</p>
+			<p>In order to <a id="_idIndexMarker2125"/>support <strong class="bold">Inter-Process Communication</strong> (<strong class="bold">IPC</strong>), a dedicated <strong class="bold">Binder</strong> mechanism<a id="_idIndexMarker2126"/> has been introduced. It provides a remote method invocation functionality<a id="_idTextAnchor1522"/>, where all<a id="_idIndexMarker2127"/> the communication between client and server apps passes through a dedicated device driver. Later, we will discuss how a single vulnerability in it allows attackers to elevate privileges in order to root the correspond<a id="_idTextAnchor1523"/>ing devices.</p>
+			<h3>The filesystem</h3>
+			<p>As we now<a id="_idIndexMarker2128"/> know, all generic user data and shared app data is stored in <code>/storage/emulated/0</code>. It is available for read and write access but setting executable permissions for files located there is not allowed. The idea here is that the user won’t be able to simply write to a disk and then execute a custom binary directly, even by mistake or as the result of a social engineering attack.</p>
+			<p>By contrast, each installed app has full access to its own directory in <code>/data/data</code>, but not to the directories of other apps unless they explicitly allow it. This is done so that one app won’t<a id="_idIndexMarker2129"/> be able to affect the work of another one or get access to s<a id="_idTextAnchor1524"/><a id="_idTextAnchor1525"/><a id="_idTextAnchor1526"/>ensitive data.</p>
+			<h3>App permissions</h3>
+			<p>The main purpose<a id="_idIndexMarker2130"/> of app permissions is to protect user privacy by giving them control over what data and system functionalities can be accessed by each application. By default, no app can affect the work of another app, unless it is explicitly allowed to do so; the same applies to accessing sensitive user data. Depending on the version of Android and the settings, some permissions may be granted automatically, while others will require manual user approval.</p>
+			<p>The default behavior when requesting user consent depends on the Android version and the SDK version used to build the app. For Android 6.0+ and SDK version &gt;= 23, the user is not notified about it at installation time. Instead, the app has to ask permission at runtime using a standard system dialog window. For older Android and SDK versions, all permissions were requested at installation time. The user is presented with groups of permissions rather than individual entries; otherwise, it might be overwhelming to go through all of them.</p>
+			<p>Each app has to announce what permissions it requires in its embedded <code>manifest</code> file. For this purpose, dedicated <code>&lt;uses-permission&gt;</code> tags can be used. Permissions are split into three protection levels:</p>
+			<ul>
+				<li><code>ACCESS_NETWORK_STATE</code></li><li><code>BLUETOOTH</code></li><li><code>NFC</code></li><li><code>VIBRATE</code></li></ul></li>
+				<li><code>BIND_AUTOFILL_SERVICE</code></li><li><code>BIND_VPN_SERVICE</code></li><li><code><a id="_idTextAnchor1527"/>WRITE_VOICEMAIL</code></li></ul></li>
+				<li><code>READ_CONTACTS</code></li><li><code>WRITE_CONTACTS</code></li><li><code>GET_ACCOUNTS</code></li></ul></li><li>Location:<ul><li><code>ACCESS_FINE_LOCATION </code></li><li><code>ACCESS_COARSE_LOCATION</code></li></ul></li></ul></li>
+			</ul>
+			<p>An example of<a id="_idIndexMarker2131"/> the permissions requested by a sample in its manifest file can be seen in the following figure:</p>
+			<div><div><img src="img/Figure_13.3_B18500.jpg" alt="Figure 13.3 – An example of the permissions requested by malware in the manifest ﬁle&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 13.3 – An example of the permissions requested by malware in the manifest ﬁle</p>
+			<p>It is worth mentioning that the list of permissions evolved over time, with multiple new permissions being enforced eventually, making the system more secure. The exact API version in which a particular permission was added (or deprecated) can be found in the most recent official Android<a id="_idTextAnchor1528"/> documentation.</p>
+			<p>Apart from this, there are also so-called special permissions that are distinct from normal or dangerous ones. They are particularly important, so an app should ask for user authorization, in addition to declaring them in the manifest file. Examples of such permissions are <code>SYSTEM_ALERT_WINDOW</code> and <code>WRITE_SETTINGS</code>.</p>
+			<p>As different devices may have different hardware features, another manifest tag, <code>&lt;uses-feature&gt;</code>, was introduced. In this case, if the <code>android:required</code> attribute is set to <code>True</code>, then Google Play won’t allow that app to be installed on the device <a id="_idIndexMarker2132"/>wit<a id="_idTextAnchor1529"/>hout the feature being <a id="_idTextAnchor1530"/>supported by it.</p>
+			<h3>Security services</h3>
+			<p>Multiple services<a id="_idIndexMarker2133"/> have been introduced on the Android platform in order to improve the overall security structure:</p>
+			<ul>
+				<li><strong class="bold">Android updates</strong>: As long as vulnerabilities are being identified and fixed, users receive updates to improve reliability and security.</li>
+				<li><strong class="bold">Google Play</strong>: Introduces several security features, such as application security scanning that aims to prevent malicious authors from uploading and promoting malicious software.</li>
+				<li><strong class="bold">Google Play Protect</strong>: A system that runs safety checks on apps downloaded from Google Play and checks the device for potentially malicious apps coming from other sources.</li>
+				<li><strong class="bold">SafetyNet</strong>: Provides several APIs, aiming to give apps that process sensitive data extra security-related information (for example, whether the <a id="_idTextAnchor1531"/>current device is protected against known threats and whether the provi<a id="_idTextAnchor1532"/>ded URL is safe).</li>
+			</ul>
+			<h3>The console</h3>
+			<p>By default, the<a id="_idIndexMarker2134"/> console is not available on the device itself (<code>adb</code> is supposed to be used from another connected device). Thus, in order to get the ability to execute basic commands, users have to install third-party apps such <a id="_idIndexMarker2135"/>as <strong class="bold">Termux</strong> or <strong class="bold">Terminal Emulator</strong>. The<a id="_idIndexMarker2136"/> interface would look as follows on the mobile device:</p>
+			<div><div><img src="img/Figure_13.4_B18500.jpg" alt="Figure 13.4 – Listing the ﬁles in a root directory using the Terminal Emulator app&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 13.4 – Listing the ﬁles in a root directory using the Terminal Emulator app</p>
+			<p>In this case, advanced <a id="_idIndexMarker2137"/>commands can be used only on the rooted device<a id="_idIndexMarker2138"/> with <strong class="bold">BusyBox</strong> or similar sets of tools installed separately.</p>
+			<p>Now, let’s talk about rooti<a id="_idTextAnchor1533"/>ng in greater detail.</p>
+			<h2 id="_idParaDest-415"><a id="_idTextAnchor1534"/>To root or not to root?</h2>
+			<p>Every once in a <a id="_idIndexMarker2139"/>while, users<a id="_idIndexMarker2140"/> may encounter applications that require their device to be rooted. What exactly does this mean and how does this process actually work? In this section, we will explore the security mechanisms implemented within different Android versions and how they can be bypassed.</p>
+			<p>If the user requires some functionality not supported by standard system APIs (for example, removing certain pre-installed applications or carrier applications, overclocking the CPU, or completely replacing the OS), the only option they have – apart from creating a feature request – is to obtain root access through a known vulnerability. As a result, the user gets elevated privileges and full control over the system. The legality of this process varies depending on the country, but generally, it is either unclear (which means it falls into a gray area), acceptable for non-copyright-related activity, or regulated by some dedicated exemptions.</p>
+			<p>Sometimes, the rooting process is used interchangeably with jailbreaking, generally applied to iOS devices. However, these are different procedures in terms of scope. Jailbreaking is the process of bypassing several different types of end-user restrictions; the main ones are listed here:</p>
+			<ul>
+				<li>The ability to modify and replace the operating system (controlled by the locked bootloader technology on iOS)</li>
+				<li>Installing non-official applications (sideloading)</li>
+				<li>Obtaining elevated privileges (what is usually known as rooting)</li>
+			</ul>
+			<p>Unlike iOS, on Android, it is possible to officially enable sideloading, and many devices are shipped with bootloaders unlocked, so only ro<a id="_idTextAnchor1535"/>oting remains an issue.</p>
+			<p>Each time a new rooting-related vulnerability becomes known, the developers are expected to fix it and either release a security patch or make the next version of the OS more secure. Thus, researchers have to come up with a new vulnerability to exploit in order to make rooting possible. Some rooting methods involve using <code>adb</code>, while others can be executed with the help of the usual user interface. Here are some of the most well-known privilege escalation exploits for Android OS:</p>
+			<p class="IMG---Figure"><img src="img/Table_13.1_B18500.png" alt=""/></p>
+			<p>Rooting is accompanied by<a id="_idIndexMarker2141"/> security<a id="_idIndexMarker2142"/> risks for end users, as in this case, they are no longer protected by system-embedded security mechanisms and restrictions. A common way to get root privileges is to place a standard Linux <code>su</code> utility, which can grant the required privileges to custom files, in an accessible location and use it on demand. Malware can check whether this tool is already available on the compromised device and misuse it at its discretion without any extra work being required.</p>
+			<p>Many Android malware families are also bundled with rooting software in order to elevate privileges on their own. There are multiple reasons why root access is beneficial to malware authors; particularly, it allows them to obtain the following:</p>
+			<ul>
+				<li>Access to crucial data</li>
+				<li>Improved persistence capabilities </li>
+				<li>Hiding capabilitie<a id="_idTextAnchor1536"/>s</li>
+			</ul>
+			<p>Examples of these kinds of malware families include:</p>
+			<ul>
+				<li><strong class="bold">Dvmap</strong>: Uses<a id="_idIndexMarker2143"/> root privileges to modify system libraries for persistence and privilege escalation</li>
+				<li><strong class="bold">Zeahache</strong>: Escalates privileges and opens a back door for other modules to enter the compromised system</li>
+				<li><strong class="bold">Guerrilla</strong>: Here, root privileges are required to access a user’s Google Play tokens and credentials and gain the ability to interact with the store directly, installing and promoting other apps</li>
+				<li><strong class="bold">Ztorg</strong>: Escalates privileges, mainly to achieve better stealth and aggressively display ads</li>
+				<li><strong class="bold">CopyCat</strong>: Infects <a id="_idIndexMarker2144"/>Android’s <strong class="bold">Zygote</strong> process (a template for other processes) and loads itself into other processes to access and alter sensitive information</li>
+				<li><strong class="bold">Tordow</strong>: Steals sensitive information such as credentials from browsers</li>
+			</ul>
+			<p>It is worth mentioning that not all malware families implement rooting, as it also increases the probability of being detected by antivirus solutions or damaging the device. In the end, it is up to <a id="_idIndexMarker2145"/>the <a id="_idIndexMarker2146"/>authors whether the advantages associated with it outweigh the r<a id="_idTextAnchor1537"/>isks, all depending on the purpose of malware.</p>
+			<p>As we now have some basic understanding of how Android works, it’s time to dive deeper into its inter<a id="_idTextAnchor1538"/>nals.</p>
+			<h1 id="_idParaDest-416"><a id="_idTextAnchor1539"/>Understanding Dalvik and ART</h1>
+			<p>The Android OS has evolved drastically over the past several years in order to address user and industry feedback, making it more stable, fast, and reliable. In this section, we will explore how the file execution process was implemented and progressed. In addition, we will dig into various original and newer file formats and learn how the Android executables are actually wor<a id="_idTextAnchor1540"/><a id="_idTextAnchor1541"/><a id="_idTextAnchor1542"/>king.</p>
+			<h2 id="_idParaDest-417"><a id="_idTextAnchor1543"/>Dalvik VM (DVM)</h2>
+			<p>The <strong class="bold">Dalvik VM</strong> (<strong class="bold">DVM</strong>) was<a id="_idIndexMarker2147"/> an open source process virtual machine used in Android up to version 4.4 (KitKat). It got its name from the village Dalvík in Iceland. The DVM implemented register-based architecture, which differs from stack-based architecture VMs such as Java VMs. The difference here is that stack-based machines use instructions to load and manipulate data on the stack and generally require more instructions than register machines in order to implement the same high-level code. By contrast, analogous register machine instructions must often define the register values used (which is not the case for stack-based machines, as the order of values on the stack is always known and the operands can be addressed implicitly by the stack pointer), so they tend to be bigger.</p>
+			<p>Usually, Dalvik programs<a id="_idIndexMarker2148"/> are <a id="_idIndexMarker2149"/>written in the <code>dx</code> is used, which<a id="_idIndexMarker2150"/> converts Java class files into the <strong class="bold">Dalvik Executable</strong> (<strong class="bold">DEX</strong>) format. It is worth mentioning that multiple class files can be converted into a single DEX file.</p>
+			<p>Once DEX files are created, they can be combined together with resources and code native to<a id="_idIndexMarker2151"/> the <code>dexopt</code> tool, producing <a id="_idIndexMarker2152"/>the <strong class="bold">Optimized DEX</strong> (<strong class="bold">ODEX</strong>) file, which is interpreted by the DVM.</p>
+			<p>Starting from <a id="_idIndexMarker2153"/>Android 2.2, the <strong class="bold">Just-In-Time</strong> (<strong class="bold">JIT</strong>) compiler was introduced for Dalvik. The way it works is that it continually profiles applications on every run and dynamically compiles the most used blocks of bytecode into native machine code. However, independent benchmark tests have shown that stack-based the Java HotSpot VM was on average two to three times faster than the DVM (with enabled JIT) on the same device, with the Dalvik code not taking up less space eith<a id="_idTextAnchor1544"/>er. In order to improve the overall performance and introduce more features, <strong class="bold">Android Runtime</strong> (<strong class="bold">ART</strong>) <a id="_idTextAnchor1545"/>was created.</p>
+			<h2 id="_idParaDest-418"><a id="_idTextAnchor1546"/>Android runtime (ART)</h2>
+			<p>ART was first<a id="_idIndexMarker2154"/> introduced as an alternative runtime environment in Android 4.4 (KitKat) and completely replaced Dalvik in the subsequent major release of Android 5.<a id="_idTextAnchor1547"/>0 (Lollipop).</p>
+			<p>In order to explore the relationship between Dalvik and ART, let’s take a look at this diagram:</p>
+			<div><div><img src="img/Figure_13.5_B18500.jpg" alt="Figure 13.5 – A diagram depicting the diﬀerences between Dalvik and ART (origin: Wikimedia Commons)&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 13.5 – A diagram depicting the diﬀerences between Dalvik and ART (origin: Wikimedia Commons)</p>
+			<p>As you can see, both Dalvik and ART share the same logic at the beginning, and operate with the same DEX and APK files to maintain backward compatibility. The major differences lie in how the files are actually processed and executed. Instead of interpreting DEX bytecode, ART translates it to machine code instructions in order to achieve better performance results. This way, instead of generating ODEX files at install time, ART compiles apps using the <code>dex2oat</code> tool to generate ELF files (already covered in the previous chapters) that contain native code. Originally, they also contained DEX code, but on modern Android systems, the DEX code is stored in <a id="_idIndexMarker2155"/>dedicated <strong class="bold">VDEX</strong> files rather than<a id="_idIndexMarker2156"/> inside the <strong class="bold">OAT</strong> files. This process is known<a id="_idIndexMarker2157"/> as <strong class="bold">Ahead-Of-Time</strong> (<strong class="bold">AOT</strong>) compilation.</p>
+			<p>Starting from<a id="_idIndexMarker2158"/> Android 7.0 (Nougat), a JIT compiler complements AOT compilation and optimizes the code execution on the fly based on the profiler output. While JIT and AOT use the same compiler, the former is able to incorporate runtime information in order to achieve better results generally, for example, via improved inlining. The following is a diagram depicting the relationship between JIT and AOT:</p>
+			<div><div><img src="img/Figure_13.6_B18500.jpg" alt="Figure 13.6 – The process of compiling and executing ﬁles in ART (origin: source.android.com)&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 13.6 – The process of compiling and executing ﬁles in ART (origin: source.android.com)</p>
+			<p>As you can see, if the <a id="_idIndexMarker2159"/>AOT binary is available (which is not always the case), they are executed straight away, either from the JIT code cache (if it is JIT-compiled) or in the usual way. Otherwise, they are interpreted and optionally compiled by JIT, depending on how it is used throughout the system, in particular, whether it is used by other applications and whether it has a meaningful profile (profile files are recorded and created during the sample execution). The AOT compilation daemon also runs periodically and utilizes this information to (re)compile highly used files.</p>
+			<p>Now, let’s dive deeper into Dalvik’s bytecode instruction set.</p>
+			<h2 id="_idParaDest-419"><a id="_idTextAnchor1548"/>The bytecode set</h2>
+			<p>As we now <a id="_idIndexMarker2160"/>know, Dalvik is a register-based machine, which defines the syntax of bytecode. There are multiple instructions operating with registers in order to access and manipulate data. The total size of any instruction is a multiple of 2 bytes. All instructions are type-agnostic, which means that they don’t differentiate between the values of different data types as long as their sizes are the same.</p>
+			<p>Here are some examples of how they look in the official documentation. We’ll split them into several categories for easier navigation. The explanation of how to interpret the first column can be found after this table:</p>
+			<ul>
+				<li><strong class="bold">Data access and movement</strong>:</li>
+			</ul>
+			<div><div><img src="img/Table_13.2(a)_B18500.jpg" alt=""/>
+				</div>
+			</div>
+			<div><div><img src="img/Table_13.2(b)_B18500.jpg" alt=""/>
+				</div>
+			</div>
+			<ul>
+				<li><strong class="bold">Arithmetic operations</strong>:<div><img src="img/Table_13.3(a)_B18500.jpg" alt=""/></div></li>
+			</ul>
+			<div><div><img src="img/Table_13.3(b)_B18500.jpg" alt=""/>
+				</div>
+			</div>
+			<ul>
+				<li><strong class="bold">Branching and calls</strong>: As all<a id="_idIndexMarker2161"/> instructions are multiples of 2 bytes, all branching instructions operate with words:</li>
+			</ul>
+			<div><div><img src="img/Table_13.4(a)_B18500.jpg" alt=""/>
+				</div>
+			</div>
+			<p class="IMG---Figure"><img src="img/Table_13.4(b)_B18500.png" alt=""/></p>
+			<p>It is worth mentioning that some sets of instructions (for example, for optimized code) can be marked as unused in the official documentation, and it is quite unlikely they will be found in malware aiming to achieve the maximum coverage possible.</p>
+			<p>Now, let’s examine the format notation used in the first column.</p>
+			<p>The first byte is the opcode of the instruction (Dalvik utilizes only one-byte values (00-0xFF) to encode the instructions themselves). In the official documentation, some similar instructions are grouped into one row with the <code>range</code> they belong (“<code>..</code>” is used to define the range) specified in the first column and the mappings for the corresponding instructions provided in the second column.</p>
+			<p>Supported<a id="_idIndexMarker2162"/> instruction formats are described using a special format ID notation in the official documentation. Format IDs mostly consist of three characters – two digits and a letter:</p>
+			<ul>
+				<li>The first digit indicates the number of two-byte code units in the resulting bytecode (see the <em class="italic">Examples</em> column).</li>
+				<li>The second digit specifies the maximum number of registers used (as some instructions support a variable number of them).</li>
+				<li>The final letter indicates the type of any extra data encoded by the format. Here is the official table describing these mnemonics:</li>
+			</ul>
+			<p class="IMG---Figure"><img src="img/Table_13.5_B18500.png" alt=""/></p>
+			<p>Let’s use the first row <a id="_idIndexMarker2163"/>of the first table as an example. Here, a <code>01 12x</code> value describing the <code>move v0, v1</code> instruction encoded using 2 bytes, <code>0110</code>, means the following:</p>
+			<ul>
+				<li><code>01</code> – the byte encoding the actual instruction (<code>0x01</code>).</li>
+				<li><code>12x</code> should be interpreted as three individual values:<ul><li><code>1</code> – the size of the instruction (one word, 2 bytes in total: <code>0x01</code> and <code>0x10</code>)</li><li><code>2</code> – the number of registers (two in total, <code>v0</code> and <code>v1</code>)</li><li><code>x</code> – no extra data used here</li></ul></li>
+			</ul>
+			<p>As for the prefixes for arguments used in the second column of the first table, this is what they mean:</p>
+			<ul>
+				<li>The <code>v</code> symbol is used to mark the arguments that the name registers.</li>
+				<li>The <code>#+</code> prefix specifies arguments indicating a literal value.</li>
+				<li>The <code>+</code> symbol is used for arguments that indicate a relative instruction address offset.</li>
+				<li>The <code>kind@</code> prefix indicates a constant pool kind (string, type, field, and so on).</li>
+			</ul>
+			<p>A separate official document describes all the possible variants of format.</p>
+			<p>Here is an example of how a sequence of Dalvik bytecode looks:</p>
+			<div><div><img src="img/Figure_13.7_B18500.jpg" alt="Figure 13.7 – An example of disassembled Dalvik bytecode&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 13.7 – An example of disassembled Dalvik bytecode</p>
+			<p>Overall, the related Android documentation is very detailed and easily accessible, so in case of doubt, it always makes sense to consult it.</p>
+			<p>Now that we <a id="_idIndexMarker2164"/>know how Android works, it’s time to go one level deeper and understand the main file formats used in its apps.<a id="_idTextAnchor1549"/><a id="_idTextAnchor1550"/></p>
+			<h1 id="_idParaDest-420"><a id="_idTextAnchor1551"/>File formats and APIs</h1>
+			<p>Here are<a id="_idIndexMarker2165"/> the most important file formats associated with applications written for differen<a id="_idTextAnchor1552"/>t versions of Android<a id="_idTextAnchor1553"/>.</p>
+			<h2 id="_idParaDest-421"><a id="_idTextAnchor1554"/>DEX</h2>
+			<p>The DEX<a id="_idIndexMarker2166"/> format <a id="_idIndexMarker2167"/>holds a set of class definitions and associated data. The file layout is as follows:</p>
+			<div><div><img src="img/Table_13.6(a)_B18500.jpg" alt=""/>
+				</div>
+			</div>
+			<p class="IMG---Figure"><img src="img/Table_13.6(b)_B18500.png" alt=""/></p>
+			<p>The rest of the<a id="_idIndexMarker2168"/> fields <a id="_idIndexMarker2169"/>define the sizes and offset of other data blocks:</p>
+			<div><div><img src="img/Figure_13.8_B18500.jpg" alt="Figure 13.8 – A DEX header with the fields described in detail&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 13.8 – A DEX header with the fields described in detail<a id="_idTextAnchor1555"/></p>
+			<p>The header starts with an 8-byte <code>DEX_FILE_MAGIC</code> value that consists of a <code>dex</code> string (<code>\x64\x65\x78</code>) followed by the newline symbol (<code>\x0a</code>), the 3 bytes defining the format version, and finally a zero byte (<code>\x00</code>). This format aims to provide a way to identify DEX<a id="_idTextAnchor1556"/> files and the corresponding layout used, and to prevent basic data corruption.<a id="_idTextAnchor1557"/></p>
+			<h2 id="_idParaDest-422"><a id="_idTextAnchor1558"/>ODEX</h2>
+			<p>Actively used<a id="_idIndexMarker2170"/> before <a id="_idIndexMarker2171"/>the appearance of ART, ODEX files are the result of the optimizations made to DEX on the device in order to improve performance and decrease the result size. ODEX files consist of the already described DEX layout, wrapped with a short ODEX header:</p>
+			<pre class="source-code">
+typedef struct DexOptHeader {
+  u1 magic[8];
+  u4 dexOffset; 
+  u4 dexLength;
+  u4 depsOffset;
+  u4 depsLength;
+  u4 auxOffset;
+  u4 auxLength;
+  u4 flags;
+  u4 padding;
+} DexOptHeader;</pre>
+			<p>The header <code>magic</code> value is the same as for DEX but features a slightly different first 3-byte signature, <code>dey</code> (<code>\x64\x65\x79</code>), rather than <code>dex</code>. This format is defined in the <code>DexFile<a id="_idTextAnchor1559"/>.h</code> source code fil<a id="_idTextAnchor1560"/>e.</p>
+			<h2 id="_idParaDest-423"><a id="_idTextAnchor1561"/>OAT</h2>
+			<p>OAT files aimed <a id="_idIndexMarker2172"/>to replace ODEX in the newer ART environment. To<a id="_idIndexMarker2173"/> begin with, file extensions shouldn’t be trusted when dealing with Android executables. In particular, on recent Android systems, files with the <code>.dex</code>, <code>.odex,</code> and <code>.oat</code> extensions may actually implement the OAT format. It is not very well-documented and varies for different versions of Android, but the most important thing here is that the result data is wrapped in ELF shared objects. Starting from Android Oreo, OAT files don’t store DEX code, leaving it to VDEX files, and are used mainly to store mapping information and the native c<a id="_idTextAnchor1562"/><a id="_idTextAnchor1563"/><a id="_idTextAnchor1564"/>ode.</p>
+			<h2 id="_idParaDest-424"><a id="_idTextAnchor1565"/>VDEX</h2>
+			<p>These files<a id="_idIndexMarker2174"/> were<a id="_idIndexMarker2175"/> introduced in newer versions of Android (starting from Android Oreo) and are created by the <code>dex2oat</code> tool. The idea here is to store DEX code independently, not inside the OAT structure, with some additional metadata to speed up verification. As with OAT, the file format is not documented and changes between different versions of Android. Its description can be found in Android’s <code>vdex_file.h</code> source code file.</p>
+			<p>Apart from this, a new internal ART format<a id="_idIndexMarker2176"/> called <code>cdex</code>. The most up-to-date description can be found in the <code>compact_dex_file.h</code> source cod<a id="_idTextAnchor1566"/><a id="_idTextAnchor1567"/>e file.</p>
+			<h2 id="_idParaDest-425"><a id="_idTextAnchor1568"/>ART</h2>
+			<p>These files<a id="_idIndexMarker2177"/> contain<a id="_idIndexMarker2178"/> internal representations of certain strings and classes listed in the APK for ART and are used to speed up the application start. The common file extension used in this case is <code>.art</code>. As in the previous case, this file format is not documented and changes between different versions of Android. As it is generally not used by malware, we<a id="_idTextAnchor1569"/> won’t go into greater det<a id="_idTextAnchor1570"/>ail here.</p>
+			<h2 id="_idParaDest-426"><a id="_idTextAnchor1571"/>ELF</h2>
+			<p>In addition to<a id="_idIndexMarker2179"/> Android-specific<a id="_idIndexMarker2180"/> file formats, it is also possible to execute general ELF files compiled for the corresponding architecture. Unlike Linux systems, which mostly <a id="_idIndexMarker2181"/>rely on <strong class="bold">glibc</strong>, Android uses its own <strong class="bold">Bionic C</strong> library <a id="_idIndexMarker2182"/>due to licensing issues. At the moment, x86 and ARM (both 32-bit and 64-bit) architectures are supported. Besides this, as has just been mentioned, it is also used to store OAT data blocks for optimized Android executables.</p>
+			<p>The ELF format has already been covered in great detail in <a href="B18500_11.xhtml#_idTextAnchor1188"><em class="italic">Chapter 11</em></a>, <em class="italic">Dissecting Linux and<a id="_idTextAnchor1572"/><a id="_idTextAnchor1573"/><a id="_idTextAnchor1574"/> IoT Malware</em>.</p>
+			<h2 id="_idParaDest-427"><a id="_idTextAnchor1575"/>APK</h2>
+			<p>APK files are<a id="_idIndexMarker2183"/> archive <a id="_idIndexMarker2184"/>files based on the JAR format, which, as we know from <a href="B18500_09.xhtml#_idTextAnchor946"><em class="italic">Chapter 9</em></a><em class="italic">, Reversing Bytecode Languages – .NET, Java, and More</em>, implements the ZIP format. What this means is that APK files can be unpacked using any software supporting ZIP-compressed files.</p>
+			<p>Usually, APK files contain the following files:</p>
+			<ul>
+				<li><code>res</code>: This directory contains various resource files (such as XMLs and pictures).</li>
+				<li><code>META-INF</code>: Stores metadata files associated with the package, mainly the following ones:<ul><li><code>MANIFEST.MF</code>:  A <code>manifest</code> file containing names and SHA1/SHA2 digests of files inside the APK</li><li><code>&lt;name&gt;.RSA</code>: Contains the application’s signature and certificate</li><li><code>&lt;name&gt;.SF</code>: Contains SHA1 or SHA2 digests of the corresponding lines in the <code>MANIFEST.MF</code> and the list of associated resources</li></ul></li>
+				<li><code>AndroidManifest.xml</code>: The main <code>manifest</code> file defining various important app-related values for the system and Google Play. It is stored in human-unreadable format inside the APK. One of the easiest ways to decode it is by using <strong class="bold">apktool</strong> for <a id="_idIndexMarker2185"/>extraction.</li>
+				<li><code>classes.dex</code>: A compiled file containing the app’s DEX bytecode; there can be several of them with numbers added following this format:  <code>classes&lt;num&gt;.dex</code>.</li>
+				<li><code>resources.arsc</code>: This compiled file contains metadata associated with resources used by the app.</li>
+			</ul>
+			<p>At the moment, Android doesn’t perform CA verification for application certificates, so self-signed certificates are allowed. Apart from this, other directories such as assets and files can also be commonly found inside APK files.</p>
+			<p>Regarding <code>AndroidManifest.xml</code>, only the <code>&lt;manifest&gt;</code> and <code>&lt;application&gt;</code> elements are required to be present. Generally, the following data can be specified there:</p>
+			<ul>
+				<li>Basic app information (such as the package name)</li>
+				<li>App components and the corresponding types (activity, service, broadcast receiver, or content provider)</li>
+				<li>Required permissions (see the corresponding section, <em class="italic">The Android security model</em>)</li>
+				<li>Hardware and software features that the app needs</li>
+				<li>Information about the supported Android SDK</li>
+			</ul>
+			<p>Unlike <a id="_idIndexMarker2186"/>programs <a id="_idIndexMarker2187"/>on many other systems, generally speaking, Android apps don’t necessarily have a single entry point, which means there is no main function. The sample’s main activities can be found by looking at the app’s <code>AndroidManifest.xml</code> file and searching for the components with the <code>android.intent.action.MAIN</code> value specified. Also check that if there is a class name mentioned in the <code>android:name</code> attribute of the <code>&lt;application&gt;</code> element (this name should represent a subclass of the <code>Application</code> class), it gets control first. Once found, search for the <code>onCreate</code> methods in these components – here is how they will look in disassembly:</p>
+			<div><div><img src="img/Figure_13.9_B18500.jpg" alt="Figure 13.9 – The onCreate method in the disassembled Android sample&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 13.9 – The onCreate method in the disassembled Android sample</p>
+			<p>Now that we<a id="_idIndexMarker2188"/> have<a id="_idIndexMarker2189"/> become familiar with the most common file formats used in Android, let’s talk about its APIs.</p>
+			<h2 id="_idParaDest-428"><a id="_idTextAnchor1576"/>APIs</h2>
+			<p>Most of the<a id="_idIndexMarker2190"/> code for <a id="_idIndexMarker2191"/>the Android platform is written in Java, so the whole infrastructure is built on it. However, Android implements its own APIs in order to let programs interact with the OS to achieve their goals. While some classes might be quite similar to Java (for example, the <code>System</code> class), there are also a significant number of differences, such as the different meanings of certain properties (or properties that have lost their meaning). In addition, some introduced classes and APIs are new and aim to provide access to the unique features implemented in Android. An example is the <code>DexClassLoader</code> class, which loads classes from JAR and APK files and can be used to execute code that wasn’t part of an application. Here are some other examples of APIs and their classes, with self-explanatory names that can be commonly seen in malware:</p>
+			<ul>
+				<li><code>SmsManager</code><ul><li><code>sendTextMessage</code></li></ul></li>
+				<li><code>ActivityManager</code><ul><li><code>GetRunningServices</code></li><li><code>getRunningAppProcesses</code></li></ul></li>
+				<li><code>PackageManager</code><ul><li><code>GetInstalledApplications</code></li><li><code>getInstalledPackages</code></li></ul></li>
+				<li><code>DevicePolicyManager</code><ul><li><code>LockNow</code></li><li><code>reboot</code></li></ul></li>
+				<li><code>Camera</code><ul><li><code>TakePicture</code></li></ul></li>
+				<li><code>DownloadManager</code><ul><li><code>enqueue</code></li></ul></li>
+				<li><code>DownloadManager.Request</code><ul><li><code>setDestinationUri</code></li></ul></li>
+			</ul>
+			<p>Some functionality <a id="_idIndexMarker2192"/>can<a id="_idIndexMarker2193"/> also be accessed through the use of a combination of the <code>Intent</code> class, with a particular argument describing the requested action, and the <code>Activity</code> class, to actually perform an action, generally using the <code>startActivityForResult</code> method.</p>
+			<p>Regarding the downloading-related functionality, many malware families obviously prefer to avoid using the standard download manager, as it tends to be more visible to the user, and instead implement it using Java classes such as <code>java.net.URL</code> and <code>java.net.URLConnection</code>. And, of course, as we know, some APIs require particular permissions to be requested prior to use. In this case, it should be at least <code>android.permission.INTERNET</code>.</p>
+			<p>Now that we have learned how the files are structured as well as what APIs we need to pay attention to, it is time to focus on particular patterns commonly found in malware as well as<a id="_idTextAnchor1577"/> the<a id="_idIndexMarker2194"/> logic <a id="_idIndexMarker2195"/>behind them.</p>
+			<h1 id="_idParaDest-429"><a id="_idTextAnchor1578"/>Malware behavior patterns</h1>
+			<p>Generally <a id="_idIndexMarker2196"/>speaking, even though malware for mobile devices has its own nuances caused by the different environment and use cases of the targeted systems, many motivation patterns behind attacks stays the same as for PC platforms. In this section, we are going to dive deeper into various examples of mobile malware fu<a id="_idTextAnchor1579"/>nctionality and learn what methods it uses in order to achieve malevolent goals.</p>
+			<p>Now that we know how things are supposed to work, let’s take a look at how malware authors leverage them. Here, we will go through various attack stages common for the vast majority of malware, which will enable us to see these patterns i<a id="_idTextAnchor1580"/>n the analyzed samples and<a id="_idTextAnchor1581"/> understand their purpose.</p>
+			<h2 id="_idParaDest-430"><a id="_idTextAnchor1582"/>Initial access</h2>
+			<p>The most <a id="_idIndexMarker2197"/>common ways malware gets access to devices are the following:</p>
+			<ul>
+				<li>Google Play</li>
+				<li>Third-party markets and sideloading </li>
+				<li>Malicious ads and exploits</li>
+			</ul>
+			<p>In the first two cases, malware authors generally rely on social engineering, tricking users into installing a potentially useful app. There are many techniques used to make this possible, such as the following:</p>
+			<ul>
+				<li><strong class="bold">Similar design</strong>: The app may look similar and have a similar name to some other well-known, legal application.</li>
+				<li><strong class="bold">Fake reviews</strong>: To make the app look authentic and not suspicious.</li>
+				<li><strong class="bold">Anti-detection techniques</strong>: To bypass automatic malware scanners and prolong the hosting.</li>
+				<li><strong class="bold">Malicious update</strong>: The original application uploaded to the store is clean, but its update contains hidden malicious functionality.</li>
+				<li><strong class="bold">Luring description</strong>: Promises free or forbidden content, easy money, and so on.</li>
+			</ul>
+			<p>The app itself may be mostly legitimate but also contain hidden malicious functionality. There are multiple ways the user may come across them – by clicking fraudulent links received via messengers, texts, emails, or left on forums, or encountering it during searches for particular apps due <a id="_idIndexMarker2198"/>to illegal <strong class="bold">Search Engine Optimization</strong> (<strong class="bold">SEO</strong>) techniques.</p>
+			<p>Use of malicious ads involves delivering malicious code through the advertisement network with the help of exploits. An example<a id="_idIndexMarker2199"/> could be <strong class="bold">lbxslt</strong>, an exploit leaked from HackingTeam <a id="_idIndexMarker2200"/>and used by attackers to spread ransomware in 2017. <a id="_idTextAnchor1583"/>In addition, exploits may also be used for high-profile attacks tar<a id="_idTextAnchor1584"/>geting particular individuals.</p>
+			<h2 id="_idParaDest-431"><a id="_idTextAnchor1585"/>Privilege escalation</h2>
+			<p>The next<a id="_idIndexMarker2201"/> stage is to obtain all required permissions. Apart from the rooting options already discussed, it is possible for malware to abuse so-called administrative permissions.</p>
+			<p>Originally designed for enterprise use cases to remotely administrate the mobile devices of employees, they can offer malware powerful capabilities, including the ability to wipe important data. Usually, the easiest way to get permissions is to keep asking the user and don’t stop until they are granted.</p>
+			<p>As long as all the required privileges are obtained, malware generally attempts to deploy its modules somewhere on a device. At this stage, extra modules can be downloaded after contacting the command and control server.</p>
+			<h2 id="_idParaDest-432"><a id="_idTextAnchor1586"/>Persistence</h2>
+			<p>The most <a id="_idIndexMarker2202"/>common places where malware installs itself once it gets executed are the following:</p>
+			<ul>
+				<li><code>/data/data</code>: Standard paths intended to be used for all Android applications. This approach poses a threat to attackers, as it is relatively easy to remediate such threats.</li>
+				<li><code>/system/(app|priv-app|lib|bin|xbin|etc)</code>: These paths require malware to use rooting exploits to get access to them. This makes it harder for the user to identify and delete the threat.</li>
+			</ul>
+			<p>Persistence in this case can be achieved using the standard Android <code>BroadcastReceiver</code> functionality common to all apps using the <code>BOOT_COMPLETED</code> action. The <code>RECEIVE_BOOT_COMPLETED</code> permission is required in this case.</p>
+			<p>While many mass malware families follow similar patterns in order to achieve their goals, there is also a much smaller – but at the same time, often a more highly significant – set of examples implementing advanced techniques in order to achieve more specific goals. An example is APT groups performing high-profile espionage tasks and therefore having much higher requirements in terms of stealth and effectiveness. An example of the relevant malware family patching system <a id="_idIndexMarker2203"/>libraries is <code>libdvm.so</code> and <code>libandroid_runtime.so</code>), injecting its code there. The libraries are supposed to execute a <a id="_idIndexMarker2204"/>standard system executable with system privileges, which is replaced by the attackers to achieve persistence and escalate privileges at the same time.</p>
+			<h2 id="_idParaDest-433"><a id="_idTextAnchor1587"/>Impact</h2>
+			<p>As long as the <a id="_idIndexMarker2205"/>malware completed its installation, it can switch to the main purpose it was created for. The exact implementation will vary drastically depending on that. Here are some of the most common behaviors found in mass malware:</p>
+			<ul>
+				<li><strong class="bold">Premium SMS senders</strong>: Probably the easiest way to make money straight away in mobile malware in certain countries is to send paid SMS messages to premium numbers (including the ones related to in-app purchases) or subscribing to paid services. Each of them will cost a certain amount of money, or an automatic subscription payment will be taken regularly, which eventually leads to draining the victim’s balance. In order to bypass CAPTCHA protection, existing anti-CAPTCHA services may be used.</li>
+				<li><strong class="bold">Clickers</strong>: A more generic group of threats that uses mobile devices to make money in multiple different ways:<ul><li><strong class="bold">Ad clickers</strong>: Simulates clicks on advertising websites without the user’s interaction, eventually draining money from advertising companies.</li><li><strong class="bold">WAP clickers</strong>: This group is similar to SMS senders in the way that it uses another form of mobile payment, this time, by simulating clicks on WAP-billing web pages. The charge will be applied to the victim’s phone balance.</li><li>Clickers that increase traffic to websites for illegal SEO purposes; for example, to promote malicious apps.</li><li>Clickers that leave fake reviews or change ratings of some apps and services.</li><li>Clickers that buy expensive apps on Google Play, for example, using accessibility <a id="_idIndexMarker2206"/>services to emulate user taps or implementing their own clients to interact with the store directly.</li></ul></li>
+				<li><strong class="bold">Adware</strong>: These threats aim to monetize custom advertisements shown to users, often in an excessive and abusive way.</li>
+				<li><strong class="bold">Infostealers</strong>: As mobile devices often contain sensitive information, including saved credentials, photos, and private messages, it is also possible for malware authors to make money from stealing it, for example, by selling it on the underground market or extorting users. Another possible option here is cyber espionage.</li>
+				<li><strong class="bold">Banking trojans</strong>: Sometimes also named infostealers, this malware aims to steal users’ banking information to get access to their bank accounts, or manipulate payments. The most common ways to do this are by displaying fake windows simulating a real banking or popular booking app on top of the real one and letting the user enter their credentials there, or by using accessibility services to make the real app perform illegitimate transactions. Access to SMS messages on a device can be used to bypass the two-factor authentication introduced by some banks.</li>
+				<li><strong class="bold">Ransomware</strong>: As in the PC world, some malware families try to block access to certain files or a whole device to illegally push the users into paying a ransom in order to restore access. Quite often, this behavior is accompanied by statements that the affected user did something wrong (for example, watched illegal content), and demanding them to pay a fine, otherwise, the information will become public.</li>
+				<li><strong class="bold">DDoS</strong>: Multiple infected mobile devices can generate enough traffic to cause significant load for the targeted websites.</li>
+				<li><strong class="bold">Proxy</strong>: Quite rarely used alone, this functionality allows malicious actors to use infected devices as a free proxy to get access to particular resources and increase anonymity. An example of such a<a id="_idIndexMarker2207"/> family is <strong class="bold">Sockbot</strong>.</li>
+				<li><strong class="bold">Cryptocurrency miners</strong>: This group abuses a device’s calculation power in order to mine cryptocurrencies. While the CPU of each device might be not very powerful, a large amount of affected devices when put together can generate significant profit for attackers. For the affected user, it results in increased traffic usage, and the device slows down drastically and excessively heats up, which eventually may cause damage.</li>
+			</ul>
+			<p>Some trojans<a id="_idIndexMarker2208"/> prefer to<a id="_idIndexMarker2209"/> implement <strong class="bold">backdoor</strong> or <strong class="bold">RAT</strong> functionality <a id="_idIndexMarker2210"/>and then deliver customizable modules in order to achieve flexibility in extending malware functionality.</p>
+			<p>It is worth mentioning that not all malware families get their unique names based on the actual functionality. Quite often, a shared name describing its propagati<a id="_idTextAnchor1588"/>on method is used, for <a id="_idIndexMarker2211"/>example, <strong class="bold">Fakeapp</strong>.</p>
+			<p>In terms of propagation, as malware can easily access a victim’s contacts, usually, the spreading mechanism involves sending links or samples to people the user knows via text, messengers, and email.</p>
+			<p>As for getting the actual money, at first, malware authors preferred to get it via premium SMS messages and local payment kiosks. Later, with the rise of cryptocurrencies, alternative options became an obvious choice for malicious authors due to anonymity and an easier setup process, providin<a id="_idTextAnchor1589"/>g users with detail<a id="_idTextAnchor1590"/>ed instructions on how to <a id="_idIndexMarker2212"/>make a payment.</p>
+			<h2 id="_idParaDest-434"><a id="_idTextAnchor1591"/>Collection</h2>
+			<p>Pure keylogging <a id="_idIndexMarker2213"/>without screen capturing is not very common for Android malware. There are several reasons for this, starting with the fact that, in most cases, it is just not needed, and also because of the peculiarities of data input on mobile devices. Sometimes high-profile spying malware implements it in a pretty creative way. For example, it is possible to keep track of screen touches and match them against a pre-defined map of coordinates to deduce the keys pressed.</p>
+			<p>An example of a family<a id="_idIndexMarker2214"/> implementing it is <strong class="bold">BusyGasper</strong>, which is backdoor malware.</p>
+			<h2 id="_idParaDest-435"><a id="_idTextAnchor1592"/>Defence evasion</h2>
+			<p>There are multiple<a id="_idIndexMarker2215"/> anti-analysis techniques that mobile malware can incorporate in order to protect itself, including the following:</p>
+			<ul>
+				<li><strong class="bold">An inaccessible location</strong>: A previously mentioned technique where malware uses rooting exploits to allow it to deploy itself in locations that are not accessible with standard user privileges. Another option is to overwrite existing system apps.</li>
+				<li><strong class="bold">Detecting privilege revocation</strong>: Multiple techniques are used to scare the user when permissions are revoked in an attempt to prevent it.</li>
+				<li><strong class="bold">Detecting antivirus solutions</strong>: In this case, malware keeps looking for files associated with known antivirus products and once detected, may display a nag window asking for its uninstallation. These kinds of messages are shown in a loop and prevent the victim from using the device properly until the requested action is taken.</li>
+				<li><strong class="bold">Emulator and sandbox detection</strong>: Here, the malware checks whether it is being executed on the emulated environment or not. There are multiple ways it can be done: by checking the presence of certain system files or values inside them, such as IMEI and IMSI, build information, various product-related values, as well as the phone numbers used. In this case, malware behaves differently depending on the result to tamper with automatic and manual analysis. Another popular simple technique used to bypass basic sandboxes with an execution time limit is to sleep or perform benign actions for a certain period of time.</li>
+				<li><strong class="bold">Icon hiding</strong>: The idea here is that the user can’t easily uninstall the app using an icon. For example, a transparent image with no visible app name can be used.</li>
+				<li><strong class="bold">Multiple copies</strong>: Malware can install itself in various locations in the hope that some of them will be missed. In addition, infecting the Zygote process allows malware to create multiple copies in the memory.</li>
+				<li><strong class="bold">Code packing or obfuscation</strong>: As many Android programs are written in Java, the same code protection solutio<a id="_idTextAnchor1593"/>ns can also be used here. Multiple commercial options are available on the market at the moment. This topic has already been covered in <a href="B18500_09.xhtml#_idTextAnchor946"><em class="italic">Chapter 9</em></a>, <em class="italic">Reversing Bytecode Languages – .NET, Java, and More</em>.</li>
+			</ul>
+			<p>In previous<a id="_idIndexMarker2216"/> chapters, we covered state-of-the-art malware that aims to get more control over the operating system in order to perform more advanced tasks, such as hiding files and processes from monitoring software and amending data at a lower level. These approaches can be applied to mobile operating systems as well. While still not actively used by malware due to deployment complexity, there are several ope<a id="_idTextAnchor1594"/>n source projects proving that it is possible.</p>
+			<p>One of them is<a id="_idIndexMarker2217"/> the <code>sys_call_table</code>. The final goal here is to hide the presence of a sample at a low level.</p>
+			<p>Now, it’s time to summarize everything we have learned so far and apply it to practice to be able to understan<a id="_idTextAnchor1596"/>d the functionality of Android malware samples.</p>
+			<h1 id="_idParaDest-436"><a id="_idTextAnchor1597"/>Static and dynamic analysis of threats</h1>
+			<p>At this stage, we have enough knowledge to start analyzing actual malware. For static analysis, the process and tools used will be mostly the same for different versions of the Android OS (regardless of whether it is based on the old DVM or new ART technology); the differences will be in the dy<a id="_idTextAnchor1598"/>namic analysis techniques used. Now, it is time to get our hands dirty and become familiar w<a id="_idTextAnchor1599"/>ith the tools that can facilitate this process.</p>
+			<h2 id="_idParaDest-437"><a id="_idTextAnchor1600"/>Static analysis</h2>
+			<p>Generally, static<a id="_idIndexMarker2218"/> analysis of bytecode malware involves either disassembling it and digging into the bytecode instructions or decompiling to the original language and exploring the source code. In many cases, the latter approach is preferable wherever possible, as reading the human-friendly code reduces the time the analysis takes. The former approach is often used when decompiling doesn’t work for whatever reason, such as a lack of up-to-date tools or because of anti-reverse-e<a id="_idTextAnchor1601"/>ngineering techniques implemented in the sample.</p>
+			<p>Here are some of the most commonly us<a id="_idTextAnchor1602"/>ed tools for static analysis of Android malware.</p>
+			<h3>Disassembling and data extraction</h3>
+			<p>These tools <a id="_idIndexMarker2219"/>aim<a id="_idIndexMarker2220"/> to restore Dalvik assembly from the compiled bytecode:</p>
+			<ul>
+				<li><code>.smali</code> file extensions.</li>
+			</ul>
+			<p>There were a handful of changes to the format between version 1 and 2 of SMALI files. To convert existing SMALI files to the new format, you can assemble the old ones with the latest Smali tool, version 1, and then disass<a id="_idTextAnchor1603"/>emble them with the latest Baksmali tool, version 2.</p>
+			<ul>
+				<li><strong class="bold">Apktool</strong>: A wrapper <a id="_idIndexMarker2223"/>around the Smali tool; it provides the functionality to easily <a id="_idIndexMarker2224"/>process <a id="_idIndexMarker2225"/>APK files. Its interface looks as follows:</li>
+			</ul>
+			<div><div><img src="img/Figure_13.10_B18500.jpg" alt="Figure 13.10 – The interface of the Apktool&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 13.10 – The interface of the Apktool</p>
+			<p>Apart from these, there are other online and desktop solutions built on top of these two, providing convenient UIs and extra features, for<a id="_idIndexMarker2226"/> example, <strong class="bold">APK Studio</strong>:</p>
+			<ul>
+				<li><code>aapt dump badging &lt;path_to_apk&gt;</code>, and to parse <code>AndroidManifest.xml</code>, use <code>aapt dump xmltree &lt;path_to_apk&gt; AndroidManifest.xml</code></li>
+				<li><strong class="bold">oat2dex</strong> (part <a id="_idIndexMarker2228"/>of <strong class="bold">SmaliEx</strong>): A very <a id="_idIndexMarker2229"/>useful tool for extracting DEX bytecode from older ELF files, storing it as part of the OAT data so that it can be analyzed as usual.</li>
+				<li><strong class="bold">vdexExtractor</strong>: This tool can<a id="_idIndexMarker2230"/> be used to extract DEX bytecode from VDEX files, as modern OAT files don’t store it anymore.</li>
+				<li><strong class="bold">LIEF</strong>: This cross-platform <a id="_idIndexMarker2231"/>library provides plenty of functionality to parse and modify Android files of various formats.</li>
+				<li><strong class="bold">Androguard</strong>: A versatile<a id="_idIndexMarker2232"/> toolset combining multiple tools to perform various types of operations, including disassembling, parsing, and decoding of various files.</li>
+			</ul>
+			<p>While bytecode assembly can definitely be used for static analysis purposes on its own, many <a id="_idIndexMarker2233"/>engineers <a id="_idIndexMarker2234"/>prefer to work with decompiled code instead to s<a id="_idTextAnchor1604"/><a id="_idTextAnchor1605"/><a id="_idTextAnchor1606"/>ave time. In this case, decompiling tools are extremely useful.</p>
+			<h3>Decompiling</h3>
+			<p>Instead of <a id="_idIndexMarker2235"/>restoring the assembly instructions, this set of tools restores the source code, which is usually a more human-friendly option:</p>
+			<ul>
+				<li><strong class="bold">JADX</strong>: A DEX to Java <a id="_idIndexMarker2236"/>decompiler that provides both a command-line and a GUI tool to obtain something close to the original source code in the Java language. In addition, it provides a basic deobfuscation functionality. Here is how its interface looks:</li>
+			</ul>
+			<div><div><img src="img/Figure_13.11_B18500.jpg" alt="Figure 13.11 – A decompiled Android sample in JADX&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 13.11 – A decompiled Android sample in JADX</p>
+			<ul>
+				<li><strong class="bold">AndroChef</strong>: This commercial<a id="_idIndexMarker2237"/> decompiler supports both Java and Android files and provides a handy GUI to go through the results.</li>
+				<li><strong class="bold">JEB decompiler</strong>: Another <a id="_idIndexMarker2238"/>powerful commercial disassembling and decompiling solution, this supports both Dalvik and machine code.</li>
+				<li><strong class="bold">dex2jar</strong>: While <a id="_idIndexMarker2239"/>not exactly a decompiler, this<a id="_idIndexMarker2240"/> tool allows engineers to convert DEX files to JARs. After that, it becomes possible to use multiple Java decompilers to obtain Java source code, as already discuss<a id="_idTextAnchor1607"/>ed in <a href="B18500_09.xhtml#_idTextAnchor946"><em class="italic">Chapter 9</em></a>, <em class="italic">Reversing Bytecode Languages – .NET, Java, and More</em>.</li>
+				<li><strong class="bold">Ghidra</strong>: In addition<a id="_idIndexMarker2241"/> to native executables, this powerful toolset also supports Android apps by converting them into JARs and can be used to facilitate static analysis for this platform.</li>
+			</ul>
+			<p>Once obtained, the source code can be analyzed<a id="_idTextAnchor1608"/> in any IDE or text editor with syntax highlighting that <a id="_idIndexMarker2242"/>supports it.</p>
+			<p>Now, it is t<a id="_idTextAnchor1609"/>ime to explore the options engineers have to perform dynamic analysis.</p>
+			<h2 id="_idParaDest-438"><a id="_idTextAnchor1610"/>Dynamic analysis</h2>
+			<p>Effective dynamic <a id="_idIndexMarker2243"/>analysis requires either some sort of emulation or remote debugging, as many mobi<a id="_idTextAnchor1611"/>le devices ten<a id="_idTextAnchor1612"/>d to have relatively small native screens and basic input capabilities.</p>
+			<h3>Android Debug Bridge</h3>
+			<p><strong class="bold">Android Debug Bridge</strong> (<strong class="bold">ADB</strong>) is a <a id="_idIndexMarker2244"/>versatile<a id="_idIndexMarker2245"/> command-line tool that lets users interact with mobile devices from the PC, providing a variety of actions. It is a part of Android SDK Platform Tools and consists of three parts:</p>
+			<ul>
+				<li>A client running on the PC, providing an interface to enter commands.</li>
+				<li>A daemon (<strong class="bold">adbd</strong>) executing entered commands on the mobile device. It runs as a background process on all devices.</li>
+				<li>A server running on the PC that manages communication between the client and the daemon.</li>
+			</ul>
+			<p>On the physical devices, ADB can be allowed by enabling the <strong class="bold">USB Debugging</strong> option under <strong class="bold">Developer options</strong> in <strong class="bold">Settings</strong>. On a modern Android OS, this option is hidden by default and can become visible by tapping the <strong class="bold">Build number</strong> option (usually, can be found in <strong class="bold">Settings</strong> | <strong class="bold">About phone</strong>) multiple times and then returning to the previous screen. In addition to real devices, ADB can also recognize and work with an Android emulator without any changes required.</p>
+			<p>In addition to accessing the device via USB, wireless interaction via Wi-Fi is also possible by first issuing the <code>adb tcpip &lt;port&gt;</code> command via USB, disconn<a id="_idTextAnchor1613"/>ecting the device, and using the <code>adb connect &lt;ip_address&gt;:&lt;port&gt;</code> command.</p>
+			<p>Here are some examples of other command-line options available:</p>
+			<ul>
+				<li><code>adb devices</code>: Lists the attached devices.</li>
+			</ul>
+			<div><div><img src="img/Figure_13.12_B18500.jpg" alt="Figure 13.12 – Adb seeing an emulated device&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 13.12 – Adb seeing an emulated device</p>
+			<ul>
+				<li><code>adb kill-server</code>: Resets the adb host</li>
+				<li><code>adb install &lt;path_to_apk&gt;</code>: Sideloads the app using its APK file</li>
+				<li><code>adb pull</code> or <code>adb push</code>: Moves files between the mobile device and the PC</li>
+				<li><code>adb root</code> or <code>adb unroot</code>: Restarts the <code>adbd</code> daemon with or without root permissions (not intended to be used in production builds)</li>
+				<li><code>adb forward</code>: Forwards the specified port from the host to the device:<ul><li>Example: <code>adb forward tcp:1234 tcp:5678</code> – forwards the host’s port <code>1234</code> to the device’s port <code>5678</code> </li></ul></li>
+				<li><code>adb shell [&lt;command&gt;]</code>: Creates a remote interactive shell or runs a command within the shell</li>
+			</ul>
+			<p>Apart from <a id="_idIndexMarker2246"/>traditional Linux<a id="_idIndexMarker2247"/> commands, such as <code>ls</code> or <code>cat</code>, the Android shell supports multiple custom commands. Here are some examples:</p>
+			<ul>
+				<li><code>screencap &lt;filepath&gt;</code>: Takes a screenshot and save the result on the device.</li>
+			</ul>
+			<div><div><img src="img/Figure_13.13_B18500.jpg" alt="Figure 13.13 – Using the screencap command&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 13.13 – Using the screencap command</p>
+			<ul>
+				<li><code>screenrecord &lt;filepath&gt;</code>: Performs screen video recording until <em class="italic">Ctrl + C</em> is pressed.</li>
+				<li><code>monkey &lt;package_name&gt;</code>: Originally designed to perform random activities and this way, stress-test applications, it can also be used to launch desired apps by using the <code>adb shell monkey -p &lt;package_name&gt; 1</code> syntax.</li>
+				<li><code>input keyevent &lt;num&gt;</code>: Initiates the specified key event. Here are a few examples of them and the corresponding numbers:<ul><li><code>3</code> – presses the <code>4</code> – presses the <code>64</code> – opens a browser</li><li><code>207</code> – opens contacts</li></ul></li>
+			</ul>
+			<p>The complete up-to-date list can be found by looking at the <code>KeyEvent</code> class in the official Android documentation.</p>
+			<p class="callout-heading">Important note</p>
+			<p class="callout">To pass arguments requiring quotes as part of the command, you will have to surround the quoted string with a pair of different quotes (either single or double).</p>
+			<p>In<a id="_idIndexMarker2248"/> addition, ADB can be used to<a id="_idIndexMarker2249"/> issue commands to additional modules:</p>
+			<ul>
+				<li><code>adb shell pm list packages</code> – lists the names of all packages. Use the <code>–f</code> option to also get the paths of the corresponding APKs. Third-party apps can be filtered out using the <code>–3</code> argument.</li></ul></li>
+				<li><code>adb shell am start -a android.intent.action.MAIN -n &lt;package_name&gt;/&lt;main_activity&gt;</code> – launches the main activity of an app. The most reliable way to specify the main activity is to provide the full path to it within the package (such as <code>adb shell am start -a android.intent.action.MAIN -n com.google.android.calendar/com.android.calendar.LaunchActivity</code>).</li></ul></li>
+				<li><code>adb shell dpm set-active-admin -user current &lt;component&gt;</code> – sets the<a id="_idTextAnchor1615"/> specified component as an active admin, usually to enforce security polici<a id="_idTextAnchor1616"/>es.</li></ul></li>
+			</ul>
+			<p>All the commands <a id="_idIndexMarker2253"/>can be found in <a id="_idIndexMarker2254"/>the comprehensive official documentation.</p>
+			<h3>Emulators</h3>
+			<p>As with any other <a id="_idIndexMarker2255"/>platform, emulators aim to<a id="_idIndexMarker2256"/> facilitate dynamic analysis by emulating the executed instructions without the need to use real devices. There are several third-party solutions aiming to provide easier access to Android apps and games, for example, BlueStacks. However, for reverse-engineering purposes, solutions that are more focused on giving developers the ability to create and debug apps generally provide better options. They include the following:</p>
+			<ul>
+				<li><strong class="bold">Android Emulator</strong>: The official Android Emulator can be installed as part of the official <strong class="bold">Android Studio</strong> or using the command-line <strong class="bold">SDK Manager</strong>. It provides almost all the capabilities of real physical devices and comes with predefined sets of configurations aiming to simulate various mobile devices (whether a phone, tablet, and wearable) on the PC.</li>
+			</ul>
+			<p>To install the emulator without Android Studio (using only the command line), follow these steps:</p>
+			<ul>
+				<li>If you have never installed the Android SDK before, create an empty directory somewhere where you would like the whole Android SDK to be located and create an environment variable, <code>ANDROID_HOME</code>, to point to this directory.</li>
+				<li>Download the Android command-line tools, unzip them, and move the whole extracted directory, <code>cmdline-tools</code>, (not its content!) to the Android SDK folder.</li>
+				<li>Inside <code>$ANDROID_HOME/cmdline-tools</code>, create a directory called <code>latest</code>, and move the whole content of <code>cmdline-tools</code> there.</li>
+				<li>In the <code>$ANDROID_HOME/cmdline-tools/latest/bin</code> directory, you can find the <code>sdkmanager</code> tool. Use this method to get the emulator and platform tools, including <code>adb</code>:<pre>./sdkmanager emulator platform-tools</pre></li>
+				<li>You can list all the available Android system images by running the following command:<pre>./sdkmanager --list | grep "system-images;android"</pre></li>
+				<li>For example, we decided to emulate Android 12, corresponding to the API level of <code>31</code>. Use the following command to download a system image that will be emulated on an x86-64 machine, together with the corresponding packages:<pre>./sdkmanager "system-images;android-31;google_apis;x86_64" "platforms;android-31"</pre></li>
+			</ul>
+			<p class="callout-heading">Important note</p>
+			<p class="callout">Using <code>google_apis_playstore</code> images will enable access to Google Play but the <code>adb root</code> command will not work on them!</p>
+			<ul>
+				<li>Use the following command to create a virtual device linked to the chosen system image (no need to create a custom hardware profile). In this case, the name used is <code>avd_31_noplay</code>, but it can be any other name:<pre>./avdmanager create avd -n "avd_31_noplay" -k "system-images;android-31;google_apis;x86_64"</pre></li>
+				<li>Now, everything is ready to run the emulator, located in the <code>$ANDROID_HOME/emulator</code> directory, using the following command:<pre>./emulator -avd "avd_31_noplay"</pre></li>
+			</ul>
+			<p class="callout-heading">Important note</p>
+			<p class="callout">When running an emulator on the VM, you may be prompted about hardware acceleration – to address it, enable support for Intel VT-x in the VM’s settings. </p>
+			<p>Here <a id="_idIndexMarker2257"/>is <a id="_idIndexMarker2258"/>how the result will look:</p>
+			<div><div><img src="img/Figure_13.14_B18500.jpg" alt="Figure 13.14 – Running the Android Emulator on a VM&#13;&#13;&#10;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 13.14 – Running the Android Emulator on a VM</p>
+			<p>The Emulator also allows us to create and restore snapshots containing the entire state of the emulated device.</p>
+			<ul>
+				<li><strong class="bold">VMWare, VirtualBox, or QEMU</strong>: These versatile solutions can be used to run an <strong class="bold">Android-x86</strong> image and perform dynamic analysis in a similar way to what would be done on the Linux VM. Keep in mind that Android-x86 is usually a few versions behind the latest Android release:</li>
+			</ul>
+			<div><div><img src="img/Figure_13.15_B18500.jpg" alt="Figure 13.15 – Running Android-x86 on a VM&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 13.15 – Running Android-x86 on a VM</p>
+			<p>Other ways to get access to Android systems<a id="_idIndexMarker2259"/> include cloud-based <strong class="bold">Genymotion</strong> and<a id="_idIndexMarker2260"/> container-based <strong class="bold">anbox</strong> solutions.</p>
+			<p>Once we <a id="_idIndexMarker2261"/>have<a id="_idIndexMarker2262"/> th<a id="_idTextAnchor1617"/><a id="_idTextAnchor1618"/>e environment to run Android programs, we need debuggers to do it in a controlled way.</p>
+			<h3>Debuggers</h3>
+			<p>Once the app <a id="_idIndexMarker2263"/>of interest is decompiled back to Java code, parts of it can be debugged as with usual source code in the IDE supporting it, for example, Android Studio. If you are using a physical device instead of an emulator, don’t forget to enable USB debugging. In addition, the code should include the <code>debuggable true</code> option in its build configuration.</p>
+			<p>Sometimes, it is required to debug the native Dalvik instructions or whole apps. Luckily, there are tools that can facilitate this process. One that deserves particular attention is <strong class="bold">smalidea</strong>. It is a <a id="_idIndexMarker2264"/>plugin for IntelliJ IDEA (or Android Studio, which is based on it) allowing for step-by-step execution of the analyzed code. This project belongs to the<a id="_idTextAnchor1619"/> Smali authors and can be found with the corresponding assembler and disassembler tools.</p>
+			<p>In addition, Android also provides tools to debug native code. Here are the instructions on how to attach at the start:</p>
+			<ul>
+				<li>First, obtain the Android NDK to get <code>lldb-server</code> prebuilt, as well as the <code>lldb</code> tools (in the past, the <code>gdbserver</code> and <code>gdb</code> tools were used)</li>
+				<li>Then, push the <code>lldb-server</code> executable to the device, for example, to the <code>/data/local/tmp</code> directory, and<a id="_idIndexMarker2265"/> make it executable:<pre>adb push lldb-server /data/local/tmp
+adb shell chmod +x /data/local/tmp/lldb-server</pre></li>
+				<li>Set up port forwarding:<pre>adb forward tcp:&lt;host_port&gt; tcp:&lt;device_port&gt;</pre></li>
+			</ul>
+			<p>Now, we have two options: either to use <code>lldb-server</code> in <code>gdbserver</code> or the <code>platform</code> mode. Let’s provide examples for both. </p>
+			<p>Using the <code>gdbserver</code> mode involves the following:</p>
+			<ul>
+				<li>Start the debugger server on the Android device – the sample of interest should be copied there as well:<pre>adb shell /data/local/tmp/lldb-server g :&lt;device_port&gt; &lt;sample_path_on_device&gt;</pre></li>
+				<li>Launch <code>lldb</code> on the host and connect to the debugger server running on the device via the forwarded port:<pre>gdb-remote 127.0.0.1:&lt;host_port&gt;</pre></li>
+			</ul>
+			<p>Using the <code>platform</code> mode involves the following:</p>
+			<ul>
+				<li>Start the debugger server on the Android device – no need to copy the sample there:<pre>adb shell /data/local/tmp/lldb-server p --listen "*.&lt;device_port&gt;" --server --gdbserver-port &lt;any_other_forwarded_port&gt;</pre></li>
+			</ul>
+			<p class="callout-heading">Important note</p>
+			<p class="callout">Here, we have to provide the <code>--gdbserver-port</code> argument, otherwise, <code>lldb</code> won’t be able to copy a sample from the host machine to the Android device later. An additional <code>adb forward</code> command is required to forward this auxiliary port.</p>
+			<ul>
+				<li>Launch <code>lldb</code> on the host, connect to the debugger server via the forwarded port, and <a id="_idIndexMarker2266"/>launch the sample – it will be copied to the Android device automatically:<pre>platform select remote-linux
+target create &lt;sample_path_on_host&gt;
+platform connect connect://127.0.0.1:&lt;host_port&gt;
+process launch --stop-at-entry</pre></li>
+			</ul>
+			<p>Here is how the successful connection will look on the debugger server side:</p>
+			<div><div><img src="img/Figure_13.16_B18500.jpg" alt="Figure 13.16 – A successful connection to the debugger server running on the Android emulator&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 13.16 – A successful connection to the debugger server running on the Android emulator</p>
+			<p>Apart from that, IDA is shipped with a set of proprietary debugger servers for Android supporting both 32- and 64-bit versions of x86 and ARM platforms (<code>android_server</code> or <code>android_server64</code>).</p>
+			<p>App startup can be debugged in the following way:</p>
+			<ol>
+				<li>Go to <code>jdb</code> debugger to be attached.</li>
+				<li>Start the app from the launcher or using the console, wait for it to load.</li>
+				<li>Attach a debugger such as <code>lldb</code>, set the required breakpoints, and continue the execution.</li>
+				<li>Attach the <code>jdb</code> debugger<a id="_idIndexMarker2267"/> to let the app run:<pre>adb forward tcp:&lt;port&gt; jdwp:&lt;app_pid&gt;
+jdb -attach localhost:&lt;port&gt;</pre></li>
+			</ol>
+			<p>Now, let’s talk about behavioral analysis.</p>
+			<h2 id="_idParaDest-439"><a id="_idTextAnchor1620"/>Behavioral analysis and tracing</h2>
+			<p>As with many <a id="_idIndexMarker2268"/>other<a id="_idIndexMarker2269"/> platforms, the <strong class="bold">fsmon</strong> tool <a id="_idIndexMarker2270"/>can be used to monitor file operations on Android. Here is an example of it being used to detect the creation of a new file:</p>
+			<div><div><img src="img/Figure_13.17_B18500.jpg" alt="Figure 13.17 – Testing fsmon on the Android Emulator by recording test file creation&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 13.17 – Testing fsmon on the Android Emulator by recording test file creation</p>
+			<p>In terms of APIs, an <strong class="bold">AppMon</strong> solution includes a set of components to intercept and manipulate API calls. It is based on the <strong class="bold">Frida</strong> project, which also provides its own versatile tools, such <a id="_idIndexMarker2271"/>as <strong class="bold">frida-trace</strong> (working together with <strong class="bold">frida-server</strong>). One <a id="_idIndexMarker2272"/>more tool based on Frida is <strong class="bold">Objection</strong>, which provides access to multiple options including various memory-related tasks, heap manipulation, and the execution of custom scripts.</p>
+			<p>For native programs, the standard <code>strace</code> tool can also be used to monitor system calls. As you can see in the following screenshot, its interface is identical to the one found on Linux systems:</p>
+			<div><div><img src="img/Figure_13.18_B18500.jpg" alt="Figure 13.18 – Using strace for behavioral analysis on the Android Emulator&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 13.18 – Using strace for behavioral analysis on the Android Emulator</p>
+			<p>Speaking about recording network traffic, the standard <code>tcpdump</code> tool can run on the device for this purpose and is generally the easiest-to-use solution. Wireshark creators also supply a tool <a id="_idIndexMarker2273"/>called <strong class="bold">androiddump</strong> to provide interfaces to capture on Android devices (which generally needs to be built separately). In addition, as long as the malicious sample is decompiled, it also becomes possible to embed various libraries intercepting <a id="_idIndexMarker2274"/>API <a id="_idIndexMarker2275"/>calls, for <a id="_idIndexMarker2276"/>example, <strong class="bold">AndroidSnooper</strong> to intercept HTTP traff<a id="_idTextAnchor1621"/><a id="_idTextAnchor1622"/>ic.</p>
+			<p>Once we know which tools can be used for the analysis, let’s summarize the analysis workflow.</p>
+			<h2 id="_idParaDest-440"><a id="_idTextAnchor1623"/>The analysis workflow</h2>
+			<p>Here is an example<a id="_idIndexMarker2277"/> of the workflow, describing how the Android sample analysis can be performed:</p>
+			<ol>
+				<li value="1"><code>boot.oat</code> file.</li>
+				<li><code>Application</code>’s subclass from the <code>android:name</code> attribute of the <code>&lt;application&gt;</code> element (if present)</li></ul></li>
+				<li><strong class="bold">Decompilation or disassembling</strong>: It always makes sense to try to get the decompiled source code, as it is usually much easier to read it and perform dynamic analysis, including alteration if necessary. If decompilation doesn’t work and some anti-reverse-engineering technique is expected, then the code can be disassembled so that the tampering logic can be amended. Native code in ELF binaries can be processed in the same way as described in <a href="B18500_11.xhtml#_idTextAnchor1188"><em class="italic">Chapter 11</em></a>, <em class="italic">Dissecting Linux and IoT Malware</em>.</li>
+				<li><code>onCreate</code> methods of the main activities, and the previously mentioned<a id="_idIndexMarker2279"/> optional <code>Application</code>’s subclass specified in the manifest, as the app execution starts there.</li>
+				<li><strong class="bold">Deobfuscation and decryption</strong>: If it has been confirmed that the sample is obfuscated, at first, it’s worth trying to figure out whether it is a known Java solution and whether any ready deobfuscators exist. If not, then generic method renaming will be helpful. There are multiple tools that can do this; refer to <a href="B18500_09.xhtml#_idTextAnchor946"><em class="italic">Chapter 9</em></a>, <em class="italic">Reversing Bytecode Languages – .NET, Java, and More</em>.</li>
+				<li><strong class="bold">Behavioral analysis</strong>: It may make sense to execute a sample in the emulator with your behavioral analysis tools of choice enabled to quickly get an idea of the potential functionality. If an emulator detection technique is implemented, it’s usually pretty straightforward to identify it in the code and amend the sample to exclude these checks.</li>
+				<li><strong class="bold">Debugging</strong>: Sometimes, it’s hard to understand certain blocks of functionality, particularly ones where malware heavily interacts with the operating system. In this case, proper step-by-step debugging may be required to speed up the analysis. Always use emulators supporting snapshot creation, so that it is possible to go back and quickly reproduce the same situation as many times as necessary.</li>
+			</ol>
+			<p>Obviously, each case is unique, and depending on circumstances, the selection of actions and their<a id="_idIndexMarker2280"/> order may vary. Malware analysis is also <a id="_idTextAnchor1625"/><a id="_idTextAnchor1626"/>an art and often requires a certain amount of creativity in order to achieve results in a prompt way.</p>
+			<h1 id="_idParaDest-441"><a id="_idTextAnchor1627"/>Summary</h1>
+			<p>In this chapter, we learned about the most important aspects of Android’s internals, covering various runtime environments implemented in different versions of it. In addition, we became familiar with the associated file formats and went through the syntax of the bytecode instructions.</p>
+			<p>Then, we dove deeper into the world of modern mobile malware, familiarizing ourselves with its different types and the associated behavior. We also learned how attackers can bypass Android security mechanisms in order to achieve their goals. Finally, we learned about various reverse-engineering tools aiming to facilitate static and dynamic analysis, and established guidelines on how and when they can be used.</p>
+			<p>Equipped with this knowledge, you can better track threat actors that are trying to penetrate Android devices and promptly mitigate the risks. In addition, the set of skills obtained can be used during the incident response process to properly understand the logic of the attacks to improve the overall security posture.</p>
+			<p>This is the last chapter of this book – we hope you enjoyed it! As a next step, we recommend putting your new knowledge into action by practicing analyzing various types of malware and sharing your results with the community. Malware analysis is a never-ending journey. We really hope this book will help many novice and experienced engineers to analyze modern and future threats more efficiently and eventually make the world a safer place.</p>
+		</div>
+		<div><div></div>
+		</div>
+	</body></html>

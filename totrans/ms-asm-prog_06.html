@@ -1,0 +1,712 @@
+<html><head></head><body>
+        
+
+                            
+                    <h1 class="header-title">Macro Instructions</h1>
+                
+            
+            
+                
+<p>Using Assembly language for the implementation of your ideas is fun (I surely have said that already and, probably, even more than once). However, it may become quite annoying when it comes to certain operations, which have to be re-implemented in different parts of your program. One possible solution may be implementing those operations in the form of a procedure and calling it when needed. However, this may quickly become a nuisance as well, once you have a procedure; which receives more than zero parameters. While in high-level languages you simply "pass" the parameters to a function, in Assembly, you have to actually pass them to a procedure in accordance with the calling convention of your choice, which, in turn, may imply additional headache with management of registers (if parameters are passed via certain registers) or accessing the stack. Sometimes, this complication is worth it, but that is not always the case, especially when it comes to a short set of recurring instructions. This is exactly the case where macro instructions may save us from a lot of headaches and redundant efforts, not to mention the amount of CPU time spent on calls (parameter preparations and procedure prolog and epilog), tiny fractions of a millisecond which may, at the end, aggregate into quite substantial delays.</p>
+<p>In this chapter, we will cover the following:</p>
+<ul>
+<li>Macro instructions and the mechanisms behind them</li>
+<li>How macro instructions may be parameterized</li>
+<li>Learning variadic macro instructions and power thereof</li>
+<li>Getting acquainted with common calling conventions</li>
+<li>Examining additional assembler directives and conditional assembly</li>
+</ul>
+<p>All of this is essential for our future work with this book, as the methods and algorithms we will explore would be too cumbersome otherwise.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">What are macro instructions?</h1>
+                
+            
+            
+                
+<p>First of all, before we submerge into the world of macro instructions, we have to understand what they actually are. Putting it the simplest way, macro instructions are aliases for sequences of instructions. You may be familiar with the term from high-level languages ( we say "may be" because not all high-level languages implement this feature), but we'll still explain it here. Remember the following sequence from the previous chapter?</p>
+<pre>movd xmm3, [dpy]<br/>movlhps xmm3, xmm3<br/>movsldup xmm3, xmm3</pre>
+<p>This sequence loads all four singles of an XMM register (in this specific case, it was XMM3) with a single precision floating point value from memory pointed by <kbd>dpy</kbd>. We used such sequences several times in our code, so it would be natural to try and replace it with a single macro instruction. Thus, defining the following macro would make our code look more elegant and readable:</p>
+<pre>macro load_4 xmmreg, addr<br/>{<br/>   movd xmmreg, [addr]<br/>   movlhps xmmreg, xmmreg<br/>   movsldup xmmreg, xmmreg<br/>}</pre>
+<p>We use it in our code like this:</p>
+<pre>load_4 xmm3, dpy<br/>load_4 xmm4, pi_2</pre>
+<p>This would make the code look more elegant and much more readable.</p>
+<p>Parentheses are a great feature of FASM and are present neither in MASM nor in GAS. Instead, you would write the following code for MASM:<br/>
+<kbd>MACRO macro_name</kbd><br/>
+<kbd>; macro body</kbd><br/>
+<kbd>ENDM</kbd><br/>
+<br/>
+And the following code for GAS:<br/>
+<kbd>.macro macro_name</kbd><br/>
+<kbd>; macro_body</kbd><br/>
+<kbd><kbd>.endm</kbd></kbd></p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">How it works</h1>
+                
+            
+            
+                
+<p>The logic behind macro instructions is quite simple. The preprocessor parses the code for the definitions of macro instructions and stores them, simply speaking, in the form of a dictionary, where the name of the macro instruction is the key and its content is the value. Of course, in reality, it is more complicated, as macro instructions may have (and most of the time, they do have) parameters, not to mention the fact that they may also be variadic (have an undefined number of parameters).</p>
+<p>When the assembler processes the code and encounters unknown instructions, it checks this dictionary for a macro instruction with the corresponding name. Once such an entry is found, the assembler replaces the macro instruction with its value--expands macro. Consider that the assembler sees the following:</p>
+<pre>load_4 xmm3, dpy</pre>
+<p>Then, it refers to the collected macro instruction definitions and replaces this line with the actual code:</p>
+<pre>movd xmm3, [dpy]<br/>movlhps xmm3, xmm3<br/>movsldup xmm3, xmm3</pre>
+<p>If the assembler finds no relevant macro definition, we are notified of this via the error reporting mechanism.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Macro instructions with parameters</h1>
+                
+            
+            
+                
+<p>Although you definitely can define a macro instruction that receives no parameters at all, you would rarely need to do this. Most of the time, you would define macro instructions that need at least one parameter. Let us take, for example, a macro instruction that implements the procedure prolog:</p>
+<pre>macro prolog frameSize<br/>{<br/>   push ebp<br/>   mov  ebp, esp<br/>   sub  esp, frameSize<br/>}</pre>
+<p>The <kbd>frameSize</kbd> property in the preceding macro instruction is a macro parameter which, in this case, is used to specify the size of the stack frame in bytes. The usage of such a macro instruction would be as follows:</p>
+<pre>my_proc:<br/>   prolog 8<br/>   <em>; body of the procedure</em><br/>   mov esp, ebp<br/>   pop ebp<br/>   ret</pre>
+<p>The preceding code is logically equivalent to (and is expanded by the preprocessor into) the following:</p>
+<pre>my_proc:<br/>   push ebp<br/>   mov  ebp, esp<br/>   sub  esp, 8<br/>   <em>; body of the procedure</em><br/>   mov  esp, ebp<br/>   pop  ebp<br/>   ret</pre>
+<p>In addition, we may define the <kbd>return</kbd> macro, which would implement the destruction of the stack frame and return from the procedure:</p>
+<pre>macro return<br/>{<br/>   mov   ebp, esp<br/>   pop   ebp<br/>   ret<br/>}</pre>
+<p>This would make our procedure even shorter:</p>
+<pre>my_proc:<br/>   prolog 8<br/>   <em>; body of the procedure</em><br/>   return</pre>
+<p>Here, the <kbd>return</kbd> macro is also a good example of parameterless macro instruction.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Variadic macro instructions</h1>
+                
+            
+            
+                
+<p>In certain cases, we do not know how many parameters would be passed to the same macro instruction used in different places in our code, and FASM provides a great and easy solution for such a problem--support for variadic macro instructions. The term <em>variadic</em> means that an operator, a procedure, or a macro can take a varying number of operands/parameters.</p>
+<p>Syntactically, variadic macro instructions are very simple. We begin with the macro keyword, then the name of the macro followed by a comma-separated list of parameters, if any. The variadic portion of the list of parameters is enclosed in square brackets. For example, should we have a macro instruction that expands to the <kbd>printf()</kbd> function or invokes it, and we want it to have a similar declaration, then the macro declaration would start like this:</p>
+<pre>macro printf fmt, [args]</pre>
+<p>Here, <kbd>fmt</kbd> stands for the format argument of the <kbd>printf()</kbd> function and <kbd>args</kbd> represents all optional parameters.</p>
+<p>Let's consider a very simple example of the reworked <kbd>prolog</kbd> macro, which, in addition to the size of a stack frame, receives the list of registers that need to be stored on the stack as they would be altered in the body of a procedure:</p>
+<pre>macro prolog frameSize, [regs]<br/>{<br/>   common<br/>   push  ebp<br/>   mov   ebp, esp<br/>   sub   esp, frameSize<br/>   forward<br/>   push regs<br/>}</pre>
+<p>Here, you've definitely noticed the <kbd>common</kbd> and <kbd>forward</kbd> keywords, which are essential for the correctness of the expansion of this macro instruction. The interesting feature of variadic macro instructions is that the content thereof is expanded for each and every variadic parameter (parameters specified in square brackets). As the creation of the stack frame after each and every register (specified by the <kbd>regs</kbd> parameter) is pushed onto stack would look weird, we have to instruct the preprocessor to expand a specific portion of the macro instruction only once, and this is what the <kbd>common</kbd> keyword does.</p>
+<p>The <kbd>forward</kbd> keyword (and its counterpart, the <kbd>reverse</kbd> keyword) instructs the preprocessor about the order the variadic parameters should be processed in. The line <kbd>push regs</kbd> expands into the <kbd>push</kbd> instruction for each parameter specified in <kbd>regs</kbd> and the preceding <kbd>forward</kbd> keyword instructs the preprocessor to process parameters in exactly the order they were written in. For example, consider the following code:</p>
+<pre>my_proc:<br/>   prolog 8, ebx, ecx, edx<br/>   <em>; body of the procedure</em></pre>
+<p>This piece of code would expand to the following:</p>
+<pre>my_proc:<br/>   push ebp<br/>   mov  ebp, esp<br/>   sub  esp, 8<br/>   push ebx<br/>   push ecx<br/>   push edx</pre>
+<p>Let's apply proper fixes to the <kbd>return</kbd> macro instruction for the sake of completeness:</p>
+<pre>macro return [regs]<br/>{<br/>   reverse<br/>   pop  regs<br/>   common<br/>   mov  esp, ebp<br/>   pop  ebp<br/>   ret<br/>}</pre>
+<p>Here, for the sake of an example, we use the <kbd>reverse</kbd> keyword, as we specify registers that should be retrieved from stack in exactly the same order in which they were passed to the <kbd>prolog</kbd> macro instruction. The procedure would then look like this:</p>
+<pre>my_proc:<br/>   prolog 8, ebx, ecx, edx<br/>   <em>; body of the function</em><br/>   return ebx, ecx, edx</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">An introduction to calling conventions</h1>
+                
+            
+            
+                
+<p>When writing code in Assembly language, it's preferable to stick to certain calling conventions (the way parameters are passed to procedures) when invoking procedures because, first of all, this minimizes the occurrence of annoying and hard to find errors and, of course, help you link your Assembly modules to high-level languages. There are quite a few calling conventions for Intel Architecture, but we will only consider some of them, which we will use later in this book.</p>
+<p>We already know about procedures and we have even mentioned the term "calling convention" in the previous chapter, so you may wonder why it is now that we cover the mechanism itself. The answer is quite simple--invocation of a procedure is a process that requires certain preparations, and, as such preparations would logically be the same with every procedure call, it is obvious to implement these preparations in the form of macro instruction.</p>
+<p>First, let's see the calling conventions that we will cover in this part of the chapter:</p>
+<div><img height="321" src="img/ecf71298-a12a-4430-a2ad-7667c82a00a0.png" width="571"/></div>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">cdecl (32-bit)</h1>
+                
+            
+            
+                
+<p>The <kbd>cdecl</kbd> calling convention is the standard convention in C and C++ high-level languages. Parameters are stored on a stack with the rightmost parameter pushed onto stack first and the leftmost parameter pushed onto stack last. It is the caller's responsibility to restore the stack once it regains control.</p>
+<p>The simplest macro that emulates the <kbd>cdecl</kbd> procedure invocation would be as follows:</p>
+<pre>macro ccall procName, [args]<br/>{<br/>   common<br/>   a = 0<br/>   if ~args eq<br/>      forward<br/>      a = a + 4<br/>      reverse <br/>      push args<br/>   end if<br/>   common<br/>   call procName<br/>   if a &gt; 0<br/>      add  esp, a<br/>   end if<br/>}</pre>
+<p>The <kbd>if</kbd> clauses here are self-explanatory; however, you may simply ignore them for now as they will be covered a bit later in this chapter.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">stdcall (32-bit)</h1>
+                
+            
+            
+                
+<p>The <kbd>stdcall</kbd> calling convention is almost identical to <kbd>cdecl</kbd> in that parameters are passed on to the stack in the same manner--the rightmost is pushed first and leftmost is pushed last. The only difference is that the caller does not have to take care of stack cleanup:</p>
+<pre>macro stdcall procName, [args]<br/>{<br/>   if ~args eq<br/>      reverse <br/>      push args<br/>   end if<br/>   common<br/>   call procName<br/>}</pre>
+<p>Let's consider a simple example that uses both the calling conventions:</p>
+<pre>cdecl_proc:<br/>   push ebp<br/>   mov  ebp, esp<br/>   <em>; body of the procedure</em><br/>   mov  esp, ebp<br/>   pop  ebp,<br/>   ret<br/><br/>stdcall_proc:<br/>   push ebp<br/>   mov  ebp, esp<br/>   <em>; body of the procedure</em><br/>   mov  esp, ebp<br/>   pop  ebp<br/>   ret  8                  <em>; Increments the stack pointer by 8 bytes after</em><br/><em>                           ; return, thus releasing the space occupied </em><br/><em>                           ; by procedure parameters</em><br/><br/>main:<br/>   ccall  cdecl_proc, 128  <em>; 128 is a numeric parameter passed to </em><br/><em>                           ; the procedure</em><br/>   stdcall stdcall_proc, 128, 32</pre>
+<p>While all is clear with the <kbd>cdecl_proc</kbd> and <kbd>stdcall_proc</kbd> procedures, let's take a closer look at what the <kbd>main</kbd> procedure expands to:</p>
+<pre>main:<br/>   push 128<br/>   call cdecl_proc<br/>   add  esp, 4<br/>   <em>;</em><br/>   push 32<br/>   push 128<br/>   call stdcall_proc</pre>
+<p>In the preceding example, the <kbd>stdcall</kbd> macro invocation also illustrates what happens when there is more than one parameter--the rightmost parameter is pushed first. Such mechanisms allow easier and more intuitive addressing of parameters within the function. Given the nature of a stack frame, we could access them as follows:</p>
+<pre>mov  eax, [ebp + 8]  <em>; Would load EAX with 128</em><br/>mov  eax, [ebp + 12] <em>; Would load EAX with 32</em></pre>
+<p>We are using an EBP register as the base pointer. The first (leftmost) parameter is located at offset <kbd>8</kbd> from the value stored in EBP, as the procedure's return address and the previously pushed value of EBP register occupy exactly 8 bytes. The following table shows the content of the stack after the creation of the stack frame:</p>
+<table>
+<tbody>
+<tr>
+<td><strong>Offset from EBP</strong></td>
+<td><strong>Content</strong></td>
+</tr>
+<tr>
+<td>+12</td>
+<td>rightmost parameter (32)</td>
+</tr>
+<tr>
+<td>+8</td>
+<td>
+<p>leftmost parameter (128)</p>
+</td>
+</tr>
+<tr>
+<td>+4</td>
+<td>
+<p>procedure return address</p>
+</td>
+</tr>
+<tr>
+<td>EBP points here</td>
+<td>
+<p>previous value of EBP</p>
+</td>
+</tr>
+<tr>
+<td>-4</td>
+<td>
+<p>first stack frame variable</p>
+</td>
+</tr>
+<tr>
+<td>....</td>
+<td>
+<p>other stack frame variables</p>
+</td>
+</tr>
+<tr>
+<td>....</td>
+<td>
+<p>saved registers</p>
+</td>
+</tr>
+<tr>
+<td>ESP points here</td>
+<td>
+<p>current stack position</p>
+</td>
+</tr>
+</tbody>
+</table>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Microsoft x64 (64-bit)</h1>
+                
+            
+            
+                
+<p>Microsoft uses its own calling convention in the 64-bit mode (long mode) using a mixed register/stack paradigm for passing procedure parameters. This means that only the first four parameters may be passed via registers and the rest (if any) should be pushed onto the stack. The following table illustrates which registers are used and in what manner:</p>
+<table>
+<tbody>
+<tr>
+<td>
+<div><strong>Parameter index</strong><br/>
+<strong>(zero based)</strong></div>
+</td>
+<td>
+<div><strong>Integer/pointer</strong></div>
+</td>
+<td>
+<div><strong>Floating point</strong></div>
+</td>
+</tr>
+<tr>
+<td>
+<p>0</div>
+</td>
+<td>
+<div>RCX</p>
+</td>
+<td>
+<p>XMM0</p>
+</td>
+</tr>
+<tr>
+<td>
+<p>1</div>
+</td>
+<td>
+<div>RDX</p>
+</td>
+<td>
+<p>XMM1</p>
+</td>
+</tr>
+<tr>
+<td>
+<p>2</div>
+</td>
+<td>
+<div>R8</p>
+</td>
+<td>
+<p>XMM2</p>
+</td>
+</tr>
+<tr>
+<td>
+<p>3</div>
+</td>
+<td>
+<div>R9</p>
+</td>
+<td>
+<p>XMM3</p>
+</td>
+</tr>
+</tbody>
+</table>
+<p> </p>
+<p>All of this looks quite clear, yet there are two things that we need to pay special attention to:</p>
+<ul>
+<li>The stack must be aligned on a 16-bytes boundary</li>
+<li>A 32-bytes shadow space on the stack is required--32 bytes between the last pushed stack parameter (if any) and the return address</li>
+</ul>
+<p>The following macro instruction (<kbd>ms64_call</kbd>) is simplistic; it is a primitive implementation of this calling convention. This specific macro does not support stack parameters:</p>
+<pre>macro ms64_call procName, [args]<br/>{<br/>   a = 0<br/>   if ~args eq<br/>      forward<br/>      if a = 0<br/>         push rcx<br/>         mov rcx, args<br/>      else if a = 1<br/>         push rdx<br/>         mov rdx, args<br/>      else if a = 2<br/>         push r8<br/>         mov r8, args<br/>      else if a = 3<br/>         push r9<br/>         mov r9, args<br/>      else<br/>         display "This macro only supports up to 4 parameters!",10,13<br/>         exit<br/>      end if<br/>      a = a + 1<br/>      end if<br/>   common<br/>   sub rsp, 32            <em>; Allocate shadow space</em><br/>   call procName          <em>; Call procedure</em><br/>   add rsp, 32            <em>; Free shadow space</em><br/>   forward<br/>   if ~args eq<br/>      if a = 4<br/>         pop r9<br/>      else if a = 3<br/>         pop r8<br/>      else if a = 2<br/>         pop rdx<br/>      else if a = 1<br/>         pop rcx<br/>      end if<br/>      a = a - 1<br/>   end if<br/>}</pre>
+<p>Consider an example of calling the procedure labeled <kbd>my_proc</kbd> in the 64-bit code, using Microsoft x64 calling convention:</p>
+<pre>ms64_call my_proc, 128, 32</pre>
+<p>Such a macro instruction would be expanded to the following:</p>
+<pre>push rcx         <em>;Save RCX register on stack</em><br/>mov  rcx, 128    <em>;Load it with the first parameter</em><br/>push rdx         <em>;Save RDX register on stack</em><br/>mov  rdx, 32     <em>;Load it with the second parameter</em><br/>sub  rsp, 32     <em>;Create 32 bytes shadow space</em><br/>call my_proc     <em>;Call the my_proc procedure</em><br/>add  rsp, 32     <em>;Destroy shadow space</em><br/>pop  rdx         <em>;Restore RDX register</em><br/>pop  rcx         <em>;Restore RCX register</em></pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">AMD64 (64-bit)</h1>
+                
+            
+            
+                
+<p>The AMD64 calling convention is used on 64-bit Unix-like systems by default. The idea is very similar except that a different set of registers is used and there is no shadow space requirement. Another difference is that the AMD64 calling convention allows up to 6 integer parameters and up to 8 floating point values to be passed via registers:</p>
+<table>
+<tbody>
+<tr>
+<td>
+<div><strong>Parameter index</strong><br/>
+<strong>(zero based)</strong></div>
+</td>
+<td>
+<div><strong>Integer/pointer</strong></div>
+</td>
+<td>
+<div><strong>Floating point</strong></div>
+</td>
+</tr>
+<tr>
+<td>
+<p>0</div>
+</td>
+<td>
+<div>RDI</p>
+</td>
+<td>
+<p>XMM0</p>
+</td>
+</tr>
+<tr>
+<td>
+<p>1</div>
+</td>
+<td>
+<div>RSI</p>
+</td>
+<td>
+<p>XMM1</p>
+</td>
+</tr>
+<tr>
+<td>
+<p>2</div>
+</td>
+<td>
+<div>RDX</p>
+</td>
+<td>
+<p>XMM2</p>
+</td>
+</tr>
+<tr>
+<td>
+<p>3</div>
+</td>
+<td>
+<div>RCX</p>
+</td>
+<td>
+<p>XMM3</p>
+</td>
+</tr>
+<tr>
+<td>
+<p>4</div>
+</td>
+<td>
+<div>R8</p>
+</td>
+<td>
+<p>XMM4</p>
+</td>
+</tr>
+<tr>
+<td>
+<p>5</div>
+</td>
+<td>
+<div>R9</p>
+</td>
+<td>
+<p>XMM5</p>
+</td>
+</tr>
+<tr>
+<td>
+<p>6</div>
+</td>
+<td>
+<div>on stack</p>
+</td>
+<td>
+<p>XMM6</p>
+</td>
+</tr>
+<tr>
+<td>
+<p>7</div>
+</td>
+<td>
+<div>on stack</p>
+</td>
+<td>
+<p>XMM7</p>
+</td>
+</tr>
+</tbody>
+</table>
+<p>The following macro instruction is a primitive implementation of such a mechanism. Just as in the case of the Microsoft x64 example, this one does not handle stack parameters:</p>
+<pre>macro amd64_call procName, [args]<br/>{<br/>   a = 0<br/>   if ~args eq<br/>      forward<br/>      if a = 0<br/>         push rdi<br/>         mov rdi, args<br/>      else if a = 1<br/>         push rsi<br/>         mov rsi, args<br/>      else if a = 2<br/>         push rdx<br/>         mov rdx, args<br/>      else if a = 3<br/>         push rcx<br/>         mov rcx, args<br/>      else if a = 4<br/>         push r8<br/>         mov r8, args<br/>      else if a = 5<br/>         push r9<br/>         mov r9, args<br/>      else<br/>         display "This macro only supports up to 4 parameters", 10, 13<br/>         exit<br/>      end if<br/>      a = a + 1<br/>   end if<br/>   common<br/>   call procName<br/>   forward<br/>   if ~args eq<br/>      if a = 6<br/>         pop r9<br/>      else if a = 5<br/>         pop r8<br/>      else if a = 4<br/>         pop rcx<br/>      else if a = 3<br/>         pop rdx<br/>      else if a = 2<br/>         pop rsi<br/>      else if a = 1<br/>         pop rdi<br/>      end if<br/>      a = a - 1<br/>   end if<br/>} </pre>
+<p>Using such a macro in 64-bit code intended to run on a Unix-like system for calling the procedure <kbd>my_proc</kbd> like this:</p>
+<pre>amd64_call my_proc, 128, 32</pre>
+<p>Would expand it into:</p>
+<pre>push rdi       <em>;Store RDI register on stack</em><br/>mov  rdi, 128  <em>;Load it with the first parameter</em><br/>push rsi       <em>;Store RSI register on stack</em><br/>mov  rsi, 32   <em>;Load it with the second parameter</em><br/>call my_proc   <em>;Call the my_proc procedure</em><br/>pop  rsi       <em>;Restore RSI register</em><br/>pop  rdi       <em>;Restore RDI register</em></pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">A note on Flat Assembler's macro capabilities</h1>
+                
+            
+            
+                
+<p>One of the huge advantages of Flat Assemblers over other assemblers for the Intel platform is its macro engine. In addition to being able to perform its original task--substituting macro instructions with their definitions--it is able to perform relatively complex computations, and I would dare to call it an additional programming language. The preceding examples only utilize a tiny fraction of what FASM's macro processor is capable of. While we only used a set of <kbd>if</kbd> clauses and a variable, we may, in necessary cases, use loops (with <kbd>while</kbd> or <kbd>repeat</kbd> statements). For example, imagine a string of characters that you want to keep encrypted:</p>
+<pre>my_string  db 'This string will be encrypted',0x0d, 0x0a, 0x00<br/>my_string_len = $ - my_string</pre>
+<p>Here, <kbd>my_string_len</kbd> is the length of the string.</p>
+<div><kbd>$</kbd> is a special symbol denoting the current address. Thus, <kbd>$-my_string</kbd> means the current address minus the address of <kbd>my_string</kbd>, which is the length of the string.</div>
+<p>A simplistic XOR encryption may be applied with just a four-line macro:</p>
+<pre>repeat my_string_len<br/>   load b byte from my_string + % - 1<br/>   store byte b xor 0x5a at my_string + % - 1<br/>end repeat</pre>
+<p>The <kbd>%</kbd> symbol here denotes the current iteration and the <kbd>-1</kbd> value is needed because the count of iterations starts at 1.</p>
+<p>This is just a short and primitive example of what the macro engine of FASM is able to do, and there is a lot more. However, this book, though it uses FASM as a primary assembler, is dedicated to Intel Assembly language rather than to specific dialect, so this additional information goes beyond its scope. I strongly recommend that you refer to the FASM documentation available at <a href="http://flatassembler.net">http://flatassembler.net</a>.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Macro instructions in MASM and GAS</h1>
+                
+            
+            
+                
+<p>Although the core idea behind the macro instruction mechanism is the same across all assemblers, the syntax of macro instructions and the capabilities of the engine vary. The following are two examples of simple macros for MASM and GAS.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Microsoft Macro Assembler</h1>
+                
+            
+            
+                
+<p>Remember our test program for MASM in <a href="cb7ac242-8ebb-4d6a-946a-220133f96674.xhtml" target="_blank">Chapter 2</a>, <em>Setting Up a Development<br/>
+Environment</em>? We can replace the code that invokes the <kbd>show_message</kbd> procedure with the following macro instruction:</p>
+<pre>MSHOW_MESSAGE MACRO title, message ;macro_name MACRO parameters<br/>   push message<br/>   push title<br/>   call show_message<br/>ENDM</pre>
+<p>This may make the code a bit more readable as we may then call the <kbd>show_message</kbd> procedure this way:</p>
+<pre>MSHOW_MESSAGE offset ti, offset msg</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">The GNU Assembler</h1>
+                
+            
+            
+                
+<p>The macro engine of the GNU Assembler is quite similar to that of Microsoft's MASM, yet there are a few syntactic differences (not taking into account the overall syntax difference) that we have to pay attention to. Let us take the <kbd>output_message</kbd> procedure from the Linux test program in <a href="https://cdp.packtpub.com/mastering_assembly_programming/wp-admin/post.php?post=221&amp;action=edit#post_52" target="_blank">Chapter 2</a>, <em>Setting Up a Development<br/>
+Environment</em>, and replace the call to <kbd>printf()</kbd> with a simple macro for demonstration purposes.</p>
+<pre>.macro print message       <em>; .macro macro_name parameter</em><br/>   pushl \message          <em>; Put the parameter on stack</em><br/>                           <em>; parameters are prefixed with '\'</em><br/>   call  printf            <em>; Call printf() library function</em><br/>   add   $4, %esp          <em>; Restore stack after cdecl function call</em><br/>.endm<br/><br/>output_message:<br/>   pushl %ebp<br/>   movl  %esp, %ebp<br/>   print 8(%ebp)           <em>; This line would expand to the above macro</em><br/>   movl  $0, %eax<br/>   leave<br/>   ret   $4</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Other assembler directives (FASM Specific)</h1>
+                
+            
+            
+                
+<p>Up until now, we mostly considered macro instructions to be some sort of replacement for procedure calls, although I believe it would be correct to refer to them as convenience instruments for simplifying the writing and maintenance of the code. In this part of the chapter, we will see some so to say built-in macro instructions--assembler directives--which may virtually be divided into three categories:</p>
+<ul>
+<li>Conditional assembly</li>
+<li>Repeat directives</li>
+<li>Inclusion directives</li>
+</ul>
+<p>Additional categories may be present depending on assembler implementation. You should refer to the documentation of the assembler you are using for more information.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">The conditional assembly</h1>
+                
+            
+            
+                
+<p>Sometimes we may want a macro instruction or a code fragment to be assembled differently depending on certain conditions. Both MASM and GAS provide this functionality too, but let's get back to FASM (as the most convenient one) and consider the following macro instruction:</p>
+<pre>macro exordd p1, p2<br/>{<br/>   if ~p1 in &lt;eax, ebx, ecx, edx, esi, edi, ebp, esp&gt; &amp;\<br/>      ~p2 in &lt;eax, ebx, ecx, edx, esi, edi, ebp, esp&gt;<br/>      push eax<br/>      mov  eax, [p2]<br/>      xor [p1], eax<br/>      pop  eax<br/>   else<br/>      if ~p1 in &lt;eax, ebx, ecx, edx, esi, edi, ebp, esp&gt;<br/>         xor [p1], p2<br/>      else if ~p2 in &lt;eax, ebx, ecx, edx, esi, edi, ebp, esp&gt;<br/>         xor p1, [p2]<br/>      else<br/>         xor p1, p2<br/>      end if<br/>   end if<br/>}</pre>
+<p>It may appear a bit complicated at first, but the purpose of the macro is rather simple. We extend an XOR instruction so that we may specify two memory locations as operands, which cannot be done with the original instruction. For simplicity, we only operate on double word values.</p>
+<p>In the beginning, we check whether both parameters are labels of memory locations and if they are, we load the value from one of them to a register and perform a XOR operation, as we would when the first operand is a memory location and the second operand is a register.</p>
+<p>If this condition is not true, we move to the second part of the macro instruction, where we perform a XOR operation appropriately depending on whether the first operand is a memory location or the second one, or whether they are both general purpose registers.</p>
+<p>As an example, let's take two variables named <kbd>my_var1</kbd> and <kbd>my_var2</kbd> containing values <kbd>0xCAFECAFE</kbd> and <kbd>0x02010201</kbd>, respectively, and swap them with XOR:</p>
+<pre>exordd my_var1, my_var2   <em>; a = a xor b</em><br/>mov    ebx, [my_var2]<br/>exordd ebx, my_var1       <em>; b = b xor a</em><br/>mov    [my_var2], ebx<br/>exordd my_var1, ebx       <em>; a = a xor b</em> <br/>exordd ebx, ebx           <em>; Reset EBX register for extra fun</em></pre>
+<p>Once processed, the preceding code would expand to this:</p>
+<pre>push eax                 <em>; exordd my_var1, my_var2</em><br/>mov  eax, [my_var2]<br/>xor  [my_var1], eax<br/>pop  eax<br/>mov  ebx, [my_var2]<br/>xor  ebx, [my_var1]      <em>; exordd ebx, my_var1</em><br/>mov  [my_var2], ebx<br/>xor  [my_var1], ebx      <em>; exordd [my_var1], ebx</em><br/>xor  ebx, ebx            <em>; exordd ebx, ebx</em></pre>
+<p>As we see, the <kbd>exordd</kbd> macro instruction is expanded differently depending on its parameters.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Repeat directives</h1>
+                
+            
+            
+                
+<p>There may be a need to repeat the same portion of code with minor differences or even without them. Assemblers have directives (sometimes referred to as built-in macro instructions) that allow us exactly this. There are three such statements common to all three assemblers--FASM, MASM and GAS:</p>
+<ul>
+<li><kbd>rept count</kbd>: The <kbd>rept</kbd> directive followed by the <kbd>count</kbd> parameter simply makes <kbd>count</kbd> copies of the code defined in the block. In case of Flat Assembler, we may declare the second parameter, which will equal the number of the current iteration (1 based). For example, the following code:</li>
+</ul>
+<pre style="padding-left: 60px">hex_chars:<br/>rept 10 cnt {db '0' + cnt - 1}<br/>rept 6  cnt {db 'A' + cnt - 1}</pre>
+<p style="padding-left: 60px">This would generate an array of hexadecimal characters named <kbd>hex_chars</kbd>, and is equivalent to:</p>
+<pre style="padding-left: 60px">hex_chars db "0123456789ABCDEF"</pre>
+<ul>
+<li><kbd>irp arg, a, b, c, ...</kbd>: The <kbd>irp</kbd> directive is followed by an argument and a list of parameters. The argument (here <kbd>arg</kbd>) represents a single parameter during each iteration. For example, this code:</li>
+</ul>
+<pre style="padding-left: 60px">irp reg, eax, ebx, ecx {inc reg}</pre>
+<p style="padding-left: 60px"/>
+<p style="padding-left: 60px"/>
+<p style="padding-left: 60px">Sequentially increments registers EAX, EBX then ECX.</p>
+<ul>
+<li><kbd><strong>irps arg, a b c ...</strong></kbd>: The <kbd>irps</kbd> directive is the same as <kbd>irp</kbd>, except that parameters in the list are not separated with commas.</li>
+</ul>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Inclusion directives</h1>
+                
+            
+            
+                
+<p>There are two directives that we have hardly touched upon in previous chapters, which appear to be very useful. These directives are:</p>
+<ul>
+<li><kbd>include 'filename'</kbd></li>
+<li><kbd>file 'filename'</kbd></li>
+</ul>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">The include directive</h1>
+                
+            
+            
+                
+<p>The syntax of the <kbd>include</kbd> directive is very simple. It is the directive itself followed by a quoted name of a source file we want to include. Logically, the operation is the same as of <kbd>#include</kbd> keyword in C or C++. Programming in Assembly is not always simple and it is a very good idea to split your code into several source files (for example, put all your definitions of macro instructions in a separate file), then combine them all by including them in the main source.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">File directive</h1>
+                
+            
+            
+                
+<p>While syntactically <kbd>include</kbd> and <kbd>file</kbd> directives are similar and both cause a file to be included in source processing, logically they are very different. Unlike the <kbd>include</kbd> directive, the <kbd>file</kbd> directive does not cause any processing of a file being included. This allows inclusion of binary data into the data section or into any place you need.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Summary</h1>
+                
+            
+            
+                
+<p>In this chapter, we have very briefly covered the numerous abilities of the macro instructions in Assembly language programming. Unfortunately, it may require an entire book to mention everything that may be done with macro instructions, especially when it comes to the Flat Assembler, which has an exceptional preprocessor.</p>
+<p>An example from my own practice: I once had to implement a heavily obfuscated version of the AES128 decryption algorithm, which took 2175 lines in total, having only a few procedures, and almost half of that (1064 lines) was occupied by the definition of different macro instructions. As you may safely assume, about 30% to 60% of each procedure contained the invocation thereof.</p>
+<p>In the next chapter, we will continue to dive deeper into the preprocessor and deal with different data structures, and the creation and management thereof.</p>
+<p class="mce-root"/>
+<p class="mce-root"/>
+
+
+            
+
+            
+        
+    </body></html>

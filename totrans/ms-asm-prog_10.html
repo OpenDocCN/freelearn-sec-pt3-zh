@@ -1,0 +1,482 @@
+<html><head></head><body>
+        
+
+                            
+                    <h1 class="header-title">Patching Legacy Code</h1>
+                
+            
+            
+                
+<p class="mce-root">A few years ago, I had an opportunity to work on an interesting project--I was contacted by a business owner who was left with an unusable executable, locked by a disgraceful developer who took the money and disappeared. Having no source code, the only option was to patch the executable in order to change the execution flow and bypass the lock.</p>
+<p>Unfortunately, this is not an isolated case. It happens quite often that an old tool, which has been around for years (if not decades), needs to be slightly changed and then... well, then there are at least two options:</p>
+<ul>
+<li>The source code has been lost and there is no way to rebuild the executable after applying changes.</li>
+<li>The source code is there, but it appears to be so old that it cannot even be compiled with modern compilers without rewriting it almost from scratch. In this case, even if rewriting is not a big issue, the possibility of libraries used with the software being incompatible with modern compilers or their output, which would make the whole project significantly more complicated, is still there.</li>
+</ul>
+<p>Depending on the complexity of changes that are needed to be applied, simply patching the binary executable file with new code may be a sufficient option as it is definitely simpler to put a few bytes in a hex editor rather than reverse-engineer a tool (either its binary form or old source code, which may no longer be supported by compilers) and rewrite it from scratch.</p>
+<p>In this chapter, we will consider a very simplistic example of an executable that needs a security fix. We will create the executable ourselves for both Windows and Linux, and we'll, first of all, examine the options and then apply a binary patch. As we will be targeting two platforms, we will address the formats of PE and ELF files where needed.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">The executable</h1>
+                
+            
+            
+                
+<p>As was mentioned earlier, we have to create the executable first. It appeared to be a relatively hard task to find a real-life example simple enough to fit the chapter, so the decision was made to take a real-life problem and wrap it with simplistic code. We will write the code for our executable in C and compile with Visual Studio 2017 when on Windows and GCC when on Linux. The code will be as simple as this:</p>
+<div><img class="image-border" height="533" src="img/a728544b-33d1-406a-b721-52d8b4d9b39f.png" width="387"/></div>
+<p>As we may see, the only thing this code is capable of is reading user input as a string into a 128-byte buffer, allocating an internal buffer specifically for the input string, copying the input string there, and printing it from the internal buffer.</p>
+<p>Create a new solution in Visual Studio 2017, name it <kbd>Legacy</kbd>, and fill the preceding illustrated code to its <kbd>main.cpp</kbd> file. Personally, I prefer to use the <kbd>.c</kbd> extension when writing in C and set the Compile As option (which can be found by navigating to Configuration Properties | C/C++ | Advanced in the project properties window) to C.</p>
+<p>The process of building the executable out of the preceding code is quite straightforward, except for one detail with Visual Studio 2017. As we are attempting to fake a <kbd>Legacy</kbd> executable, we need to disable Linker's Dynamic Base option. While in Visual Studio, right-click on the project and select Properties. The following screenshot illustrates where the Dynamic Base option may be found:</p>
+<div><img class="image-border" src="img/60ce97b7-f1f3-4ab5-b224-c724373126f4.png"/></div>
+<p>Once this option has been disabled, simply click on Build or Build All.</p>
+<p>On Linux, however, we may simply build the executable the usual way by entering one of the following commands in the terminal (ignore the warning for now):</p>
+<pre><em># As we are interested in 32-bit executable </em><br/><em># on a 32-bit platform we will type:</em><br/><strong>gcc -o legacy legacy.c</strong><br/><br/><em># and on a 64-bit platform we will type:</em><br/><strong>gcc -o legacy legacy.c -m32</strong></pre>
+<p>In this chapter, we will begin by patching the Windows executable first, then we will proceed to the Linux executable and see how the problem may be solved in the case of ELF. Oh, and most importantly; forget about the C sources and pretend that we do not have them.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">The issue</h1>
+                
+            
+            
+                
+<p>Whether we try to run our executables on Windows or on Linux, we would hardly notice any problem, as the program asks for our name and then prints it back. This will keep working in a stable manner as long as the program does not encounter a name longer than 127 ASCII characters (the 128<sup>th</sup> character is the terminating <kbd>NULL</kbd> value) and such names exist. Let's try to run this executable (we are referring to the one built for Windows, but the same idea applies to the Linux executable too) and feed it with a long line of text, much longer than 127 characters. This is what will happen:</p>
+<div><img class="image-border" src="img/a2459d93-d1f0-4f4b-8f48-7024aae02352.png"/></div>
+<p>The reason for this message is the <kbd>gets()</kbd> function. If C is not your language of choice, you may be unaware of the fact that this function does not check the length of the input, which may lead to stack corruption in the best case (just like what caused the preceding message to appear) and is a vulnerability inviting specially crafted exploits in the worst case. Luckily, the solution for the <kbd>gets()</kbd> problem is quite simple; the call to <kbd>gets()</kbd> has to be replaced by a call to the <kbd>fgets()</kbd> function. Should we have sources, this would be a one minute fix, but we don't (at least we are pretending we don't have them).</p>
+<p>However, the solution we will shortly implement is not complex. All we need is a disassembler (preferably IDA Pro), a hex editor, and, of course, Flat Assembler.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">PE files</h1>
+                
+            
+            
+                
+<p>In order to successfully implement a patch, we need to understand the PE file format (PE stands for portable executable). While a detailed specification may be obtained at this URL, <a href="http://www.microsoft.com/whdc/system/platform/firmware/PECOFF.mspx">http://www.microsoft.com/whdc/system/platform/firmware/PECOFF.mspx</a>, we only need to understand a few things about the format and be able to manually parse its basic structure.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Headers</h1>
+                
+            
+            
+                
+<p>A PE file contains several headers and the first one we encounter is the DOS header, which only contains two things that are interesting for us; the first is the <kbd>MZ</kbd> signature and the second is the offset of the file header, also known as the PE header (as it is preceded by the <kbd>PE\x0\x0</kbd> signature). The file header contains basic information about the file such as, for example, the number of sections.</p>
+<p>Following the PE header is the optional header, which, in turn, contains even more interesting information such as <kbd>ImageBase</kbd>, --the address at which the image (file) should preferably be loaded, --and <kbd>NumberOfRvaAndSizes</kbd>, and the latter is of special interest for us. The <kbd>NumberOfRvaAndSizes</kbd> field denotes the number of entries in the array of <kbd>IMAGE_DATA_DIRECTORY</kbd> entries immediately following the optional header. The <kbd>IMAGE_DATA_DIRECTORY</kbd> structure is defined as follows:</p>
+<pre>struct IMAGE_DATA_DIRECTORY<br/>{<br/>   DWORD VirtualAddress;<br/>   DWORD Size;<br/>}</pre>
+<p>Each of these structures describes certain areas of the PE file. For example, <kbd>Import IMAGE_DATA_DIRECTORY</kbd>, the one we are particularly interested in, refers to information about functions not present in this file, but imported from dynamic link libraries.</p>
+<p>The next would be an array of <kbd>IMAGE_SECTION_HEADER</kbd> structures, where each of the PE sections is described (we are given a section's file offset and size as well as its virtual address and virtual size, the size in memory, which may and most likely will be different from its size in the file).</p>
+<p>While I strongly encourage you to read the official specification, I would also suggest downloading and installing the best hex editor I have ever seen, --010 Editor (available at <a href="https://www.sweetscape.com/010Editor/">https://www.sweetscape.com/010Editor/</a>). This powerful application, in addition to having builds for Windows, mac OS X, and Linux, supports templates for easier parsing of different binary formats and has a template for parsing of PE files. Take a look at the template's output; --it makes understanding the PE format much easier. Here is how a PE file is displayed in 010 Editor:</p>
+<div><img class="image-border" src="img/58b086a5-924f-4a78-a8c1-2acc74bc137a.png"/></div>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Imports</h1>
+                
+            
+            
+                
+<p>The <kbd>gets()</kbd> function we are hunting for is dynamically linked from the <kbd>ucrtbased.dll</kbd> file, therefore we should check the import table for it. Using the 010 Editor to find and parse the import table, as we see in the following screenshot, is not difficult:</p>
+<div><img class="image-border" src="img/329cdb1a-6870-4543-8866-f36f789b6bee.png"/></div>
+<p>Although it may be (and in fact is) an interesting process to manually parse a PE executable, it is much more convenient and easy to use one of the tools available out there. For example, IDA Pro would do all the dirty work for us.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Gathering information</h1>
+                
+            
+            
+                
+<p>Load the <kbd>Legacy.exe</kbd> file into IDA Pro or any other disassembler of your choice as we will now start gathering information about what we have to do in order to patch the <kbd>Legacy.exe</kbd> file and force it to use <kbd>fgets()</kbd> instead of <kbd>gets()</kbd>.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Locating calls to gets()</h1>
+                
+            
+            
+                
+<p>We are lucky, in our case, that there is only one call to <kbd>gets()</kbd>, and we know that it should be somewhere around the call to <kbd>printf</kbd>, which prints the <kbd>Enter your name:</kbd> string. However, let's take a look at the Strings window in IDA Pro:</p>
+<div><img class="image-border" src="img/d3ee48f7-163f-475d-a788-f9d125d60767.png"/></div>
+<p>Finding the string of interest takes a second in the worst case, and once found, we simply double-click on it and get to the <kbd>.rdata</kbd> section of the executable where we see the following:</p>
+<div><img class="image-border" src="img/27fae41b-f98f-488b-aa63-c3bd8ac18a12.png"/></div>
+<p>Double-clicking on <kbd>DATA XREF:</kbd> takes us to the place in the code where the string is being accessed from:</p>
+<div><img class="image-border" src="img/77b20cb6-90d1-4516-9320-0fe55c872f3a.png"/></div>
+<p>Going down just five lines, we see the call to <kbd>j_gets</kbd>... Why <kbd>j_gets</kbd>, you may ask; aren't we looking for the <kbd>gets()</kbd> function's address and not for jumps to it? Of course we are looking for <kbd>gets()</kbd>; however, since there may have been more than one call to <kbd>gets()</kbd>, the compiler created a single "call hub" for this function so that any other code calling <kbd>gets()</kbd> would, in fact, call <kbd>j_gets</kbd> and then be directed to the real <kbd>gets()</kbd> function's address in the import table. And this is what we see at the address of <kbd>j_gets</kbd>:</p>
+<div><img class="image-border" src="img/f8690e74-895c-4fec-aa43-64b10ad66eae.png"/></div>
+<p>For now, we only have to take note of the address of the <kbd>call j_gets</kbd> instruction, which is <kbd>0x4117Ec</kbd>.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Preparing for the patch</h1>
+                
+            
+            
+                
+<p>Unfortunately, we cannot simply redirect the call to <kbd>fgets()</kbd> instead of <kbd>j_gets</kbd>, because we do not have <kbd>fgets()</kbd> imported at all (as we are not using it in our C source) as well as due to the fact that <kbd>gets()</kbd> takes only one argument (as we see at the address <kbd>0x4117EB</kbd>-<kbd>cdecl</kbd> passing of a parameter), while <kbd>fgets()</kbd> expects three. Trying to patch the code in place so that it would pass three parameters is not possible without damaging the executable and rendering it unusable. This means that we need to find a place for shim code, which would add the two additional parameters and actually call <kbd>fgets()</kbd> (once we add it as an imported function).</p>
+<p>Fortunately for us, PE sections in memory (and, in fact, in files too) occupy much more space than their actual content. This is true in our case as well and we need to find where the content of the <kbd>.text</kbd> section ends; for this reason we, first of all, look at where the next section begins, as shown in the following screenshot:</p>
+<div><img class="image-border" src="img/9deda949-ed11-4c95-83d0-18446fb3ff11.png"/></div>
+<p>As we see in the preceding screenshot, the next section is <kbd>.rdata</kbd> and the beginning of its content is highlighted. Once we are there, we begin to scroll up, till we see content other than zeros or <kbd>0xcc</kbd> bytes, as shown in the following screenshot:</p>
+<div><img class="image-border" src="img/740aef78-6103-4a43-ad33-3c35f3dee7ed.png"/></div>
+<p>We see that as the actual content's last byte is at file offset <kbd>0x4196</kbd>, we have some spare space beginning with the file offset <kbd>0x4197</kbd>; however, it does not seem right to begin a procedure at an unaligned address, so let's begin with the file offset <kbd>0x4198</kbd>. Just to be sure that we are at the right place, let's compare the bytes with what we see in IDA Pro:</p>
+<div><img class="image-border" src="img/11c13b61-c204-421c-9046-1d1e728659c5.png"/></div>
+<p>Eventually, we see that the bytes are the same and we may use the file offset <kbd>0x4198</kbd> (virtual address <kbd>0x414d98</kbd>) for our shim code.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Importing fgets()</h1>
+                
+            
+            
+                
+<p>Before we begin the implementation of our patch, we still need to make the executable import <kbd>fgets()</kbd> instead of <kbd>gets()</kbd>. This appears to be quite easy. Let's take a look at the content of the import table where the <kbd>gets()</kbd> function is imported:</p>
+<div><img class="image-border" src="img/d1216e6a-1de8-4929-845a-7ab5d11f8ffb.png"/></div>
+<p class="mce-root">Having located the string, we may safely overwrite it with <kbd>fgets</kbd>. The explanation, looking at the following screenshot, makes it clear why such overwriting is safe in this specific case:</p>
+<div><img class="image-border" src="img/3b66c681-22e8-4684-9980-4d62a3515c26.png"/></div>
+<p>The preceding screenshot shows <kbd>gets</kbd> being replaced by <kbd>fgets</kbd> already. We are lucky once more here because the <kbd>gets</kbd> string, which started at the file offset <kbd>0x7EF0</kbd>, did not end on an even boundary, so we had an extra zero at <kbd>0x7EF5</kbd>, thus leaving us enough space to overwrite <kbd>gets</kbd> with <kbd>fgets</kbd> and have the terminating <kbd>NULL</kbd> intact.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Patching calls</h1>
+                
+            
+            
+                
+<p>The next step would be patching calls to <kbd>gets()</kbd> and redirecting them to our shim. As we only have a single call to <kbd>gets()</kbd> (which is now a call to <kbd>fgets()</kbd> with an invalid number of parameters), we will patch the call itself. If we had multiple calls to <kbd>fgets()</kbd>, we would then patch the <kbd>jmp fgets</kbd> instruction rather than patching each and every call.</p>
+<p>As we have already seen, the call is relative to <kbd>EIP</kbd>, so we have to calculate a new offset for the call so that it would call our shim code located at <kbd>0x414d98</kbd>. The formula is rather simple:</p>
+<div><em>new_offset = 0x414d98 - 0x4117EC - 5</em></div>
+<p>Here, <kbd>0x4117EC</kbd> is the address of the call instruction and <kbd>5</kbd> is its length in bytes. We need to use this length of the call instruction as, at the time it is executed, the <kbd>EIP</kbd> already points at the instruction immediately following the call. The resulting offset would be <kbd>0x35A7</kbd>.</p>
+<p>However, before we can apply this patch, we have to find the right place in the hex editor and we use a few bytes representing this call instruction and a few bytes that follow as shown in the following screenshot:</p>
+<div><img class="image-border" src="img/fefdff4a-98f9-42bc-a858-9dbc13dc2092.png"/></div>
+<p>We used the <kbd>0xe8 0xf3 0xfa 0xff 0xff 0x83 0xc4 0x04</kbd> bytes for our search. Doing this, one has to make sure such a sequence of bytes appears only once in the search result. Here the <kbd>0xe8</kbd> is the call instruction and the <kbd>0xf3 0xfa 0xff 0xff</kbd> bytes are the offset from the next instruction --<kbd>0xfffffaf3</kbd>. The following screenshot shows the offset patch being applied:</p>
+<div><img class="image-border" src="img/4e30e86b-3c38-462d-8190-99555366649b.png"/></div>
+<p>The offset is overwritten with <kbd>0x000035a7</kbd>. Now, the instruction at <kbd>0x4117ec</kbd> would call our shim code. But we still have to implement the shim code.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Shim code</h1>
+                
+            
+            
+                
+<p>The code we are about to write will look a tiny bit different from the code we are used to as we are not expecting an executable file to be generated out of it; instead, we will generate a binary file containing a 32-bit procedure assumed to be loaded at a specific address, and that is what we are going to tell the compiler in the first two lines of our <kbd>patch.asm</kbd> source file:</p>
+<pre><em>; Tell the assembler we are writing 32-bit code</em><br/>use32<br/><br/><em>; Then specify the address where the procedure</em><br/><em>; is expected to be loaded at</em><br/>org 0x414d98</pre>
+<p>Then we will define two labels pointing at addresses outside our procedure. Fortunately, Flat Assembler allows us to define a label at an arbitrary address, like this:</p>
+<pre><em>; Assign label to the code where jump </em><br/><em>; to fgets is performed</em><br/>label fgets at 0x414bd8<br/><br/><em>; We will discuss this label in just a few seconds</em><br/>label __acrt_iob_func at 0x41b180</pre>
+<p>After this, we are ready to begin our implementation of the actual shim code as a regular <kbd>cdecl</kbd> procedure:</p>
+<pre>fgets_patch:<br/>  <em> ; Standard cdecl prolog</em><br/>   push  ebp<br/>   mov   ebp, esp<br/><br/>   <em>; Ooops... We need to pass a pointer to </em><br/><em>   ; the stdin as one of the fgets' parameters,</em><br/><em>   ; but we have no idea what this pointer is...</em></pre>
+<p>The implementation of the standard C library on Windows provides us with a function for determining pointers to streams based on their number. The function is <kbd>__iob_func(int)</kbd>. Luckily for us, our victim executable is importing this function from <kbd>ucrtbased.dll</kbd> as we can see in the Imports tab of IDA Pro (or in the 010 Editor too):</p>
+<div><img class="image-border" src="img/b9427232-540b-4faf-826d-374c7df66034.png"/></div>
+<p>Although the name differs a bit (prepended with <kbd>__acrt_</kbd>), this is the function we are interested in and it is located at the virtual address <kbd>0x41b180</kbd>. This is why we added the <kbd>__acrt_iob_func</kbd> label a few moments ago. Visiting that address, we may see that the address of the real <kbd>__acrt_iob_func</kbd> would be placed there after dynamic linking:</p>
+<div><img class="image-border" src="img/4534f6dd-9bb0-43d9-a087-8d3cd26c585a.png"/></div>
+<p>In order to call this external function for getting the pointer to the <kbd>stdin</kbd> stream, we must remember that the <kbd>stdin</kbd> number is <kbd>0</kbd> and that imported functions are called indirectly:</p>
+<pre><em>   ; Get the stdin stream pointer</em><br/>   push  0<br/>   call  dword[__acrt_iob_func]<br/>   <em>; The result is in the EAX register</em><br/><em>   ; Do not forget to fix the stack pointer</em><br/><em>   ; after calling a cdecl procedure</em><br/>   add   esp, 4</pre>
+<p>Now, we are ready to forward the execution flow to <kbd>fgets()</kbd> and we do that in the following way:</p>
+<pre><em>   ; Forward the call to fgets()</em><br/>   push  eax             <em>; stdin</em><br/>   push  128             <em>; max input length</em><br/>   push  dword [ebp + 8] <em>; forward pointer to the</em> <br/>                        <em> ; input buffer</em><br/>   call  fgets<br/>   add   esp, 12<br/><br/>   <em>; Standard cdecl epilog</em><br/>   mov   esp, ebp<br/>   pop   ebp<br/>   ret</pre>
+<p>The code for the patch is ready. As simple as that (in this particular case). Compiling this code would generate a 35-bytes binary file containing raw binary code. This is the code seen in the hex editor:</p>
+<div><img class="image-border" src="img/bde1ad36-c088-42f4-a7f0-5c66579d291e.png"/></div>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Applying the patch</h1>
+                
+            
+            
+                
+<p>In the <em>Preparing for the patch</em> subsection of this chapter, we have already located the place where the patch should be applied in the hex editor, which is at the file offset <kbd>0x4198</kbd>. The application of the patch is rather simple --we copy the bytes from the <kbd>patch.bin</kbd> file into the executable at the aforementioned location and get the following:</p>
+<div><img class="image-border" src="img/17f5709e-cdd6-448c-b3a1-251ebef2cac9.png"/></div>
+<p>Now save the file and we are done. The executable has been patched and would use <kbd>fgets()</kbd> instead of <kbd>gets()</kbd> from now on. We may check this by running the executable and feeding a very long string instead of a name:</p>
+<div><img class="image-border" src="img/2618a77d-2ead-479c-9916-08b62152c221.png"/></div>
+<p>As we see, such input no longer causes any error as with <kbd>fgets()</kbd> at most 127 characters are read, thus keeping our stack safe, and we see the result in the preceding screenshot; --the output is truncated.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">A complex scenario</h1>
+                
+            
+            
+                
+<p>We have just gone through a simplistic scenario of patching a PE executable; alas, real-life situations are rarely that simple and modifications are usually much more complex than simply importing a different function. Is there a way to statically patch executables in such cases? Of course there is. In fact, there are more than one. For example, one may patch a certain procedure within the file, thus altering the algorithm it implements. This is, however, only possible when the existing procedure occupies enough space for the new code. Another option is to add an executable section to a PE file, which is rather simple and deserves being examined here. The whole process contains five easy steps (six, --if modifying the <kbd>patch.asm</kbd> file counts) and we are going to cover them one by one.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Preparing the patch</h1>
+                
+            
+            
+                
+<p>This is the easiest step as we hardly have to do anything here. We already have a working patch code and the only important difference from the Assembly point of view is where the code is going to be placed in memory. We will be adding a new section right at the end of the victim executable, thus the loading address for the code (the <kbd>Virtual Address</kbd>) is calculated by the summation of <kbd>Virtual Address</kbd> and <kbd>Virtual Size</kbd> of the currently last section and rounding it up to the nearest multiple of <kbd>SectionAlignment</kbd>, which, in our case, would be <kbd>0x1D000 + 0x43C = 0x1d43C</kbd>, rounded up to <kbd>0x1e000</kbd>. However, despite being called a virtual address, this value is in fact an offset from <kbd>ImageBase</kbd>, which is <kbd>0x400000</kbd>, thus the real virtual address would be <kbd>0x41e000</kbd>.</p>
+<p>To put it simply, we only have to modify one line of <kbd>patch.asm</kbd>, --line number 2, so that <kbd>org 0x414d98</kbd> would become <kbd>org 0x41e000</kbd>. The rest of the code remains the same.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Adjusting file headers</h1>
+                
+            
+            
+                
+<p>Since we are about to append the section to an executable file, we need to make some changes to its headers so that they reflect the new reality. Let's open the <kbd>Legacy.exe</kbd> file in either the 010 Editor or any other hex editor you prefer and go through all its headers making modifications where necessary.</p>
+<p>Before we proceed to update the file, we have to decide what would be the size of the new section in file (<kbd>SizeOfRawData</kbd>) and in memory (<kbd>VirtualSize</kbd>) in accordance with the <kbd>FileAlignment</kbd> and <kbd>SectionAlignment</kbd> values, respectively. Checking this values in the <kbd>IMAGE_OPTIONAL_HEADER32</kbd> structure, we see that the <kbd>FileAlignment</kbd> value is <kbd>0x200</kbd> and <kbd>SectionAlignment</kbd> is <kbd>0x1000</kbd>. Since the code we want to insert into the new section is tiny (only 35 bytes), we may proceed with minimum sizes, making the section's <kbd>SizeOfRawData = 0x200</kbd> and <kbd>VirtualSize = 0x1000</kbd>.</p>
+<p>However, let's proceed step by step and, as the first modification, adjust the <kbd>NumberOfSections</kbd> field of <kbd>IMAGE_FILE_HEADER</kbd> under <kbd>IMAGE_NT_HEADERS</kbd>, as shown in the following screenshot:</p>
+<div><img class="image-border" height="472" src="img/f345c8ca-b191-4a4a-be96-f1f5843b4b72.png" width="535"/></div>
+<p>Originally, the file had seven sections and, as we are going to add another section, we change the <kbd>WORD NumberOfSections</kbd> value to <kbd>8h</kbd>.</p>
+<p>Once the <kbd>NumberOfSections</kbd> field has been updated, we proceed with updating the <kbd>SizeOfImage</kbd> field (which is the size of the executable image in memory) of the <kbd>IMAGE_OPTIONAL_HEADER32</kbd> header. The original value of the <kbd>SizeOfImage</kbd> field is <kbd>0x1E000</kbd> and, as our new section should occupy <kbd>0x1000</kbd> bytes in memory, we simply set <kbd>SizeOfImage</kbd> to <kbd>0x1F000</kbd>, as shown in the following screenshot:</p>
+<div><img class="image-border" height="544" src="img/50ad8ec5-4b97-4f8e-9f3b-508e9f2640bb.png" width="504"/></div>
+<p>Now comes a rather more interesting part --adding a section header. Section headers are located right after the array of <kbd>IMAGE_DATA_DIRECTORY</kbd> entries, which, in our case, is at the file offset of <kbd>0x1F0</kbd>. The last section header (for the <kbd>.rsrc</kbd> section) is located at the file offset <kbd>0x2E0</kbd> and we are going to insert our header right after starting at file offset <kbd>0x308</kbd>. In the case of this executable, we have plenty of spare bytes, so we may safely proceed.</p>
+<p>The first eight bytes of the section header contain the section's name and we will name our section <kbd>.patch</kbd>. The interesting fact about the section name field is that the name does not have to end with 0 (the <kbd>NULL</kbd> string terminator) and may occupy all eight bytes.</p>
+<p>The next four byte are integers describing the virtual size of a section (how many bytes it would occupy in memory), which, as we have previously decided, is <kbd>0x1000</kbd> bytes (another interesting fact--we may set this field to 0 and it would still work well).</p>
+<p>The next field is a four bytes integer describing the <kbd>VirtualAddress</kbd> field of a section (where the section should be loaded at). The value for this field is the previous value of the <kbd>SizeOfImage</kbd> field, which was <kbd>0x1E000</kbd>.</p>
+<p>Following the <kbd>VirtualAddress</kbd> field, there is the <kbd>SizeOfRawData</kbd> field (4 bytes as well), which we set to <kbd>0x200</kbd>, --the size of the new section in the file, --and<br/>
+<kbd>PointerToRawData</kbd>, which we set to the previous size of the file --<kbd>0x8E00</kbd>.</p>
+<p>The remaining fields are filled with zeros, except the last field, <kbd>Characteristics</kbd>, which we set to <kbd>0x60000020</kbd>, denoting the section as containing code and being executable.</p>
+<p>The section header you added should look like the one shown in the following screenshot:</p>
+<div><img class="image-border" src="img/e72d4d5b-359b-4be9-bd6d-8b4d49116ef8.png"/></div>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Appending a new section</h1>
+                
+            
+            
+                
+<p>There are just two more steps to take and the first of them would be appending the actual section data to the file. Scrolling the file to the end in a hex editor, we will see that the first available file offset to add bytes to is <kbd>0x8e00</kbd>, which is exactly the value we set the <kbd>PointerToRawData</kbd> field to.</p>
+<p>We should append <kbd>0x200</kbd> bytes to the file, thus setting its size to <kbd>0x9000</kbd>, and fill the first 35 bytes of those <kbd>0x200</kbd> bytes with our code, as shown on the following screenshot:</p>
+<div><img class="image-border" src="img/61105c12-0e5b-4fff-a20c-f23eadabdf62.png"/></div>
+<p>Just one more step to take before we can actually run the executable, so let's not hesitate.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Fixing the call instruction</h1>
+                
+            
+            
+                
+<p>All that is left to do is to fix the <kbd>call gets()</kbd> instruction so that it would point to our new code. We use the same binary string <kbd>0xE8 0xF3 0xFA 0xFF 0xFF 0x83 0xC4 0x04</kbd> in order to locate the call we are interested in and replace the <kbd>0xF3 0xFA 0xFF 0xFF</kbd> bytes with <kbd>0x0F 0xC8 0x00 0x00</kbd>, which is the exact offset from the instruction following the call to our new section. The following screenshot illustrates precisely this:</p>
+<div><img class="image-border" src="img/c7328faa-8728-43ee-8a9f-3d6cc71380cc.png"/></div>
+<p>At last, save the file and try to launch it. If the patching has been done correctly, then you will see the same result as with the previous approach.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">ELF executables</h1>
+                
+            
+            
+                
+<p>Patching ELF executables is a bit more difficult than patching their PE counterparts as ELF files tend to have no spare space in their sections, thus leaving no other choice but to either add a section, which is not as simple as with PE files, or inject a shared object.</p>
+<p>Adding a section requires a good knowledge of the ELF format (specifications can be found at <a href="http://www.skyfree.org/linux/references/ELF_Format.pdf">http://www.skyfree.org/linux/references/ELF_Format.pdf</a>), which, although quite interesting, resides, in its fullness, outside the scope of this book. The most noticeable problem is in the way sections and headers are arranged within an ELF executable and in the way an ELF structure is treated by Linux, which makes it hard to append data as we did in the case of PE patching.</p>
+<p>Injection of a shared object, on the other hand, is much simpler to implement and easy to use, so let's proceed this way.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">LD_PRELOAD</h1>
+                
+            
+            
+                
+<p>The <kbd>LD_PRELOAD</kbd> environment variable is used by the Linux dynamic linker/loader <kbd>ld.so</kbd> and, if set, contains a list of shared objects to be loaded with the executable before any other shared object is loaded, including <kbd>libc.so</kbd>. This means that we may create a shared object, which would export a symbol named <kbd>gets</kbd>, and specify this shared object in <kbd>LD_PRELOAD</kbd>, which would guarantee, that if the executable we are attempting to run imports a symbol with the same name, our implementation of <kbd>gets</kbd> would be linked instead of the one from <kbd>libc.so</kbd>, which would be loaded afterward.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">A shared object</h1>
+                
+            
+            
+                
+<p>Right now, we are going to implement our own <kbd>gets()</kbd> procedure, which would, in fact, forward calls to <kbd>fgets()</kbd> just as our PE patch did. Unfortunately, Flat Assembler's support for ELF does not allow us to create shared objects in a simple way yet; therefore, we will create an object file and later link it with GCC as a shared object for a 32-bit system.</p>
+<p>The source code is, as usual, quite simple and intuitive:</p>
+<pre><em>; First the formatter directive to tell</em><br/><em>; the assembler to generate ELF object file</em><br/>format ELF<br/><br/><em>; We want to export our procedure under </em><br/><em>; the name "gets"</em><br/>public gets as 'gets'<br/><br/><em>; And we need the following symbols to be</em><br/><em>; imported from libc</em><br/><em>; As you may notice, unlike Windows, the </em><br/><em>; "stdin" is exported by libc</em><br/>extrn fgets<br/>extrn stdin<br/><br/><em>; As we want to create a shared object</em><br/><em>; we better create our own PLT (Procedure</em><br/><em>; Linkage Table)</em><br/>section '.idata' writeable<br/>   _fgets  dd  fgets<br/>   _stdin  dd  stdin<br/><br/><br/>section '.text' executable<br/><br/><em>; At last, the procedure</em><br/>gets:<br/>   <em>; Standard cdecl prolog</em><br/>   push  ebp<br/>   mov   ebp, esp<br/><br/>   <em>; Forward the call to fgets()</em><br/>   mov   eax, [_stdin]<br/>   push  dword [eax]             ; FILE*<br/>   push  127                     ; len<br/>   push  dword [ebp + 8]         ; Buff*<br/>   call  [_fgets]<br/>   add   esp, 12<br/><br/>   <em>; Standard cdecl epilog</em><br/>   mov   esp, ebp<br/>   pop   ebp<br/>   ret</pre>
+<p>Save the preceding code as <kbd>fgets_patch.asm</kbd> and compile it with <kbd>fasm</kbd> or <kbd>fasm.x64</kbd>; this will result in the <kbd>fgets_patch.o</kbd> object file. Building a shared object out of this object file is as simple as running one of the following commands in the terminal:</p>
+<pre><em># On a 32-bit system</em><br/><strong>gcc -o fgets_patch.so fgets_patch.o -shared</strong> <br/><br/><em># and on a 64-bit system</em><br/><strong>gcc -o fgets_patch.so fgets_patch.o -shared -m32</strong></pre>
+<p>Let's now test and run the legacy executable without the patch and feed it with a long string (140 bytes). Here is the result:</p>
+<div><img class="image-border" src="img/ca0ad6e2-02f2-4ed3-af77-c18f0c3acddb.png"/></div>
+<p>As we can see, the stack was corrupted, which caused a segmentation fault (invalid memory access). Now we may try to run the same executable but set the <kbd>LD_PRELOAD</kbd> environment variable to <kbd>"./fgets_patch.so"</kbd>, thus forcing our shared object to be loaded before anything else when launching the <kbd>legacy</kbd> executable. The command line would then be as follows:</p>
+<pre><strong>LD_PRELOAD=./fgets_patch.so ./legacy</strong></pre>
+<p>This time, we get the output just as expected, --truncated to 127 characters, --meaning that our implementation of <kbd>gets()</kbd> was linked by the dynamic linking process:</p>
+<div><img class="image-border" src="img/2326a414-067b-4d3a-9f35-0d05734a1091.png"/></div>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Summary</h1>
+                
+            
+            
+                
+<p>Modification of existing executable code and/or running processes is a rather broad theme, which is very difficult to fit into a single chapter as it may itself deserve a separate book. It is, however, much more relevant to programming techniques, and operating systems in general, while we were trying to concentrate on the Assembly language.</p>
+<p>This chapter hardly covers the tip of the iceberg called modification of binary code (known as patching). The purpose was to demonstrate how easy and interesting the process may be, rather then covering each and every method in much detail. We have, however, acquired a general indication of where to go to when it comes to modification of code that cannot be simply rebuilt.</p>
+<p>The method of code analysis was covered very superficially just to provide you with the general idea, just as the most part of the process of patching an application too, as the emphasis was on the implementation of patches themselves. My personal suggestion is --go and get acquainted with the format specs for both Windows PE executables and object files and Linux ELF. Even if you would never have to patch a single executable, you would then understand what happens on lower levels when you are coding in a higher-level languages.</p>
+
+
+            
+
+            
+        
+    </body></html>

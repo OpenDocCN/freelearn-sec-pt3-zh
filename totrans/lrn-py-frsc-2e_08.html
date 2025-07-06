@@ -1,0 +1,747 @@
+<html><head></head><body>
+        
+
+                            
+                    <h1 class="header-title">The Media Age</h1>
+                
+            
+            
+                
+<p>Metadata, or data describing data, is a powerful artifact an examiner can leverage to answer investigative questions. Broadly speaking, metadata can be found through examination of filesystems and embedded elements. File permissions, MAC timestamps, and file size are recorded at the filesystem level. However, for specific file types, such as JPEGs, additional metadata is embedded within the file itself.</p>
+<p>Embedded metadata is more specific to the object in question. This embedded metadata can provide additional sources of timestamps, the author of a particular document, or even GPS coordinates for a photo. Entire software applications, such as Phil Harvey's ExifTool, exist to extract embedded metadata from files and collate it with filesystem metadata.</p>
+<p>This chapter will cover the following topics:</p>
+<ul>
+<li>Using first- and third-party libraries to extract metadata from files</li>
+<li>Understanding <strong>Exchangeable Image File Format</strong> (<strong>EXIF</strong>), ID3, and Microsoft Office embedded metadata</li>
+<li>Learning to build frameworks to facilitate rapid development and integration of scripts</li>
+</ul>
+<p>The code for this chapter was developed and tested using Python 2.7.15 and Python 3.7.1.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Creating frameworks in Python</h1>
+                
+            
+            
+                
+<p>Frameworks are incredibly useful for large-scale projects in Python. We previously called the <kbd>UserAssist</kbd> script a framework in <a href="59414e87-5820-4942-bd47-aba762dd9f14.xhtml" target="_blank">Chapter 6</a>, <em>Extracting Artifacts from Binary Files</em>; however, it doesn't really fit that model. The frameworks we build will have an abstract top layer, which will act as the controller of the program. This controller will be responsible for executing plugins and writers.</p>
+<p>A plugin is code contained in a separate script that adds a specific feature to the framework. Once developed, a plugin should be easily integrated into an existing framework in a few lines of code. A plugin should also execute standalone functionality and not require modification of the controller to operate. For example, we'll write one plugin to specifically process EXIF metadata and another to process Office metadata. An advantage of the framework model is that it allows us to group many plugins together in an organized manner and execute them all for a shared objective, such as extracting various types of embedded metadata from files.</p>
+<p>Building out frameworks requires some forethought and planning. It's vital to plan out and test the types of data structures you want to use for your framework. Some data structures are better suited for different tasks. Consider the types of input and output your framework will handle and let that guide your decision to the appropriate data type. Having to rewrite your framework after discovering a more optimal data structure can be a frustrating and time-consuming task.</p>
+<p>Without this step, a framework can rapidly get out of hand and become an absolute bogged down mess. Imagine scenario where each plugin requires its own unique arguments, and worse, returns different types of data that require special handling. For example, one plugin might return a list of dictionaries and another plugin may return a dictionary of dictionaries. Most of your code would be written to convert these data types into a common form for your writers. For your sanity, we recommend creating standardized input and output that each plugin adheres to. This will have the benefit of making your framework much easier to understand and more stable from unnecessary conversion errors.</p>
+<p>Writers take processed data from the plugins and write them to output files. An example of a writer we're familiar with is a CSV writer. In previous chapters, our CSV writers take processed data input and write it to a file. In larger projects, such as this, we might have writers for various types of output. For example, in this chapter, we'll develop a Google Earth KML writer to plot GPS data we extract from embedded EXIF metadata.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Introduction to EXIF metadata</h1>
+                
+            
+            
+                
+<p>EXIF metadata is a standard that's used for image and audio file tags that are created by devices and applications. Most commonly, this kind of embedded metadata is associated with JPEG files. However, EXIF metadata is also present in TIFF, WAV, and other files. In JPEG files, EXIF metadata can contain technical camera settings used to take the photo such as the shutter speed, F-stop, and ISO values. These may not be inherently useful to an examiner, but tags containing the make, model, and GPS location of the photo can be used for attributing an individual to a crime. Each of these elements are associated with a tag. For example, the make metadata is EXIF tag 271 or <kbd>0x010F</kbd>. A list of tags can be found at <a href="http://www.exiv2.org/tags.html">http://www.exiv2.org/tags.html</a>.</p>
+<p>EXIF metadata is stored at the beginning of JPEG images and, if present, is located at byte offset 24. The EXIF header begins with the hex <kbd>0x45786966</kbd>, which is Exif in ASCII. The following is a hex dump of the first 52 bytes of a JPEG image:</p>
+<div><img src="img/33d72819-5c38-454c-a051-a310b140a4f1.png" style="width:43.42em;height:11.42em;"/></div>
+<p>Note the EXIF header starting at offset 24. The hex <kbd>0x4D4D</kbd> following it represents Motorola or big-endian byte alignment. The <kbd>0x010F</kbd> tag ID at byte offset 40 is the EXIF <kbd>Make</kbd> metadata tag. Each tag is made up of four components:</p>
+<table border="1" style="border-collapse: collapse;width: 100%">
+<tbody>
+<tr>
+<td>
+<p class="TableColumnHeadingPACKT"><strong>Byte offset</strong></p>
+</td>
+<td>
+<p class="TableColumnHeadingPACKT"><strong>Name</strong></p>
+</td>
+<td>
+<p class="TableColumnHeadingPACKT"><strong>Description</strong></p>
+</td>
+</tr>
+<tr>
+<td>
+<p class="TableColumnContentPACKT">0-1</p>
+</td>
+<td>
+<p class="TableColumnContentPACKT">ID</p>
+</td>
+<td>
+<p class="TableColumnContentPACKT">The tag ID representing a specific EXIF metadata element</p>
+</td>
+</tr>
+<tr>
+<td>
+<p class="TableColumnContentPACKT">2-3</p>
+</td>
+<td>
+<p class="TableColumnContentPACKT">Type</p>
+</td>
+<td>
+<p class="TableColumnContentPACKT">Type of data (integer,+ string, and so on)</p>
+</td>
+</tr>
+<tr>
+<td>
+<p class="TableColumnContentPACKT">4-7</p>
+</td>
+<td>
+<p class="TableColumnContentPACKT">Length</p>
+</td>
+<td>
+<p class="TableColumnContentPACKT">The length of the data</p>
+</td>
+</tr>
+<tr>
+<td>
+<p class="TableColumnContentPACKT">8-11</p>
+</td>
+<td>
+<p class="TableColumnContentPACKT">Offset</p>
+</td>
+<td>
+<p class="TableColumnContentPACKT">The offset from the byte alignment value</p>
+</td>
+</tr>
+</tbody>
+</table>
+<p>In the preceding table, the <kbd>Make</kbd> tag has a data type of 2, equating to an ASCII string, is 6 bytes long, and is located 2,206 bytes from the byte alignment value of <kbd>0x4D4D</kbd>. The second screenshot shows a 52 byte slice of data <kbd>2206</kbd> bytes from the beginning of the file. Here, we can see Nokia, the make of the phone that was used to take the photograph, as a 6 byte long ASCII string:</p>
+<div><img src="img/58d35dd2-900d-4b52-96b2-a43e6b902e3d.png" style="width:42.25em;height:10.17em;"/></div>
+<p>If we were so inclined, we could use <kbd>struct</kbd> and parse through the header and grab the pertinent EXIF metadata. Fortunately, the third-party <strong>Python Imaging Library</strong>, PIL, module already supports EXIF metadata and makes this task much simpler.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Introducing the Pillow module</h1>
+                
+            
+            
+                
+<p>Pillow (version 5.3.0) is an actively maintained fork of the Python Imaging Library and is an extensive module that can archive, display, and process image files. A full description of this module can be read at <a href="https://pillow.readthedocs.io">http://www.pillow.readthedocs.io</a>. This library can be installed using <kbd>pip</kbd> as follows:</p>
+<pre><strong>pip install pillow==5.3.0</strong></pre>
+<p>PIL provides a function named <kbd>_getexif()</kbd>, which returns a dictionary of tags and their values. Tags are stored in their decimal format rather than hexadecimal. Interpreting <kbd>0x010F</kbd> in big-endian corresponds to the decimal value 271 for the <kbd>Make</kbd> tag. Rather than doing this the hard way with <kbd>struct</kbd>, we can simply query whether a tag exists and, if it does, then process the value:</p>
+<pre><strong>&gt;&gt;&gt; from PIL import Image</strong> 
+<strong>&gt;&gt;&gt; image = Image.open('img_42.jpg')</strong> 
+<strong>&gt;&gt;&gt; exif = image._getexif()</strong> 
+<strong>&gt;&gt;&gt; if 271 in exif.keys():</strong> 
+<strong>...     print('Make:', exif[271])</strong> 
+<strong>... </strong> 
+<strong>Make: Nokia</strong></pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Introduction to ID3 metadata</h1>
+                
+            
+            
+                
+<p>The ID3 metadata container is often associated with MP3 files. There are two versions of the embedded structure: ID3v1 and ID3v2. The ID3v1 version is the final 128 bytes of the file and has a different structure from the updated format. The newer version, which we'll focus on, is located at the beginning of the file and is variable in length.</p>
+<p>An ID3 tag has a simpler structure compared with EXIF tags. The first 16 bytes are evenly split between the tag ID and the length of the metadata. Following that is the metadata itself. The following screenshot contains the first 144 bytes of an MP3 file:</p>
+<div><img src="img/a6599dbf-35ca-49ae-a9d0-c880ba3ca339.png" style="width:43.75em;height:16.17em;"/></div>
+<p>The file signature of MP3 files is the ASCII ID3. Shortly after the signature, we can see different tags, such as TP1, TP2, and TCM. These are metadata tags for the artist, band, and composer, respectively. The next 8 bytes following TP1 is the length represented by the hex <kbd>0x0B</kbd> or 11. Following the 2 byte buffer is the data for the artist formerly known as <kbd>The Artist</kbd>. <kbd>The Artist</kbd> is 10 bytes long with an additional single null byte (0x00) prepended to the data for a total of 11 bytes. We'll use a module named Mutagen to load the file and read any ID3 tags that are present.</p>
+<p>Some MP3 files may not have embedded ID3 metadata. In this case, the tags we can see in the previous screenshot may not be present.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Introducing the Mutagen module</h1>
+                
+            
+            
+                
+<p>Mutagen (version 1.41.1) is capable of reading and writing different audio metadata formats. Mutagen supports a wide variety of embedded audio formats, such as ASF, FLAC, M4A, and MP3 (ID3). The full documentation for this module can be found at<a href="http://www.mutagen.readthedocs.io"> http://www.mutagen.readthedocs.io</a>. We can install this module with <kbd>pip</kbd> as follows:</p>
+<pre><strong>pip install mutagen==1.41.1</strong> </pre>
+<p>Using Mutagen is straightforward. We need to create an ID3 object by opening our MP3 file and then, as with PIL, look for specific tags in a dictionary, as follows:</p>
+<pre><strong>&gt;&gt;&gt; from mutagen import id3</strong> 
+<strong>&gt;&gt;&gt; id = id3.ID3('music.mp3')</strong> 
+<strong>&gt;&gt;&gt; if 'TP1' in id.keys():</strong> 
+<strong>...     print('Artist:', id['TP1'])</strong> 
+<strong>...</strong> 
+<strong>Artist: The Artist</strong> </pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Introduction to Office metadata</h1>
+                
+            
+            
+                
+<p>With the launch of Office 2007, Microsoft introduced a new proprietary format for their office products, such as <kbd>.docx</kbd>, <kbd>.pptx</kbd>, and <kbd>.xlsx</kbd> files. These documents are actually a zipped directory consisting of XML and binary files. These documents have a great deal of embedded metadata stored in the XML files within the document. The two XML files we'll look at are <kbd>core.xml</kbd> and <kbd>app.xml</kbd>, which store different types of metadata.</p>
+<p>The <kbd>core.xml</kbd> file stores metadata related to the document such as author, the revision number, and who last modified the document. The <kbd>app.xml</kbd> file stores metadata that's more specific to the contents of the file. For example, Word documents store page, paragraph, line, word, and character counts, whereas a PowerPoint presentation stores information related to slides, hidden slides, and note count, among others.</p>
+<p>To view this data, use an archive utility of your choice and unzip an existing 2007 or higher version Office document. You may need to add a <kbd>.zip</kbd> extension to the end of your file to get the option to unzip the archive with your tool of choice. The following is a screenshot of the contents of an unzipped Word document:</p>
+<div><img src="img/25a35a59-7a76-4ff5-977a-013e38a4242d.png"/></div>
+<p>In the <kbd>docProps</kbd> folder, we can see our two XML files, which contain the metadata related to our specific word document. The word directory contains the actual word document itself in <kbd>document.xml</kbd> and any inserted media stored in the media subdirectory. Now, let's take a look at the <kbd>core.xml</kbd> file:</p>
+<div><img src="img/115bd8be-b47b-45cd-b39a-0e4e90401a78.png"/></div>
+<p>In <a href="a7837b20-94b0-4a49-a096-42a2a8620423.xhtml" target="_blank">Chapter 4</a>, <em>Working with Serialized Data Structures</em>, we discussed serialized data and mentioned that XML was a popular format for data serialization. XML works on the concept of directives, namespaces, and tags and is similar to another popular markup language, HTML. Most XML files begin with header directives detailing the version, encoding, and any instructions to parsers.</p>
+<p>The <kbd>core.xml</kbd> file also contains five namespaces that are declared only once at the beginning of the file and are then referred to by their assigned namespace variable thereafter. The primary purpose of namespaces is to avoid name conflict resolutions and are created using the <kbd>xmlns</kbd> attribute.</p>
+<p>After the namespaces, we have a variety of tags, similar to HTML, such as the title, subject, and creator. We can use an XML parser, such as <kbd>lxml</kbd>, to iterate through these tags and process them.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Introducing the lxml module</h1>
+                
+            
+            
+                
+<p>The <kbd>lxml</kbd> (version 4.2.5) third-party module has Python bindings to the C <kbd>libxml2</kbd> and <kbd>libxslt</kbd> libraries. This module is a very popular XML parser for its speed and can be used to parse HTML files. We'll use this module to walk through each <kbd>child</kbd> tag and print out those of interest. Full documentation for this library can be found at <a href="http://www.lxml.de">http://www.lxml.de</a>. Once again, installing a library is made simple using <kbd>pip</kbd>:</p>
+<pre><strong>pip install lxml==4.2.5</strong> </pre>
+<p>Let's take a look at how to iterate through the <kbd>core.xml</kbd> file in the interactive prompt. The <kbd>etree</kbd> or element tree API provides a simple mechanism of iterating through children in the XML file. First, we need to parse an XML file into an element tree. Next, we get the root-level element in the tree. With the root, we can walk through each child using the <kbd>root.iter()</kbd> function and print out the tag and text values. Note that the tag contains the fully expanded namespace. In just a few lines of code, we can now parse basic XML files with ease using <kbd>lxml</kbd>:</p>
+<pre><strong>&gt;&gt;&gt; import lxml.etree.ElementTree as ET</strong> 
+<strong>&gt;&gt;&gt; core = ET.parse('core.xml')</strong> 
+<strong>&gt;&gt;&gt; root = core.getroot()</strong> 
+<strong>&gt;&gt;&gt; for child in root.iter():</strong> 
+<strong>...     print(child.tag, ':', child.text)</strong> 
+<strong>... </strong> 
+<strong>{http://purl.org/dc/elements/1.1/}title : Metadata Title</strong> 
+<strong>{http://purl.org/dc/elements/1.1/}subject : Digital Forensics</strong> 
+<strong>{http://purl.org/dc/elements/1.1/}creator : Preston Miller &amp; Chapin Bryce</strong> 
+<strong>...</strong> </pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">The Metadata_Parser framework overview</h1>
+                
+            
+            
+                
+<p>Now that we understand the concept of frameworks and what kind of data we're dealing with, we can examine the specifics of our framework implementation. Rather than a flow diagram, we use a high-level diagram to show how the scripts interact with each other:</p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-747 image-border" src="img/41d06044-4d8e-46f0-8eb2-e042ff464511.png" style="width:66.50em;height:33.75em;"/></p>
+<p>This framework is going to be controlled by the <kbd>metadata_parser.py</kbd> script. This script will be responsible for launching our three plugin scripts and then shuttling the returned data to the appropriate writer plugins. During processing, the plugins make calls to processors to help validate data or perform other processing functions. We have two writer plugins, one for CSV output and another to plot geotagged data using Google Earth's KML format.</p>
+<p>Each plugin will take an individual file as its input and store the parsed metadata tags in a dictionary. This dictionary is then returned to <kbd>metadata_parser.py</kbd> and is appended to a list. Once all of our input files are processed, we send these lists of dictionaries to writers. We use the <kbd>DictWriter</kbd> from the <kbd>csv</kbd> module to write our dictionary output to a CSV file.</p>
+<p>Similar to <a href="59414e87-5820-4942-bd47-aba762dd9f14.xhtml" target="_blank">Chapter 6</a>, <em>Extracting Artifacts from Binary Files</em>, we'll have multiple Python directories to organize our code in a logical manner. To use these packages, we need to make the directory searchable with an <kbd>__init__.py</kbd> script and then import the directory in the code:</p>
+<pre>  |-- metadata_parser.py 
+  |-- plugins 
+      |-- __init__.py 
+      |-- exif_parser.py 
+      |-- id3_parser.py 
+      |-- office_parser.py 
+  |-- processors 
+      |-- __init__.py 
+      |-- utility.py 
+  |-- writers 
+      |-- __init__.py 
+      |-- csv_writer.py 
+      |-- kml_writer.py </pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Our main framework controller – metadata_parser.py</h1>
+                
+            
+            
+                
+<p>The <kbd>metadata_parser.py</kbd> script contains a single function, <kbd>main()</kbd>, on line 45 that handles coordinating logic between our plugins and writers. At the top of the script, we call our imports we will use for this chapter. On lines 8 and 9, we specifically import our plugins and writers directories that we've created as follows:</p>
+<pre>001 """EXIF, ID3, and Office Metadata parser."""<br/>002 from __future__ import print_function<br/>003 import argparse<br/>004 import os<br/>005 import sys<br/>006 import logging<br/>007 <br/>008 import plugins<br/>009 import writers<br/>...<br/>045 def main(input_dir, output_dir):</pre>
+<p>On line 133, we set up the arguments for our program. This script takes two positional arguments, an input and output directory, and an optional log argument to change the directory and name of the log file. Lines 142 through 154 focus on setting up the log, as in previous chapters. The lines are as follows:</p>
+<pre>131 if __name__ == '__main__':<br/>132 <br/>133     parser = argparse.ArgumentParser(description=__description__,<br/>134                                 epilog='Developed by ' +<br/>135                                 __author__ + ' on ' +<br/>136                                 __date__)<br/>137     parser.add_argument('INPUT_DIR', help='Input Directory')<br/>138     parser.add_argument('OUTPUT_DIR', help='Output Directory')<br/>139     parser.add_argument('-l', help='File path of log file.')<br/>140     args = parser.parse_args()<br/>141 <br/>142     if args.l:<br/>143         if not os.path.exists(args.l):<br/>144             os.makedirs(args.l)<br/>145         log_path = os.path.join(args.l, 'metadata_parser.log')<br/>146     else:<br/>147         log_path = 'metadata_parser.log'<br/>148     logging.basicConfig(filename=log_path, level=logging.DEBUG,<br/>149                         format=('%(asctime)s | %(levelname)s | '<br/>150                         '%(message)s'), filemode='a')<br/>151 <br/>152     logging.info('Starting Metadata_Parser')<br/>153     logging.debug('System ' + sys.platform)<br/>154     logging.debug('Version ' + sys.version) </pre>
+<p>On line 156, we create our output directory if the supplied output directory doesn't exist. This output directory is created with the <kbd>makedirs()</kbd> function. This function accepts a string representing the file path to a directory and creates the directory and any intermediate directories that don't exist in the file path. On line 159, we check whether the supplied input is a directory and whether it exists. If so, on line 161, the <kbd>main()</kbd> function is called, and the input and output directory arguments are passed. If the input doesn't exist or isn't a directory, we log and print the error and exit with status code 1. We have the following code:</p>
+<pre>156     if not os.path.exists(args.OUTPUT_DIR):<br/>157         os.makedirs(args.OUTPUT_DIR)<br/>158 <br/>159     if(os.path.exists(args.INPUT_DIR) and<br/>160     os.path.isdir(args.INPUT_DIR)):<br/>161         main(args.INPUT_DIR, args.OUTPUT_DIR)<br/>162     else:<br/>163         msg =('Supplied input directory doesn't exist or is'<br/>164         'not a directory')<br/>165         print('[-]', msg)<br/>166         logging.error(msg)<br/>167         sys.exit(1)</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Controlling our framework with the main() function</h1>
+                
+            
+            
+                
+<p>On lines 57 through 59, we create our lists that will store the returned dictionaries from our plugin calls. But before we can call our plugins, we need to generate a file listing from the user's input directory argument. We do this on line 65 with the <kbd>os.walk()</kbd> function, which we used in previous chapters. A new argument, <kbd>topdown</kbd>, is passed to our directory walking loop. This allows us to control the flow of the iteration and step through the directory from the top level down to the furthest level. This is the default behavior, though it can be specified to ensure the anticipated behavior. For each file, we need to <kbd>join()</kbd> it with the root to generate the full path to the file:</p>
+<pre>045 def main(input_dir, output_dir):<br/>046     """<br/>047     The main function generates a file listing, sends files to be<br/>048     processed, and output written.<br/>049     :param input_dir: The input directory to scan for suported<br/>050         embedded metadata containing files<br/>051     :param output_dir: The output directory to write metadata<br/>052         reports to<br/>053     :return: Nothing.<br/>054     """<br/>055     # Create lists to store each supported embedded metadata<br/>056     # before writing to output<br/>057     exif_metadata = []<br/>058     office_metadata = []<br/>059     id3_metadata = []<br/>060 <br/>061     # Walk through list of files<br/>062     msg = 'Generating file listing and running plugins.'<br/>063     print('[+]', msg)<br/>064     logging.info(msg)<br/>065     for root, subdir, files in os.walk(input_dir, topdown=True):<br/>066         for file_name in files:<br/>067             current_file = os.path.join(root, file_name)<br/>068             ext = os.path.splitext(current_file)[1].lower() </pre>
+<p>Finally, on line 68, we separate the extension from the full path using the <kbd>os.path.splitext()</kbd> function. The <kbd>splitext()</kbd> function takes a string representing a file path and returns a list with the path as the first element and the extension as the second element. We could have also used the <kbd>split()</kbd> function, splitting on the period and accessing the last element of the newly formed list:</p>
+<pre><strong>&gt;&gt;&gt; '/path/to/metadata_image.jpg'.split('.')[-1]</strong> 
+<strong>jpg</strong> </pre>
+<p>After we have <kbd>current_file</kbd>, we look at its extension on lines 71, 83, and 96 to determine whether any of our existing plugins are appropriate. If our file is a JPEG image, then the conditional on line 71 will evaluate to <kbd>True</kbd>. On line 73, we call our <kbd>exif_parser()</kbd> function, which is found in the <kbd>exif_parser.py</kbd> script within the plugins subdirectory. Because we're only matching on extension, this function call is wrapped around <kbd>try</kbd> and <kbd>except</kbd> to handle situations where we raise an error in the <kbd>exif_parser()</kbd> function due to mismatching file signatures:</p>
+<pre>070             # PLUGINS<br/>071             if ext == '.jpeg' or ext == '.jpg':<br/>072                 try:<br/>073                     ex_metadata, exif_headers = plugins.exif_parser.exif_parser(<br/>074                     current_file)<br/>075                     exif_metadata.append(ex_metadata)<br/>076                 except TypeError:<br/>077                     print(('[-] File signature mismatch. '<br/>078                         'Continuing to next file.'))<br/>079                     logging.error((('JPG &amp; TIFF File Signature '<br/>080                     'check failed for ' + current_file)))<br/>081                     continue</pre>
+<p>If the function doesn't raise an error, it'll return the EXIF metadata for that particular file and the headers for the CSV writer. On line 75, we append the EXIF metadata results to our <kbd>exif_metadata</kbd> list and continue processing the other input files:</p>
+<pre>083             elif ext == '.docx' or ext == '.pptx' or ext == '.xlsx':<br/>084                 try:<br/>085                     of_metadata, office_headers = plugins.office_parser.office_parser(<br/>086                     current_file)<br/>087                     office_metadata.append(of_metadata)<br/>088                 except TypeError:<br/>089                     print(('[-] File signature mismatch. '<br/>090                         'Continuing to next file.'))<br/>091                     logging.error((('DOCX, XLSX, &amp; PPTX File '<br/>092                     'Signature check failed for ' + current_file))<br/>093                     )<br/>094                     continue<br/>095 <br/>096             elif ext == '.mp3':<br/>097                 try:<br/>098                     id_metadata, id3_headers = plugins.id3_parser.id3_parser(<br/>099                     current_file)<br/>100                     id3_metadata.append(id_metadata)<br/>101                     except TypeError:<br/>102                         print(('[-] File signature mismatch. '<br/>103                             'Continuing to next file.'))<br/>104                         logging.error((('MP3 File Signature check '<br/>105                             'failed for ' + current_file)))<br/>106                         continue</pre>
+<p>Note the similar structure employed for the other two plugins. All plugins take only one input, <kbd>current_file</kbd>, and return two output values, the metadata dictionary and CSV headers. Only eight lines of code are required to properly call and then store the results of each plugin. A few more lines of code are required to write the stored data to an output file.</p>
+<p>Once we've iterated through all of the files, we can begin writing any necessary output. On lines 113, 119, and 123, we check to see whether any of the metadata lists contain dictionaries. If they do, we call the <kbd>csv_writer()</kbd> function in the <kbd>csv_writer.py</kbd> script under the writers subdirectory. For EXIF metadata, we also call the <kbd>kml_writer()</kbd> function on line 114 to plot GPS coordinates:</p>
+<pre>108     # WRITERS<br/>109     msg = 'Writing output to ' + output_dir<br/>110     print('[+]', msg)<br/>111     logging.info(msg)<br/>112 <br/>113     if len(exif_metadata) &gt; 0:<br/>114         writers.kml_writer.kml_writer(exif_metadata,<br/>115             output_dir, 'exif_metadata.kml')<br/>116         writers.csv_writer.csv_writer(exif_metadata, exif_headers,<br/>117             output_dir, 'exif_metadata.csv')<br/>118 <br/>119     if len(office_metadata) &gt; 0:<br/>120         writers.csv_writer.csv_writer(office_metadata,<br/>121             office_headers, output_dir, 'office_metadata.csv')<br/>122 <br/>123     if len(id3_metadata) &gt; 0:<br/>124         writers.csv_writer.csv_writer(id3_metadata, id3_headers,<br/>125             output_dir, 'id3_metadata.csv')<br/>126 <br/>127     msg = 'Program completed successfully -- exiting..'<br/>128     print('[*]', msg)<br/>129     logging.info(msg)</pre>
+<p>This completes the controller logic for our framework. The main processing occurs in each individual plugin file. Now, let's look at our first plugin.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Parsing EXIF metadata – exif_parser.py</h1>
+                
+            
+            
+                
+<p>The <kbd>exif_parser</kbd> plugin is the first we'll develop and is relatively simple due to our reliance on the PIL module. There are three functions within this script: <kbd>exif_parser()</kbd>, <kbd>get_tags()</kbd>, and <kbd>dms_to_decimal()</kbd>. The <kbd>exif_parser()</kbd> function, on line 39, is the entry point into this plugin and takes a string representing a filename as its only input. This function primarily serves as coordinating logic for the plugin.</p>
+<p>The <kbd>get_tags()</kbd> function on line 62 is responsible for parsing the EXIF tags from our input file. Finally, the <kbd>dms_to_decimal()</kbd> function on line 172 is a small helper function, which is responsible for converting GPS coordinates into decimal format. Take a look at the following code:</p>
+<pre>001 from datetime import datetime<br/>002 import os<br/>003 from time import gmtime, strftime<br/>004 <br/>005 from PIL import Image<br/>006 <br/>007 import processors
+...
+039 def exif_parser(): 
+... 
+062 def get_tags(): 
+... 
+172 def dms_to_decimal(): </pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Understanding the exif_parser() function</h1>
+                
+            
+            
+                
+<p>This function serves three purposes: it validates the input file, extracts the tags, and returns the processed data to <kbd>metadata_parser.py</kbd>. To validate an input value, we'll evaluate its file signature against known signatures. Rather than relying on the extension of a file, which can be incorrect, we check the signature to avoid any additional sources of error.</p>
+<p>Checking a file's signature, sometimes referred to as its magic number, typically consists of examining the first couple of bytes of a file and comparing that with known signatures for that file type. Gary Kessler has a great list of file signatures documented on his website, <a href="https://www.garykessler.net/library/file_sigs.html" target="_blank">https://www.garykessler.net/library/file_sigs.html</a>:</p>
+<pre>039 def exif_parser(filename):<br/>040     """<br/>041     The exif_parser function confirms the file type and sends it<br/>042     to be processed.<br/>043     :param filename: name of the file potentially containing EXIF<br/>044     metadata.<br/>045     :return: A dictionary from get_tags, containing the embedded<br/>046     EXIF metadata.<br/>047     """</pre>
+<p>On line 50, we create a list of known file signatures for JPEG images. On line 52, we call the <kbd>check_header()</kbd> function in the <kbd>utility.py</kbd> script in the processors subdirectory. This function will evaluate to <kbd>True</kbd> if the header of the file matches one of the supplied known signatures:</p>
+<pre>049     # JPEG signatures<br/>050     signatures = ['ffd8ffdb','ffd8ffe0', 'ffd8ffe1', 'ffd8ffe2',<br/>051         'ffd8ffe3', 'ffd8ffe8']<br/>052     if processors.utility.check_header(<br/>053             filename,signatures, 4) == True:<br/>054         return get_tags(filename)<br/>055     else:<br/>056         print(('File signature doesn't match known '<br/>057             'JPEG signatures.'))<br/>058         raise TypeError(('File signature doesn't match ' <br/>059             'JPEG object.'))</pre>
+<p>If we do have a legitimate JPEG file, we call and return the results of the <kbd>get_tags()</kbd> function on line 54. Alternatively, if <kbd>check_header()</kbd> returns <kbd>False</kbd>, then we have a mismatch and we raise a <kbd>TypeError</kbd> exception to our parent script, <kbd>metadata_parser.py</kbd>, to handle the situation appropriately.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Developing the get_tags() function</h1>
+                
+            
+            
+                
+<p>The <kbd>get_tags()</kbd> function, with the help of the PIL module, parses EXIF metadata tags from our JPEG image. On line 72, we create a list of headers for our CSV output. This list contains all of the possible keys that might be created in our EXIF dictionary in the order we want them to be displayed in a CSV file. As all JPEG images may not have the same or any embedded EXIF tags, we'll run into the scenario where some dictionaries have more tags than others. By supplying the writer with the list of ordered keys, we'll ensure that the fields are written in the appropriate order and columns:</p>
+<pre>062 def get_tags(filename):<br/>063     """<br/>064     The get_tags function extracts the EXIF metadata from the data<br/>065     object.<br/>066     :param filename: the path and name to the data object.<br/>067     :return: tags and headers, tags is a dictionary containing<br/>068     EXIF metadata and headers are the order of keys for the<br/>069     CSV output.<br/>070     """<br/>071     # Set up CSV headers<br/>072     headers = ['Path', 'Name', 'Size', 'Filesystem CTime',<br/>073     'Filesystem MTime', 'Original Date', 'Digitized Date', 'Make',<br/>074     'Model', 'Software', 'Latitude', 'Latitude Reference',<br/>075     'Longitude', 'Longitude Reference', 'Exif Version', 'Height',<br/>076     'Width', 'Flash', 'Scene Type']</pre>
+<p>On line 77, we open the JPEG file using the <kbd>Image.open()</kbd> function. Once again, we perform one final validation step using the <kbd>verify()</kbd> function. This function checks for any file corruption and raises errors if encountered. Otherwise, on line 84, we call the <kbd>_getexif()</kbd> function, which returns a dictionary of EXIF metadata:</p>
+<pre>077     image = Image.open(filename)<br/>078 <br/>079     # Detects if the file is corrupt without decoding the data<br/>080     image.verify()<br/>081 <br/>082     # Descriptions and values of EXIF tags<br/>083     # http://www.exiv2.org/tags.html<br/>084     exif = image._getexif()</pre>
+<p>On line 86, we create our dictionary, <kbd>tags</kbd>, which will store metadata about our file object. On lines 87 through 94, we populate the dictionary with some filesystem metadata, such as the full path, name, size, and create and modify timestamps. The <kbd>os.path.basename()</kbd> function takes the full pathname and returns the filename. For example, <kbd>os.path.basename('Users/LPF/Desktop/myfile.txt')</kbd> would simply return <kbd>myfile.txt</kbd>.</p>
+<p>Using the <kbd>getsize()</kbd> function will return the file size in bytes. The larger the number, the less useful it is for humans. We're more accustomed to seeing sizes with common prefixes, such as MB, GB, and TB. The <kbd>convert_size()</kbd> processor function does just this to make the data more useful for the human analyst.</p>
+<p>On lines 91 and 93, we convert the integer returned by <kbd>os.path.getctime()</kbd>, representing the creation time expressed in seconds since the epoch. The epoch, <kbd>01/01/1970 00:00:00</kbd>, can be confirmed by calling <kbd>time.gmtime(0)</kbd>. We use the <kbd>gmtime()</kbd> function to convert these seconds into a time-structured object (similar to <kbd>datetime</kbd>). We use the <kbd>strftime</kbd> to format the time object into our desired date string:</p>
+<pre>086     tags = {}<br/>087     tags['Path'] = filename<br/>088     tags['Name'] = os.path.basename(filename)<br/>089     tags['Size'] = processors.utility.convert_size(<br/>090         os.path.getsize(filename))<br/>091     tags['Filesystem CTime'] = strftime('%m/%d/%Y %H:%M:%S',<br/>092         gmtime(os.path.getctime(filename)))<br/>093     tags['Filesystem MTime'] = strftime('%m/%d/%Y %H:%M:%S',<br/>094         gmtime(os.path.getmtime(filename)))</pre>
+<p>On line 95, we check whether there are any keys in the <kbd>exif</kbd> dictionary. If there are, we iterate through each key and check its value. The values we're querying for are from the EXIF tags described at <a href="http://www.exiv2.org/tags.html">http://www.exiv2.org/tags.html</a>. There are many potential EXIF tags, but we're going to query for only some of the more forensically relevant ones.</p>
+<p>If the particular tag does exist in the <kbd>exif</kbd> dictionary, then we transfer the value to our tags dictionary. Some tags require some additional processing, such as timestamp, scene, flash, and GPS tags. The timestamp tags are displayed in a format that's inconsistent with how we're representing other timestamps. For example, the time from tag 36867 on line 99 is separated by colons and in a different order:</p>
+<pre>2015:11:11 10:32:15</pre>
+<p>In line 100, we use the <kbd>strptime</kbd> function to convert our existing time string into a <kbd>datetime</kbd> object. In the very next line, we use the <kbd>strftime</kbd> function to convert it into our desired date string format:</p>
+<pre>095     if exif:<br/>096         for tag in exif.keys():<br/>097             if tag == 36864:<br/>098                 tags['Exif Version'] = exif[tag]<br/>099             elif tag == 36867:<br/>100                 dt = datetime.strptime(exif[tag],<br/>101                 '%Y:%m:%d %H:%M:%S')<br/>102                 tags['Original Date'] = dt.strftime(<br/>103                 '%m/%d/%Y %H:%M:%S')<br/>104             elif tag == 36868:<br/>105                 dt = datetime.strptime(exif[tag],<br/>106                 '%Y:%m:%d %H:%M:%S')<br/>107                 tags['Digitized Date'] = dt.strftime(<br/>108                 '%m/%d/%Y %H:%M:%S')</pre>
+<p>The scene (<kbd>41990</kbd>) and flash (<kbd>37385</kbd>) tags have an integer value rather than a string. As we mentioned previously, the online documentation (<a href="http://www.exiv2.org/tags.html">http://www.exiv2.org/tags.html</a>) explains what these integers represent. In these two scenarios, we create a dictionary containing the potential integers as keys and their descriptions as values. We check whether the tag's value is a key in our dictionary. If it's present, we store the description in the tags dictionary rather than the integer. Again, this is for the purpose of making analysis easier on the examiner. Seeing a string explanation of the scene or flash tag is more valuable than a number representing that explanation:</p>
+<pre>109             elif tag == 41990:<br/>110                 # Scene tags<br/>111                 # http://www.awaresystems.be/imaging/tiff/tifftags/privateifd/exif/scenecapturetype.html<br/>112                 scenes = {0: 'Standard', 1: 'Landscape',<br/>113                 2: 'Portrait', 3: 'Night Scene'}<br/>114                 if exif[tag] in scenes:<br/>115                     tags['Scene Type'] = scenes[exif[tag]]<br/>116                 else:<br/>117                     pass<br/>118             elif tag == 37385:<br/>119                 # Flash tags<br/>120                 # http://www.awaresystems.be/imaging/tiff/tifftags/privateifd/exif/flash.html<br/>121                 flash = {0: 'Flash did not fire',<br/>122                 1: 'Flash fired',<br/>123                 5: 'Strobe return light not detected',<br/>124                 7: 'Strobe return light detected',<br/>125                 9: 'Flash fired, compulsory flash mode',<br/>126                 13: 'Flash fired, compulsory flash mode, return light not detected',<br/>127                 15: 'Flash fired, compulsory flash mode, return light detected',<br/>128                 16: 'Flash did not fire, compulsory flash mode',<br/>129                 24: 'Flash did not fire, auto mode',<br/>130                 25: 'Flash fired, auto mode',<br/>131                 29: 'Flash fired, auto mode, return light not detected',<br/>132                 31: 'Flash fired, auto mode, return light detected',<br/>133                 32: 'No flash function',<br/>134                 65: 'Flash fired, red-eye reduction mode',<br/>135                 69: 'Flash fired, red-eye reduction mode, return light not detected',<br/>136                 71: 'Flash fired, red-eye reduction mode, return light detected',<br/>137                 73: 'Flash fired, compulsory flash mode, red-eye reduction mode',<br/>138                 77: 'Flash fired, compulsory flash mode, red-eye reduction mode, return light not detected',<br/>139                 79: 'Flash fired, compulsory flash mode, red-eye reduction mode, return light detected',<br/>140                 89: 'Flash fired, auto mode, red-eye reduction mode',<br/>141                 93: 'Flash fired, auto mode, return light not detected, red-eye reduction mode',<br/>142                 95: 'Flash fired, auto mode, return light detected, red-eye reduction mode'}<br/>143                 if exif[tag] in flash:<br/>144                     tags['Flash'] = flash[exif[tag]]<br/>145             elif tag == 271:<br/>146                 tags['Make'] = exif[tag]<br/>147             elif tag == 272:<br/>148                 tags['Model'] = exif[tag]<br/>149             elif tag == 305:<br/>150                 tags['Software'] = exif[tag]<br/>151             elif tag == 40962:<br/>152                 tags['Width'] = exif[tag]<br/>153             elif tag == 40963:<br/>154                 tags['Height'] = exif[tag]</pre>
+<p>Finally, on line 155, we look for the GPS tags that are stored as a nested dictionary under the key 34853. If the latitude and longitude tags exist, we pass them to the <kbd>dms_to_decimal()</kbd> function to convert them into a more suitable manner for the KML writer:</p>
+<pre>155             elif tag == 34853:<br/>156                 for gps in exif[tag]:<br/>157                     if gps == 1:<br/>158                         tags['Latitude Reference'] = exif[tag][gps]<br/>159                     elif gps == 2:<br/>160                         tags['Latitude'] = dms_to_decimal(<br/>161                         exif[tag][gps])<br/>162                     elif gps == 3:<br/>163                         tags['Longitude Reference'] = exif[tag][gps]<br/>164                     elif gps == 4:<br/>165                         tags['Longitude'] = dms_to_decimal(<br/>166                         exif[tag][gps])<br/>167                     else:<br/>168                         pass<br/>169     return tags, headers</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Adding the dms_to_decimal() function</h1>
+                
+            
+            
+                
+<p>The <kbd>dms_to_decimal()</kbd> function converts GPS coordinates from degree minute second format into decimal. A simple formula exists to convert between the two formats. The GPS data we extract from our EXIF metadata contains three tuples within another tuple. Each interior tuple represents the numerator and denominator of the degree, minute, or second. First, we need to separate the individual degree, min, and second numerators from their denominators in the nested tuples. The following diagram highlights how we can convert our extracted GPS data into decimal format:</p>
+<div><img src="img/f06fd0dd-c6be-440b-b2a6-5d509011cf7d.png" style="width:31.25em;height:20.83em;"/></div>
+<p>On line 178, we use list comprehension to create a list containing the first element of every element in the tuple. We then unpack this list into the three elements: <kbd>deg</kbd>, <kbd>min</kbd>, and <kbd>sec</kbd>. The formula we use is dependent on whether the degree value is positive or negative.</p>
+<p>If <kbd>deg</kbd> is positive, then we add the minutes and seconds. We divide seconds by 360,0000 rather than 3,600 because originally we did not divide the seconds' value by its denominator. If <kbd>deg</kbd> is negative, we instead subtract the minutes and seconds as follows:</p>
+<pre>172 def dms_to_decimal(dms):<br/>173     """<br/>174     Converts GPS Degree Minute Seconds format to Decimal format.<br/>175     :param dms: The GPS data in Degree Minute Seconds format.<br/>176     :return: The decimal formatted GPS coordinate.<br/>177     """<br/>178     deg, min, sec = [x[0] for x in dms]<br/>179     if deg &gt; 0:<br/>180         return "{0:.5f}".format(deg + (min / 60.) + (<br/>181             sec / 3600000.))<br/>182     else:<br/>183         return "{0:.5f}".format(deg - (min / 60.) - (<br/>184             sec / 3600000.))</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Parsing ID3 metdata – id3_parser.py</h1>
+                
+            
+            
+                
+<p><kbd>id3_parser</kbd> is similar to <kbd>exif_parser</kbd> we've previously discussed. The <kbd>id3_parser()</kbd> function defined on line 37 checks the file signature and then calls the <kbd>get_tags()</kbd> function. The <kbd>get_tags()</kbd> function relies on the <kbd>mutagen</kbd> module to parse MP3 and ID3 tags:</p>
+<pre>001 import os<br/>002 from time import gmtime, strftime<br/>003 <br/>004 from mutagen import mp3, id3<br/>005 <br/>006 import processors
+..   
+037 def id3_parser(): 
+... 
+059 def get_tags(): </pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Understanding the id3_parser() function</h1>
+                
+            
+            
+                
+<p>This function is identical to the <kbd>exif_parser()</kbd> function, with the exception of the signature that's used to check file headers. The MP3 format has only one file signature, <kbd>0x494433</kbd>, unlike the JPEG format. When we call the <kbd>check_header()</kbd> function, we supply the file, known signature, and the number of bytes to read from the header. If the signatures match, we call and return the results of the <kbd>get_tags()</kbd> function, as follows:</p>
+<pre>037 def id3_parser(filename):<br/>038     """<br/>039     The id3_parser function confirms the file type and sends it to<br/>040     be processed.<br/>041     :param filename: name of the file potentially containing exif<br/>042     metadata.<br/>043     :return: A dictionary from get_tags, containing the embedded<br/>044     EXIF metadata.<br/>045     """</pre>
+<p>Although it might be boring to see the same type of logic in each plugin, this greatly simplifies the logic of our framework. In scenarios with larger frameworks, creating things in the same uniform manner helps those maintaining the code sane. Copying and pasting a pre-existing plugin and working from there is often a good way to ensure that things are developed in the same manner. See the following code:</p>
+<pre>047     # MP3 signatures<br/>048     signatures = ['494433']<br/>049     if processors.utility.check_header(<br/>050     filename, signatures, 3) == True:<br/>051         return get_tags(filename)<br/>052     else:<br/>053         print(('File signature doesn't match known '<br/>054         'MP3 signatures.'))<br/>055         raise TypeError(('File signature doesn't match ' <br/>056         'MP3 object.')) </pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Revisiting the get_tags() function</h1>
+                
+            
+            
+                
+<p>The <kbd>get_tags()</kbd> function follows the same logic we used for our EXIF plugin. Like any good programmer, we copied that script and made a few modifications to fit ID3 metadata. In the <kbd>get_tags()</kbd> function, we first need to create our CSV headers on line 69. These headers represent the possible keys our dictionary might possess and the order we want to see them in our CSV output:</p>
+<pre>059 def get_tags(filename):<br/>060     """<br/>061     The get_tags function extracts the ID3 metadata from the data<br/>062     object.<br/>063     :param filename: the path and name to the data object.<br/>064     :return: tags and headers, tags is a dictionary containing ID3<br/>065     metadata and headers are the order of keys for the CSV output.<br/>066     """<br/>067 <br/>068     # Set up CSV headers<br/>069     header = ['Path', 'Name', 'Size', 'Filesystem CTime',<br/>070     'Filesystem MTime', 'Title', 'Subtitle', 'Artist', 'Album',<br/>071     'Album/Artist', 'Length (Sec)', 'Year', 'Category',<br/>072     'Track Number', 'Comments', 'Publisher', 'Bitrate',<br/>073     'Sample Rate', 'Encoding', 'Channels', 'Audio Layer']</pre>
+<p>On line 74, we create our tags dictionary and populate it with some filesystem metadata in the same manner as the EXIF plugin, as follows:</p>
+<pre>074     tags = {}<br/>075     tags['Path'] = filename<br/>076     tags['Name'] = os.path.basename(filename)<br/>077     tags['Size'] = processors.utility.convert_size(<br/>078         os.path.getsize(filename))<br/>079     tags['Filesystem CTime'] = strftime('%m/%d/%Y %H:%M:%S',<br/>080         gmtime(os.path.getctime(filename)))<br/>081     tags['Filesystem MTime'] = strftime('%m/%d/%Y %H:%M:%S',<br/>082         gmtime(os.path.getmtime(filename)))</pre>
+<p>Mutagen has two classes that we can use to extract metadata from MP3 files. The first class, <kbd>MP3</kbd>, has some standard metadata stored in MP3 files, such as the bitrate, channels, and length in seconds. Mutagen has built-in functions to access this information. First, we need to create an MP3 object, which is accomplished on line 85, using the <kbd>mp3.MP3()</kbd> function. Next, we can use the <kbd>info.bitrate()</kbd> function, for example, to return the bitrate of the MP3 file. We store these values in our tags dictionary in lines 88 through 92, as follows:</p>
+<pre>084     # MP3 Specific metadata<br/>085     audio = mp3.MP3(filename)<br/>086     if 'TENC' in audio.keys():<br/>087         tags['Encoding'] = audio['TENC'][0]<br/>088         tags['Bitrate'] = audio.info.bitrate<br/>089         tags['Channels'] = audio.info.channels<br/>090         tags['Audio Layer'] = audio.info.layer<br/>091         tags['Length (Sec)'] = audio.info.length<br/>092         tags['Sample Rate'] = audio.info.sample_rate </pre>
+<p>The second class, <kbd>ID3</kbd>, extracts ID3 tags from an MP3 file. We need to first create an ID3 object using the <kbd>id3.ID3()</kbd> function. This will return a dictionary of ID3 tags as keys. Sound familiar? This is what we were presented with in the previous plugin. The only difference is that the value in the dictionaries are stored in a slightly different format:</p>
+<pre>{'TPE1': TPE1(encoding=0, text=[u'The Artist']),...} </pre>
+<p>To access the value, <kbd>The Artist</kbd>, we need to treat the value as a list and specify the element in the zeroth index.</p>
+<p>In a similar manner, we look for each of our tags of interest and store the first element in the value in the tags dictionary. At the end of this process, we return the tags and header objects back to <kbd>id3_parser()</kbd>, which in turn returns it to the <kbd>metadata_parser.py</kbd> script:</p>
+<pre>094     # ID3 embedded metadata tags<br/>095     id = id3.ID3(filename)<br/>096     if 'TPE1' in id.keys():<br/>097         tags['Artist'] = id['TPE1'][0]<br/>098     if 'TRCK' in id.keys():<br/>099         tags['Track Number'] = id['TRCK'][0]<br/>100     if 'TIT3' in id.keys():<br/>101         tags['Subtitle'] = id['TIT3'][0]<br/>102     if 'COMM::eng' in id.keys():<br/>103         tags['Comments'] = id['COMM::eng'][0]<br/>104     if 'TDRC' in id.keys():<br/>105         tags['Year'] = id['TDRC'][0]<br/>106     if 'TALB' in id.keys():<br/>107         tags['Album'] = id['TALB'][0]<br/>108     if 'TIT2' in id.keys():<br/>109         tags['Title'] = id['TIT2'][0]<br/>110     if 'TCON' in id.keys():<br/>111         tags['Category'] = id['TCON'][0]<br/>112     if 'TPE2' in id.keys():<br/>113         tags['Album/Artist'] = id['TPE2'][0]<br/>114     if 'TPUB' in id.keys():<br/>115         tags['Publisher'] = id['TPUB'][0]<br/>116 <br/>117     return tags, header</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Parsing Office metadata – office_parser.py</h1>
+                
+            
+            
+                
+<p>The last of the plugins, <kbd>office_parser.py</kbd>, parses DOCX, PPTX, and XLSX files, extracting embedded metadata in XML files. We use the <kbd>zipfile</kbd> module, which is part of the standard library, to unzip and access the contents of the Office document. This script has two functions, <kbd>office_parser()</kbd> and <kbd>get_tags()</kbd>:</p>
+<pre>001 import zipfile<br/>002 import os<br/>003 from time import gmtime, strftime<br/>004 <br/>005 from lxml import etree<br/>006 import processors<br/>...   
+037 def office_parser(): 
+...
+059 def get_tags(): </pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Evaluating the office_parser() function</h1>
+                
+            
+            
+                
+<p>The <kbd>office_parser()</kbd> function first checks the input file against the known file signature. All Office documents share the same file signature, <kbd>0x504b0304140006000</kbd>, and if the input file matches, it's then further processed by the <kbd>get_tags()</kbd> function, as follows:</p>
+<pre>037 def office_parser(filename):<br/>038     """<br/>039     The office_parser function confirms the file type and sends it<br/>040     to be processed.<br/>041     :param filename: name of the file potentially containing<br/>042     embedded metadata.<br/>043     :return: A dictionary from get_tags, containing the embedded<br/>044     metadata.<br/>045     """<br/>046 <br/>047     # DOCX, XLSX, and PPTX signatures<br/>048     signatures = ['504b030414000600']<br/>049     if processors.utility.check_header(<br/>050     filename, signatures, 8) == True:<br/>051         return get_tags(filename)<br/>052     else:<br/>053         print(('File signature doesn't match known '<br/>054         'signatures.'))<br/>055         raise TypeError(('File signature doesn't match ' <br/>056         'Office objects.'))</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">The get_tags() function for the last time</h1>
+                
+            
+            
+                
+<p>On line 70, we create the list of headers for our potential dictionary. Line 81 is where the proverbial magic happens. The built-in <kbd>zipfile</kbd> library is used to read, write, append, and list files in a ZIP archive. On line 81, we create our ZIP file object, allowing us to read the documents contained within it. See the following code:</p>
+<pre>059 def get_tags(filename):<br/>060     """<br/>061     The get_tags function extracts the office metadata from the<br/>062     data object.<br/>063     :param filename: the path and name to the data object.<br/>064     :return: tags and headers, tags is a dictionary containing<br/>065     office metadata and headers are the order of keys for the CSV<br/>066     output.<br/>067     """<br/>068 <br/>069     # Set up CSV headers<br/>070     headers = ['Path', 'Name', 'Size', 'Filesystem CTime',<br/>071     'Filesystem MTime', 'Title', 'Author(s)','Create Date',<br/>072     'Modify Date', 'Last Modified By Date', 'Subject', 'Keywords',<br/>073     'Description', 'Category', 'Status', 'Revision',<br/>074     'Edit Time (Min)', 'Page Count', 'Word Count',<br/>075     'Character Count', 'Line Count',<br/>076     'Paragraph Count', 'Slide Count', 'Note Count',<br/>077     'Hidden Slide Count', 'Company', 'Hyperlink Base']<br/>078 <br/>079     # Create a ZipFile class from the input object<br/>080     # This allows us to read or write to the 'Zip archive'<br/>081     zf = zipfile.ZipFile(filename)</pre>
+<p>Specifically, on lines 86 and 87, we read the core and app XML files and then convert them into an XML element tree. The <kbd>etree.fromstring()</kbd> method allows us to build an element tree from a string and is a different method of accomplishing the same task we described earlier in this chapter, which used the <kbd>ElementTree.parse()</kbd> function:</p>
+<pre>083     # These two XML files contain the embedded metadata of<br/>084     # interest<br/>085     try:<br/>086         core = etree.fromstring(zf.read('docProps/core.xml'))<br/>087         app = etree.fromstring(zf.read('docProps/app.xml'))<br/>088     except KeyError as e:<br/>089         assert Warning(e)<br/>090         return {}, headers</pre>
+<p>As in the previous sections, we create the tags dictionary and populate it with some filesystem metadata:</p>
+<pre>092     tags = {}<br/>093     tags['Path'] = filename<br/>094     tags['Name'] = os.path.basename(filename)<br/>095     tags['Size'] = processors.utility.convert_size(<br/>096         os.path.getsize(filename))<br/>097     tags['Filesystem CTime'] = strftime('%m/%d/%Y %H:%M:%S',<br/>098         gmtime(os.path.getctime(filename)))<br/>099     tags['Filesystem MTime'] = strftime('%m/%d/%Y %H:%M:%S',<br/>100         gmtime(os.path.getmtime(filename)))</pre>
+<p>Starting on line 104, we begin to parse the core XML document by iterating through its children using the <kbd>iterchildren()</kbd> function. As we iterate through each child, we look for various keywords in the <kbd>child.tag</kbd> string. If found, the <kbd>child.text</kbd> string is associated with the appropriate key in the tags dictionary.</p>
+<p>These tags in the <kbd>core.xml</kbd> and <kbd>app.xml</kbd> files aren't always present and this is the reason we have to first check whether they are there before we can extract them. Some tags, such as the revision tag, are only present in specific Office documents. We'll see much more of that with the <kbd>app.xml</kbd> file:</p>
+<pre>102     # Core Tags<br/>103 <br/>104     for child in core.iterchildren():<br/>105 <br/>106         if 'title' in child.tag:<br/>107             tags['Title'] = child.text<br/>108         if 'subject' in child.tag:<br/>109             tags['Subject'] = child.text<br/>110         if 'creator' in child.tag:<br/>111             tags['Author(s)'] = child.text<br/>112         if 'keywords' in child.tag:<br/>113             tags['Keywords'] = child.text<br/>114         if 'description' in child.tag:<br/>115             tags['Description'] = child.text<br/>116         if 'lastModifiedBy' in child.tag:<br/>117             tags['Last Modified By Date'] = child.text<br/>118         if 'created' in child.tag:<br/>119             tags['Create Date'] = child.text<br/>120         if 'modified' in child.tag:<br/>121             tags['Modify Date'] = child.text<br/>122         if 'category' in child.tag:<br/>123             tags['Category'] = child.text<br/>124         if 'contentStatus' in child.tag:<br/>125             tags['Status'] = child.text<br/>126 <br/>127         if (filename.endswith('.docx') or<br/>128         filename.endswith('.pptx')):<br/>129             if 'revision' in child.tag:<br/>130                 tags['Revision'] = child.text</pre>
+<p>The <kbd>app.xml</kbd> file contains metadata more specific to a given application. On line 133, when we iterate through the children of the element tree, we're only checking tags for specific extensions.</p>
+<p>For example, DOCX files contain page and line count metadata that doesn't make sense for PPTX and XLSX files. Therefore, we separate the tags we look for based on the extension of the file. The <kbd>TotalTime</kbd> tag is particularly insightful and is the time spent editing the document in minutes. See the following code:</p>
+<pre>132     # App Tags<br/>133     for child in app.iterchildren():<br/>134 <br/>135         if filename.endswith('.docx'):<br/>136             if 'TotalTime' in child.tag:<br/>137                 tags['Edit Time (Min)'] = child.text<br/>138             if 'Pages' in child.tag:<br/>139                 tags['Page Count'] = child.text<br/>140             if 'Words' in child.tag:<br/>141                 tags['Word Count'] = child.text<br/>142             if 'Characters' in child.tag:<br/>143                 tags['Character Count'] = child.text<br/>144             if 'Lines' in child.tag:<br/>145                 tags['Line Count'] = child.text<br/>146             if 'Paragraphs' in child.tag:<br/>147                 tags['Paragraph Count'] = child.text<br/>148             if 'Company' in child.tag:<br/>149                 tags['Company'] = child.text<br/>150             if 'HyperlinkBase' in child.tag:<br/>151                 tags['Hyperlink Base'] = child.text<br/>152 <br/>153         elif filename.endswith('.pptx'):<br/>154             if 'TotalTime' in child.tag:<br/>155                 tags['Edit Time (Min)'] = child.text<br/>156             if 'Words' in child.tag:<br/>157                 tags['Word Count'] = child.text<br/>158             if 'Paragraphs' in child.tag:<br/>159                 tags['Paragraph Count'] = child.text<br/>160             if 'Slides' in child.tag:<br/>161                 tags['Slide Count'] = child.text<br/>162             if 'Notes' in child.tag:<br/>163                 tags['Note Count'] = child.text<br/>164             if 'HiddenSlides' in child.tag:<br/>165                 tags['Hidden Slide Count'] = child.text<br/>166             if 'Company' in child.tag:<br/>167                 tags['Company'] = child.text<br/>168             if 'HyperlinkBase' in child.tag:<br/>169                 tags['Hyperlink Base'] = child.text<br/>170         else:<br/>171             if 'Company' in child.tag:<br/>172                 tags['Company'] = child.text<br/>173             if 'HyperlinkBase' in child.tag:<br/>174                 tags['Hyperlink Base'] = child.text<br/>175 <br/>176     return tags, headers</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Moving on to our writers</h1>
+                
+            
+            
+                
+<p>Within the writers directory, we have two scripts: <kbd>csv_writer.py</kbd> and <kbd>kml_writer.py</kbd>. Both of these writers are called depending on the types of data being processed in the <kbd>metadata_parser.py</kbd> framework.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Writing spreadsheets – csv_writer.py</h1>
+                
+            
+            
+                
+<p>In this chapter, we'll use <kbd>csv.DictWriter</kbd> instead of <kbd>csv.writer</kbd>, just like we did in <a href="a4ae250a-8aa8-49b9-8fd6-0cac51975f11.xhtml" target="_blank">Chapter 5</a>, <em>Databases in Python</em>, and <a href="59414e87-5820-4942-bd47-aba762dd9f14.xhtml" target="_blank">Chapter 6</a>, <em>Extracting Artifacts from Binary Files</em>. As a reminder, the difference is that the <kbd>DictWriter</kbd> writes dictionary objects to a CSV file and the <kbd>csv.writer</kbd> function is more suited for writing lists.</p>
+<p>The great thing about <kbd>csv.DictWriter</kbd> is that it requires an argument, <kbd>fieldnames</kbd>, when creating the writer object. The <kbd>fieldnames</kbd> argument should be a list that represents the desired order of columns in the output. In addition, all possible keys must be included in the <kbd>fieldnames</kbd> list. If a key exists that isn't contained in the list, an exception will be raised. On the other hand, if a key isn't present in the dictionary but is in the <kbd>fieldnames</kbd> list, then that column will simply be skipped for that entry:</p>
+<pre>001 from __future__ import print_function<br/>002 import sys<br/>003 import os<br/>004 if sys.version_info[0] == 2:<br/>005     import unicodecsv as csv<br/>006 elif sys.version_info[0] == 3:<br/>007     import csv<br/>008 import logging<br/>...
+040 def csv_writer(output_data, headers, output_dir, output_name):<br/>041     """<br/>042     The csv_writer function uses the csv DictWriter module to<br/>043     write the list of dictionaries. The DictWriter can take<br/>044     a fieldnames argument, as a list, which represents the<br/>045     desired order of columns.<br/>046     :param output_data: The list of dictionaries containing<br/>047     embedded metadata.<br/>048     :param headers: A list of keys in the dictionary that<br/>049     represent the desired order of columns in the output.<br/>050     :param output_dir: The folder to write the output CSV to.<br/>051     :param output_name: The name of the output CSV.<br/>052     :return:<br/>053     """<br/>054     msg = 'Writing ' + output_name + ' CSV output.'<br/>055     print('[+]', msg)<br/>056     logging.info(msg)<br/>057<br/>058     out_file = os.path.join(output_dir, output_name)<br/>059 <br/>060     if sys.version_info[0] == 2:<br/>061         csvfile = open(out_file, "wb")<br/>062     elif sys.version_info[0] == 3:<br/>063         csvfile = open(out_file, "w", newline='',<br/>064             encoding='utf-8')</pre>
+<p>On line 69, we create our <kbd>csv.DictWriter</kbd> function, passing in the output file and the headers as a list of <kbd>fieldnames</kbd> from our plugin function. To write the headers for our CSV file, we can simply call the <kbd>writeheader</kbd> function, which uses the <kbd>fieldnames</kbd> list as its list of headers. Finally, we need to iterate through each dictionary in our metadata container list and write them using the <kbd>writerow()</kbd> function in line 76, as follows:</p>
+<pre>066     with csvfile:<br/>067         # We use DictWriter instead of Writer to write<br/>068         # dictionaries to CSV.<br/>069         writer = csv.DictWriter(csvfile, fieldnames=headers)<br/>070 <br/>071         # Writerheader writes the header based on the supplied<br/>072         # headers object<br/>073         writer.writeheader()<br/>074         for dictionary in output_data:<br/>075             if dictionary:<br/>076                 writer.writerow(dictionary)</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Plotting GPS data with Google Earth – kml_writer.py</h1>
+                
+            
+            
+                
+<p>The <kbd>kml_writer.py</kbd> script uses the <kbd>simplekml</kbd> module (version 1.3.1) to quickly create our KML output. Full documentation for this module can be found at <a href="https://simplekml.readthedocs.io/en/latest/">http://simplekml.com</a>. This module can be installed with <kbd>pip</kbd>:</p>
+<div><pre><strong>pip install simplekml==1.3.1</strong></pre></div>
+<p>With this module, we can create and add a geotagged point and save KML in three lines of code:</p>
+<pre>001 from __future__ import print_function<br/>002 import os<br/>003 import logging<br/>004 <br/>005 import simplekml<br/>...
+036 def kml_writer(output_data, output_dir, output_name):<br/>037     """<br/>038     The kml_writer function writes JPEG and TIFF EXIF GPS data to<br/>039     a Google Earth KML file. This file can be opened<br/>040     in Google Earth and will use the GPS coordinates to create<br/>041     'pins' on the map of the taken photo's location.<br/>042     :param output_data: The embedded EXIF metadata to be written<br/>043     :param output_dir: The output directory to write the KML file.<br/>044     :param output_name: The name of the output KML file.<br/>045     :return:<br/>046     """</pre>
+<p>In line 51, we create our KML object using the <kbd>simplekml.Kml()</kbd> call. This function takes an optional keyword argument name that represents the name of the KML file. Lines 52-71 check whether the original date key is present and prepares our GPS points to be entered into the KML object:</p>
+<pre>047     msg = 'Writing ' + output_name + ' KML output.'<br/>048     print('[+]', msg)<br/>049     logging.info(msg)<br/>050     # Instantiate a Kml object and pass along the output filename<br/>051     kml = simplekml.Kml(name=output_name)<br/>052     for exif in output_data:<br/>053         if ('Latitude' in exif.keys() and<br/>054                 'Latitude Reference' in exif.keys() and<br/>055                 'Longitude Reference' in exif.keys() and<br/>056                 'Longitude' in exif.keys()):<br/>057 <br/>058             if 'Original Date' in exif.keys():<br/>059                 dt = exif['Original Date']<br/>060             else:<br/>061                 dt = 'N/A'<br/>062 <br/>063             if exif['Latitude Reference'] == 'S':<br/>064                 latitude = '-' + exif['Latitude']<br/>065             else:<br/>066                 latitude = exif['Latitude']<br/>067 <br/>068             if exif['Longitude Reference'] == 'W':<br/>069                 longitude = '-' + exif['Longitude']<br/>070             else:<br/>071                 longitude = exif['Longitude']</pre>
+<p>Our GPS coordinates are in decimal format from the <kbd>exif_parser.py</kbd> script. However, in this script, we didn't account for the reference point. The reference point determines the sign of the GPS coordinate. A south latitude reference makes the latitude negative. Likewise, west makes the longitude negative.</p>
+<p>Once that has been accounted for, we can create our geotagged point passing the name, description, and coordinates of the point. The else statement on lines 76 and 77 is executed if the conditional checking of the latitude and longitude EXIF tags that exist return <kbd>False</kbd>. Although these two lines could be omitted, they should be implemented as a reminder of the implemented logic. Once we've created all of our points, we can save the KML file by calling the <kbd>kml.save()</kbd> function and passing along the desired output path and the name of the file. The following are lines 73 through 78:</p>
+<pre>073             kml.newpoint(name=exif['Name'],<br/>074             description='Originally Created: ' + dt,<br/>075             coords=[(longitude, latitude)])<br/>076         else:<br/>077             pass<br/>078     kml.save(os.path.join(output_dir, output_name))</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Supporting our framework with processors</h1>
+                
+            
+            
+                
+<p>The processors directory contains one script, <kbd>utility.py</kbd>. This script has some helper functions that are used by all current plugins. Rather than writing the functions for each separate plugin, we gathered them under one script.</p>
+<p class="mce-root"/>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Creating framework-wide utility functions – utility.py</h1>
+                
+            
+            
+                
+<p>This script has two functions, <kbd>check_header()</kbd> and <kbd>convert_size()</kbd>. The former performs file signature matching, whereas the latter converts an integer representing the byte size of a file into a human-readable format, as follows:</p>
+<pre>001 import binascii<br/>002 import logging<br/>...
+033 def check_header(filename, headers, size):<br/>034     """<br/>035     The check_header function reads a supplied size of the file<br/>036     and checks against known signatures to determine the file<br/>037     type.<br/>038     :param filename: The name of the file.<br/>039     :param headers: A list of known file signatures for the<br/>040     file type(s).<br/>041     :param size: The amount of data to read from the file for<br/>042     signature verification.<br/>043     :return: Boolean, True if the signatures match;<br/>044     otherwise, False.<br/>045     """</pre>
+<p>The <kbd>check_header()</kbd> function, defined on line 33, takes a filename, list of known signatures, and the amount of data to read from the file as arguments. On line 46, we open the input file and then read the first few bytes based on the value passed in as the size argument. On line 48, we convert the ASCII representation of the data into a hex string. On line 49, we iterate through each known signature and compare it with <kbd>hex_header</kbd>. If they match, we return <kbd>True</kbd> and otherwise, we return <kbd>False</kbd> and log the warning, as follows:</p>
+<pre>046     with open(filename, 'rb') as infile:<br/>047         header = infile.read(size)<br/>048         hex_header = binascii.hexlify(header).decode('utf-8')<br/>049         for signature in headers:<br/>050             if hex_header == signature:<br/>051                 return True<br/>052             else:<br/>053                 pass<br/>054         logging.warn(('The signature for {} ({}) doesn't match '<br/>055             'known signatures: {}').format(<br/>056                 filename, hex_header, headers))<br/>057         return False</pre>
+<p>The <kbd>convert_size()</kbd> function is a useful utility function that converts byte-size integers into human-readable format. On line 66, we create our list of potential prefixes. Note, we're assuming that the user won't encounter any file requiring more than a <kbd>TB</kbd> prefix, at least for a few years:</p>
+<pre>059 def convert_size(size):<br/>060     """<br/>061     The convert_size function converts an integer representing<br/>062     bytes into a human-readable format.<br/>063     :param size: The size in bytes of a file<br/>064     :return: The human-readable size.<br/>065     """<br/>066     sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB']</pre>
+<p>We use a <kbd>while</kbd> loop to continually divide the size by 1024 until it's less than 1024. Every time we make a division, we add one to the index. When the size is less than 1024, the index is the location in the sizes list of the appropriate prefix.</p>
+<p>On line 71, we use the string formatting function, <kbd>format</kbd>, to return our float and prefix in the desired way. <kbd>{:.2f}</kbd> tells the format function that this first argument is a float and we want to round up to two decimal places:</p>
+<pre>067     index = 0<br/>068     while size &gt; 1024:<br/>069         size /= 1024.<br/>070         index += 1<br/>071     return '{:.2f} {}'.format(size, sizes[index])</pre>
+<p>As seen in the below screenshot, we can run our framework across a directory and gather an output report for our review. In this case, we've run the code against a folder containing an image with geolocation data.</p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-839 image-border" src="img/4e8004b2-ac33-435a-bf1a-24dc6f68e422.png" style="width:38.17em;height:8.75em;"/></p>
+<p>Our output report is shown below, though we've wrapped the columns to ensure it fits on one page.</p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-840 image-border" src="img/373a91e2-6212-49e5-95ae-17f24e8612c5.png" style="width:96.33em;height:32.42em;"/></p>
+<p>Our script also generated KML output viewable in Google Earth as shown below:</p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-841 image-border" src="img/bed99712-e9ee-4794-b294-10ccb6d9864b.png" style="width:39.33em;height:29.42em;"/></p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Framework summary</h1>
+                
+            
+            
+                
+<p>Frameworks are incredibly useful to organize multiple collections of scripts under one roof, so to speak. There are challenges that come with frameworks; mainly keeping standardized operations through the growth of the project. Our <kbd>metadata_parser.py</kbd> framework is in its first iteration and, if we continue to develop it, we may find that the current setup is only suitable on a smaller level.</p>
+<p>For example, as we implement more and more features, we might realize that the efficiency of our framework starts to lag. At that point, we would need to go back to the drawing board and determine whether we're using the correct data type or the best way to write our plugins and writers.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Additional challenges</h1>
+                
+            
+            
+                
+<p>We had difficulties deciding between two main challenges for this chapter. We could add additional plugins or refine what currently exists. In actual development, your time would be spent balancing these two objectives as the framework continues to grow. For this chapter, we propose a recursive-based challenge.</p>
+<p>Remember that, while explaining the post Office 2007 format of documents, we determined that attached media is stored in the media subdirectory of the document. In its current incarnation, when an Office document is encountered, that media subdirectory, which might have copies of files containing embedded metadata themselves, isn't processed. The challenge here is to add the newly discovered files to the current file listing.</p>
+<p>We might do that by returning a list of newly discovered files back to <kbd>metadata_parser.py</kbd>. Another route might be to check the file extensions in the <kbd>office_parser.py</kbd> script and pass them immediately onto the appropriate plugins. The latter method would be easier to implement but not ideal as it removes some of the control from the <kbd>metadata_parser.py</kbd> script. Ultimately, it's up to the developer to determine the most efficient and logical method of completing this challenge.</p>
+<p>Beyond this, some other efficiency achievements can be made. For example, we don't need to return the headers for the plugin each and every time the plugin is called. Since the headers will always be the same, we only need to have them created/returned once. Alternatively, this framework is limited by the types of writers it supports. Consider adding a writer for Excel spreadsheets to create more useful reports.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Summary</h1>
+                
+            
+            
+                
+<p>In this chapter, you learned how to handle some of the popular embedded metadata formats, perform basic file signature analysis, and create frameworks in Python. Frameworks become a normal programming solution as programs increase in complexity. The code for this project can be downloaded from GitHub or Packt, as described in the <em>Preface</em>.</p>
+<p>In the next chapter, you'll learn how to develop a basic graphical user interface, or GUI, in Python using the first-party TkInter module. This GUI will be responsible for converting timestamps of various types into a human-readable format.</p>
+
+
+            
+
+            
+        
+    </body></html>

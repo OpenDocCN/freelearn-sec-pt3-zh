@@ -1,0 +1,790 @@
+<html><head></head><body><div><h1 class="header-title">Identification and Extraction of Hidden Components</h1>
+                
+            
+            
+                
+<p>Today, the most common use for reverse engineering is in targeting malware. Like any other software, malware has its installation process. The difference is that it does not ask for the user's permission to install. Malware does not even install in the <kbd>Program files</kbd> folder where other legitimate applications are installed. Rather, it tends to install its malware file in folders that are not commonly entered by the user, making it hidden from being noticed. However, some malware shows up noticed and generates copies of itself in almost all noticeable folders such as the desktop. Its purpose is to get its copies executed by users, be it by accidental double-click or by curiosity. This is what we usually call malware persistence.</p>
+<p>Persistence is when malware consistently runs in the background. In this chapter, we will be pointing out general techniques used by malware to become persistent. We will also explain common locations where malware files are stored. Major behaviors of malware and some tools that are capable of identifying how the malware installs itself in the system will also be shown.  Understanding how malware is delivered will definitely help a reverse engineer explain how the attacker was able to compromise the system.</p>
+<p>In this chapter we will learn about the following:</p>
+<ul>
+<li>The basics of the operating system environment</li>
+<li>Typical malware behavior:
+<ul>
+<li>Malware delivery</li>
+<li>Malware persistence</li>
+<li>Malware payload</li>
+</ul>
+</li>
+<li>Tools used to identify hidden components</li>
+</ul>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Technical requirements</h1>
+                
+            
+            
+                
+<p>The discussions will use the Windows environment. We will be using the virtual machine setup we created in the previous <a href="fd21c299-93d0-4055-9630-5ca289ed6389.xhtml"/><em>chapter</em>. In addition, you'll need to download and install this software: the SysInternals suite (<a href="https://docs.microsoft.com/en-us/sysinternals/downloads/sysinternals-suite">https://docs.microsoft.com/en-us/sysinternals/downloads/sysinternals-suite</a>).</p>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">The operating system environment</h1>
+                
+            
+            
+                
+<p>Doing reverse engineering requires the analyst to understand where the software being reversed is being run. The major parts that software requires in order to work in an operating system are the memory and the filesystem. In Windows operating systems, besides the memory and the filesystem, Microsoft introduced the registry system, which is actually stored in protected files called registry hives.</p>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">The filesystem</h1>
+                
+            
+            
+                
+<p>The filesystem is where data is stored directly to the physical disk drive. These filesystems manage how files and directories are stored in the disk. Various disk filesystems have their own variation of efficiently reading and writing data. </p>
+<p>There are different disk filesystems such as <kbd>FAT</kbd>, <kbd>NTFS</kbd>, <kbd>ex2</kbd>, <kbd>ex3</kbd>, <kbd>XFS</kbd>, and <kbd>APFS</kbd>. Common filesystems used by Windows are <kbd>FAT32</kbd> and <kbd>NTFS</kbd>. Stored in the filesystem is information about the directory paths and files. It includes the filename, size of the file, date stamps, and permissions.</p>
+<p class="mce-root"/>
+<p>The following screenshot shows the information stored in the filesystem about <kbd>bfsvc.exe</kbd>:</p>
+<div><img class="alignnone size-full wp-image-999 image-border" src="img/3d3d23fa-993b-4722-9c78-5229f649f2c0.png" style="width:69.58em;height:50.00em;" width="835" height="600"/></div>
+<p>In previous MacOS X versions, file information and data are stored in resource forks. Resource forks are actually deprecated but backward compatibility still exists on recent versions of MacOS. A file has two forks stored in the filesystem, the data fork and the resource fork. The data fork contains unstructured data, while the resource fork contains structured data. The resource fork contains information such as the executable machine code, icons, shape of an alert box, string used in the file, and so forth. For instance, if you wanted to back up a Mac application by simply moving it to a Windows hard drive then moving it back, the Mac application will no longer open. While transferring, only the file gets transferred but the resource fork gets stripped out in the process. Simple copy tools don't respect the forks. Instead, Mac developers developed tools to synchronize files to and from external disks.</p>
+<p class="mce-root"/>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Memory</h1>
+                
+            
+            
+                
+<p>When a Windows executable file executes, the system allocates a memory space, reads the executable file from the disk, writes it at predefined sections in the allocated memory, then allows the code to execute from there. This block of memory is called a process block and is linked to other process blocks. Basically, every program that executes consumes a memory space as a process.</p>
+<p>The following screenshot shows a Windows Task Manager's view of the list of processes:</p>
+<div><img class="alignnone size-full wp-image-1000 image-border" src="img/b604f103-6f56-472c-892b-76c701360402.png" style="width:52.42em;height:37.25em;" width="629" height="447"/></div>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">The registry system</h1>
+                
+            
+            
+                
+<p>In Windows, the registry is a common database that contains system-wide configuration and application settings.  Examples of stored information in the registry are as follows:</p>
+<ul>
+<li>Associated programs that execute specific files:
+<ul>
+<li>DOCX files are associated with Microsoft Word</li>
+<li>PDF files are associated with Adobe Reader</li>
+</ul>
+</li>
+<li>Associated icons to specific files and folders</li>
+<li>Software settings:
+<ul>
+<li>Uninstall configuration</li>
+<li>Update sites</li>
+<li>Ports used</li>
+<li>Product IDs</li>
+</ul>
+</li>
+<li>User and group profiles</li>
+<li>Printer setup:
+<ul>
+<li>Default printer</li>
+<li>Driver names</li>
+</ul>
+</li>
+<li>Designated drivers for specific services</li>
+</ul>
+<p>The registry is stored in hive files. The list of hive files is also found in the registry itself, as can be seen in the following screenshot:  </p>
+<div><img class="alignnone size-full wp-image-1001 image-border" src="img/a752ad00-daec-41d9-ae13-89640296cb69.png" style="width:85.00em;height:31.08em;" width="1020" height="373"/></div>
+<p>Writing and reading information from the registry requires using Windows registry APIs. The registry can be viewed visually using the Registry Editor. Entries in the right pane of the Registry Editor are the registry keys. On the left pane, the registry values are found under the Name column, as can be seen in the following screenshot:</p>
+<div><img class="alignnone size-full wp-image-1002 image-border" src="img/fcefc1ec-f942-4c85-91ec-2a9f928c85ad.png" style="width:57.33em;height:38.08em;" width="688" height="457"/></div>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Typical malware behavior</h1>
+                
+            
+            
+                
+<p>Malware is simply defined as malicious software. You'd expect bad things to happen to your system environment once malware has entered. Once typical malware enters the system, it does two basic things: installs itself and does its evil work. With the intent of forcing itself to be installed in the system malware does not need to notify the user at all. Instead, it directly makes changes to the system.  </p>
+<p class="mce-root"/>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Persistence</h1>
+                
+            
+            
+                
+<p>One of the changes malware makes in the system is to make itself resident.  Malware persistence means that the malware will still be running in background and, as much as possible, all the time. For example, malware gets executed after every boot-up of the system, or malware gets executed at a certain time of the day. The most common way for malware to achieve persistence is to drop a copy of itself in some folder in the system and make an entry in the registry.</p>
+<p>The following view of the registry editor shows a registry entry by the <kbd>GlobeImposter</kbd> ransomware:  </p>
+<div><img class="alignnone size-full wp-image-1003 image-border" src="img/6f1764a9-ab35-4af3-af54-29c59201920c.png" style="width:69.33em;height:17.08em;" width="832" height="205"/></div>
+<p>Any entries made under the registry key <kbd>HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\<br/>
+Windows\CurrentVersion\Run</kbd> are expected to run every time Windows starts. In this case, the <kbd>GlobeImposter</kbd> ransomware's executable file stored in <kbd>C:\Users\JuanIsip\AppData\Roaming\huVyja.exe</kbd> becomes persistent.   <kbd>BrowserUpdateCheck</kbd> is the registry value, while the path is the registry data. What matters under this registry key are the paths, regardless of the registry value name.</p>
+<p>There are several areas in the registry that can trigger the execution of a malware executable file. </p>
+<p class="mce-root"/>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Run keys</h1>
+                
+            
+            
+                
+<p>Entering a file path in the registry data under these registry keys will trigger execution when Windows starts, as can be seen in the following registry path for the Windows 64-bit versions</p>
+<ul>
+<li><kbd>HKEY_LOCAL_MACHINE\Software\Microsoft\Windows\CurrentVersion\Run</kbd></li>
+<li><kbd>HKEY_LOCAL_MACHINE\Software\Microsoft\Windows\CurrentVersion\RunOnce</kbd></li>
+<li><kbd>HKEY_LOCAL_MACHINE\Software\Microsoft\Windows\CurrentVersion\RunOnceEx</kbd></li>
+<li><kbd>HKEY_LOCAL_MACHINE\Software\Microsoft\Windows\CurrentVersion\RunServices</kbd></li>
+<li><kbd>HKEY_LOCAL_MACHINE\Software\Microsoft\Windows\N\RunServicesOnce</kbd></li>
+<li><kbd>HKEY_LOCAL_MACHINE\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer\Run</kbd></li>
+<li><kbd>HKEY_LOCAL_MACHINE\SOFTWARE\Wow6432Node\Windows\CurrentVersion\Run</kbd></li>
+</ul>
+<p>Programs that are listed under these registry keys will trigger execution when the current user logs in, as can be seen in the following registry path:</p>
+<ul>
+<li><kbd>HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run</kbd></li>
+<li><kbd>HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\RunOnce</kbd></li>
+<li><kbd>HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\RunOnceEx</kbd></li>
+<li><kbd>HKEY_LOCAL_MACHINE\Software\Microsoft\Windows\CurrentVersion\RunServices</kbd></li>
+<li><kbd>HKEY_LOCAL_MACHINE\Software\Microsoft\Windows\CurrentVersion\RunServicesOnce</kbd></li>
+<li><kbd>HKEY_CURRENT_USER\Software\Microsoft\Windows NT\CurrentVersion\Windows\Run</kbd></li>
+</ul>
+<p>The keys names containing <kbd>Once</kbd> will have the listed programs that run only once. The malware may still persist if it keeps on placing its own file path under the <kbd>RunOnce</kbd>, <kbd>RunOnceEx</kbd> or <kbd>RunServicesOnce</kbd> keys.</p>
+<p class="mce-root"/>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Load and Run values</h1>
+                
+            
+            
+                
+<p>The following registry values, under their respective registry key, will trigger execution when any user logs in:</p>
+<ul>
+<li><kbd>HKEY_CURRENT_USER\Software\Microsoft\Windows NT\CurrentVersion\Windows</kbd>
+<ul>
+<li><kbd>Load = &lt;file path&gt;</kbd></li>
+<li><kbd>Run = &lt;file path&gt;</kbd></li>
+</ul>
+</li>
+</ul>
+<p><strong>BootExecute value</strong></p>
+<ul>
+<li><kbd>HKEY_LOCAL_MACHINE\SYSTEM\ControlSetXXX\Control\Session Manager</kbd>
+<ul>
+<li><kbd>XXX</kbd> in <kbd>ControlSetXXX</kbd> is a three digit number usually <kbd>ControlSet001</kbd>, <kbd>ControlSet002</kbd>, or <kbd>ControlSet003</kbd>.</li>
+<li><kbd>BootExecute = &lt;file path&gt;</kbd>
+<ul>
+<li>The default value of <kbd>BootExecute</kbd> is <kbd>autocheck autochk *</kbd> </li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+<p><strong>Winlogon key</strong></p>
+<ul>
+<li><kbd>HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon</kbd>
+<ul>
+<li>Activities under this registry key are executed during Windows logon </li>
+<li><kbd>UserInit = &lt;file path&gt;</kbd>
+<ul>
+<li>The default value of <kbd>Userinit</kbd> is <kbd>C:\Windows\system32\userinit.exe</kbd></li>
+</ul>
+</li>
+<li><kbd>Notify = &lt;dll file path&gt;</kbd>
+<ul>
+<li><kbd>Notify</kbd> is not set by default. It is expected to be a dynamic link library file</li>
+</ul>
+</li>
+<li><kbd>Shell = &lt;exe file path&gt;</kbd>
+<ul>
+<li>The default value of <kbd>Shell</kbd> is <kbd>explorer.exe</kbd></li>
+</ul>
+</li>
+</ul>
+</li>
+<li><kbd>HKEY_CURRENT_USER\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon</kbd>
+<ul>
+<li><kbd>Shell = &lt;exe file path&gt;</kbd>
+<ul>
+<li>The default value of <kbd>Shell</kbd> is <kbd><kbd>explorer.exe</kbd></kbd></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+<p><strong>Policy scripts keys</strong></p>
+<ul>
+<li><kbd>HKEY_LOCAL_MACHINE\Software\Microsoft\Windows\CurrentVersion\Group Policy\Scripts\Shutdown\0\N</kbd>
+<ul>
+<li>where <kbd>N</kbd> is a number starting from <kbd>0</kbd>. Multiple scripts or executables can be run during the shutdown sequence</li>
+<li><kbd>Script = [file path of executable file or script]</kbd></li>
+</ul>
+</li>
+<li><kbd>HKEY_LOCAL_MACHINE\Software\Microsoft\Windows\CurrentVersion\Group Policy\Scripts\Startup\0\N</kbd>
+<ul>
+<li>This is where <kbd>N</kbd> is a number starting from <kbd>0</kbd>. Multiple scripts or executables can be run during the startup sequence.</li>
+<li><kbd>Script = [file path of executable file or script]</kbd></li>
+</ul>
+</li>
+<li><kbd>HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Group Policy\Scripts\Logon\0\N</kbd>
+<ul>
+<li>This is where <kbd>N</kbd> is a number starting from <kbd>0</kbd>. Multiple scripts or executables can be run when a user logs off.</li>
+<li><kbd>Script = [file path of executable file or script]</kbd></li>
+</ul>
+</li>
+<li><kbd>HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Group Policy\Scripts\Logoff\0\N</kbd>
+<ul>
+<li>where N is a number starting from 0. Multiple scripts or executables can be run when a user logs off</li>
+<li><kbd>Script = [file path of executable file or script]</kbd></li>
+</ul>
+</li>
+</ul>
+<p><strong>AppInit_DLLs values</strong></p>
+<ul>
+<li><kbd>HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Windows</kbd>
+<ul>
+<li><kbd>AppInit_DLLs = [a list of DLLs]</kbd>
+<ul>
+<li>The list of DLLs are delimited by a comma or space</li>
+</ul>
+</li>
+<li><kbd>LoadAppInit_DLLs = [1 or 0]</kbd>
+<ul>
+<li>Here, <kbd>1</kbd> means enabled, and <kbd>0</kbd> means disabled</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+<p><strong>Services keys</strong></p>
+<ul>
+<li><kbd>HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\[Service Name]</kbd>
+<ul>
+<li>This is where <kbd>ServiceName</kbd> is the name of the service</li>
+<li><kbd>ImagePath = [sys/dll file path]</kbd></li>
+<li>Loads a system file (<kbd>.sys</kbd>) or a library file (<kbd>.dll</kbd>), which is the driver executable</li>
+<li>The service triggers depending on the value of the start:
+<ul>
+<li><kbd>0</kbd>  (<kbd>SERVICE_BOOT_START</kbd> triggers when OS is being loaded)</li>
+<li><kbd>1</kbd>  (<kbd>SERVICE_SYSTEM_START</kbd> triggers when OS is being initialized)</li>
+<li><kbd>2</kbd> (<kbd>SERVICE_AUTO_START</kbd> triggers when service manager starts.)</li>
+<li><kbd>3</kbd>  (<kbd>SERVICE_DEMAND_START</kbd> triggers when it is manually started)</li>
+<li><kbd>4</kbd>  (<kbd>SERVICE_DISABLED</kbd>. The service is disabled from triggering)</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+<p><strong>File associations</strong></p>
+<ul>
+<li><kbd>HKEY_CLASSES_ROOT or in HKEY_LOCAL_MACHINE\SOFTWARE\Classes\[File type or extension name]\shell\open\command</kbd>
+<ul>
+<li>The entry in the (<kbd>Default</kbd>) registry value executes files that are described by [File type or extension name].</li>
+<li>The following code shows the associated entry for executable files or <kbd>.EXE</kbd> files:<br/>
+<ul>
+<li><kbd><kbd>&lt;show image of exefile entry in HKEY_LOCAL_MACHINE\SOFTWARE\Classes\exefile\shell\open\command&gt;</kbd></kbd></li>
+<li>The (<kbd>Default</kbd>) value contains <kbd>"%1" %*</kbd>.  <kbd>%1</kbd> pertains to the executable being run as is, while <kbd>%*</kbd> pertains to the command-line arguments.  Persistence is implemented by malware by appending its own executable. For example, the <kbd>(Default)</kbd> value is set to <kbd>malware.exe "%1" %*</kbd>.  As a result, <kbd>malware.exe</kbd> runs and uses <kbd>%1</kbd> (the executable being run) and <kbd>%*</kbd> as its arguments.  <kbd>malware.exe</kbd> is then responsible for running <kbd>%1</kbd> with its <kbd>%*</kbd>.</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Startup values</h1>
+                
+            
+            
+                
+<p>The startup registry value contains the path to a folder which contains files that are executed after the user has logged in. The default folder location is at <kbd>%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup</kbd>.</p>
+<ul>
+<li><kbd>HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders</kbd>
+<ul>
+<li><kbd>Startup = [startup folder path]</kbd></li>
+</ul>
+</li>
+<li><kbd>HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders</kbd>
+<ul>
+<li><kbd>Startup = [startup folder path]</kbd></li>
+</ul>
+</li>
+<li><kbd>HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders</kbd>
+<ul>
+<li><kbd>Common Startup = [startup folder path]</kbd></li>
+</ul>
+</li>
+<li><kbd>HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders</kbd>
+<ul>
+<li><kbd><kbd>Common Startup = [startup folder path]</kbd></kbd></li>
+</ul>
+</li>
+</ul>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">The Image File Execution Options key</h1>
+                
+            
+            
+                
+<p>File paths set in the debugger of the <kbd>Image File Execution Options</kbd> key is run when the process is to be debugged or is run with the <kbd>CreateProcess</kbd> API:</p>
+<ul>
+<li><kbd>HKEY_LOCAL_MACHINE\Software\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\[Process Name]</kbd>
+<ul>
+<li><kbd>Debugger = [executable file]</kbd></li>
+<li><kbd>[Process Name]</kbd> pertains to the filename of the running executable</li>
+<li>This persistence only triggers when there is a need for  <kbd>[Process Name]</kbd> to invoke a debugger</li>
+</ul>
+</li>
+</ul>
+<p><strong>Browser Helper Objects key</strong></p>
+<ul>
+<li><kbd>HKEY_LOCAL_MACHINE\Software\Microsoft\Windows\CurrentVersion\Explorer\Browser Helper Objects\[CLSID]</kbd>
+<ul>
+<li>Having the <kbd>CLSID</kbd> as a subkey simply means that it is installed and enabled as an Internet Explorer BHO</li>
+<li>The <kbd>CLSID</kbd> is registered under the <kbd>HKEY_CLASSES_ROOT\CLSID\[CLSID]\InprocServer32</kbd> key
+<ul>
+<li>The <kbd>(Default)</kbd> value points to the DLL file associated with the BHO</li>
+</ul>
+</li>
+<li>The DLL file is loaded every time Internet Explorer is opened</li>
+</ul>
+</li>
+</ul>
+<p class="mce-root"/>
+<p>Besides registry entries, an executable can also be triggered by schedule using the task scheduler or <kbd>cron</kbd> jobs. An executable or a script can be triggered even at certain conditions. Take, for example, the following screenshot of a Windows Task scheduler:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="img/cc0452a4-685c-4ecf-9818-aa764c6c15a5.png" width="1002" height="519"/></p>
+<p>There are many more ways in which malware gets persistence other than those which have been listed previously. These are the challenges that a reverse engineer learns as they encounter new techniques.</p>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Malware delivery</h1>
+                
+            
+            
+                
+<p>In the software security industry, the activity of an attacker to spread and compromise a system is called a malware campaign. There are various ways that malware gets into a system. The most common way that these malware executable files are delivered is through an email attachment sent to its target user(s). As communication technology changes, the logistics that these campaigns implement adapt to whatever technology there is. This includes looking for vulnerabilities in the target system and penetrating it with exploits.</p>
+<p class="mce-root"/>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Email</h1>
+                
+            
+            
+                
+<p>Malware sent as an email delivery would require the recipient to open the attached file. The email is crafted in such a way that the recipient becomes curious about opening the attachment. These unsolicited emails that are spread to many addresses are called email spam. They usually contain a subject and a message body that uses social engineering to get the recipient's attention and eventually have them execute the malware. An example of this can be seen in the following screenshot:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="img/ce4c0c7f-e5fc-43d3-830c-001d0cb6e798.png" width="942" height="767"/></p>
+<p class="mce-root"/>
+<p>Activities that deceive a person or a group of people to do an activity is called<strong> </strong><strong><em>social engineering</em></strong>. With poor security awareness, users may fall into this famous proverbial trap: <em>curiosity killed the cat</em>.  </p>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Instant messenger</h1>
+                
+            
+            
+                
+<p>Besides email, there is what we call SPIM or Instant Messaging Spam. This is spam sent to instant messaging such as Facebook, Skype, and Yahoo Messenger applications. This also includes public or private messages spimmed using Twitter, Facebook, and other social networking services. The messages usually contain a link to a compromised site containing malware or spyware. Some services that support file transfers are abused by malware spim. Today, these social networking services have implemented back-end security to mitigate SPIM.  However, at the time of writing, there are still a few incidents of malware spreading through instant messaging. An example of this can be seen in the following screenshot:</p>
+<div><img class="alignnone size-full wp-image-1004 image-border" src="img/4afd4239-23ac-4750-bce5-72eb2f4ae67c.png" style="width:32.00em;height:19.25em;" width="384" height="231"/></div>
+<p>Image from John Patrick Lita from <kbd>CSPCert.ph</kbd></p>
+<p>The previous screenshot is a private message from Facebook's instant messenger containing a ZIP file that actually contains a malware file.</p>
+<p class="mce-root"/>
+<p class="mce-root"/>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">The computer network</h1>
+                
+            
+            
+                
+<p>It is a necessity today that a computer has to be connected to a network so users can access resources from each other. With each computer linked to another whether it is LAN (Local Area Network) or WAN (Wide Area Network), file sharing protocols are also open for attackers to abuse. Malware can attempt to drop copies of itself to file shares. However, the malware depends on the user at the remote end running the malware file from the file share. These kinds of malware are called network worms.</p>
+<p>To list down the shared folders in Windows, you can use the <kbd>net share</kbd> command, as can be seen in the following screenshot:</p>
+<div><img class="alignnone size-full wp-image-1005 image-border" src="img/b9883f2f-f1bf-4545-9ed9-3cda3b8c15e1.png" style="width:55.92em;height:19.83em;" width="671" height="238"/></div>
+<p>As an analyst, we can make recommendations on what to do with these shared folders. We can say that these shares either be removed, if not used. We can also have these folders reviewed for the permissions of who can access it and what type of permissions (like read and write permissions) certain users can have. That way, we are helping secure the network from getting infested by network worms.</p>
+<p class="mce-root"/>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Media storage</h1>
+                
+            
+            
+                
+<p>Network administrators are very restrictive when it comes to using thumb drives. The primary reason is that external storage devices, such as USB thumb drives, CDs, DVDs, external hard drives, and even smartphones are all media in which malware can store itself. Once a storage device gets mounted to a computer, it serves like a regular drive. Malware can simply drop copies of itself to these storage drives. Similar to network worms, these are worms that depend on the user to run the malware. But with the Windows Autorun feature turned on, malware may execute once the drive is mounted, as can be seen in the following screenshot:</p>
+<div><img class="alignnone size-full wp-image-1006 image-border" src="img/2d80a5c6-bf0f-4133-aab9-1f2ec761dea0.png" style="width:27.08em;height:23.58em;" width="325" height="283"/></div>
+<p>The previous image is the default dialog encountered when inserting a CD drive containing setup software.</p>
+<p>The <kbd>autorun.inf</kbd> file in the root of a drive contains information on which file to automatically execute. This is used by software installers stored in CDs so that, when the disk is inserted, it automatically runs the setup program. This is abused by malware by doing these steps:</p>
+<ol>
+<li>Dropping a copy of its malware file in removable drives</li>
+<li>Along  with its dropped copy, it generates an <kbd>autorun.inf</kbd> file that points to the dropped executable file, as can be seen in the following example:</li>
+</ol>
+<div><img class="alignnone size-full wp-image-1007 image-border" src="img/3caf8d06-f65d-4fc7-9dbf-2d1373d0c5a7.png" style="width:21.67em;height:4.50em;" width="260" height="54"/></div>
+<p>The <kbd>autorun.inf</kbd> for the VirtualBox setup autoplay dialog shown previously contains the text as shown in the previous screenshot. The <kbd>open</kbd> property contains the executable to be run.  </p>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Exploits and compromised websites</h1>
+                
+            
+            
+                
+<p>Exploits are also categorized under malware. Exploits are crafted to compromise specific vulnerabilities of software or network services. These are usually in the form of binary data. Exploits take advantage of vulnerability, thereby causing the target software or service to behave in such a manner that the attacker intends it should behave. Usually, the attacker intends to gain control over the target system or simply take it down.</p>
+<p>Once an attacker identifies vulnerabilities on its target, an exploit is crafted containing code that would download malware that can give the attacker more access. This concept was used to develop exploit kits. Exploit kits are a set of known vulnerability scanners and known exploits packaged as a toolkit.</p>
+<p>The following diagram gives an example:</p>
+<div><img class="alignnone size-full wp-image-1008 image-border" src="img/dd9c8d78-682e-4cfc-ae8d-9e377a599f5a.jpg" style="width:54.83em;height:38.17em;" width="658" height="458"/></div>
+<p>In a malware campaign, social engineering is used to lure users to visit links that are actually compromised. Usually, the compromised sites were manually hacked and have been injected with a hidden script that redirects to another website. The malicious links are spammed to email messages, instant messaging, and social networking sites. Visiting legitimate sites that are compromised with malicious advertisements also counts as bait. These sites include software or media piracy sites, the dark web, or even pornographic sites. Once the user clicks the link, typically, the site redirects to another compromised site, and to another, until it reaches the exploit kit landing gate page. From the user's internet browser, the exploit kit gate gathers information on the machine, such as software versions, and then determines whether or not the software is known to be vulnerable. It then delivers all exploits applicable to the vulnerable software. The exploits typically contain code that will download and execute malware. As a result, the unaware user gets a compromised system.</p>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Software piracy</h1>
+                
+            
+            
+                
+<p>Hacking tools, pirated software, serial generating tools, and pirated media files are just some of the distributed software where malware or adware may be included. For example, the setup file of the installer of pirated software may be downloading malware and installing it in the background without asking the user for permission.</p>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Malware file properties</h1>
+                
+            
+            
+                
+<p>The initial behavior of common malware is to drop a copy of itself, drop its malware component embedded in it, or download its malware component. It creates the dropped files which are usually found in these folders:</p>
+<ul>
+<li>The Windows System folder: <kbd>C:\Windows\System32</kbd></li>
+<li>The Windows folder:  <kbd>C:\Windows</kbd></li>
+<li>The user profile folder:   <kbd>C:\Users\[username]</kbd></li>
+<li>The Appdata folder:  <kbd>C:\Users\[username]\AppData\Roaming</kbd></li>
+<li>The recycle bin folder:  <kbd>C:\$Recycle.Bin</kbd></li>
+<li>The desktop folder: <kbd>C:\Users\[username]\Desktop</kbd></li>
+<li>The temporary folder:  <kbd>C:\Users\[username]\AppData\Local\Temp</kbd></li>
+</ul>
+<p class="mce-root"/>
+<p>As part of its social engineering, another cheap technique is to change the icon of a malware file to something that would lure the user to open it, for example, folder icons, Microsoft Office icons, or Adobe PDF icons. It also uses file names that are deceiving, such as the words <em>INVOICE,</em> <em>New</em> <em>Folder</em>, <em>Scandal,</em> <em>Expose,</em> <em>Pamela,</em> <em>Confidential,</em> and so on. The following screenshot gives examples of actual malware that mimics known documents: </p>
+<div><img class="alignnone size-full wp-image-1009 image-border" src="img/4c96205c-9be2-4f40-84de-5455a0c46d75.png" style="width:71.08em;height:35.33em;" width="853" height="424"/></div>
+<p>Notice that highlighting the fake PDF file shows that it is actually an application.</p>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Payload – the evil within</h1>
+                
+            
+            
+                
+<p>The attacker develops malware for a purpose. This is typically to cause harm to the target, maybe because of hate, for fun, for monetary or, probably, political reasons. Here are some typical malware payloads that were seen in the wild:</p>
+<ul>
+<li>Encrypting files for ransom</li>
+<li>Deleting all files</li>
+<li>Formatting drives</li>
+<li>Gaining full access to the system and the network</li>
+<li>Stealing accounts and passwords</li>
+<li>Stealing documents, images, and videos</li>
+<li>Changing specific configuration and settings</li>
+<li>Turning the computer into a proxy server</li>
+<li>Installing <kbd>cryptocoin</kbd> miners</li>
+<li>Continuously opening websites - ad or porn sites</li>
+<li>Installing more malware</li>
+<li>Installing adware</li>
+</ul>
+<p>One of the conclusions that a reverse engineer includes in the report is the payload. This determines what malware actually does to the machine other than getting installed.</p>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Tools</h1>
+                
+            
+            
+                
+<p>Identifying the registry entry, files dropped, and running processes that are related to the malware requires tools. There are existing tools that we can use to extract these objects. There are two analysis events we should consider: analysis after the malware has been executed and analysis before the malware executes. Since our aim for this chapter is to extract components, we will discuss the tools that can help us find suspected files. Analysis tools that are used after we have extracted our suspected malware will be discussed in further chapters.</p>
+<p>When a system has already been compromised, the analyst would need to use tools that can identify suspected files. Each suspected file will be analysed further. To start off, we can identify it based on persistence.</p>
+<ol>
+<li>List down all processes and their respective file information</li>
+<li>From the list of known registry persistence paths, look for entries containing the file paths</li>
+<li>Extract the suspected files</li>
+</ol>
+<p>The above steps may require pre-existing tools from Microsoft Windows, such as:</p>
+<ul>
+<li>The Registry Editor (<kbd>regedit</kbd>/<kbd>regedt32)</kbd> to search the registry</li>
+<li>You can also use the command line for accessing the registry <kbd>reg.exe</kbd>, as seen in the following screenshot:   
+<div><div><img class="alignnone size-full wp-image-1010 image-border" src="img/34dfced5-4b4d-4808-9a34-3b1c81d62655.png" style="width:36.75em;height:30.50em;" width="441" height="366"/></div>
+</div>
+</li>
+<li>Task manager (<kbd>taskmgr</kbd>) to list down the processes</li>
+<li>Windows Explorer (<kbd>explorer</kbd>) or Command prompt (<kbd>cmd</kbd>) to traverse directories and retrieve the files. </li>
+</ul>
+<p>However, there are also third-party  tools that we can use that can help us list down suspected files. Here are a few we will briefly discuss:</p>
+<ul>
+<li>Autoruns</li>
+<li>Process explorer</li>
+</ul>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Autoruns</h1>
+                
+            
+            
+                
+<p>The startup list we saw earlier in this chapter, covers registry entries, schedule jobs, and file location. The bottom line is that this tool covers all of those, including other areas we have not discussed, such as Microsoft Office add-ons, codecs, and printer monitors, as can be seen in the following screenshot:</p>
+<div><img class="alignnone size-full wp-image-1011 image-border" src="img/9aef4cb4-672a-4e3f-aa33-eaa1e50bf60d.png" style="width:66.00em;height:29.67em;" width="792" height="356"/></div>
+<p>There are 32- and 64-bit versions of the autoruns tool. The screenshot above shows all possible triggers for an executable which was based on the research of the SysInternals' authors Mark Russinovich and Bryce Cogswell. The screenshot also categorizes each autorun entry, shows the description of each entry, and indicates the file path related to the entry.</p>
+<p>As for reverse engineers, the identification of suspected files can be determined by having knowledge of what files are common to the startup prior to the system getting compromised. Continuous practice and experience will make the reverse engineer easily identify which are good or suspected executable files.</p>
+<p class="mce-root"/>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">The Process explorer</h1>
+                
+            
+            
+                
+<p>In essence, the <kbd>Process</kbd> explorer tool is similar to the Task Manager, as demonstrated in the following screenshot:  </p>
+<div><img class="alignnone size-full wp-image-1012 image-border" src="img/4ed1ab11-4f36-4fbe-ad59-bf27992bfb3a.png" style="width:64.92em;height:43.17em;" width="779" height="518"/></div>
+<p>The advantage of this tool is that it can show more information about the process itself, such as how it was run, including the parameters used, and even its autostart location, as can be seen in the following example:</p>
+<div><img class="alignnone size-full wp-image-1013 image-border" src="img/b8c9a968-e48b-406c-9e75-83a73bd95b62.png" style="width:35.83em;height:45.67em;" width="430" height="548"/></div>
+<p>In addition, the process explorer has tools to send it VirusTotal identification, shows a list of strings identified from its image and the threads associated with it. From a reverser's point of view, the highly used information here is the command-line usage, and autostart location. VirusTotal is an online service that scans a submitted file or URL using multiple security software, as demonstrated in the following screenshot: </p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-1014 image-border" src="img/b355e1f2-34fb-41b9-bd08-3a65b11a2cc8.png" style="width:72.75em;height:57.58em;" width="873" height="691"/></p>
+<p>The results are not conclusive, but it gives the submitter an idea about the file's credibility of being legit software or malware.</p>
+<p class="mce-root"/>
+<p class="mce-root"/>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Summary</h1>
+                
+            
+            
+                
+<p>In the first chapter, we learned about reverse engineering and its importance when analyzing malware. To begin with our reverse engineering adventures, we have to learn the system we are analyzing. We discussed the three main areas in the Windows operating system environment: memory, disk, and the registry.  In this chapter, we aimed to find malware from a compromised Windows system by extracting suspected files. To do that, we listed common startup areas in the system that we can search into. These areas include the registry, task schedules, and startup folder.  </p>
+<p>We learned that typical malware behaves by installing itself and runnng code that harms the system. Malware installs itself basically for persistence which results in the malware file triggering most of the time the system is online. We then listed a few behaviors as to why malware was called malicious. This malicious code consisted of anything to do with crime entailing monetary or political gain, such as ransom and backdoor access.</p>
+<p>We ended this chapter by listing tools we can use to easily identify the suspected files. We first introduced pre-existing Windows tools such as the Registry editor, Task Manager and the Task Scheduler. We followed these with two more tools from SysInternals: autoruns and Process explorer.  With these tools at hand, we should be able to list down our suspected files. However, as with any other tasks, we will be able to master identification faster with practice and experience.</p>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Further reading</h1>
+                
+            
+            
+                
+<ul>
+<li><a href="https://msdn.microsoft.com/en-us/library/windows/desktop/ms724871(v=vs.85).aspx">https://msdn.microsoft.com/en-us/library/windows/desktop/ms724871(v=vs.85).aspx</a></li>
+<li><a href="https://medium.com/@johnpaticklita/cryptomalware-spreads-on-facebook-79a299590116">https://medium.com/@johnpaticklita/cryptomalware-spreads-on-facebook-79a299590116</a></li>
+</ul>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  </body></html>

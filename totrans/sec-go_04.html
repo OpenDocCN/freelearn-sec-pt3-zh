@@ -1,0 +1,344 @@
+<html><head></head><body>
+        
+
+                            
+                    <h1 class="header-title">Forensics</h1>
+                
+            
+            
+                
+<p>Forensics is the gathering of evidence to detect a crime. Digital forensics refers simply looking for digital evidence and includes locating anomalous files that may contain relevant information, searching for hidden data, figuring out when a file was last modified, figuring out who sent an email, hashing files, gathering information about an attacking IP, or capturing network communication.</p>
+<p>In addition to forensics, this chapter will cover a basic example of steganography—the hiding of archives inside images. Steganography is a trick employed to hide information within other information so that it is not easily found.</p>
+<p>Hashing, while relevant to forensics, is covered in <a href="f68073f0-8cc8-40b5-af0e-795ce30e5271.xhtml" target="_blank">Chapter 6</a>, <em>Cryptography</em>, and packet capturing is covered in <a href="e69a87b2-99ff-47cf-a935-4ef39304ed15.xhtml"/><a href="e69a87b2-99ff-47cf-a935-4ef39304ed15.xhtml" target="_blank">Chapter 5</a>, <em>Packet Capturing and Injection</em>. You will find examples that could be useful to forensic investigators throughout all the chapters this book.</p>
+<p>In this chapter you, will learn about the following topics:</p>
+<ul>
+<li class="MsoNormalCxSpMiddle">File forensics</li>
+<li>Getting basic file information</li>
+<li>Finding large files</li>
+<li>Finding recently changed files</li>
+<li>Reading the boot sector of a disk</li>
+<li>Network forensics</li>
+<li>Looking up hostnames and IP addresses</li>
+<li>Looking up MX mail records</li>
+<li>Looking up nameservers for a host</li>
+<li>Steganography</li>
+<li>Hiding an archive in an image</li>
+<li>Detecting an archive hidden in an image</li>
+<li>Generating a random image</li>
+<li>Creating a ZIP archive</li>
+</ul>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Files</h1>
+                
+            
+            
+                
+<p>File forensics is important because an attacker may leave behind traces, and the evidence needs to be gathered before any more changes are made or any information is lost. This includes determining who owns a file, when it was last changed, who has access to it, and seeing whether there is any hidden data in a file.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Getting file information</h1>
+                
+            
+            
+                
+<p>Let's begin with something simple. This program will print the information about a file, namely when it was last modified, who owns it, how many bytes it is, and what its permissions are. This will also serve as a good test to make sure that your Go development environment is set up properly.</p>
+<p>If an investigator has found an anomalous file, the first thing to do is to check all the basic metadata. This will give information about who owns the file, what groups have access to it, when it was last modified, whether it is an executable file, and how large it is. All of this information is potentially useful.</p>
+<p>The primary function we'll use is <kbd>os.Stat()</kbd>. This returns a <kbd>FileInfo</kbd> struct, which we will print. We have to import the <kbd>os</kbd> package at the beginning to call <kbd>os.Stat()</kbd>. Two variables are returned from <kbd>os.Stat()</kbd>, which is different than many languages that only allow one return variable. You can ignore a return variable, such as an error you want to ignore, using an underscore (<kbd>_</kbd>) symbol in place of a variable name.</p>
+<p>The <kbd>fmt</kbd> (short for format) package we import contains typical printing functions such as <kbd>fmt.Println()</kbd> and <kbd>fmt.Printf()</kbd>. The <kbd>log</kbd> package contains <kbd>log.Printf()</kbd> and <kbd>log.Println()</kbd>. The difference between <kbd>fmt</kbd> and <kbd>log</kbd> is that <kbd>log</kbd> prints out a <kbd>timestamp</kbd> before the message, and it is thread safe.</p>
+<p>The <kbd>log</kbd> package has one function that is not available in <kbd>fmt</kbd>, and that is <kbd>log.Fatal()</kbd>, which calls <kbd>os.Exit(1)</kbd> immediately after printing. The <kbd>log.Fatal()</kbd> function is useful for handling certain error conditions by printing the error and quitting. Use the <kbd>fmt print</kbd> function if you want clean output with full control. Use the <kbd>log</kbd> package's print functions if it will be useful to have timestamp on each message. When gathering forensic clues, it is important to log what time you performed each action.</p>
+<p>In this example, the variables are defined in their own section before the <kbd>main</kbd> function. Variables at this scope are available to the whole package. This means that every function is in the same file, and the other files are in the same directory with the same package declaration. This method of defining variables is just to show that this is possible with Go. It is one of Pascal's influences on the language, along with the <kbd>:=</kbd> operator. It can be nice to have all the variables defined at the top with the data type explicitly listed. To save space in later examples, we will take advantage of the <em>declare and assign</em> operator or the <kbd>:=</kbd> symbol. This is convenient when writing code because you don't have to declare the variable type first. It infers the data type on compilation. When reading source code, however, having the variable types declared explicitly can help the reader navigate the code. We could have also placed the whole <kbd>var</kbd> declaration inside the <kbd>main</kbd> function to limit the scope further:</p>
+<pre>package main<br/><br/>import (<br/>   "fmt"<br/>   "log"<br/>   "os"<br/>)<br/><br/>var (<br/>   fileInfo os.FileInfo<br/>   err error<br/>)<br/><br/>func main() {<br/>   // Stat returns file info. It will return<br/>   // an error if there is no file.<br/>   fileInfo, err = os.Stat("test.txt")<br/>   if err != nil {<br/>      log.Fatal(err)<br/>   }<br/>   fmt.Println("File name:", fileInfo.Name())<br/>   fmt.Println("Size in bytes:", fileInfo.Size())<br/>   fmt.Println("Permissions:", fileInfo.Mode())<br/>   fmt.Println("Last modified:", fileInfo.ModTime())<br/>   fmt.Println("Is Directory: ", fileInfo.IsDir())<br/>   fmt.Printf("System interface type: %T\n", fileInfo.Sys())<br/>   fmt.Printf("System info: %+v\n\n", fileInfo.Sys())<br/>}</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Finding the largest files</h1>
+                
+            
+            
+                
+<p>Large files are always prime suspects when investigating. Large database dumps, password dumps, rainbow tables, credit card caches, stolen intellectual property, and other data are often stored in one large archive that is easy to spot if you have the right tools. Also, it would be helpful to find exceptionally large image or video files that may have steganographically-hidden information inside. Steganography is covered further in this chapter.</p>
+<p>This program will search in a directory and all subdirectories for all files and sort them by file size. We'll explore the initial directory with <kbd>ioutil.ReadDir()</kbd> to get the contents as a slice of the <kbd>os.FileInfo</kbd> structs. To check whether a file is a directory, we'll use <kbd>os.IsDir()</kbd>. We'll then create a custom data struct named <kbd>FileNode</kbd> to store the information we need. We use a linked list to store the file information. Before inserting an element into the list, we'll go through it to find the proper place in order to keep the list sorted correctly. Note that running the program on a directory such as <kbd>/</kbd> may take a very long time. Try a more specific directory such as your <kbd>home</kbd> folder:</p>
+<pre>package main<br/><br/>import (<br/>   "container/list"<br/>   "fmt"<br/>   "io/ioutil"<br/>   "log"<br/>   "os"<br/>   "path/filepath"<br/>)<br/><br/>type FileNode struct {<br/>   FullPath string<br/>   Info os.FileInfo<br/>}<br/><br/>func insertSorted(fileList *list.List, fileNode FileNode) {<br/>   if fileList.Len() == 0 { <br/>      // If list is empty, just insert and return<br/>      fileList.PushFront(fileNode)<br/>      return<br/>   }<br/><br/>   for element := fileList.Front(); element != nil; element =    <br/>      element.Next() {<br/>      if fileNode.Info.Size() &lt; element.Value.(FileNode).Info.Size()       <br/>      {<br/>         fileList.InsertBefore(fileNode, element)<br/>         return<br/>      }<br/>   }<br/>   fileList.PushBack(fileNode)<br/>}<br/><br/>func getFilesInDirRecursivelyBySize(fileList *list.List, path string) {<br/>   dirFiles, err := ioutil.ReadDir(path)<br/>   if err != nil {<br/>      log.Println("Error reading directory: " + err.Error())<br/>   }<br/><br/>   for _, dirFile := range dirFiles {<br/>      fullpath := filepath.Join(path, dirFile.Name())<br/>      if dirFile.IsDir() {<br/>         getFilesInDirRecursivelyBySize(<br/>            fileList,<br/>            filepath.Join(path, dirFile.Name()),<br/>         )<br/>      } else if dirFile.Mode().IsRegular() {<br/>         insertSorted(<br/>            fileList,<br/>            FileNode{FullPath: fullpath, Info: dirFile},<br/>         )<br/>      }<br/>   }<br/>}<br/><br/>func main() {<br/>   fileList := list.New()<br/>   getFilesInDirRecursivelyBySize(fileList, "/home")<br/><br/>   for element := fileList.Front(); element != nil; element =   <br/>      element.Next() {<br/>      fmt.Printf("%d ", element.Value.(FileNode).Info.Size())<br/>      fmt.Printf("%s\n", element.Value.(FileNode).FullPath)<br/>   }<br/>}</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Finding recently modified files</h1>
+                
+            
+            
+                
+<p>When examining a victim machine forensically, one of the first things you can do is to look for files that have been recently altered. It could give you clues as to where an attacker was looking, what settings they modified, or what their motive was.</p>
+<p>However, if an investigator is looking through an attacker's machine, then the goal is slightly different. Recently accessed files may give clues as to what tools they were using to attack where they might be hiding data, or what software they use.</p>
+<p>The following example will search a directory and subdirectories to find all the files and sort them by the last modified time. This example is very much like the previous one except that the sorting is done by comparing timestamps using the <kbd>time.Time.Before()</kbd> function:</p>
+<pre>package main<br/><br/>import (<br/>   "container/list"<br/>   "fmt"<br/>   "io/ioutil"<br/>   "log"<br/>   "os"<br/>   "path/filepath"<br/>)<br/><br/>type FileNode struct {<br/>   FullPath string<br/>   Info os.FileInfo<br/>}<br/><br/>func insertSorted(fileList *list.List, fileNode FileNode) {<br/>   if fileList.Len() == 0 { <br/>      // If list is empty, just insert and return<br/>      fileList.PushFront(fileNode)<br/>      return<br/>   }<br/><br/>   for element := fileList.Front(); element != nil; element = <br/>      element.Next() {<br/>      if fileNode.Info.ModTime().Before(element.Value.<br/>        (FileNode).Info.ModTime()) {<br/>            fileList.InsertBefore(fileNode, element)<br/>            return<br/>        }<br/>    }<br/><br/>    fileList.PushBack(fileNode)<br/>}<br/><br/>func GetFilesInDirRecursivelyBySize(fileList *list.List, path string) {<br/>    dirFiles, err := ioutil.ReadDir(path)<br/>    if err != nil {<br/>        log.Println("Error reading directory: " + err.Error())<br/>    }<br/><br/>    for _, dirFile := range dirFiles {<br/>        fullpath := filepath.Join(path, dirFile.Name())<br/>        if dirFile.IsDir() {<br/>            GetFilesInDirRecursivelyBySize(<br/>            fileList,<br/>            filepath.Join(path, dirFile.Name()),<br/>            )<br/>        } else if dirFile.Mode().IsRegular() {<br/>           insertSorted(<br/>              fileList,<br/>              FileNode{FullPath: fullpath, Info: dirFile},<br/>           )<br/>        }<br/>    }<br/>}<br/><br/>func main() {<br/>    fileList := list.New()<br/>    GetFilesInDirRecursivelyBySize(fileList, "/")<br/><br/>    for element := fileList.Front(); element != nil; element =    <br/>       element.Next() {<br/>        fmt.Print(element.Value.(FileNode).Info.ModTime())<br/>        fmt.Printf("%s\n", element.Value.(FileNode).FullPath)<br/>    }<br/>}</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Reading the boot sector</h1>
+                
+            
+            
+                
+<p>This program will read the first 512 bytes of a disk and print the results as decimal values, hex, and a string. The <kbd>io.ReadFull()</kbd> function is like a normal read, but it ensures that the byte slice you provide with for data is completely filled. It returns an error if there are not enough bytes in the file to fill the byte slice.</p>
+<p>A practical use for this is to check a machine's boot sector to see if it has been modified. Rootkits and malware may hijack the boot process by modifying the boot sector. You can manually inspect it for anything strange or compare it to a known good version. Perhaps a backup image of the machine or a fresh install can be compared to see if anything has changed.</p>
+<p>Note that you can technically pass it any filename and not specifically a disk, since everything in Linux is treated as a file. If you pass it the name of the device directly, such as <kbd>/dev/sda</kbd>, it will read the first <kbd>512</kbd> bytes of the disk, which is the boot sector. The primary disk device is typically <kbd>/dev/sda</kbd>, but may also be <kbd>/dev/sdb</kbd> or <kbd>/dev/sdc.</kbd> Use <kbd>mount</kbd> or the <kbd>df</kbd> tools to get more information about what your disks are named. You will need to run the application with <kbd>sudo</kbd> in order to have the permission to read the disk device directly.</p>
+<p>For more information on files, input, and output, look into the <kbd>os</kbd>, <kbd>bufio</kbd>, and <kbd>io</kbd> packages, as demonstrated in the following code block:</p>
+<pre>package main<br/><br/>// Device is typically /dev/sda but may also be /dev/sdb, /dev/sdc<br/>// Use mount, or df -h to get info on which drives are being used<br/>// You will need sudo to access some disks at this level<br/><br/>import (<br/>   "io"<br/>   "log"<br/>   "os"<br/>)<br/><br/>func main() {<br/>   path := "/dev/sda"<br/>   log.Println("[+] Reading boot sector of " + path)<br/>  <br/>   file, err := os.Open(path)<br/>   if err != nil {<br/>      log.Fatal("Error: " + err.Error())<br/>   }<br/>   <br/>   // The file.Read() function will read a tiny file in to a large<br/>   // byte slice, but io.ReadFull() will return an<br/>   // error if the file is smaller than the byte slice.<br/>   byteSlice := make([]byte, 512)<br/>   // ReadFull Will error if 512 bytes not available to read<br/>   numBytesRead, err := io.ReadFull(file, byteSlice)<br/>   if err != nil {<br/>      log.Fatal("Error reading 512 bytes from file. " + err.Error())<br/>   }<br/><br/>   log.Printf("Bytes read: %d\n\n", numBytesRead)<br/>   log.Printf("Data as decimal:\n%d\n\n", byteSlice)<br/>   log.Printf("Data as hex:\n%x\n\n", byteSlice)<br/>   log.Printf("Data as string:\n%s\n\n", byteSlice)<br/>}</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Steganography</h1>
+                
+            
+            
+                
+<p>Steganography is the practice of hiding a message inside a nonsecret message. It is not to be confused with stenography, the practice of taking diction, like a court reporter who transcribes the spoken words during a trial. Steganography goes back in history a long time, and an old-fashioned example is sewing in morse code messages in the stitching of clothing items.</p>
+<p>In the digital world, people can hide any type of binary data inside an image, audio, or video file. The quality of the original may or may not suffer from this process. Some images can maintain their original integrity fully, but they have extra data hidden from plain sight in the form of a <kbd>.zip</kbd> or <kbd>.rar</kbd> archive. Some steganography algorithms are complex and hide the original binary data in the single lowest bit of each byte, only denigrating the original quality slightly. Other steganography algorithms are simpler and just combine an image file and an archive into a single file. We will look at how to hide an archive inside an image and also how to detect hidden archives.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Generating an image with random noise</h1>
+                
+            
+            
+                
+<p>This program will create a JPEG image with every pixel set to a random color. It is a simple program so we have just a jpeg image available to work with. The Go standard library comes with <kbd>jpeg</kbd>, <kbd>gif</kbd>, and <kbd>png</kbd> packages. The interface to all different image types is the same, so swapping from a <kbd>jpeg</kbd> to a <kbd>gif</kbd> or <kbd>png</kbd> package is very easy:</p>
+<pre>package main<br/><br/>import (<br/>   "image"<br/>   "image/jpeg"<br/>   "log"<br/>   "math/rand"<br/>   "os"<br/>)<br/>
+func main() {<br/>   // 100x200 pixels<br/>   myImage := image.NewRGBA(image.Rect(0, 0, 100, 200))<br/> <br/>   for p := 0; p &lt; 100*200; p++ {<br/>      pixelOffset := 4 * p<br/>      myImage.Pix[0+pixelOffset] = uint8(rand.Intn(256)) // Red<br/>      myImage.Pix[1+pixelOffset] = uint8(rand.Intn(256)) // Green<br/>      myImage.Pix[2+pixelOffset] = uint8(rand.Intn(256)) // Blue<br/>      myImage.Pix[3+pixelOffset] = 255 // Alpha<br/>   }<br/>    <br/>   outputFile, err := os.Create("test.jpg")<br/>   if err != nil {<br/>      log.Fatal(err)<br/>   }<br/><br/>   jpeg.Encode(outputFile, myImage, nil)<br/><br/>   err = outputFile.Close()<br/>   if err != nil {<br/>      log.Fatal(err)<br/>   }<br/>}</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Creating a ZIP archive</h1>
+                
+            
+            
+                
+<p>This program will create a ZIP archive, so we have an archive to use with our steganography experiments. The Go standard library has a <kbd>zip</kbd> package, but it also supports TAR archives with the <kbd>tar</kbd> package. This example generates a ZIP file with two files: <kbd>test.txt</kbd> and <kbd>test2.txt</kbd>. To keep it simple, the contents of each file is hard-coded as a string in this source code:</p>
+<pre>package main<br/><br/>import (<br/>   "crypto/md5"<br/>   "crypto/sha1"<br/>   "crypto/sha256"<br/>   "crypto/sha512"<br/>   "fmt"<br/>   "io/ioutil"<br/>   "log"<br/>   "os"<br/>)<br/><br/>func printUsage() {<br/>   fmt.Println("Usage: " + os.Args[0] + " &lt;filepath&gt;")<br/>   fmt.Println("Example: " + os.Args[0] + " document.txt")<br/>}<br/><br/>func checkArgs() string {<br/>   if len(os.Args) &lt; 2 {<br/>      printUsage()<br/>      os.Exit(1)<br/>   }<br/>   return os.Args[1]<br/>}<br/><br/>func main() {<br/>   filename := checkArgs()<br/><br/>   // Get bytes from file<br/>   data, err := ioutil.ReadFile(filename)<br/>   if err != nil {<br/>      log.Fatal(err)<br/>   }<br/><br/>   // Hash the file and output results<br/>   fmt.Printf("Md5: %x\n\n", md5.Sum(data))<br/>   fmt.Printf("Sha1: %x\n\n", sha1.Sum(data))<br/>   fmt.Printf("Sha256: %x\n\n", sha256.Sum256(data))<br/>   fmt.Printf("Sha512: %x\n\n", sha512.Sum512(data))<br/>}</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Creating a steganographic image archive</h1>
+                
+            
+            
+                
+<p>Now that we have an image and a ZIP archive, we can combine them together to "hide" the archive within the image. This is probably the most primitive form of steganography. A more advanced way would be to split up the file byte by byte, store the information in the low bits of the image, use a special program to extract the data from the image, and then reconstruct the original data. This example is nice because we can easily test and verify if it still loads as an image and still behaves like a ZIP archive.</p>
+<p>The following example will take a JPEG image and a ZIP archive and combine them to create a hidden archive. The file will retain the <kbd>.jpg</kbd> extension and will still function and look like a normal image. However, the file also still works as a ZIP archive. You can unzip the <kbd>.jpg</kbd> file and the archived files will be extracted:</p>
+<pre>package main<br/><br/>import (<br/>   "io"<br/>   "log"<br/>   "os"<br/>)<br/><br/>func main() {<br/>   // Open original file<br/>   firstFile, err := os.Open("test.jpg")<br/>   if err != nil {<br/>      log.Fatal(err)<br/>   }<br/>   defer firstFile.Close()<br/>   <br/>   // Second file<br/>   secondFile, err := os.Open("test.zip")<br/>   if err != nil {<br/>      log.Fatal(err)<br/>   }<br/>   defer secondFile.Close()<br/><br/>   // New file for output<br/>   newFile, err := os.Create("stego_image.jpg")<br/>   if err != nil {<br/>      log.Fatal(err)<br/>   }<br/>   defer newFile.Close()<br/><br/>   // Copy the bytes to destination from source<br/>   _, err = io.Copy(newFile, firstFile)<br/>   if err != nil {<br/>      log.Fatal(err)<br/>   }<br/>   _, err = io.Copy(newFile, secondFile)<br/>   if err != nil {<br/>      log.Fatal(err)<br/>   }<br/>}<br/></pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Detecting a ZIP archive in a JPEG image</h1>
+                
+            
+            
+                
+<p>If data is hidden using the technique from the previous example, it can be detected by searching for the ZIP file signature in the image. A file may have a <kbd>.jpg</kbd> extension and still load properly in a photo viewer, but it may still have a ZIP archive stored in the file. The following program searches through a file and looks for a ZIP file signature. We can run it against the file created in the previous example:</p>
+<pre>package main<br/><br/>import (<br/>   "bufio"<br/>   "bytes"<br/>   "log"<br/>   "os"<br/>)<br/><br/>func main() {<br/>   // Zip signature is "\x50\x4b\x03\x04"<br/>   filename := "stego_image.jpg"<br/>   file, err := os.Open(filename)<br/>   if err != nil {<br/>      log.Fatal(err)<br/>   }<br/>   bufferedReader := bufio.NewReader(file)<br/><br/>   fileStat, _ := file.Stat()<br/>   // 0 is being cast to an int64 to force i to be initialized as<br/>   // int64 because filestat.Size() returns an int64 and must be<br/>   // compared against the same type<br/>   for i := int64(0); i &lt; fileStat.Size(); i++ {<br/>      myByte, err := bufferedReader.ReadByte()<br/>      if err != nil {<br/>         log.Fatal(err)<br/>      }<br/><br/>      if myByte == '\x50' { <br/>         // First byte match. Check the next 3 bytes<br/>         byteSlice := make([]byte, 3)<br/>         // Get bytes without advancing pointer with Peek<br/>         byteSlice, err = bufferedReader.Peek(3)<br/>         if err != nil {<br/>            log.Fatal(err)<br/>         }<br/>
+         if bytes.Equal(byteSlice, []byte{'\x4b', '\x03', '\x04'}) {<br/>            log.Printf("Found zip signature at byte %d.", i)<br/>         }<br/>      }<br/>   }<br/>}</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Network</h1>
+                
+            
+            
+                
+<p>Sometimes, a strange IP will show up in logs, and you will need to find out more information, or there can be a domain name that you need to geolocate based on an IP address. These examples demonstrate gathering information about hosts. Packet capturing is also an integral part of network forensic investigations, but there is so much to say about packet capturing, so <a href="e69a87b2-99ff-47cf-a935-4ef39304ed15.xhtml" target="_blank">Chapter 5</a>, <em>Packet Capturing and Injection</em> dedicated just to packet capturing and injection.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Looking up a hostname from an IP address</h1>
+                
+            
+            
+                
+<p>This program will take an IP address and figure out what the hostnames are. The <kbd>net.parseIP()</kbd> function is used to validate the IP address provided, and <kbd>net.LookupAddr()</kbd> does the real work of figuring out what the hostname is.</p>
+<p>By default, the pure Go resolver is used. The resolver can be overridden by setting the <kbd>netdns</kbd> value of the <kbd>GODEBUG</kbd> environment variable. Set the value of <kbd>GODEBUG</kbd> to <kbd>go</kbd> or <kbd>cgo</kbd>. You can do this in Linux with the following shell commands:</p>
+<pre><strong>export GODEBUG=netdns=go # force pure Go resolver (Default)<br/>export GODEBUG=netdns=cgo # force cgo resolver</strong></pre>
+<p>Here is the code for the program:</p>
+<pre>package main<br/><br/>import (<br/>   "fmt"<br/>   "log"<br/>   "net"<br/>   "os"<br/>)<br/>
+func main() {<br/>   if len(os.Args) != 2 {<br/>      log.Fatal("No IP address argument provided.")<br/>   }<br/>   arg := os.Args[1]<br/><br/>   // Parse the IP for validation<br/>   ip := net.ParseIP(arg)<br/>   if ip == nil {<br/>      log.Fatal("Valid IP not detected. Value provided: " + arg)<br/>   }<br/><br/>   fmt.Println("Looking up hostnames for IP address: " + arg)<br/>   hostnames, err := net.LookupAddr(ip.String())<br/>   if err != nil {<br/>      log.Fatal(err)<br/>   }<br/>   for _, hostnames := range hostnames {<br/>      fmt.Println(hostnames)<br/>   }<br/>}</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Looking up IP addresses from a hostname</h1>
+                
+            
+            
+                
+<p>The following example takes a hostname and returns the IP address. It is very similar to the previous example, but it is in reverse. The <kbd>net.LookupHost()</kbd> function does the heavy lifting:</p>
+<pre>package main<br/><br/>import (<br/>   "fmt"<br/>   "log"<br/>   "net"<br/>   "os"<br/>)<br/><br/>func main() {<br/>   if len(os.Args) != 2 {<br/>      log.Fatal("No hostname argument provided.")<br/>   }<br/>   arg := os.Args[1]<br/>
+  <br/>   fmt.Println("Looking up IP addresses for hostname: " + arg)<br/>   <br/>   ips, err := net.LookupHost(arg)<br/>   if err != nil {<br/>      log.Fatal(err)<br/>   }<br/>   for _, ip := range ips {<br/>      fmt.Println(ip)<br/>   }<br/>}</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Looking up MX records</h1>
+                
+            
+            
+                
+<p>This program will take a domain name and return the MX records. MX records, or mail exchanger records, are DNS records that point to the mail server. For example, the MX server of <a href="https://www.devdungeon.com/" target="_blank">https://www.devdungeon.com/</a> is <kbd>mail.devdungeon.com</kbd>. The <kbd>net.LookupMX()</kbd> function performs this lookup and returns a slice of the <kbd>net.MX</kbd> structs:</p>
+<pre>package main<br/><br/>import (<br/>   "fmt"<br/>   "log"<br/>   "net"<br/>   "os"<br/>)<br/><br/>func main() {<br/>   if len(os.Args) != 2 {<br/>      log.Fatal("No domain name argument provided")<br/>   }<br/>   arg := os.Args[1]<br/>  <br/>   fmt.Println("Looking up MX records for " + arg)<br/>  <br/>   mxRecords, err := net.LookupMX(arg)<br/>   if err != nil {<br/>      log.Fatal(err)<br/>   }<br/>   for _, mxRecord := range mxRecords {<br/>      fmt.Printf("Host: %s\tPreference: %d\n", mxRecord.Host,   <br/>         mxRecord.Pref)<br/>   }<br/>}</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Looking up nameservers for a hostname</h1>
+                
+            
+            
+                
+<p>This program will find nameservers associated with a given hostname. The primary function here is <kbd>net.LookupNS()</kbd>:</p>
+<pre>package main<br/><br/>import (<br/>   "fmt"<br/>   "log"<br/>   "net"<br/>   "os"<br/>)<br/><br/>func main() {<br/>   if len(os.Args) != 2 {<br/>      log.Fatal("No domain name argument provided")<br/>   }<br/>   arg := os.Args[1]<br/>  <br/>   fmt.Println("Looking up nameservers for " + arg)<br/> <br/>   nameservers, err := net.LookupNS(arg)<br/>   if err != nil {<br/>      log.Fatal(err)<br/>   }<br/>   for _, nameserver := range nameservers {<br/>      fmt.Println(nameserver.Host)<br/>   }<br/>}</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Summary</h1>
+                
+            
+            
+                
+<p>After reading this chapter, you should now have a basic understanding of the goal of digital forensic investigations. Much more could be said on each of these topics, and forensics is a specialty field that warrants its own book, much less a chapter.</p>
+<p>Use the examples you have read as a starting place to think about what kind of information you would look for if you were presented a machine that had been compromised, and your goal was to figure out how the attacker got in, what time it happened, what they accessed, what they modified, what their motive was, how much data was exfiltrated, and anything else you can find to identify who the actor was or what actions were taken on the system.</p>
+<p>A skilled adversary will make every attempt to cover their tracks and avoid forensic detection. For this reason, it is important to stay up to date on the latest tools and trends being used so that you know what tricks and clues to look for when investigating.</p>
+<p>These examples can be expanded upon, automated, and integrated into other applications that perform forensic searches on a larger scale. With the scalability of Go, a tool could easily be crafted to search an entire filesystem or network in an efficient manner.</p>
+<p>In the next chapter, we will look at packet capturing with Go. We'll start with the basics such as getting a list of network devices and dumping network traffic to a file. Then we will talk about using filters to look for specific network traffic. In addition, we will look at more advanced techniques for decoding and inspecting packets using Go interfaces. We will also cover creating custom packet layers and forging and sending packets from a network card, allowing you to send arbitrary packets.</p>
+
+
+            
+
+            
+        
+    </body></html>

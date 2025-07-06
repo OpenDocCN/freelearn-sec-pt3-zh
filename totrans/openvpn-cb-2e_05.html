@@ -1,0 +1,505 @@
+<html><head></head><body><div><div><div><div><h1 class="title"><a id="ch05"/>Chapter 5. Scripting and Plugins</h1></div></div></div><p>In this chapter, we will cover the following recipes:</p><div><ul class="itemizedlist"><li class="listitem">Using a client-side up/down script</li><li class="listitem">Using a <code class="literal">client-connect</code> script</li><li class="listitem">Using a <code class="literal">learn-address</code> script</li><li class="listitem">Using a <code class="literal">tls-verify</code> script</li><li class="listitem">Using an <code class="literal">auth-user-pass-verify</code> script</li><li class="listitem">Script order</li><li class="listitem">Script security and logging</li><li class="listitem">Scripting and IPv6</li><li class="listitem">Using the <code class="literal">down-root</code> plugin</li><li class="listitem">Using the PAM authentication plugin</li></ul></div><div><div><div><div><h1 class="title"><a id="ch05lvl1sec52"/>Introduction</h1></div></div></div><p>One of the most powerful features of OpenVPN is its scripting capability and the ability to extend OpenVPN itself through the use of plugins. Using client-side scripting, the connection process can be tailored to the site-specific needs, such as setting up advanced routing options, adding firewall rules or mapping network drives. With server-side scripting, it is possible to assign a custom IP address to different clients, or to extend the authentication process by adding an extra username and password check. Plugins are very useful when integrating OpenVPN authentication into existing authentication frameworks, such as PAM, LDAP, or even Active Directory.</p><p>In this chapter, the focus will be on scripting, both at the client side and at the server side, and on a few often-used plugins.</p></div></div>
+<div><div><div><div><h1 class="title"><a id="ch05lvl1sec53"/>Using a client-side up/down script</h1></div></div></div><p>In this recipe, we will use very simple <code class="literal">up</code> and <code class="literal">down</code> scripts on the client side to show how OpenVPN calls these scripts. By logging messages to a file, as well as the environment variables, we can easily see which information OpenVPN provides to the <code class="literal">up</code> and <code class="literal">down</code> scripts.</p><div><div><div><div><h2 class="title"><a id="ch05lvl2sec190"/>Getting ready</h2></div></div></div><p>Set up the client and server certificates using the <em>Setting up the public and private keys</em> recipe from <a class="link" title="Chapter 2.  Client-server IP-only Networks" href="part0025.xhtml#aid-NQU21">Chapter 2</a>, <em>Client-server IP-only Networks</em>. For this recipe, the server computer was running Fedora 22 Linux and OpenVPN 2.3.10. The client was running Windows 7 64 bit and OpenVPN 2.3.10. Keep the server configuration file, <code class="literal">basic-udp-server.conf</code>, from the <em>Server-side routing</em> recipe, from <a class="link" title="Chapter 2.  Client-server IP-only Networks" href="part0025.xhtml#aid-NQU21">Chapter 2</a>, <em>Client-server IP-only Networks</em>.</p></div><div><div><div><div><h2 class="title"><a id="ch05lvl2sec191"/>How to do it...</h2></div></div></div><div><ol class="orderedlist arabic"><li class="listitem">Start the server:<pre class="programlisting">
+<strong>[root@server]# openvpn --config basic-udp-server.conf</strong>
+</pre></li><li class="listitem">Create the client configuration file:<pre class="programlisting">        client &#13;
+        proto udp &#13;
+        remote openvpnserver.example.com &#13;
+        port 1194 &#13;
+        dev tun &#13;
+        nobind &#13;
+ &#13;
+        ca       "c:/program files/openvpn/config/ca.crt" &#13;
+        cert     "c:/program files/openvpn/config/client2.crt" &#13;
+        key      "c:/program files/openvpn/config/client2.key" &#13;
+        tls-auth "c:/program files/openvpn/config/ta.key"" 1 &#13;
+ &#13;
+        remote-cert-tls server &#13;
+        script-security 2 &#13;
+        up   "c:\\program\ files\\openvpn\\scripts\\updown.bat" &#13;
+        down "c:\\program\ files\\openvpn\\scripts\\updown.bat" &#13;
+</pre><p>Save the file as <code class="literal">example5-1.ovpn</code>. Note the backslashes: when specifying the <code class="literal">ca</code>, <code class="literal">cert</code>, <code class="literal">key</code>, and <code class="literal">tls-auth</code> directives, forward slashes can be used, but not for the <code class="literal">up</code> and <code class="literal">down</code> scripts!</p></li><li class="listitem">Next, on the Windows client, create the batch file <code class="literal">updown.bat</code> batch file in the  <code class="literal">C:\Program Files\OpenVPN\scripts</code> directory:<pre class="programlisting">        @echo off &#13;
+        echo === BEGIN '%script_type%' script === &gt;&gt; &#13;
+        c:\temp\openvpn.log &#13;
+        echo Script name: [%0] &gt;&gt; c:\temp\openvpn.log &#13;
+        echo Command line argument 1: [%1] &gt;&gt; c:\temp\openvpn.log &#13;
+        echo Command line argument 2: [%2] &gt;&gt; c:\temp\openvpn.log &#13;
+        echo Command line argument 3: [%3] &gt;&gt; c:\temp\openvpn.log &#13;
+        echo Command line argument 4: [%4] &gt;&gt; c:\temp\openvpn.log &#13;
+        echo Command line argument 5: [%5] &gt;&gt; c:\temp\openvpn.log &#13;
+        echo Command line argument 6: [%6] &gt;&gt; c:\temp\openvpn.log &#13;
+        echo Command line argument 7: [%7] &gt;&gt; c:\temp\openvpn.log &#13;
+        echo Command line argument 8: [%8] &gt;&gt; c:\temp\openvpn.log &#13;
+        echo Command line argument 9: [%9] &gt;&gt; c:\temp\openvpn.log &#13;
+        set &gt;&gt; c:\temp\openvpn.log &#13;
+        echo === END '%script_type%' script === &gt;&gt;                 &#13;
+        c:\temp\openvpn.log &#13;
+</pre></li><li class="listitem">Finally, start the OpenVPN client:<div><img src="img/image00375.jpeg" alt="How to do it..."/></div><p style="clear:both; height: 1em;"> </p></li></ol><div></div><p>After the client successfully connects to the OpenVPN server, the  <code class="literal">c:\temp\openvpn.log</code> log file will contain an output similar to the following:</p><pre class="programlisting">=== BEGIN 'up' script ===  &#13;
+Script name: ["c:\program files\openvpn\scripts\updown.bat"]  &#13;
+Command line argument 1: [Local Area Connection 2]  &#13;
+Command line argument 2: [1500]  &#13;
+Command line argument 3: [1541]  &#13;
+Command line argument 4: [10.200.0.2]  &#13;
+ &#13;
+Command line argument 5: [255.255.255.0]  &#13;
+ &#13;
+Command line argument 6: [init]  &#13;
+Command line argument 7: []  &#13;
+Command line argument 8: []  &#13;
+Command line argument 9: [] &#13;
+...  &#13;
+script_type=up &#13;
+[dump of environment variables] &#13;
+... &#13;
+=== END 'up' script === &#13;
+</pre><p>When the client disconnects from the server, the script is called again, with the exact same command-line parameters, but now the <code class="literal">script_type</code> is set to <code class="literal">down</code>.</p><p>Note that the first command-line argument contains the name of the <code class="literal">TUN</code> device. On Linux and Mac OS systems, this will generally be <code class="literal">tun0</code> or <code class="literal">tun1</code>, but on Windows platforms, it is the actual name of the TAP-Win32 adapter.</p></div><div><div><div><div><h2 class="title"><a id="ch05lvl2sec192"/>How it works...</h2></div></div></div><p>After the initial connection is made with the OpenVPN server, but before the VPN is fully established, the OpenVPN client calls the <code class="literal">up</code> script. If the <code class="literal">up</code> script returns with an exit code not equal to zero, the connection sequence is aborted.</p><p>Similarly, when the connection is shut down the <code class="literal">down</code> script is executed after the VPN connection has been stopped.</p><p>Note the use of the double backslashes (<code class="literal">\\</code>) in the <code class="literal">up</code> and <code class="literal">down</code> directives: OpenVPN translates the backslash character internally and hence it needs to be specified twice. The backslash between <code class="literal">c:\\program</code> and <code class="literal">files</code> is required as otherwise OpenVPN cannot find the <code class="literal">up</code> and <code class="literal">down</code> scripts without it.</p></div><div><div><div><div><h2 class="title"><a id="ch05lvl2sec193"/>There's more...</h2></div></div></div><p>In this section, we will see some more advanced tricks when using the <code class="literal">up</code> and <code class="literal">down</code> scripts, including a sample script to verify the remote hostname of a VPN server.</p><div><div><div><div><h3 class="title"><a id="ch05lvl3sec53"/>Environment variables</h3></div></div></div><p>The script used in this recipe merely writes out all the environment variables to a file. These environment variables contain useful information about the remote server, such as the <code class="literal">common_name</code> certificate. An extension to this script would be to check whether the  <code class="literal">common_name</code> certificate matches the remote hostname. The IP address of the remote hostname is available as <code class="literal">trusted_ip</code>.</p></div><div><div><div><div><h3 class="title"><a id="ch05lvl3sec54"/>Calling the down script before the connection terminates</h3></div></div></div><p>The <code class="literal">down</code> script is executed after the actual connection to the OpenVPN server has been stopped. It is also possible to execute the script during the disconnect phase before the connection to the server is dropped. To do this, add the following directive to the client configuration file:</p><pre class="programlisting">down-pre &#13;
+</pre></div><div><div><div><div><h3 class="title"><a id="ch05lvl3sec55"/>Advanced - verify the remote hostname</h3></div></div></div><p>A more advanced usage of an <code class="literal">up</code> script would be to verify that the remote hostname matches the remote IP address, similar to the way that a web browser verifies the address of secure websites. On Linux systems, this can easily be done using a shell script as an <code class="literal">up</code> script:</p><pre class="programlisting">#!/bin/bash &#13;
+ &#13;
+# reverse DNS lookup &#13;
+server_name=`host $untrusted_ip | \ &#13;
+  sed -n 's/.*name pointer \(.*\)\./\1/p' &#13;
+if [ "$server_name" != "$common_name" ] &#13;
+then &#13;
+    echo "Server certificate does not match hostname."&#13;
+    echo "Aborting" &#13;
+    exit 1 &#13;
+fi &#13;
+</pre><p>But on Windows, this is trickier to achieve without resorting to tools such as PowerShell or Cygwin.</p></div></div></div>
+<div><div><div><div><h1 class="title"><a id="ch05lvl1sec54"/>Using a client-connect script</h1></div></div></div><p>This recipe will demonstrate how to set up a client-connect script that gets executed on the server side when a new client connects. Similarly, we can specify a <code class="literal">client-disconnect</code> script that is executed when a client disconnects from the server. Client-connect and client-disconnect scripts can be used for several purposes:</p><div><ul class="itemizedlist"><li class="listitem">Extra authentication</li><li class="listitem">Opening and closing firewall ports</li><li class="listitem">Assigning specific IP address to special clients</li><li class="listitem">Writing out connection-specific configuration lines for a client</li></ul></div><p>In this recipe, we will use a client-connect script to disable client access to the client with a <code class="literal">client2</code> certificate between 10 p.m. (or 22:00 hours) and 6 a.m. During other hours, a static IP is assigned to this client.</p><div><div><div><div><h2 class="title"><a id="ch05lvl2sec194"/>Getting ready</h2></div></div></div><p>Install OpenVPN 2.3 or higher on two computers. Make sure that the computers are connected over a network. Set up the client and server certificates using the first recipe from <a class="link" title="Chapter 2.  Client-server IP-only Networks" href="part0025.xhtml#aid-NQU21">Chapter 2</a>, <em>Client-server IP-only Networks</em>. For this recipe, the server computer was running Fedora 22 Linux and OpenVPN 2.3.10. The client was running Windows 7 64 bit and OpenVPN 2.3.10. Keep the server configuration file, <code class="literal">basic-udp-server.conf</code>, from the <em>Server-side routing</em> recipe, from <a class="link" title="Chapter 2.  Client-server IP-only Networks" href="part0025.xhtml#aid-NQU21">Chapter 2</a>, <em>Client-server IP-only Networks</em>, at hand. For the client, keep the client configuration file, <code class="literal">basic-udp-client.ovpn</code>, from the <em>Using an ifconfig-pool block</em> recipe from <a class="link" title="Chapter 2.  Client-server IP-only Networks" href="part0025.xhtml#aid-NQU21">Chapter 2</a>, <em>Client-server IP-only Networks</em>, at hand.</p></div><div><div><div><div><h2 class="title"><a id="ch05lvl2sec195"/>How to do it...</h2></div></div></div><div><ol class="orderedlist arabic"><li class="listitem">Append the following lines to the <code class="literal">basic-udp-server.conf</code> server configuration file:<pre class="programlisting">        script-security 2 &#13;
+        client-connect    /etc/openvpn/cookbook/example5-2-connect.sh &#13;
+</pre></li><li class="listitem">Save it as <code class="literal">example5-2-server.conf</code>.</li><li class="listitem">Next, create the connect script:<pre class="programlisting">        #!/bin/bash &#13;
+ &#13;
+        if [ "x$common_name" = "xclient2" ] &#13;
+        then &#13;
+          hour= /bin/date +"%H" &#13;
+          if [ $hour -lt 6 -o $hour -gt 22 ] &#13;
+          then &#13;
+            echo "disable" &gt; $1 &#13;
+          else &#13;
+            echo "ifconfig-push 10.200.0.200 255.255.255.0" &#13;
+          fi &#13;
+        fi  &#13;
+</pre></li><li class="listitem">Save this file as <code class="literal">example5-2-connect.sh</code>.</li><li class="listitem">Make sure that the script is executable:<pre class="programlisting">
+<strong>[root@server]# chmod 755 example5-2-connect.sh</strong>
+</pre></li><li class="listitem">Start the server:<pre class="programlisting">
+<strong>[root@server]# openvpn --config example5-2-server.conf</strong>
+</pre></li><li class="listitem">Start the OpenVPN client:<div><img src="img/image00376.jpeg" alt="How to do it..."/></div><p style="clear:both; height: 1em;"> </p></li><li class="listitem">If the client is started after 6 am and before 10 p.m., the connection will be established successfully. Otherwise, the client log file will show lines similar to the following:<pre class="programlisting">        us=70083 SENT CONTROL [openvpnserver]: 'PUSH_REQUEST' &#13;
+        (status=1) &#13;
+</pre><p>Also, the server log will more clearly state the reason for the connection refusal:</p><pre class="programlisting">         client2/192.168.3.22:57870 MULTI: client has been rejected due &#13;
+         to 'disable' directive &#13;
+</pre></li></ol><div></div></div><div><div><div><div><h2 class="title"><a id="ch05lvl2sec196"/>How it works...</h2></div></div></div><p>When a client connects, the OpenVPN server executes the <code class="literal">client-connect</code> script with several environment variable sets that are related to the client connecting. The script writes out two lines to the connect-specific configuration file, which is passed as the first and only parameter to the <code class="literal">client-connect</code> script. This configuration file is then processed by the OpenVPN server as if it's a normal configuration file. The two possible lines that we use are <code class="literal">disable</code> and <code class="literal">ifconfig-push 10.200.0.200 255.255.255.0</code>.</p><p>The first option disables a client from connecting. The second option pushes a pre-defined IP to the client.</p></div><div><div><div><div><h2 class="title"><a id="ch05lvl2sec197"/>There's more...</h2></div></div></div><p>In this section, we focus on <code class="literal">client-disconnect</code> and the many environment variables that are available to all OpenVPN scripts.</p><div><div><div><div><h3 class="title"><a id="ch05lvl3sec56"/>Pitfall in using ifconfig-push</h3></div></div></div><p>The <code class="literal">client-connect</code> script used here did not check whether the IP address that was assigned using the <code class="literal">ifconfig-push 10.200.0.200 255.255.255.0</code> command was actually available. If many clients connect to the server, then this IP address will also be assigned from the pool of IP addresses that is formed as a result of the <code class="literal">server 10.200.0.0 255.255.255.0</code> statement.</p><p>When assigning static IP addresses to a client, it is best to assign them from a special subnet.</p></div><div><div><div><div><h3 class="title"><a id="ch05lvl3sec57"/>The client-disconnect scripts</h3></div></div></div><p>A <code class="literal">client-disconnect</code> script can be specified using the following:</p><pre class="programlisting">client-disconnect /etc/openvpn/cookbook/disconnect.sh &#13;
+</pre><p>This script is executed when the client disconnects from the server. Be aware that when a client first disconnects and <code class="literal">explicit-exit-notify</code> is not specified on the client side, then the OpenVPN server will first try to reconnect several times to the client. If a client does not respond after several attempts, then the <code class="literal">client-disconnect</code> script will be executed. Depending on the server configuration, this might be several minutes after the client has actually disconnected. When using TCP connections, it is not needed to specify <code class="literal">explicit-exit-notify</code>, as the client is disconnected immediately when the TCP connection stops.</p></div><div><div><div><div><h3 class="title"><a id="ch05lvl3sec58"/>Environment variables</h3></div></div></div><p>There is a multitude of environment variables available inside a client-connect and client-disconnect script. It is very instructive to write a <code class="literal">client-connect</code> script that does a little more than the following:</p><pre class="programlisting">#!/bin.bash &#13;
+env &gt;&gt; /tmp/log &#13;
+</pre><p>Also, similar to the <code class="literal">up</code> and <code class="literal">down</code> script, is the <code class="literal">script_type</code> environment variable that contains the type of script as configured in the server configuration file. This gives the server administrator the option to write a single script for both <code class="literal">client-connect</code> and <code class="literal">client-disconnect</code>.</p></div><div><div><div><div><h3 class="title"><a id="ch05lvl3sec59"/>Absolute paths</h3></div></div></div><p>Note that an absolute path is used for the script. Relative paths are allowed, but especially for the OpenVPN server, it is more secure to use absolute paths. Assuming that the OpenVPN server is always started in the same directory is a bad security practice. An alternative is to use the following:</p><pre class="programlisting">
+<strong>cd /etc/openvpn/cookcook</strong>
+<strong>client-connect example5-2-connect.sh </strong>
+</pre></div></div></div>
+<div><div><div><div><h1 class="title"><a id="ch05lvl1sec55"/>Using a learn-address script</h1></div></div></div><p>This recipe will demonstrate how to set up a <code class="literal">learn-address</code> script that is executed on the server side when there is a change in the address of a connecting client. Learn-address scripts can be used to dynamically set up firewalling rules for specific clients or to adjust routing tables.</p><p>In this recipe, we will use a <code class="literal">learn-address</code> script to open up a firewall and to set up masquerading for a client. When the client disconnects, the firewall is closed again and the <code class="literal">iptables</code> masquerading rule is removed.</p><div><div><div><div><h2 class="title"><a id="ch05lvl2sec198"/>Getting ready</h2></div></div></div><p>Install OpenVPN 2.3 or higher on two computers. Make sure that the computers are connected over a network. Set up the client and server certificates using the first recipe from <a class="link" title="Chapter 2.  Client-server IP-only Networks" href="part0025.xhtml#aid-NQU21">Chapter 2</a>, <em>Client-server IP-only Networks</em>. For this recipe, the server computer was running Fedora 22 Linux and OpenVPN 2.3.10, and the client was running Windows 7 64 bit and OpenVPN 2.3.10. For the client, keep the client configuration file, <code class="literal">basic-udp-client.ovpn</code>, from the <em>Using an ifconfig-pool block</em> recipe, from <a class="link" title="Chapter 2.  Client-server IP-only Networks" href="part0025.xhtml#aid-NQU21">Chapter 2</a>, <em>Client-server IP-only Networks</em>.</p></div><div><div><div><div><h2 class="title"><a id="ch05lvl2sec199"/>How to do it...</h2></div></div></div><div><ol class="orderedlist arabic"><li class="listitem">Create the server configuration file:<pre class="programlisting">        proto udp &#13;
+        port 1194 &#13;
+        dev tun &#13;
+ &#13;
+        server 10.200.0.0 255.255.255.0 &#13;
+ &#13;
+        ca       /etc/openvpn/cookbook/ca.crt &#13;
+        cert     /etc/openvpn/cookbook/server.crt &#13;
+        key      /etc/openvpn/cookbook/server.key &#13;
+        dh       /etc/openvpn/cookbook/dh2048.pem &#13;
+        tls-auth /etc/openvpn/cookbook/ta.key 0 &#13;
+ &#13;
+        persist-key &#13;
+        persist-tun &#13;
+        keepalive 10 60 &#13;
+ &#13;
+        topology subnet &#13;
+ &#13;
+        daemon &#13;
+        log-append /var/log/openvpn.log &#13;
+        script-security 2 &#13;
+        learn-address /etc/openvpn/cookbook/example5-3-learn-address.sh &#13;
+        push "redirect-gateway def1" &#13;
+</pre></li><li class="listitem">Save it as <code class="literal">example5-3-server.conf</code>. Note that this server configuration file does not have the lines <code class="literal">user nobody</code> and <code class="literal">group nobody</code> (nor <code class="literal">group nogroup</code>).</li><li class="listitem">Next, create the <code class="literal">learn-address</code> script:<pre class="programlisting">        #!/bin/bash &#13;
+ &#13;
+        # $1 = action (add, update, delete) &#13;
+        # $2 = IP or MAC &#13;
+        # $3 = client_common name &#13;
+ &#13;
+        if [ "$1" = "add" ] &#13;
+        then &#13;
+            /sbin/iptables -I FORWARD -i tun0 -s $2 -j ACCEPT &#13;
+            /sbin/iptables -I FORWARD -o tun0 -d $2 -j ACCEPT &#13;
+            /sbin/iptables -t nat -I POSTROUTING -s $2 -o wlan0 -j &#13;
+            MASQUERADE &#13;
+        elif [ "$1" = "delete" ] &#13;
+        then &#13;
+            /sbin/iptables -D FORWARD -i tun0 -s $2 -j ACCEPT &#13;
+            /sbin/iptables -D FORWARD -o tun0 -d $2 -j ACCEPT &#13;
+            /sbin/iptables -t nat -D POSTROUTING -s $2 -o wlan0 -j &#13;
+            MASQUERADE &#13;
+        fi &#13;
+</pre></li><li class="listitem">Save this file as <code class="literal">example5-3-learn-address.sh</code>.</li><li class="listitem">Make sure that the script is executable and start the OpenVPN server:<pre class="programlisting">
+<strong>[root@server]# chmod 755 example5-3-learn-address.sh</strong>
+<strong>[root@server]# openvpn --config example5-3-server.conf</strong>
+</pre></li><li class="listitem">Start the client using the Windows GUI using the basic configuration file:<div><img src="img/image00377.jpeg" alt="How to do it..."/></div><p style="clear:both; height: 1em;"> </p></li><li class="listitem">After the client connects to the server, check the <code class="literal">iptables</code> firewall rules on the server:<pre class="programlisting">
+<strong>        [root@server]# iptables -L FORWARD -n -v</strong> &#13;
+        Chain FORWARD (policy ACCEPT 4612K packets, 1761M bytes) &#13;
+         pkts bytes target     prot opt in     out     source                       destination &#13;
+            0     0 ACCEPT     all  --  *      tun0    0.0.0.0/0                    10.200.0.2 &#13;
+            0     0 ACCEPT     all  --  tun0   *       10.200.0.2                0.0.0.0/0 &#13;
+ &#13;
+        <strong>[root@server]# iptables -t nat -L POSTROUTING -n -v</strong> &#13;
+        Chain POSTROUTING (policy ACCEPT 336K packets, 20M bytes) &#13;
+         pkts bytes target     prot opt in     out     source                       destination &#13;
+            0     0 MASQUERADE  all  --  *      wlan0   10.200.0.2                0.0.0.0/0 &#13;
+</pre></li><li class="listitem">Disconnect the client, wait for a few minutes, and then verify that the <code class="literal">iptables</code> rules have been removed.</li></ol><div></div></div><div><div><div><div><h2 class="title"><a id="ch05lvl2sec200"/>How it works...</h2></div></div></div><p>When a client connects to the OpenVPN server or disconnects from it, the OpenVPN server executes the <code class="literal">learn-address</code> script with several command-line arguments:</p><div><ul class="itemizedlist"><li class="listitem"><code class="literal">$1</code>: Action (add, update, delete).</li><li class="listitem"><code class="literal">$2</code>: IP or MAC. For tun-based networks, this is the client IP address. For tap-based networks, this is the client (virtual) MAC address.</li><li class="listitem"><code class="literal">$3</code>: <code class="literal">client_common</code> name.</li></ul></div><p>In this recipe, the <code class="literal">learn-address</code> script is used to open up the firewall for the connecting client and to set up the masquerading rules for the client so that the clients can reach the other machines on the server-side LAN.</p></div><div><div><div><div><h2 class="title"><a id="ch05lvl2sec201"/>There's more...</h2></div></div></div><p>In the following section, some details of the use of the <code class="literal">user nobody</code> directive and the <code class="literal">update</code> action of the <code class="literal">learn-address</code> script are given.</p><div><div><div><div><h3 class="title"><a id="ch05lvl3sec60"/>User nobody</h3></div></div></div><p>As stated earlier, this server configuration does not include the following lines:</p><pre class="programlisting">user nobody &#13;
+group nobody &#13;
+</pre><p>Or, on some Linux distributions, it can be as follows:</p><pre class="programlisting">group &#13;
+nogroup &#13;
+</pre><p>If we had added these lines, then the OpenVPN server process would be running as user <code class="literal">nobody</code>. This user does not have the required rights to open and close firewall ports using <code class="literal">iptables</code>, hence they were removed in this example.</p></div><div><div><div><div><h3 class="title"><a id="ch05lvl3sec61"/>The update action</h3></div></div></div><p>The <code class="literal">learn-address</code> script is also called when the OpenVPN server detects an address change on the client side. This can happen most often in a TAP-based network when an external DHCP server is used. The <code class="literal">learn-address</code> script can then adjust routing tables or firewalling rules based on the new client IP address, using the <code class="literal">update</code> action.</p><p>Another method to generate a <code class="literal">learn-address update</code> action is by triggering a soft-reset of the server; for example, by sending a USR1 signal to the server process. This will cause all clients to reconnect, this time triggering an <code class="literal">update</code> action.</p></div></div></div>
+<div><div><div><div><h1 class="title"><a id="ch05lvl1sec56"/>Using a tls-verify script</h1></div></div></div><p>OpenVPN has several layers in which the credentials of a connecting client are verified. It is even possible to add a custom layer to the verification process by specifying a <code class="literal">tls-verify</code> script. In this recipe, we will demonstrate how such a script can be used to allow access only for a particular certificate.</p><div><div><div><div><h2 class="title"><a id="ch05lvl2sec202"/>Getting ready</h2></div></div></div><p>Install OpenVPN 2.3 or higher on two computers. Make sure that the computers are connected over a network. Set up the client and server certificates using the <em>Setting up the public and private keys</em> recipe from <a class="link" title="Chapter 2.  Client-server IP-only Networks" href="part0025.xhtml#aid-NQU21">Chapter 2</a>, <em>Client-server IP-only Networks</em>. For this recipe, the server computer was running Fedora 22 Linux and OpenVPN 2.3.10. The client was running Windows 7 64 bit and OpenVPN 2.3.10. For the client, keep the client configuration file, <code class="literal">basic-udp-client.ovpn</code>, from the <em>Using an ifconfig-pool block</em> recipe, from Chapter 2, <em>Client-server IP-only Networks</em> .</p></div><div><div><div><div><h2 class="title"><a id="ch05lvl2sec203"/>How to do it...</h2></div></div></div><div><ol class="orderedlist arabic"><li class="listitem">Create the server configuration file:<pre class="programlisting">        proto udp &#13;
+        port 1194 &#13;
+        dev tun &#13;
+ &#13;
+        server 10.200.0.0 255.255.255.0 &#13;
+ &#13;
+        ca       /etc/openvpn/cookbook/ca.crt &#13;
+        cert     /etc/openvpn/cookbook/server.crt &#13;
+        key      /etc/openvpn/cookbook/server.key &#13;
+        dh       /etc/openvpn/cookbook/dh2048.pem &#13;
+        tls-auth /etc/openvpn/cookbook/ta.key 0 &#13;
+ &#13;
+        persist-key &#13;
+        persist-tun &#13;
+        keepalive 10 60 &#13;
+ &#13;
+        topology subnet &#13;
+ &#13;
+        user  nobody &#13;
+        group nobody  # nogroup on some distros &#13;
+        daemon &#13;
+        log-append /var/log/openvpn.log &#13;
+ &#13;
+        script-security 2 &#13;
+        tls-verify /etc/openvpn/cookbook/example5-4-tls-verify.sh &#13;
+</pre></li><li class="listitem">Save it as <code class="literal">example5-4-server.conf</code>.</li><li class="listitem">Next, create the <code class="literal">tls-verify</code> script:<pre class="programlisting">        #!/bin/bash &#13;
+ &#13;
+        [ $# -lt 2 ] &amp;&amp; exit 1 &#13;
+ &#13;
+        # if the depth is non-zero , continue processing &#13;
+        [ "$1" -ne 0 ] &amp;&amp; exit 0 &#13;
+ &#13;
+        allowed_cns=`sed 's/ /_/g' $0.allowed` &#13;
+        for i in $allowed_cns &#13;
+        do &#13;
+          [ "$2" = "$i" ] &amp;&amp; exit 0 &#13;
+        done &#13;
+        # catch-all &#13;
+        exit 1 &#13;
+</pre></li><li class="listitem">Save this file as <code class="literal">example5-4-tls-verify.sh</code>.</li><li class="listitem">Make sure that the script is executable:<pre class="programlisting">
+<strong>[root@server]# chmod 755 example5-4-tls-verify.sh</strong>
+</pre></li><li class="listitem">Finally, create the list of allowed certificates:<pre class="programlisting">
+<strong>[root@server]# echo "/C=US/O=Cookbook 2.4/CN=client1" &gt; \     </strong>
+<strong>    /etc/openvpn/cookbook/example5-4-tls-verify.sh.allowed</strong>
+</pre><p>Note that this is a one-line command.</p></li><li class="listitem">Start the OpenVPN server:<pre class="programlisting">
+<strong>[root@server]# openvpn --config example5-4-server.conf</strong>
+</pre></li><li class="listitem">Start the client with the Windows GUI using the basic configuration file:<div><img src="img/image00378.jpeg" alt="How to do it..."/></div><p style="clear:both; height: 1em;"> </p><p>The client should be able to connect normally.</p></li><li class="listitem">Now, on the OpenVPN server, remove the <code class="literal">/etc/openvpn/cookbook/example5-4-tls-verify.sh.allowed</code> file and reconnect. This time the server log will show the following:<pre class="programlisting">        CN not found in /etc/openvpn/cookbook/example5-4-tls-&#13;
+        verify.sh.allowed, denying access &#13;
+        ... openvpnclient1:9007 TLS_ERROR: BIO read tls_read_plaintext &#13;
+        error: error:140890B2:SSL &#13;
+        routines:SSL3_GET_CLIENT_CERTIFICATE:no certificate returned &#13;
+        ... openvpnclient1:9007 TLS Error: TLS object -&gt; incoming &#13;
+        plaintext read error &#13;
+        ... openvpnclient1:9007 TLS Error: TLS handshake failed &#13;
+</pre><p>This means that the client is denied access by the OpenVPN server.</p></li></ol><div></div></div><div><div><div><div><h2 class="title"><a id="ch05lvl2sec204"/>How it works...</h2></div></div></div><p>When a client connects to the OpenVPN server, the <code class="literal">tls-verify</code> script is executed several times to verify the entire certificate chain of the connecting client. In this recipe, we look for the end-user certificate, which is the equivalent of the <code class="literal">client1.crt</code> file. When this end-user certificate is found in the <code class="literal">example5-4-tls-verify.sh.allowed</code> file, the script returns <code class="literal">0</code>, indicating a successful verification. If it is not found, a message is printed to the OpenVPN log and the script returns <code class="literal">1</code>. The OpenVPN server then denies the access to this particular client.</p></div><div><div><div><div><h2 class="title"><a id="ch05lvl2sec205"/>There's more...</h2></div></div></div><p>In this recipe, we focus only on the end-user certificate using a simple lookup table. Of course, this could also have been achieved in many other ways (for example, by using a <code class="literal">client-config-dir</code> file). With a <code class="literal">tls-verify</code> script, it is also possible to disallow all the certificates from a particular certificate authority (CA).</p><p>In more complex setups, where client certificates can be signed by many different CAs, it is sometimes very useful to temporarily refuse access to all the certificates from a particular CA. For example, to deny access to all certificates that are signed with the CA certificate with the subject name "Cookbook 2.4 CA" from <a class="link" title="Chapter 2.  Client-server IP-only Networks" href="part0025.xhtml#aid-NQU21">Chapter 2</a>, <em>Client-server IP-only Networks</em>, the following script could be used:</p><pre class="programlisting">#!/bin/bash &#13;
+ &#13;
+[ $# -lt 2 ] &amp;&amp; exit 1 &#13;
+CA=`echo $2 | sed -n 's/.*\/CN=\(.*\)\/.*/\1/p'` &#13;
+[ "$CA" = "Cookbook 2.4 CA" ] &amp;&amp; exit 1 &#13;
+</pre></div></div>
+<div><div><div><div><h1 class="title"><a id="ch05lvl1sec57"/>Using an auth-user-pass-verify script</h1></div></div></div><p>Other than certificates and private keys, OpenVPN also offers the option to use a username and password mechanism for verifying client access. In this recipe, we will demonstrate how to set up an <code class="literal">auth-user-pass-verify</code> script, which is executed on the server side when a client connects. This script can be used to look up a user in a database or file and can also be used to verify that the right password was specified.</p><div><div><div><div><h2 class="title"><a id="ch05lvl2sec206"/>Getting ready</h2></div></div></div><p>Install OpenVPN 2.3 or higher on two computers. Make sure that the computers are connected over a network. Set up the client and server certificates using the first recipe from <a class="link" title="Chapter 2.  Client-server IP-only Networks" href="part0025.xhtml#aid-NQU21">Chapter 2</a>, <em>Client-server IP-only Networks</em>. For this recipe, the server computer was running CentOS 6 Linux and OpenVPN 2.3.10, and the client was running Fedora 22 and OpenVPN 2.3.10. For the server, keep the server configuration file, <code class="literal">basic-udp-server.conf</code>, from the <em>Server-side routing</em> recipe, from <a class="link" title="Chapter 2.  Client-server IP-only Networks" href="part0025.xhtml#aid-NQU21">Chapter 2</a>, <em>Client-server IP-only Networks</em>.</p></div><div><div><div><div><h2 class="title"><a id="ch05lvl2sec207"/>How to do it...</h2></div></div></div><div><ol class="orderedlist arabic"><li class="listitem">Append a line to the server configuration file, <code class="literal">basic-udp-server.conf</code>:<pre class="programlisting">        script-security 2 &#13;
+        auth-user-pass-verify /etc/openvpn/cookbook/example5-5-aupv.sh &#13;
+        via-file &#13;
+</pre><p>Note that the last line is a single line. Save it as <code class="literal">example5-5-server.conf</code>.</p></li><li class="listitem">Create the <code class="literal">auth-user-pass-verify</code> script:<pre class="programlisting">        #!/bin/bash &#13;
+ &#13;
+        # the username+password is stored in a temporary file &#13;
+        # pointed to by $1 &#13;
+        username=`head -1 $1` &#13;
+        password=`tail -1 $1` &#13;
+ &#13;
+        if grep "$username:$password" $0.passwd &gt; /dev/null 2&gt;&amp;1 &#13;
+        then &#13;
+          exit 0 &#13;
+        else &#13;
+          if grep "$username" $0.passwd &gt; /dev/null 2&gt;&amp;1 &#13;
+          then &#13;
+            echo "auth-user-pass-verify: Wrong password entered for &#13;
+                   user '$username'" &#13;
+          else &#13;
+            echo "auth-user-pass-verify: Unknown user '$username'" &#13;
+          fi &#13;
+          exit 1 &#13;
+        fi &#13;
+</pre></li><li class="listitem">Save it as <code class="literal">example5-5-aupv.sh</code>.</li><li class="listitem">Set up a (very unsafe!) password file:<pre class="programlisting">
+<strong>[server]$ cd /etc/openvpn/cookbook</strong>
+<strong>[server]$ echo "cookbook:koobcook" &gt; example5-5-&#13;
+        aupv.sh.passwd</strong>
+</pre></li><li class="listitem">Make sure that the <code class="literal">auth-user-pass-verify</code> script is executable, then start the server:<pre class="programlisting">
+<strong>[root@server]#$ chmod 755 example5-5-aupv.sh</strong>
+<strong>[root@server]# openvpn --config example5-5-server.conf</strong>
+</pre></li><li class="listitem">Next, create the client configuration file:<pre class="programlisting">        client &#13;
+        proto udp &#13;
+        remote openvpnserver.example.com &#13;
+        port 1194 &#13;
+ &#13;
+        dev tun &#13;
+        nobind &#13;
+ &#13;
+        ca       /etc/openvpn/cookbook/ca.crt &#13;
+        cert     /etc/openvpn/cookbook/client1.crt &#13;
+        key      /etc/openvpn/cookbook/client1.key &#13;
+        tls-auth /etc/openvpn/cookbook/ta.key 1 &#13;
+ &#13;
+        remote-cert-tls server &#13;
+        auth-user-pass &#13;
+</pre></li><li class="listitem">Save it as <code class="literal">example5-5-client.conf</code>.</li><li class="listitem">Start the client:<pre class="programlisting">
+<strong>[root@client]# openvpn --config example5-5-client.conf</strong>
+</pre></li><li class="listitem">First, the OpenVPN client will ask for the username and password:<pre class="programlisting">        Enter Auth Username: cookbook &#13;
+        Enter Auth Password: koobcook &#13;
+</pre></li><li class="listitem">Then, if the correct password is entered, the connection is established as normal.</li><li class="listitem">Next, try to reconnect using a different username:<pre class="programlisting">        Enter Auth Username: janjust &#13;
+        Enter Auth Password: whatever &#13;
+</pre></li><li class="listitem">The server log will now show the following:<pre class="programlisting">        auth-user-pass-verify: Unknown user 'janjust' &#13;
+        ... openvpnclient:50834 TLS Auth Error: Auth Username/Password          verification failed for peer &#13;
+</pre></li></ol><div></div><p>And the client is now refused access.</p></div><div><div><div><div><h2 class="title"><a id="ch05lvl2sec208"/>How it works...</h2></div></div></div><p>The OpenVPN client first prompts the user for the Auth username and password. Note that the password is sent to the server over a secure channel, but the password itself is not hashed or encrypted. The server-side <code class="literal">auth-user-pass-verify</code> script is passed the username and password in a file on two lines. The script then looks up the username in its password file and verifies whether the right password was specified. If so, then the script exits with exit code 0, indicating success. Otherwise, the exit code of 1 is returned, causing the server to abort the client connection.</p></div><div><div><div><div><h2 class="title"><a id="ch05lvl2sec209"/>There's more...</h2></div></div></div><p>In the following section, we'll see some details about how a password can be specified and can be passed from the server to the <code class="literal">auth-user-pass-verify</code> script.</p><div><div><div><div><h3 class="title"><a id="ch05lvl3sec62"/>Specifying the username and password in a file on the client</h3></div></div></div><p>OpenVPN has the option to specify the username and password in a file on the client. For this, OpenVPN needs to be compiled with a special flag, which is enabled by default starting with OpenVPN 2.3.</p><p>Note that it is unsafe to allow the password to be stored on the client (in plaintext format!).</p></div><div><div><div><div><h3 class="title"><a id="ch05lvl3sec63"/>Passing the password via environment variables</h3></div></div></div><p>In this recipe, we used the following:</p><pre class="programlisting">auth-user-pass-verify example5-5-aupv.sh via-file &#13;
+</pre><p>This configured the OpenVPN server to pass the client-supplied username and password via a temporary file. This temporary file is accessible only to the server process, and hence, this is a safe mechanism to pass the encrypted password to the <code class="literal">auth-user-pass-verify</code> script.</p><p>It is also possible to pass the username and password to the <code class="literal">auth-user-pass-verify</code> script via environment variables:</p><pre class="programlisting">auth-user-pass-verify example5-5-aupv.sh via-env &#13;
+</pre><p>The advantage of this is that no extra files need to be created. The downside is that passing a password via plaintext and via the environment is slightly less secure: it is easier (but not easy!) to snoop the environment of another process than it is to read a secure file owned by another user.</p></div></div></div>
+<div><div><div><div><h1 class="title"><a id="ch05lvl1sec58"/>Script order</h1></div></div></div><p>With all the possible scripts that can be configured on the OpenVPN server, it becomes important to determine the order in which these scripts are executed. In this recipe, we will find out what the order is, as well as the command-line parameters for each of these scripts.</p><div><div><div><div><h2 class="title"><a id="ch05lvl2sec210"/>Getting ready</h2></div></div></div><p>Install OpenVPN 2.3 or higher on two computers. Make sure that the computers are connected over a network. Set up the client and server certificates using the first recipe from <a class="link" title="Chapter 2.  Client-server IP-only Networks" href="part0025.xhtml#aid-NQU21">Chapter 2</a>, <em>Client-server IP-only Networks</em>. For this recipe, the server computer was running CentSO 6 Linux and OpenVPN 2.3.10., and the client was running Fedora 22 and OpenVPN 2.3.10. For the server, keep the server configuration file, <code class="literal">basic-udp-server.conf</code>, from the <em>Server-side routing</em> recipe, from <a class="link" title="Chapter 2.  Client-server IP-only Networks" href="part0025.xhtml#aid-NQU21">Chapter 2</a>, <em>Client-server IP-only Networks</em>. For the client, keep the client configuration file from the previous recipe at hand.</p></div><div><div><div><div><h2 class="title"><a id="ch05lvl2sec211"/>How to do it...</h2></div></div></div><div><ol class="orderedlist arabic"><li class="listitem">Append the following lines to the server configuration file, <code class="literal">basic-udp-server.conf</code>:<pre class="programlisting">        script-security 2 &#13;
+        cd /etc/openvpn/cookbook &#13;
+        up                   example5-6-script.sh &#13;
+        route-up             example5-6-script.sh &#13;
+        down                 example5-6-script.sh &#13;
+        client-connect       example5-7-script.sh &#13;
+        client-disconnect    example5-6-script.sh &#13;
+        learn-address        example5-6-script.sh &#13;
+        tls-verify           example5-6-script.sh &#13;
+        auth-user-pass-verify      example5-6-script.sh via-env &#13;
+</pre></li><li class="listitem">Save it as <code class="literal">example5-6-server.conf</code>.</li><li class="listitem">Create the following script:<pre class="programlisting">        #!/bin/bash &#13;
+ &#13;
+        exec &gt;&gt; /tmp/example5-6.log 2&gt;&amp;1 &#13;
+        date +"%H:%M:%S: START $script_type script ===" &#13;
+        echo "argv = $0 $@" &#13;
+        echo "user = `id -un`/`id -gn`" &#13;
+        date +"%H:%M:%S: END $script_type script ===" &#13;
+</pre></li><li class="listitem">Save it as <code class="literal">example5-6-script.sh</code>.</li><li class="listitem">Make sure that the script is executable and then start the server:<pre class="programlisting">
+<strong>[root@server]# chmod 755 example5-6-script.sh</strong>
+<strong>[root@server]# openvpn --config example5-6-server.conf</strong>
+</pre></li><li class="listitem">Next, start the client:<pre class="programlisting">
+<strong>[root@client]# openvpn --config example5-5-client.conf</strong>
+</pre><p>The Auth username and password can be chosen arbitrarily, as they are not used.</p></li><li class="listitem">After successfully connecting to the server, disconnect the client and wait for a few minutes until the server recognizes that the client has disconnected. Now, stop the OpenVPN server as well.<p>A log file will be created in <code class="literal">/tmp/example5-6.log</code>, parts of which are shown here:</p><pre class="programlisting">        13:34:45: START up script === &#13;
+        13:34:45: START route-up script === &#13;
+        13:36:26: START tls-verify script === &#13;
+        18:36:26: START tls-verify script === &#13;
+        18:36:27: START user-pass-verify script === &#13;
+        18:36:27: START client-connect script === &#13;
+        18:36:27: START learn-address script === &#13;
+        argv = example5-6-script.sh add 10.200.0.2 client1 &#13;
+        18:37:14: START client-disconnect script === &#13;
+        18:37:20: START learn-address script === &#13;
+        argv = example5-6-script.sh delete 10.200.0.2 &#13;
+        18:37:20: START down script === &#13;
+</pre></li></ol><div></div></div><div><div><div><div><h2 class="title"><a id="ch05lvl2sec212"/>How it works...</h2></div></div></div><p>There are many script hooks built into OpenVPN. When the OpenVPN server starts up and when a client connects and then disconnects, these scripts are executed one by one. The order (for OpenVPN 2.3) is as follows:</p><div><ul class="itemizedlist"><li class="listitem">The <code class="literal">up</code> script as user <code class="literal">root</code>.</li><li class="listitem">The <code class="literal">route-up</code> script as user <code class="literal">root</code>; afterwards, root privileges are dropped and OpenVPN switches to the user <code class="literal">nobody</code> as specified in the server configuration.</li><li class="listitem">The <code class="literal">tls-verify</code> script. The CA certificate that was used to sign the client certificate is passed for verification.</li><li class="listitem">The <code class="literal">tls-verify</code> script. The client certificate itself is passed.</li><li class="listitem">The <code class="literal">user-pass-verify</code> script.</li><li class="listitem">The <code class="literal">client-connect</code> script.</li><li class="listitem">The <code class="literal">learn-address</code> script with the action, <code class="literal">add</code>.</li></ul></div><p>At this point, the client has successfully established a VPN connection. Now, when the client disconnects:</p><div><ul class="itemizedlist"><li class="listitem">The <code class="literal">client-disconnect</code> script</li><li class="listitem">The <code class="literal">learn-address</code> script with the action, <code class="literal">delete</code></li></ul></div><p>And when the server shuts down:</p><div><ul class="itemizedlist"><li class="listitem">The <code class="literal">down</code> command; note that this is run as the user <code class="literal">nobody</code>!</li></ul></div></div><div><div><div><div><h2 class="title"><a id="ch05lvl2sec213"/>There's more...</h2></div></div></div><p>When writing scripts, it is very important to keep the script execution time in mind. The design of OpenVPN 2 is very monolithic: everything (except plugins, which we will come to later in this chapter) is run under a single thread. This means that while a script is executing, the whole OpenVPN server is temporarily unavailable for all other clients: the routing of packets stops, other clients cannot connect or disconnect, and even the management interface will not respond. So, it is very important to ensure that all the server-side scripts execute very quickly.</p><p>This design flaw has been recognized, but it is not expected that there will be a major change until the arrival of OpenVPN 3.</p></div></div>
+<div><div><div><div><h1 class="title"><a id="ch05lvl1sec59"/>Script security and logging</h1></div></div></div><p>One of the major differences between OpenVPN 2.0 and later versions is related to the security when running scripts. With OpenVPN 2.0, all scripts were executed using a <code class="literal">system</code> call and the entire set of server environment variables was passed to each script. Starting with OpenVPN 2.1, the <code class="literal">script-security</code> configuration directive is introduced and the default for executing scripts is now the <code class="literal">execv</code> call, which is more secure. Also, it is advisable to log output of your scripts for security reasons. With script logging output, including timestamps, it becomes much easier to track down problems and possible security incidents. Starting with OpenVPN 2.3, it is no longer possible to add the <code class="literal">system</code> option to the <code class="literal">script-security</code> configuration directive.</p><p>In this recipe, we will focus on the different options for the <code class="literal">script-security</code> configuration directive and on the methods to ease the logging of script output.</p><div><div><div><div><h2 class="title"><a id="ch05lvl2sec214"/>Getting ready</h2></div></div></div><p>Install OpenVPN 2.3 or higher on two computers. Make sure that the computers are connected over a network. Set up the client and server certificates using the first recipe from <a class="link" title="Chapter 2.  Client-server IP-only Networks" href="part0025.xhtml#aid-NQU21">Chapter 2</a>, <em>Client-server IP-only Networks</em>. For this recipe, the server computer was running CentSO 6 Linux and OpenVPN 2.3.10, and the client was running Fedora 22 and OpenVPN 2.3.10. For the server, keep the server configuration file, <code class="literal">basic-udp-server.conf</code>, from the <em>Server-side routing</em> recipe, from <a class="link" title="Chapter 2.  Client-server IP-only Networks" href="part0025.xhtml#aid-NQU21">Chapter 2</a>, <em>Client-server IP-only Networks</em>.</p></div><div><div><div><div><h2 class="title"><a id="ch05lvl2sec215"/>How to do it...</h2></div></div></div><div><ol class="orderedlist arabic"><li class="listitem">Start the OpenVPN server using the configuration file from the <em>Using a client-side up/down script</em> recipe:<pre class="programlisting">
+<strong>[root@server]# openvpn --config basic-udp-server.conf</strong>
+</pre></li><li class="listitem">Create the client configuration file:<pre class="programlisting">        client &#13;
+        proto udp &#13;
+        remote openvpnserver.example.com &#13;
+        port 1194 &#13;
+ &#13;
+        dev tun &#13;
+        nobind &#13;
+ &#13;
+        ca       /etc/openvpn/cookbook/ca.crt &#13;
+        cert     /etc/openvpn/cookbook/client1.crt &#13;
+        key      /etc/openvpn/cookbook/client1.key &#13;
+        tls-auth /etc/openvpn/cookbook/ta.key 1 &#13;
+ &#13;
+        remote-cert-tls server &#13;
+        up "/etc/openvpn/cookbook/example5-7-up.sh arg1 arg2" &#13;
+</pre></li><li class="listitem">Save it as <code class="literal">example5-7-client.conf</code>. Notice the lack of the <code class="literal">script-security</code> directive.</li><li class="listitem">Create the <code class="literal">up</code> script:<pre class="programlisting">        #!/bin/bash &#13;
+ &#13;
+        exec &gt;&gt; /etc/openvpn/cookbook/example5-7.log 2&gt;&amp;1 &#13;
+        date +"%H:%M:%S: START $script_type script ===" &#13;
+        echo "argv = [$0] [$1] [$2] [$3] [$4]" &#13;
+        pstree $PPID &#13;
+        date +"%H:%M:%S: END $script_type script ===" &#13;
+</pre></li><li class="listitem">Save it as <code class="literal">example5-7-up.sh</code> and make sure that it is executable.</li><li class="listitem">Start the OpenVPN client:<pre class="programlisting">
+<strong>[client]$ openvpn --config example5-7-client.conf</strong>
+</pre></li><li class="listitem">The client appears to connect successfully until the <code class="literal">up</code> script needs to be executed:<pre class="programlisting">        ... /etc/openvpn/cookbook/example5-7-up.sh [arguments] &#13;
+        ... WARNING: External program may not be called unless '--&#13;
+        script-security 2' or higher is enabled. See --help text or &#13;
+        man page for detailed info.  &#13;
+        ... WARNING: Failed running command (--up/--down): external &#13;
+        program fork failed  &#13;
+        ... Exiting due to fatal error  &#13;
+</pre></li><li class="listitem">When we repeat the preceding with an extra command-line parameter, <code class="literal">--script-security 2</code>, the client can connect successfully:<pre class="programlisting">            <strong>[client]$ openvpn --config example5-7-client.conf  \</strong>&#13;
+            <strong>   --script-security 2</strong>
+</pre></li></ol><div></div><p>The <code class="literal">/etc/openvpn/cookbook/example5-7.log</code> log file now shows the following:</p><pre class="programlisting">05:25:33: START up script === &#13;
+argv = [/etc/openvpn/cookbook/example5-7-up.sh] [argument1] [argument2] [tun0] [1500] &#13;
+openvpn---example5-7-up.s---pstree &#13;
+05:25:33: END up script ===  &#13;
+</pre><p>If we repeat this preceding exercise using <code class="literal">--script-security 3</code>, we would get a similar output.</p></div><div><div><div><div><h2 class="title"><a id="ch05lvl2sec216"/>How it works...</h2></div></div></div><p>In order to execute the scripts on either the client or the server, the directive, <code class="literal">script-security 2</code> (or 3) must be specified; otherwise, OpenVPN 2.1 or higher will refuse to start. The following parameters can be specified for the <code class="literal">script-security</code> directive:</p><div><ul class="itemizedlist"><li class="listitem"><code class="literal">0</code>: This parameter specifies that no external programs can be called. This means that OpenVPN cannot successfully start up, except on Microsoft Windows under certain circumstances.</li><li class="listitem"><code class="literal">1</code>: This parameter specifies that only built-in external programs (such as <code class="literal">/sbin/ifconfig</code>, and <code class="literal">/sbin/ip</code> on Linux, and <code class="literal">netsh.exe</code>, and <code class="literal">route.exe</code> on Windows) can be called.</li><li class="listitem"><code class="literal">2</code>: This parameter specifies that built-ins and scripts can be called.</li><li class="listitem"><code class="literal">3</code>: This is the same as <code class="literal">2</code>, but now here, passwords can be passed to scripts via environment variables as well.</li></ul></div></div><div><div><div><div><h2 class="title"><a id="ch05lvl2sec217"/>There's more...</h2></div></div></div><p>There are subtle differences between running scripts on Linux/NetBSD/Mac OS and on Windows. On Windows, the system call, <code class="literal">CreateProcess</code> , is used by default. This makes it impossible to pass extra parameters to some scripts, such as the <code class="literal">up</code> script, as the entire text enclosed with quotes after the <code class="literal">up</code> directive is considered as the name of the executable or script.</p></div></div>
+<div><div><div><div><h1 class="title"><a id="ch05lvl1sec60"/>Scripting and IPv6</h1></div></div></div><p>Now that IPv6 addresses are more common, it is instructive to show how IPv6 addresses are passed from the server to client-side scripts. Basically, all environment variables that existed for IPv4 addresses also exist for IPv6, simply by appending or inserting <code class="literal">_ipv6</code> to the environment variable. In this recipe, we will show you how to process these environment variables.</p><div><div><div><div><h2 class="title"><a id="ch05lvl2sec218"/>Getting ready</h2></div></div></div><p>Install OpenVPN 2.3 or higher on two computers. Make sure that the computers are connected over a network. Set up the client and server certificates using the first recipe from <a class="link" title="Chapter 2.  Client-server IP-only Networks" href="part0025.xhtml#aid-NQU21">Chapter 2</a>, <em>Client-server IP-only Networks</em>. For this recipe, the server computer was running CentOS 6 Linux and OpenVPN 2.3.10., and the client was running Fedora 22 and OpenVPN 2.3.10. For the server, keep the server configuration file, <code class="literal">basic-udp-server.conf</code>, from the <em>Server-side routing</em> recipe, from <a class="link" title="Chapter 2.  Client-server IP-only Networks" href="part0025.xhtml#aid-NQU21">Chapter 2</a>, <em>Client-server IP-only Networks</em>.</p></div><div><div><div><div><h2 class="title"><a id="ch05lvl2sec219"/>How to do it...</h2></div></div></div><div><ol class="orderedlist arabic"><li class="listitem">Append two lines to the server configuration file, <code class="literal">basic-udp-server.conf</code>:<pre class="programlisting">        push "route-ipv6 2001:610:120::111:0:1/96" &#13;
+        push "route-ipv6 2001:610:120::222:0:1/96" &#13;
+</pre></li><li class="listitem">Save it as <code class="literal">example5-8-server.conf</code>.</li><li class="listitem">Start the server:<pre class="programlisting">
+<strong>[root@server]# openvpn --config example5-8-server.conf</strong>
+</pre></li><li class="listitem">Next, create the client configuration file:<pre class="programlisting">        client &#13;
+        proto udp &#13;
+        remote openvpnserver.example.com &#13;
+        port 1194 &#13;
+ &#13;
+        dev tun &#13;
+        nobind &#13;
+ &#13;
+        ca       /etc/openvpn/cookbook/ca.crt &#13;
+        cert     /etc/openvpn/cookbook/client1.crt &#13;
+        key      /etc/openvpn/cookbook/client1.key &#13;
+        tls-auth /etc/openvpn/cookbook/ta.key 1 &#13;
+ &#13;
+        remote-cert-tls server &#13;
+        script-security 2 &#13;
+        up "/etc/openvpn/cookbook/example5-8.sh" &#13;
+ &#13;
+        route-up "/etc/openvpn/cookbook/example5-8.sh" &#13;
+ &#13;
+</pre></li><li class="listitem">Save it as <code class="literal">example5-8-client.conf</code>.</li><li class="listitem">Create the following script:<pre class="programlisting">        #!/bin/bash &#13;
+ &#13;
+        exec &gt;&gt; /tmp/example5-10.log 2&gt;&amp;1 &#13;
+        date +"%H:%M:%S: START $script_type script ===" &#13;
+        export | grep ipv6 &#13;
+        date +"%H:%M:%S: END $script_type script ==="  &#13;
+</pre></li><li class="listitem">Save it as <code class="literal">example5-8-script.sh</code>.</li><li class="listitem">Make sure that the <code class="literal">example5-8.sh</code> script is executable, and then start the client:<pre class="programlisting">
+<strong>[root@client]# chmod 755 example5-8.sh</strong>
+<strong>[root@client]# openvpn --config example5-8-client.conf</strong>
+</pre></li><li class="listitem">After the client has is connected, check the client-side log file, <code class="literal">/tmp/example5-8.log</code>:<pre class="programlisting">        16:19:58: START up script === &#13;
+ &#13;
+        declare -x ifconfig_ipv6_local="2001:610:120::200:0:1001" &#13;
+        declare -x ifconfig_ipv6_netbits="112" &#13;
+        declare -x ifconfig_ipv6_remote="2001:610:120::200:0:2" &#13;
+        declare -x route_ipv6_gateway_1="2001:610:120::200:0:2" &#13;
+        declare -x route_ipv6_gateway_2="2001:610:120::200:0:2" &#13;
+        declare -x route_ipv6_network_1="2001:610:120::111:0:1/96" &#13;
+        declare -x route_ipv6_network_2="2001:610:120::222:0:1/96"&#13;
+        16:19:58: END up script === &#13;
+        16:19:58: START route-up script === &#13;
+        declare -x ifconfig_ipv6_local="2001:610:120::200:0:1001" &#13;
+        declare -x ifconfig_ipv6_netbits="112" &#13;
+        declare -x ifconfig_ipv6_remote="2001:610:120::200:0:2" &#13;
+        declare -x route_ipv6_gateway_1="2001:610:120::200:0:2" &#13;
+        declare -x route_ipv6_gateway_2="2001:610:120::200:0:2" &#13;
+        declare -x route_ipv6_network_1="2001:610:120::111:0:1/96" &#13;
+        declare -x route_ipv6_network_2="2001:610:120::222:0:1/96" &#13;
+        16:19:58: END route-up script === &#13;
+</pre></li></ol><div></div></div><div><div><div><div><h2 class="title"><a id="ch05lvl2sec220"/>How it works...</h2></div></div></div><p>The OpenVPN server assigns an IPv6 address to the client and also pushes out two IPv6 routes to the client using the <code class="literal">push "route-ipv6 ..."</code> directive. The client picks up these directives and passes them on to the <code class="literal">up</code> and <code class="literal">route-up</code> scripts. These scripts only show the environment variables that have <code class="literal">ipv6</code> in them, which gives a good overview of the IPv6 settings that are available to scripts and plugins.</p></div><div><div><div><div><h2 class="title"><a id="ch05lvl2sec221"/>There's more...</h2></div></div></div><p>Be careful when passing IPv6 routes to clients that contain the IPv6 address of the server itself—these routes can take precedence over an existing route to the server, causing the VPN connection to stall.</p></div></div>
+<div><div><div><div><h1 class="title"><a id="ch05lvl1sec61"/>Using the down-root plugin</h1></div></div></div><p>OpenVPN supports a plugin architecture, where external plugins can be used to extend the functionality of OpenVPN. Plugins are special modules or libraries that adhere to the OpenVPN Plugin API. One of these plugins is the <code class="literal">down-root</code> plugin, which is available only on Linux. This allows the user to run specified commands as a user <code class="literal">root</code> plugin when OpenVPN shuts down. Normally, the OpenVPN process drops root privileges (if the <code class="literal">--user</code> directive is used) for security reasons. While this is a good security measure, it makes it difficult to undo some of the actions that an <code class="literal">up</code> script can perform, which is run as a user <code class="literal">root</code> plugin. For this, the <code class="literal">down-root</code> plugin was developed. This recipe will demonstrate how the <code class="literal">down-root</code> plugin can be used to remove a file that was created by an <code class="literal">up</code> script.</p><div><div><div><div><h2 class="title"><a id="ch05lvl2sec222"/>Getting ready</h2></div></div></div><p>Set up the client and server certificates using the <em>Setting up public and private keys</em> recipe from <a class="link" title="Chapter 2.  Client-server IP-only Networks" href="part0025.xhtml#aid-NQU21">Chapter 2</a>, <em>Client-server IP-only Networks</em>. For this recipe, the server computer was running CentOS 6 Linux and OpenVPN 2.3.10. No client computer was required.</p></div><div><div><div><div><h2 class="title"><a id="ch05lvl2sec223"/>How to do it...</h2></div></div></div><div><ol class="orderedlist arabic"><li class="listitem">Create the server configuration file:<pre class="programlisting">        proto udp &#13;
+        port 1194 &#13;
+        dev tun &#13;
+ &#13;
+        server 10.200.0.0 255.255.255.0 &#13;
+ &#13;
+        ca       /etc/openvpn/cookbook/ca.crt &#13;
+        cert     /etc/openvpn/cookbook/server.crt &#13;
+        key      /etc/openvpn/cookbook/server.key &#13;
+        dh       /etc/openvpn/cookbook/dh2048.pem &#13;
+        tls-auth /etc/openvpn/cookbook/ta.key 0 &#13;
+ &#13;
+        persist-key &#13;
+        persist-tun &#13;
+        keepalive 10 60 &#13;
+ &#13;
+        topology subnet &#13;
+ &#13;
+        user  nobody &#13;
+        group nobody  # nogroup on some distros &#13;
+ &#13;
+        daemon &#13;
+        log-append /var/log/openvpn.log &#13;
+ &#13;
+        script-security 2 &#13;
+        cd /etc/openvpn/cookbook &#13;
+        up "example5-9.sh" &#13;
+        plugin /usr/lib64/openvpn/plugin/lib/openvpn-down-root.so &#13;
+        "./example5-9.sh --down" &#13;
+ &#13;
+        suppress-timestamps &#13;
+        verb 5 &#13;
+</pre></li><li class="listitem">Save it as <code class="literal">example5-9-server.conf</code>.</li><li class="listitem">Next, create the <code class="literal">up</code> script, which we will also use for the <code class="literal">down-root</code> plugin:<pre class="programlisting">        #!/bin/sh &#13;
+        if [ "$script_type" = "up" ] &#13;
+        then &#13;
+          touch /tmp/example5-9.tempfile &#13;
+        fi &#13;
+        if [ "$1" = "--down" ] &#13;
+        then &#13;
+          rm /tmp/example5-9.tempfile &#13;
+        fi &#13;
+</pre></li><li class="listitem">Save it as <code class="literal">example5-9.sh</code> and make sure that it is executable.</li><li class="listitem">Start the OpenVPN server:<pre class="programlisting">
+<strong>[root@server]# openvpn --config example5-9-server.conf</strong>
+</pre><p>The server log file will now show the following:</p><pre class="programlisting">        PLUGIN_CALL: POST /usr/lib64/openvpn/plugin/lib/openvpn-down-         root.so/PLUGIN_UP status=0 &#13;
+        example5-9.sh tun0 1500 1541 10.200.0.1 10.200.0.2 init &#13;
+</pre><p>This indicates the plugin has started. The fact that there were no error codes right after the <code class="literal">up</code> script was executed indicates that it ran successfully.</p></li><li class="listitem">Verify that the <code class="literal">/tmp/example5-9.tempfile</code> file was created on the server.</li><li class="listitem">Next, stop the server. The server log will now show the following:<pre class="programlisting">        PLUGIN_CALL: POST /usr/lib64/openvpn/plugin/lib/openvpn-down-  &#13;
+        root.so/PLUGIN_DOWN status=0 &#13;
+        PLUGIN_CLOSE: /usr/lib64/openvpn/plugin/lib/openvpn-down-&#13;
+        root.so &#13;
+</pre></li><li class="listitem">Verify that the <code class="literal">/tmp/example5-9.tempfile</code> file has been removed.</li></ol><div></div></div><div><div><div><div><h2 class="title"><a id="ch05lvl2sec224"/>How it works...</h2></div></div></div><p>The <code class="literal">down-root</code> plugin is registered at system startup when the OpenVPN server process is still running with <code class="literal">root</code> privileges. Plugins are spawned off in a separate thread, meaning that when the main OpenVPN process drops its root privileges, the plugins will still have full <code class="literal">root</code> access. When OpenVPN shuts down, the plugin is called and it removes the file created by the user <code class="literal">root</code> plugin when the server started.</p><p>Here is an interesting part of the server log file is:</p><pre class="programlisting">/sbin/ifconfig tun0 0.0.0.0 &#13;
+SIOCSIFADDR: Permission denied &#13;
+SIOCSIFFLAGS: Permission denied &#13;
+Linux ip addr del failed: external program exited with error status: 255 &#13;
+PLUGIN_CALL: POST /usr/lib64/openvpn/plugin/lib/openvpn-down-root.so/PLUGIN_DOWN status=0 &#13;
+PLUGIN_CLOSE: /usr/lib64/openvpn/plugin/lib/openvpn-down-root.so &#13;
+</pre><p>This indicates that the OpenVPN process was indeed not capable of running the command <code class="literal">/sbin/ifconfig tun0 0.0.0.0</code>, proving that <code class="literal">root</code> privileges had been successfully dropped. The plugin was then called, which did have <code class="literal">root</code> privileges, so that it could remove the root-owned file in <code class="literal">/tmp</code>.</p><p>Note that it is required to specify a path starting with <code class="literal">./</code> for the script that the plugin runs. If the leading <code class="literal">./</code> is not specified on Linux or Mac OS, then OpenVPN will not be able to find the script that the plugin needs to run, as the current directory (<code class="literal">.</code>) normally is not part of the PATH environment variable.</p><p>Also note that the <code class="literal">up</code> script is called with the <code class="literal">script_type</code> environment variable set but that this is not true for plugins. To overcome this, an extra parameter was added so that the same script could be used as both the <code class="literal">up</code> and <code class="literal">down-root</code> scripts.</p></div><div><div><div><div><h2 class="title"><a id="ch05lvl2sec225"/>There's more...</h2></div></div></div><p>Plugins are supported on Linux, Net/FreeBSD, and on Windows. The following script callbacks can be intercepted using a plugin:</p><div><ul class="itemizedlist"><li class="listitem"><code class="literal">up</code></li><li class="listitem"><code class="literal">down</code></li><li class="listitem"><code class="literal">route-up</code></li><li class="listitem"><code class="literal">ipchange</code></li><li class="listitem"><code class="literal">tls-verify</code></li><li class="listitem"><code class="literal">auth-user-pass-verify</code></li><li class="listitem"><code class="literal">client-connect</code></li><li class="listitem"><code class="literal">client-disconnect</code></li><li class="listitem"><code class="literal">learn-address</code></li></ul></div></div><div><div><div><div><h2 class="title"><a id="ch05lvl2sec226"/>See also</h2></div></div></div><div><ul class="itemizedlist"><li class="listitem">The next recipe, <em>Using the PAM authentication plugin</em>, which explains how to use an OpenVPN plugin to authenticate remote VPN clients</li></ul></div></div></div>
+<div><div><div><div><h1 class="title"><a id="ch05lvl1sec62"/>Using the PAM authentication plugin</h1></div></div></div><p>A very useful plugin for OpenVPN is a plugin to validate a username using the Linux/UNIX PAM authentication system. <strong>PAM</strong> stands for <strong>pluggable authentication modules</strong> and is a very modular system for allowing users access to system resources. It is used by most modern Linux and UNIX variants, offering a very flexible and extendible system for authenticating and authorizing users. In this recipe, we will use the PAM authentication plugin as a replacement of an <code class="literal">auth-user-pass-verify</code> script to validate a remote user's credentials against the system PAM configuration.</p><div><div><div><div><h2 class="title"><a id="ch05lvl2sec227"/>Getting ready</h2></div></div></div><p>Install OpenVPN 2.3 or higher on two computers. Make sure that the computers are connected over a network. Set up the client and server certificates using the first recipe from <a class="link" title="Chapter 2.  Client-server IP-only Networks" href="part0025.xhtml#aid-NQU21">Chapter 2</a>, <em>Client-server IP-only Networks</em>. For this recipe, the server computer was running CentOS 6 Linux and OpenVPN 2.3.11. The client was running Fedora 22 Linux and OpenVPN 2.3.11. For the client, keep the client configuration file, <code class="literal">example5-5-client.conf</code>, from the <em>Using an auth-user-pass-verify script</em> recipe at hand.</p></div><div><div><div><div><h2 class="title"><a id="ch05lvl2sec228"/>How to do it...</h2></div></div></div><div><ol class="orderedlist arabic"><li class="listitem">Create the server configuration file:<pre class="programlisting">        proto udp &#13;
+        port 1194 &#13;
+        dev tun &#13;
+ &#13;
+        server 10.200.0.0 255.255.255.0 &#13;
+ &#13;
+        ca       /etc/openvpn/cookbook/ca.crt &#13;
+        cert     /etc/openvpn/cookbook/server.crt &#13;
+        key      /etc/openvpn/cookbook/server.key &#13;
+        dh       /etc/openvpn/cookbook/dh2048.pem &#13;
+        tls-auth /etc/openvpn/cookbook/ta.key 0 &#13;
+ &#13;
+        persist-key &#13;
+        persist-tun &#13;
+        keepalive 10 60 &#13;
+ &#13;
+        topology subnet &#13;
+ &#13;
+        user  nobody &#13;
+        group nobody  # nogroup on some distros &#13;
+ &#13;
+        daemon &#13;
+        log-append /var/log/openvpn.log &#13;
+ &#13;
+        verb 5 &#13;
+        suppress-timestamps &#13;
+ &#13;
+        plugin /usr/lib64/openvpn/plugins/openvpn-plugin-auth-pam.so          "login login USERNAME password PASSWORD" &#13;
+</pre><p>Note that the last line of the server configuration file is a single line. Save it as: <code class="literal">example5-10-server.conf</code>.</p></li><li class="listitem">Start the OpenVPN server:<pre class="programlisting">
+<strong>[root@server]# openvpn --config example5-10-server.conf</strong>
+</pre><p>The server log file will now show:</p><pre class="programlisting">        AUTH-PAM: BACKGROUND: INIT service='login' &#13;
+        PLUGIN_INIT: POST /usr/lib64/openvpn/plugins/openvpn-plugin-&#13;
+        auth-pam.so '/usr/lib64/openvpn/plugins/openvpn-plugin-auth-&#13;
+        pam.so] [login] [login] [USERNAME] [password] [PASSWORD]'          intercepted=PLUGIN_AUTH_USER_PASS_VERIFY &#13;
+</pre><p>This indicates that the PAM plugin successfully initialized in the background.</p></li><li class="listitem">Start the OpenVPN client. OpenVPN will first prompt for the Auth username and password:<pre class="programlisting">        ... OpenVPN 2.3.11 x86_64-redhat-linux-gnu [SSL (OpenSSL)] &#13;
+        [LZO] [EPOLL] [PKCS11] [MH] [IPv6] built on May 10 2016 &#13;
+        ... library versions: OpenSSL 1.0.1e-fips 11 Feb 2013, LZO 2.08 &#13;
+        Enter Auth Username: ******** &#13;
+        Enter Auth Password: ********  &#13;
+</pre></li></ol><div></div><p>On the server used in this recipe, a special user <code class="literal">cookbook</code> was created. After typing in the username and password, the connection to the server is successfully established. The OpenVPN server log shows the following:</p><pre class="programlisting">AUTH-PAM: BACKGROUND: received command code: 0 &#13;
+AUTH-PAM: BACKGROUND: USER: cookbook &#13;
+AUTH-PAM: BACKGROUND: my_conv[0] query='login:' style=2 &#13;
+AUTH-PAM: BACKGROUND: name match found, query/match-string ['login:', 'login'] = 'USERNAME' &#13;
+AUTH-PAM: BACKGROUND: my_conv[0] query='Password: ' style=1 &#13;
+AUTH-PAM: BACKGROUND: name match found, query/match-string ['Password: ', 'password'] = 'PASSWORD' &#13;
+... 192.168.3.22:50887 PLUGIN_CALL: POST /usr/lib64/openvpn/plugins/openvpn-plugin-auth-pam.so/PLUGIN_AUTH_USER_PASS_VERIFY status=0 &#13;
+... 192.168.3.22:50887 TLS: Username/Password authentication succeeded for username 'cookbook' &#13;
+ &#13;
+</pre><p>This shows that the user was successfully authenticated using PAM.</p></div><div><div><div><div><h2 class="title"><a id="ch05lvl2sec229"/>How it works...</h2></div></div></div><p>The PAM authentication plugin intercepts the <code class="literal">auth-user-pass-verify</code> callback. When the OpenVPN client connects and passes along the username and password, the plugin wakes up. It queries the PAM subsystem by looking at the <code class="literal">login</code> module (this is the first parameter for the <code class="literal">openvpn-auth-pam.so</code> file). The other parameters are used by the <code class="literal">auth-pam</code> plugin to know which input to expect from the PAM subsystem:</p><pre class="programlisting">login USERNAME password PASSWORD &#13;
+</pre><p>The PAM <code class="literal">login</code> subsystem will ask for the username by presenting the <code class="literal">login prompt</code> and will ask for the password by presenting the <code class="literal">password</code> prompt. The <code class="literal">auth-pam</code> plugin uses this information to know where to fill in the username (<code class="literal">USERNAME</code>) and password (<code class="literal">PASSWORD</code>).</p><p>After the user has been successfully authenticated by the PAM subsystem, the connection is established.</p></div><div><div><div><div><h2 class="title"><a id="ch05lvl2sec230"/>There's more...</h2></div></div></div><p>It would also have been possible to authenticate a user using an <code class="literal">auth-user-pass-verify</code> script, which queries the PAM subsystem. There are two major advantages to using the PAM plugin for this:</p><div><ul class="itemizedlist"><li class="listitem">It is not required to use the <code class="literal">script-security</code> directive at all.</li><li class="listitem">The plugin method is much faster and far more scalable. When many users try to connect to the OpenVPN server at the same time, the VPN performance would be greatly affected when using an <code class="literal">auth-user-pass-verify</code> script, as for each user connection, a separate process needs to be started, during which the OpenVPN's main thread is installed.</li></ul></div></div><div><div><div><div><h2 class="title"><a id="ch05lvl2sec231"/>See also</h2></div></div></div><div><ul class="itemizedlist"><li class="listitem">The previous recipe, <em>Using the down-root plugin</em>, in which the basics of using OpenVPN plugins are explained</li></ul></div></div></div></body></html>

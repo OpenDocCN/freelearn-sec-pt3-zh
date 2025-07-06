@@ -1,0 +1,640 @@
+<html><head></head><body><div><h1 class="header-title">Anti-analysis Tricks</h1>
+                
+            
+            
+                
+<p>Anti-debugging, anti-virtual-machine (VM), anti-emulation, and anti-dumping are all tricks that attempt to analysis put a halt to an analysis. In this chapter, we will try to show the concepts of these anti-analysis methods. To help us identify these codes, we will explain the concept and show the actual disassembly codes that makes it work. Being able to identify these tricks will help us to avoid them. With initial static analysis, we would be able to skip these codes.</p>
+<p>In this chapter, we will achieve the following learning outcomes:</p>
+<ul>
+<li>Identifying anti-analysis tricks</li>
+<li>Learning how to overcome anti-analysis tricks</li>
+</ul>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Anti-debugging tricks</h1>
+                
+            
+            
+                
+<p>Anti-debugging tricks are meant to ensure that the codes are not working under the influence of a debugger. Say we have a program with an anti-debugging code in it. The behavior of the program is just as if it were running without an anti-debugging code. The story becomes different, however, when the program is being debugged. While debugging, we encounter code that goes straight to exiting the program or jumps into code that doesn't make sense. This process is illustrated in the following diagram:</p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-1114 image-border" src="img/1c7cfacd-b490-4585-885c-fea0b90b2e1a.png" style="width:16.58em;height:12.67em;" width="330" height="251"/></p>
+<p>Developing anti-debugging code requires understanding the traits of the program and the system, both when normally running and when being debugged. For example, the <strong>Process Environment Block</strong> (<strong>PEB</strong>) contains a flag that is set when a program is being run under a debugger. Another popular trick is to use a <strong>Structured Exception Handler</strong> (<strong>SEH</strong>) to continue code that forces an error exception while debugging. To better understand how these work, let's discuss these tricks in a little more detail.</p>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">IsDebuggerPresent</h1>
+                
+            
+            
+                
+<p><kbd>IsDebuggerPresent</kbd> is a <kbd>Kernel32</kbd> API function that simply tells us whether the program is under a debugger. The result is placed in the <kbd>eax</kbd> register with a value of either true (<kbd>1</kbd>) or false (<kbd>0</kbd>). When used, the code looks something like this:</p>
+<pre>call IsDebuggerPresent<br/>test eax, eax<br/>jz notdebugged</pre>
+<p>The same concept applies with the <kbd>CheckRemoteDebuggerPresent</kbd> API. The difference is that it checks whether either another process or its <em>own</em> process is being debugged. <kbd>CheckRemoteDebuggerPresent</kbd> requires two arguments: a handle to a process and an output variable that tells us whether the process is being debugged or not. The following code checks whether its own process is being debugged:</p>
+<pre class="">call GetCurrentProcess<br/>push edi<br/>push eax<br/>call CheckRemoteDebuggerPresent<br/>cmp dword ptr [edi], 1<br/>jz beingdebugged</pre>
+<p>The <kbd>GetCurrentProcess</kbd> API is used to retrieve the handle to the running process. This usually returns a <kbd>-1</kbd> (<kbd>0xFFFFFFFF</kbd>) value, which is the handle to its own process. The <kbd>edi</kbd> register should be a variable address where the output of <kbd>CheckRemoteDebuggerPresent</kbd> will be stored.  </p>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Debug flags in the PEB</h1>
+                
+            
+            
+                
+<p>A thread is the basic unit of execution.  The process itself is run as a thread entity that is capable of triggering multiple threads in the same process space. The information about the currently running thread is stored in the the Thread Environment Block (TEB).  The TEB is also called the Thread Information Block (TIB) and contains information such as the thread ID, structured error handling frame, stack base address and limit, and the address pointing to information about the process the thread is running under.  Information about the process is stored in the Process Environment Block (PEB).</p>
+<p>The PEB contains information like pointer to tables that lists the loaded modules, command line parameters used to run the process, information taken from the PE header, and if it is being debugged.  The TIB and PEB structures are documented by Microsoft at https://docs.microsoft.com/en-us/windows/desktop/api/winternl/.</p>
+<p><kbd>PEB</kbd> has fields that can be used to identify whether a process is being debugged: the <kbd>BeingDebugged</kbd> and <kbd>NtGlobalFlag</kbd> flags. In <kbd>PEB</kbd>, these are located at the following locations:</p>
+<table style="border-collapse: collapse;width: 100%" border="1">
+<tbody>
+<tr>
+<td style="width: 63.3333px" class="CDPAlignCenter CDPAlign"><strong>Offset</strong></td>
+<td style="width: 599.333px" class="CDPAlignCenter CDPAlign"><strong>Information</strong></td>
+</tr>
+<tr>
+<td style="width: 63.3333px"><kbd>0x02</kbd></td>
+<td style="width: 599.333px">BeingDebugged (1 for True) - BYTE</td>
+</tr>
+<tr>
+<td style="width: 63.3333px"><kbd>0x68</kbd></td>
+<td style="width: 599.333px">GlobalNTFlag (usually 0x70 when debugged) - DWORD</td>
+</tr>
+</tbody>
+</table>
+<p> </p>
+<p>Internally, <kbd>IsDebuggerPresent</kbd> works with this code:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="img/9c4b23ee-ce65-4df9-9e3c-b62d9eeb7aaa.png" style="width:24.67em;height:4.58em;" width="249" height="46"/></p>
+<p>Let's check what is happening with the <kbd>IsDebuggerPresent</kbd> code:</p>
+<pre>mov eax, dword ptr fs:[18]</pre>
+<p>The preceding line retrieves the address of the <strong>Thread Environment Block</strong> (<strong>TEB</strong>) from the <strong>Thread Information Block</strong> (<strong>TIB</strong>). The <kbd>FS</kbd> segment contains <kbd>TIB</kbd>. <kbd>TEB</kbd> address is stored at offset <kbd>0x18</kbd> of <kbd>TIB</kbd>. <kbd>TIB</kbd> is stored in the <kbd>eax</kbd> register.</p>
+<p>The following line retrieves <kbd>PEB</kbd> address and stores it in the <kbd>eax</kbd> register. The <kbd>PEB</kbd> address is located at offset <kbd>0x30</kbd> of <kbd>TEB</kbd>:</p>
+<pre>mov eax, dword ptr ds:[eax+30]</pre>
+<p class="mce-root">The byte at offset <kbd>2</kbd> of <kbd>PEB</kbd> contains a Boolean value of <kbd>1</kbd> or <kbd>0</kbd>, indicating whether the process is being debugged or not:</p>
+<pre>movzx eax, byte ptr ds:[eax+2]</pre>
+<p>If we wanted to create our own function, but applied this with <kbd>GlobalNTFlag</kbd>, we can make the code look like this:</p>
+<pre>mov eax, dword ptr fs:[18]<br/>mov eax, dword ptr ds:[eax+0x30]<br/>mov eax, dword ptr ds:[eax+0x68]<br/>cmp eax, 0x70<br/>setz al<br/>and eax, 1</pre>
+<p>The first three lines of the preceding block basically retrieve <kbd>GlobalNTFlag</kbd> at offset <kbd>0x68</kbd> of <kbd>PEB</kbd>. </p>
+<p>The following <kbd>cmp</kbd> instruction will set the zero flag to <kbd>1</kbd> if the value of <kbd>eax</kbd> is equal to <kbd>0x70</kbd>:</p>
+<pre>cmp eax, 0x70</pre>
+<p>The <kbd>setz</kbd> instruction will set the <kbd>al</kbd> register with what <kbd>ZF</kbd> is, which should either be <kbd>0</kbd> or <kbd>1</kbd>:</p>
+<pre>setz al</pre>
+<p>Finally, the <kbd>and</kbd> instruction will only retain the first bit for the <kbd>eax</kbd> register, which, as a result, clears the register, but retains a value of either <kbd>1</kbd> or <kbd>0</kbd>, for true or false:</p>
+<pre>and eax, 1</pre>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Debugger information from NtQueryInformationProcess</h1>
+                
+            
+            
+                
+<p>Querying process information using the <kbd>NtQueryInformationProcess</kbd> function gives us another way to identify if the process is under a debugger. As sourced from <kbd>MSDN</kbd>, the <kbd>NtQueryInformationProcess</kbd> syntax declaration is the following:</p>
+<pre>NTSTATUS WINAPI NtQueryInformationProcess(
+  _In_       HANDLE ProcessHandle,
+  _In_       PROCESSINFOCLASS ProcessInformationClass,
+  _Out_      PVOID ProcessInformation,
+  _In_       ULONG ProcessInformationLength,
+  _Out_opt_  PULONG ReturnLength
+);</pre>
+<p>More information about this function can be found at <a href="https://docs.microsoft.com/en-us/windows/desktop/api/winternl/nf-winternl-ntqueryinformationprocess">https://docs.microsoft.com/en-us/windows/desktop/api/winternl/nf-winternl-ntqueryinformationprocess</a>.</p>
+<p>Specific information is returned based on what ID is supplied in the second argument, <kbd>PROCESSINFOCLASS</kbd>. <kbd>PROCESSINFOCLASS</kbd> is an enumerated list of IDs that we want to query. The IDs we need in order to determine whether the process is being debugged are the following:</p>
+<ul>
+<li><kbd>ProcessDebugPort (7)</kbd></li>
+<li><kbd>ProcessDebugObjectHandle (30)</kbd></li>
+<li><kbd>ProcessDebugFlags (31)</kbd></li>
+</ul>
+<p>In essence, if the output result, filled in the <kbd>ProcessInformation</kbd> from the third argument, gives us a non-zero result, then it means that the process is being debugged.</p>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Timing tricks</h1>
+                
+            
+            
+                
+<p>Normally, the time it takes for a program to execute lines of instructions from address <kbd>A</kbd> to address <kbd>B</kbd> would only take less than a second. But if these instructions were being debugged, a human would probably take about a second per line. Debugging from address <kbd>A</kbd> to address <kbd>B</kbd> would at least take a couple of seconds.</p>
+<p>Essentially, the concept works just like a stopwatch. If the time it takes for a few lines of code is too long, the trick assumes that the program is being debugged.</p>
+<p>Timing tricks can be applied as an anti-debugging method in any programming language. Setting a stopwatch would only require a function that can read time. Here are some examples of how timing tricks can be implemented in x86 assembly:</p>
+<pre>rdtsc<br/>mov ebx, eax<br/>nop<br/>nop<br/>nop<br/>nop<br/>nop<br/>nop<br/>nop<br/>nop<br/>rdtsc<br/>sub eax, ebx<br/>cmp eax, 0x100000<br/>jg exit</pre>
+<p>In x86 processors means <strong>Read Time-Stamp Counter </strong>(<strong>RDTSC</strong>). Every time the processor is reset (either by a hard reset or power-on), the timestamp counter is set to 0. The timestamp counter increments for every processor clock cycle. In the preceding chunk of <kbd>RDTSC</kbd> code, the result of the first <kbd>RDTSC</kbd> instruction is stored in the <kbd>ebx</kbd> register. After a set of <kbd>nop</kbd> instructions, the value stored in <kbd>ebx</kbd> is subtracted from the result of the second <kbd>RDTSC</kbd> instruction. This takes the difference between the first and second <kbd>TSC</kbd>. If the difference is greater than <kbd>0x100000</kbd>, the code jumps to exit. If the program were not being step debugged, the difference should be about less than <kbd>0x500</kbd>.</p>
+<p>On the other hand, <kbd>GetSystemTime</kbd> and <kbd>GetLocalTime</kbd>, which are API functions that can retrieve time, can also be used to implement timing tricks. To identify these tricks, the code has to contain two time-retrieving functions.</p>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Passing code execution via SEH</h1>
+                
+            
+            
+                
+<p>One of the most popular anti-debugging tricks is to use <kbd>SEH</kbd> to pass code execution. It is popular trick used in Windows computer viruses.  But before we discuss how this trick is used for anti-debugging, let us discuss how <kbd>SEH</kbd> works a little.</p>
+<p>Exceptions are usually triggered from errors, such as reading bytes from inaccessible memory regions, or by something as simple as division by zero. They can also be triggered by debugger interrupts, <kbd>INT 3</kbd> and <kbd>INT 1</kbd>. When an exception occurs, the system jumps right to the exception handler. Normally, the exception handler's job is to do something about the error.</p>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p>Usually, this job gives an error message notification, leading to a graceful termination of the program. In programming terms, this is try-except or <kbd>try-catch</kbd> handling. The following is an example of exception handling in Python programming:</p>
+<pre class="prettyprint prettyprinted">try:
+    print("Hello World!")<br/>    
+except:
+    print("Hello Error!")</pre>
+<p>An <kbd>SEH</kbd> record contains two elements: the address of the exception handler and the address of the next <kbd>SEH</kbd> record. The next <kbd>SEH</kbd> record contains the address of the <kbd>SEH</kbd> record next to it. Overall, the <kbd>SEH</kbd> records are chained to each other. This is called the <kbd>SEH</kbd> chain. If the current handler was not able to handle the exception, then the next handler takes over. A program crash can happen if ever the <kbd>SEH</kbd> records were exhausted. This process is shown here:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="img/d9ee4c66-f07f-48a3-a34c-9a4706024131.png" style="width:15.25em;height:16.00em;" width="255" height="267"/></p>
+<p>As we can see, the last <kbd>SEH</kbd> record contains a <kbd>-1</kbd> (<kbd>0xFFFFFFFF</kbd> for 32-bit address space) value at the <kbd>SEH</kbd> record pointer field.</p>
+<p>Now that we know how <kbd>SEH</kbd> works, how can this be abused for anti-debugging? Using our try-except Python code, abusing it would look something like this:</p>
+<pre class="prettyprint prettyprinted">x = 1<br/>try:<br/>    x = x / 0<br/>    print("This message will not show up!")<br/>except:<br/>    print("Hello World!")</pre>
+<p>What we did was force an error (a division-by-zero error, to be precise) to cause an exception. The exception handler displays the <kbd>Hello World!</kbd> message. But how does it work in x86 assembly language?</p>
+<p class="mce-root">To set up our new <kbd>SEH</kbd>, we need to first identify where the current <kbd>SEH</kbd> is. For every process, there is an <kbd>SEH</kbd> chain set up by the Windows OS. The current <kbd>SEH</kbd> record can be retrieved from offset <kbd>0</kbd> of <kbd>TIB</kbd>, as denoted by the <kbd>FS</kbd> segment register.</p>
+<p>The following assembly code retrieves the address of the current <kbd>SEH</kbd> record to the <kbd>eax</kbd> register:</p>
+<pre>mov eax, dword ptr FS:[0]</pre>
+<p>To change the handler, we can simply change the address of the current <kbd>SEH</kbd> record at <kbd>FS:[0]</kbd> with our <kbd>SEH</kbd> record. Let's assume that the handling code's address will be at <kbd>0x00401000</kbd>, and that the current SEH record, is located at <kbd>0x00200000</kbd> has these values in it:</p>
+<table style="border-collapse: collapse;width: 100%" border="1">
+<tbody>
+<tr style="height: 29px">
+<td style="width: 219.333px;height: 29px">Next SEH record</td>
+<td style="width: 282px;height: 29px"><kbd>0xFFFFFFFF</kbd></td>
+</tr>
+<tr style="height: 3.09082px">
+<td style="width: 219.333px;height: 3.09082px">Current handler address</td>
+<td style="width: 282px;height: 3.09082px"><kbd>0x78000000</kbd></td>
+</tr>
+</tbody>
+</table>
+<p> </p>
+<p>The next thing to do is build our <kbd>SEH</kbd> record, which we can store in the stack. With <kbd>FS:[0]</kbd> returning the <kbd>0x00200000</kbd> value, and our handler located at <kbd>0x00401000</kbd>, here's a way to build the <kbd>SEH</kbd> record from the stack:</p>
+<pre>push 0x00401000<br/>push dword ptr FS:[0]</pre>
+<p>The stack should look like something like this:</p>
+<table style="border-collapse: collapse;width: 100%" border="1">
+<tbody>
+<tr>
+<td style="width: 219.333px">ESP</td>
+<td style="width: 282px"><kbd>0x00200000</kbd></td>
+</tr>
+<tr>
+<td style="width: 219.333px">ESP+4</td>
+<td style="width: 282px"><kbd>0x00401000</kbd></td>
+</tr>
+</tbody>
+</table>
+<p> </p>
+<p>All we need to do is update the value of <kbd>FS:[0]</kbd> to the address of this <kbd>SEH</kbd> record, which is the register <kbd>ESP</kbd> register (that is, top of the stack):</p>
+<pre>mov dword ptr FS:[0], esp</pre>
+<p>The preceding code should add our <kbd>SEH</kbd> to the <kbd>SEH</kbd> chain.</p>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Causing exceptions</h1>
+                
+            
+            
+                
+<p>The next thing to do is develop a code that forcefully causes an exception. We have a few known ways to do that:</p>
+<ul>
+<li>
+<p>Use debug breakpoints (INT 3 / INT 1)</p>
+</li>
+<li>
+<p>Access inaccessible memory spaces</p>
+</li>
+<li>Divide by zero</li>
+</ul>
+<p>The aim of an <kbd>SEH</kbd> anti-debugging trick is to direct the debug analysis to an error. This makes an analyst try to trace back to what might have caused the error, eventually wasting time. And, if the analyst is familiar with <kbd>SEH</kbd>, it would be easy to pinpoint where the handler is and set a breakpoint there.</p>
+<p>Step debugging works because of <kbd>Interrupt 1</kbd>, while breakpoints are set using <kbd>Interrupt 3</kbd>. When the execution of code encounters an <kbd>INT 3</kbd> instruction, a debug exception occurs. To invoke an <kbd>Interrupt 1</kbd> exception, the trap flag has to be set first.</p>
+<p>When reading data from inaccessible memory, a read error occurs. There are already known memory regions, such as the kernel space, that are not allowed to be directly accessed from the user-mode process. Most of these regions are protected with a <kbd>PAGE_GUARD</kbd> flag. The <kbd>PAGE_GUARD</kbd> flag can be set with a <kbd>VirtualAlloc</kbd> or <kbd>VirtualProtect</kbd> function. That means we can produce our own inaccessible memory region. Typically, the region from offset <kbd>0</kbd> of the process space is not accessible. The following line of code will cause an access violation exception:</p>
+<pre>mov al, [0]</pre>
+<p>In mathematics, doing actual division by zero is an infinite task. The system explicitly identifies this kind of error and causes an exception. An example line for this is the following:</p>
+<pre>mov eax, 1<br/>xor cl, cl<br/>div cl</pre>
+<p>What the preceding code does is set the <kbd>eax</kbd> register to <kbd>1</kbd>, set the <kbd>cl</kbd> register to <kbd>0</kbd>, and then divides <kbd>eax</kbd> with <kbd>cl</kbd>, causing a divide-by-zero exception.</p>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">A typical SEH setup</h1>
+                
+            
+            
+                
+<p>Based on what we've learned, let's make use of a regular flow of code, then use <kbd>SEH</kbd> as an anti-debugging trick. The following code will be our original code:</p>
+<pre>push eax<br/>mov eax, 0x12345678<br/>mov ebx, 0x87654321<br/>and eax, ebx<br/>pop eax</pre>
+<p>After placing the <kbd>SEH</kbd> anti-debugging trick, the code would look something like this:</p>
+<pre>    mov eax, dword ptr FS:[0]<br/>    push 0x00401000<br/>    push eax<br/>    mov dword ptr FS:[0], esp<br/>    mov al, [0]<br/><br/>RDTSC (with CPUID to force a VM Exit)<br/><br/>VMM instructions i.e. VMCALL<br/><br/>VMEXIT<br/>0x00401000:<br/>    push eax<br/>    mov eax, 0x12345678<br/>    mov ebx, 0x87654321<br/>    and eax, ebx<br/>    pop eax</pre>
+<p>What we did here was to manually set up the <kbd>SEH</kbd>. Fortunately, Windows has a feature that can also set up exception handlers called Vectored Exception Handler. The API that registers a new handle is <kbd>AddVectoredExceptionHandler</kbd>. A C source code that implements this can be found at <a href="https://docs.microsoft.com/en-us/windows/desktop/debug/using-a-vectored-exception-handler">https://docs.microsoft.com/en-us/windows/desktop/debug/using-a-vectored-exception-handler</a>.</p>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Anti-VM tricks</h1>
+                
+            
+            
+                
+<p>This trick's aim is to exit the program when it identifies that it is running in a virtualized environment. The most typical way to identify being in a VM is to check for specific virtualization software artifacts installed in the machine. These artifacts may be located in the registry or a running service. We have listed a few specific artifacts that can be used to identify being run inside a VM. </p>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">VM running process names</h1>
+                
+            
+            
+                
+<p>The easiest way for a program to determine whether it is in a VM is by identifying known file names of running processes. Here's a list for each of the most popular pieces of VM software:</p>
+<table style="border-collapse: collapse;width: 100%" border="1">
+<tbody>
+<tr>
+<td><strong>Virtualbox</strong></td>
+<td><strong>VMWare</strong></td>
+<td><strong>QEMU</strong></td>
+<td><strong>Parallels</strong></td>
+<td><strong>VirtualPC</strong></td>
+</tr>
+<tr>
+<td>
+<p class="mce-root"><kbd>vboxtray.exe</kbd><br/>
+<kbd>vboxservice.exe</kbd><br/>
+<kbd>vboxcontrol.exe</kbd></p>
+</td>
+<td><kbd>vmtoolsd.exe</kbd><br/>
+<kbd>vmwaretray.exe</kbd><br/>
+<kbd>vmwareuser</kbd><br/>
+<kbd>VGAuthService.exe</kbd><br/>
+<kbd>vmacthlp.exe</kbd></td>
+<td><kbd>qemu-ga.exe</kbd></td>
+<td><kbd>prl_cc.exe</kbd><br/>
+<kbd>prl_tools.exe</kbd></td>
+<td><kbd>vmsrvc.exe</kbd><br/>
+<kbd>vmusrvc.exe</kbd></td>
+</tr>
+</tbody>
+</table>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Existence of VM files and directories</h1>
+                
+            
+            
+                
+<p>Identifying the existence of at least one of the VM software's files can tell if the program is running in a virtual machine. The following table contains a list of files that can be used to identify if the program is running in a VirtualBox or VMware guest:</p>
+<table style="border-collapse: collapse;width: 100%" border="1">
+<tbody>
+<tr>
+<td style="width: 44.3511%" class="CDPAlignCenter CDPAlign"><strong>Virtualbox</strong></td>
+<td style="width: 49.6489%" class="CDPAlignCenter CDPAlign"><strong>VMWare</strong></td>
+</tr>
+<tr>
+<td style="width: 44.3511%"><kbd>%programfiles%\oracle\virtualbox guest additions</kbd><br/>
+<kbd>system32\drivers\VBoxGuest.sys</kbd><br/>
+<kbd>system32\drivers\VBoxMouse.sys</kbd><br/>
+<kbd>system32\drivers\VBoxSF.sys</kbd><br/>
+<kbd>system32\drivers\VBoxVideo.sys</kbd><br/>
+<kbd>system32\vboxdisp.dll</kbd><br/>
+<kbd>system32\vboxhook.dll</kbd><br/>
+<kbd>system32\vboxmrxnp.dll</kbd><br/>
+<kbd>system32\vboxogl.dll</kbd><br/>
+<kbd>system32\vboxoglarrayspu.dll</kbd><br/>
+<kbd>system32\vboxoglcrutil.dll</kbd><br/>
+<kbd>system32\vboxoglerrorspu.dll</kbd><br/>
+<kbd>system32\vboxoglfeedbackspu.dll</kbd><br/>
+<kbd>system32\vboxoglpackspu.dll</kbd><br/>
+<kbd>system32\vboxoglpassthroughspu.dll</kbd></td>
+<td style="width: 49.6489%"><kbd>%programfiles%\VMWare</kbd><br/>
+<kbd>system32\drivers\vm3dmp.sys</kbd><br/>
+<kbd>system32\drivers\vmci.sys</kbd><br/>
+<kbd>system32\drivers\vmhgfs.sys</kbd><br/>
+<kbd>system32\drivers\vmmemctl.sys</kbd><br/>
+<kbd>system32\drivers\vmmouse.sys</kbd><br/>
+<kbd>system32\drivers\vmrawdsk.sys</kbd><br/>
+<kbd>system32\drivers\vmusbmouse.sys</kbd></td>
+</tr>
+</tbody>
+</table>
+<p class="mce-root"/>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Default MAC address</h1>
+                
+            
+            
+                
+<p>The first three hexadecimal numbers of the VM's default MAC address can also be used. But, of course, if the MAC address were changed, these won't work:</p>
+<table style="border-collapse: collapse;width: 100%" border="1">
+<tbody>
+<tr>
+<td class="CDPAlignCenter CDPAlign"><strong>VirtualBox</strong></td>
+<td class="CDPAlignCenter CDPAlign"><strong>VMWare</strong></td>
+<td class="CDPAlignCenter CDPAlign"><strong>Parallels</strong></td>
+</tr>
+<tr>
+<td><kbd>08:00:27</kbd></td>
+<td>
+<p class="mce-root"><kbd>00:05:69</kbd><br/>
+<kbd>00:0C:29</kbd><br/>
+<kbd>00:1C:14</kbd><br/>
+<kbd>00:50:56</kbd></p>
+</td>
+<td><kbd>00:1C:42</kbd></td>
+</tr>
+</tbody>
+</table>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Registry entries made by VMs</h1>
+                
+            
+            
+                
+<p>Information and configuration of software are usually done in the registry. This also counts for the VM guest software, which makes registry entries. Here's a short list of registry entries by VirtualBox:</p>
+<pre class="mce-root">HARDWARE\ACPI\DSDT\VBOX__ <br/>HARDWARE\ACPI\FADT\VBOX__ <br/>HARDWARE\ACPI\RSDT\VBOX__ <br/>SOFTWARE\Oracle\VirtualBox Guest Additions <br/>SYSTEM\ControlSet001\Services\VBoxGuest <br/>SYSTEM\ControlSet001\Services\VBoxMouse <br/>SYSTEM\ControlSet001\Services\VBoxService <br/>SYSTEM\ControlSet001\Services\VBoxSF <br/>SYSTEM\ControlSet001\Services\VBoxVideo </pre>
+<p>Here are registry entries known to be from VMWare:</p>
+<pre>SOFTWARE\VMware, Inc.\VMware Tools </pre>
+<p>A Linux emulation with Wine has the following registry entry:</p>
+<pre>SOFTWARE\Wine</pre>
+<p>The existence of Microsoft's Hyper-V' can also be identified from the registry:</p>
+<pre>SOFTWARE\Microsoft\Virtual Machine\Guest</pre>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">VM devices</h1>
+                
+            
+            
+                
+<p class="mce-root">These are virtual devices created by the VM. Here are the accessible devices created by VirtualBox and VMWare:</p>
+<table style="border-collapse: collapse;width: 100%" border="1">
+<tbody>
+<tr>
+<td style="width: 28%" class="CDPAlignCenter CDPAlign"><strong>VirtualBox</strong></td>
+<td style="width: 28.6641%" class="CDPAlignCenter CDPAlign"><strong>VMWare</strong></td>
+</tr>
+<tr>
+<td style="width: 28%"><kbd>\\.\VBoxGuest</kbd><br/>
+<kbd>\\.\VBoxTrayIPC</kbd><br/>
+<kbd>\\.\VBoxMiniRdrDN</kbd></td>
+<td style="width: 28.6641%">
+<p class="mce-root"><kbd>\\.\HGFS</kbd><br/>
+<kbd>\\.\vmci</kbd></p>
+</td>
+</tr>
+</tbody>
+</table>
+<p class="mce-root"/>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">CPUID results</h1>
+                
+            
+            
+                
+<p class="mce-root"><kbd>CPUID</kbd> is an x86 instruction that returns information about the processor it is running under.  Before running the instruction, the type of information, called a leaf, is required and stored in register EAX.  Depending on the leaf, it returns values in registers EAX, EBX, ECX, and EDX.  Every bit stored in the registers may tells if a certain CPU feature is available or not. Details about the returned CPU information can be found at <a href="https://en.wikipedia.org/wiki/CPUID">https://en.wikipedia.org/wiki/CPUID</a>.</p>
+<p class="mce-root">One of then pieces of <kbd>CPUID</kbd> returned information is a flag that tells whether the system is running on a hypervisor. Hypervisor is a CPU feature that supports running VM guests. For anti-VM, if this flag were enabled, it would mean that the process is in a VM guest.</p>
+<p>The following x86 code checks whether the hypervisor flag is enabled:</p>
+<pre>mov eax, 1<br/>cpuid<br/>bt ecx, 31<br/>jc inhypervisor</pre>
+<p>The preceding code retrieves information from CPUID leaf 1. The 31<sup>st</sup> bit result in the <kbd>ecx</kbd> register is placed in the carry flag. If the bit is set to 1, the system is running on a hypervisor.</p>
+<p>Besides the hypervisor information, some specific VM software can be identified from the guest OS. The CPUID instruction can return a unique string ID to identify the VM software the guest is under. The following code checks whether it is running in a VMWare guest:</p>
+<pre>mov eax, 0x40000000<br/>cpuid<br/>cmp ebx, 'awMV'<br/>jne exit<br/>cmp ecx, 'MVer'<br/>jne exit<br/>cmp edx, 'eraw'<br/>jne exit</pre>
+<p>When values of the <kbd>ebx</kbd>, <kbd>ecx</kbd>, and <kbd>edx</kbd> registers are concatenated, it would read as <kbd>VMwareVMware</kbd>. Here is a list of known string IDs used by other VM software:</p>
+<table style="border-collapse: collapse;width: 100%" border="1">
+<tbody>
+<tr>
+<td><strong>VirtualBox 4.x</strong></td>
+<td><strong>VMware</strong></td>
+<td><strong>Hyper-V</strong></td>
+<td><strong>KVM</strong></td>
+<td><strong>Xen</strong></td>
+</tr>
+<tr>
+<td>VBoxVBoxVBox</td>
+<td>VMwareVMware</td>
+<td>Microsoft Hv</td>
+<td>KVMKVMKVM</td>
+<td>XenVMMXenVMM</td>
+</tr>
+</tbody>
+</table>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Anti-emulation tricks</h1>
+                
+            
+            
+                
+<p class="mce-root">Anti-emulation or anti-automated analysis are methods employed by a program to prevent moving further in its code if it identifies that it is being analyzed. The behavior of a program can be logged and analyzed using automated analysis tools such as Cuckoo Sandbox, Hybrid Analysis, and ThreatAnalyzer. The concept of these tricks is in being able to determine that the system in which a program is running is controlled and was set up by a user.</p>
+<p>Here are some things that distinguish a user-controlled environment and an automated analysis controlled system from each other:</p>
+<ul>
+<li>A user-controlled system has mouse movement.</li>
+<li>User controlled systems can include a dialog box that waits for a user to scroll down and then click on a button.</li>
+<li>The setup of an automated analysis system has the following attributes:<br/>
+<ul>
+<li>A low amount of physical memory</li>
+<li>A low disk size</li>
+<li>The free space on the disk may be nearly depleted</li>
+<li>The number of CPUs is only one</li>
+<li>The screen size is too small</li>
+</ul>
+</li>
+</ul>
+<p>Simply setting up a task that requires a user's manual input would determine that the program is running in a user-controlled environment. Similar to anti-VM, the VM guest setup would make use of the lowest possible requirements, such that it doesn't eat up the VM host's computer resources.</p>
+<p>Another anti-analysis trick checks for running analysis tools. These tools include the following:</p>
+<ul>
+<li>OllyDBG (<kbd>ollydbg.exe</kbd>)</li>
+<li>WinDbg (<kbd>windbg.exe</kbd>)</li>
+<li>IDA Pro (<kbd>ida.exe</kbd>, <kbd>idag.exe</kbd>, <kbd>ida64.exe</kbd>, <kbd>idag64.exe</kbd>)</li>
+<li>SysInternals Suite Tools, which includes the following:<br/>
+<ul>
+<li>Process Explorer (<kbd>procexp.ex</kbd>e)</li>
+<li>Process Monitor (<kbd>procmon.exe</kbd>)</li>
+<li>Regmon (<kbd>regmon.exe</kbd>)</li>
+<li>Filemon (<kbd>filemon.exe</kbd>)</li>
+<li>TCPView (<kbd>tcpview.exe</kbd>)</li>
+<li>Autoruns (<kbd>autoruns.exe</kbd>, <kbd>autorunsc.exe</kbd>)</li>
+</ul>
+</li>
+<li>Wireshark (<kbd>wireshark.exe</kbd>)</li>
+</ul>
+<p>A way around these tricks is for automated analysis to trick them back. For example, there are ways to mimic mouse movement and even read dialog window properties, scroll, and click buttons. A simple work-around for anti-analysis trick is to rename the tool we're using to monitor behaviors.</p>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Anti-dumping tricks</h1>
+                
+            
+            
+                
+<p>This method does not stop dumping memory to a file. This trick instead prevents the reverser from easily understanding the dumped data. Here are some examples of how this could be applied:</p>
+<ul>
+<li>
+<p>Portions of the PE header have been modified, so that the process dump gives the wrong properties.</p>
+</li>
+<li>
+<p>Portions of <kbd>PEB</kbd>, such as <kbd>SizeOfImage</kbd>, have been modified, so that the process dumping tool dumps wrong.</p>
+</li>
+<li>
+<p>Dumping is very useful for seeing decrypted data. Anti-dumping tricks would re-encrypt the decrypted code or data after use.</p>
+</li>
+</ul>
+<p>To overcome this trick, we can either identify or skip the code that modifies data. For re-encryption, we can also skip the code that re-encrypts, to leave it in a decrypted state.</p>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  
+<div><h1 class="header-title">Summary</h1>
+                
+            
+            
+                
+<p>Malware have been evolving by adding new techniques to evade anti-virus and reverse engineering.  These techniques include process hollowing, process injection, process doppelganging, code anti-debugging, and anti-analysis.  Process hollowing and process doppelganging techniques basically overwrites the image of a legit process with a malicious image.  This masks the malicious program with a legit process.  Process injection, on the other hand, inserts and runs code in a remote process space.</p>
+<p class="mce-root">Anti-debugging, anti-analysis, and the other tricks discussed in this chapter are obstacles for reverse engineering. But knowing the concept for these tricks enables us to overcome them. Doing static analysis with deadlisting, we can identify and then skip the tricky code, or in the case of SEH, place a breakpoint at the handler.</p>
+<p class="mce-root">We discussed anti-debugging tricks and their technique of using errors to cause exceptions and hold the rest of its code at the handler. We also discussed other tricks, including anti-VM and anti-emulation tricks, which are able to identify being in an analysis environment.</p>
+<p>In the next chapter, we will be using what we have learned here with an actual reverse engineering analysis of an executable file.</p>
+
+
+            
+
+            
+        
+    </div>
+
+
+
+  </body></html>

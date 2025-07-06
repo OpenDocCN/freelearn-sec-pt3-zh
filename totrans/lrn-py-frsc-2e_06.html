@@ -1,0 +1,1136 @@
+<html><head></head><body>
+        
+
+                            
+                    <h1 class="header-title">Extracting Artifacts from Binary Files</h1>
+                
+            
+            
+                
+<p>Parsing binary data is an indispensable skill. Inevitably, we are tasked with analyzing artifacts that are unfamiliar or undocumented. This issue is compounded when the file of interest is a binary file. Rather than analyzing a text-like file, we often need to use our favorite hex editor to begin reverse engineering the file's internal binary structure. Reverse engineering the underlying logic of binary files is out of scope for this chapter. Instead, we will work with a binary object whose structure is already well-known. This will allow us to highlight how to use Python to parse these binary structures automatically once the internal structure is understood. In this chapter, we will examine the <kbd>UserAssist</kbd> registry key from the <kbd>NTUSER.DAT</kbd> registry hive.</p>
+<p>This chapter illustrates how to extract Python objects from binary data and generate an automatic Excel report. We will use three modules to accomplish this task: <kbd>struct</kbd>, <kbd>yarp</kbd>, and <kbd>xlsxwriter</kbd>. Although the <kbd>struct</kbd> module is included in the standard installation of Python, both <kbd>yarp</kbd> and <kbd>xlsxwriter</kbd> must be installed separately. We will cover how to install these modules in their respective sections.</p>
+<p>The <kbd>struct</kbd> library is used to parse the binary object into Python objects. Once we have parsed the data from the binary object, we can write our findings into a report. In past chapters, we have reported results in the CSV or HTML files. In this chapter, we will create an Excel report containing tables and summary charts of the data.</p>
+<p>In this chapter, we will cover the following topics:</p>
+<ul>
+<li>Understanding the <kbd>UserAssist</kbd> artifact and its binary structure</li>
+<li>An introduction to ROT-13 encoding and decoding</li>
+<li>Installing and manipulating registry files with the <kbd>yarp</kbd> module</li>
+<li>Using <kbd>struct</kbd> to extract Python objects from binary data</li>
+<li>Creating worksheets, tables, and charts using <kbd>xlsxwriter</kbd></li>
+</ul>
+<p>The code for this chapter was developed and tested using Python 2.7.15 and Python 3.7.1</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">UserAssist</h1>
+                
+            
+            
+                
+<p>The <kbd>UserAssist</kbd> artifact identifies <strong>graphical user interface</strong> (<strong>GUI</strong>) application execution on Windows machines. This artifact stores differing amounts of information depending on the version of Windows OS. To identify the data specific to certain applications, we have to decode the registry key name as it is stored as the ROT13-encoded path and name of the application. As an example, the <kbd>UserAssist</kbd> value data for Windows XP and Vista is 16 bytes in length, and it stores the following:</p>
+<ul>
+<li>The last execution time in UTC (in FILETIME format)</li>
+<li>Execution count</li>
+<li>Session ID</li>
+</ul>
+<p>The last execution time information is stored as a Windows FILETIME object. This is another common representation of time that differs from the UNIX timestamps we've seen in previous chapters. We will show how this timestamp can be interpreted within Python and displayed as human-readable, later in this chapter. The execution count represents the number of times the application has been launched.</p>
+<p>Windows 7 and higher store even more data than their predecessors. Windows 7 <kbd>UserAssist</kbd> values are 72 bytes in length and, in addition to the three previously mentioned artifacts, store the following:</p>
+<ul>
+<li>Focus count</li>
+<li>Focus time</li>
+</ul>
+<p>The focus count is the number of times the application was clicked on to bring it back into focus. For example, when you have two applications opened, only one is in focus at a given time. The other application is inactive until it is clicked on again. The focus time is the total amount of time a given application was in focus, and it is expressed in milliseconds.</p>
+<p>This registry artifact does not store the execution of command-line-based programs or GUI applications that are Windows startup programs.</p>
+<p>The <kbd>UserAssist</kbd> registry key is located within the <kbd>NTUSER.DAT</kbd> registry hive found in the root folder of every user's home directory. Within this hive, the <kbd>UserAssist</kbd> key is found at <kbd>SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\UserAssist</kbd>. Subkeys of the <kbd>UserAssist</kbd> key consist of known GUIDs and their respective count subkey. Within the count subkey of each GUID, there may be numerous values related to program execution. This structure is demonstrated here:</p>
+<pre>SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\UserAssist 
+.{GUID_1} 
+..Count 
+.{GUID_2} 
+..Count </pre>
+<p>The values within the count subkey store the application execution information we are interested in parsing. Each value's name under the count subkey represents the ROT-13-encoded path and name of the executable. This makes it difficult to identify executables at first glance. Let's fix that.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Understanding the ROT-13 substitution cipher – rot13.py</h1>
+                
+            
+            
+                
+<p>ROT-13 is a simple substitution cipher that transforms text and substitutes each character with another, thirteen characters after it. For example, the letter <kbd>a</kbd> would be substituted with the letter <kbd>n</kbd> and vice versa. Elements such as numbers, special characters, and a character's case are unaffected by the cipher. While Python does offer a built-in way of decoding ROT-13, we are going to pretend that it doesn't exist and manually decode ROT-13 data. We will use the built-in ROT-13 decoding method in our script.</p>
+<p>Before we pretend that this functionality doesn't exist, let's quickly use it to illustrate how we could encode and decode ROT-13 data with Python 2:</p>
+<pre><strong>&gt;&gt;&gt; original_data = 'Why, ROT-13?'</strong> 
+<strong>&gt;&gt;&gt; encoded_data = original_data.encode('rot-13')</strong> 
+<strong>&gt;&gt;&gt; print encoded_data</strong> 
+<strong>Jul, EBG-13?</strong> 
+<strong>&gt;&gt;&gt; print encoded_data.decode('rot-13')</strong> 
+<strong>Why, ROT-13?</strong> </pre>
+<p>Decoding or encoding with ROT-13 in Python 3 requires a slightly different approach with the native <kbd>codecs</kbd> library:</p>
+<pre><strong>&gt;&gt;&gt; import codecs</strong><br/><strong>&gt;&gt;&gt; enc = codecs.getencoder('rot-13')</strong><br/><strong>&gt;&gt;&gt; enc('Why, ROT-13?')</strong><br/><strong>('Jul, EBG-13?', 12)</strong><br/><strong>&gt;&gt;&gt; enc('Why, ROT-13?')[0]</strong><br/><strong>'Jul, EBG-13?'</strong></pre>
+<p>Now, let's look at how you might approach this if it weren't already built-in. While you should never reinvent the wheel, we want to take this opportunity to practice list operations and introduce a tool to audit code. The code from the <kbd>rot13.py</kbd> script in the code bundle for this chapter is demonstrated next.</p>
+<p>The <kbd>rot_code()</kbd> function defined at line 32 accepts a ROT-13-encoded or ROT-13-decoded string. On line 39, we have <kbd>rot_chars</kbd>, a list of characters in the alphabet. As we iterate through each character in the supplied input, we will use this list to substitute the character with its counterpart 13 elements away. As we execute this substitution, we will store them in the substitutions list instantiated in line 43:</p>
+<pre>032 def rot_code(data):<br/>033    """<br/>034     The rot_code function encodes/decodes data using string<br/>035     indexing<br/>036     :param data: A string<br/>037     :return: The rot-13 encoded/decoded string<br/>038     """<br/>039     rot_chars = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i',<br/>040     'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't',<br/>041     'u', 'v', 'w', 'x', 'y', 'z']<br/>042 <br/>043     substitutions = []</pre>
+<p>On line 46, we begin to walk through each character, <kbd>c</kbd>, in the data string. On line 49, we use a conditional statement to determine if the character is uppercase or lowercase. We do this to preserve the case of the character as we process it:</p>
+<pre>045     # Walk through each individual character<br/>046     for c in data:<br/>047 <br/>048         # Walk through each individual character<br/>049         if c.isupper():</pre>
+<p>On line 54, we attempt to identify the index of the character in our list. If the character is a non-alphabetical character, we will receive a <kbd>ValueError</kbd> exception. Non-alphabetical characters, such as numbers or special characters, are appended to the substitutions list unmodified as these types of values are not encoded by ROT-13:</p>
+<pre>051             try:<br/>052                 # Find the position of the character in<br/>053                 # rot_chars list<br/>054                 index = rot_chars.index(c.lower())<br/>055             except ValueError:<br/>056                 substitutions.append(c)<br/>057                 continue</pre>
+<p>Once we have found the index of the character, we can calculate the corresponding index 13 characters away by subtracting 13. For values less than 13, this will be a negative number. Fortunately, list indexing supports negative numbers and works splendidly here. Before appending the corresponding character to our substitutions list, we use the string <kbd>upper()</kbd> function to return the character to its original case:</p>
+<pre>059             # Calculate the relative index that is 13<br/>060             # characters away from the index<br/>061             substitutions.append(<br/>062             (rot_chars[(index-13)]).upper())</pre>
+<p>The <kbd>else</kbd> statement of the conditional block handles lowercase characters. The following code block is substantially the same functionality as what we just covered. The difference is that we never use lowercase or uppercase because the character is already in the proper case to be processed:</p>
+<pre>064         else:<br/>065 <br/>066             try:<br/>067                 # Find the position of the character in<br/>068                 # rot_chars list<br/>069                 index = rot_chars.index(c)<br/>070             except ValueError:<br/>071                 substitutions.append(c)<br/>072                 continue<br/>073 <br/>074             substitutions.append(rot_chars[((index-13))])</pre>
+<p>Finally, on line 76, we collapse the substitutions list to a string using the <kbd>join()</kbd> method. We join on an empty string so that each element of the list is appended without any separating characters. If this script is invoked from the command line, it will print out the processed string, <kbd>Jul, EBG-13?</kbd>, which we know corresponds to <kbd>ROT-13?</kbd>. We have the following code:</p>
+<pre>   
+076     return ''.join(substitutions)<br/>077 <br/>078 if __name__ == '__main__':<br/>079     print(rot_code('Jul, EBG-13?'))</pre>
+<p>The following screenshot illustrates how we can import our <kbd>rot13</kbd> module and call the <kbd>rot_code()</kbd> method to either decode or encode a string:</p>
+<div><img src="img/b57fa910-b502-48b3-9555-b4d80ba72530.png"/></div>
+<p>Make sure that the Python interactive prompt is opened in the same directory as the <kbd>rot13.py</kbd> script. Otherwise, an <kbd>ImportError</kbd> will be generated.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Evaluating code with timeit</h1>
+                
+            
+            
+                
+<p>Let's now audit our module and see if it is superior to the built-in method (spoiler: it's not!) We mentioned that you should never reinvent the wheel unless absolutely required. There's a good reason: most built-in or third-party solutions have been optimized for performance and security. How does our <kbd>rot_code()</kbd> function stack up against the built-in function? We can use the <kbd>timeit</kbd> module to calculate the time a function or line of code takes to execute.</p>
+<p>Let's compare the difference between the two methods of decoding ROT-13 values. Supplying the Python interpreter with <kbd>-m</kbd> executes a named module if its parent directory is found in the <kbd>sys.path</kbd> list. The <kbd>timeit</kbd> module can be called directly from the command line using the <kbd>-m</kbd> switch.</p>
+<p>We can see what directories are in scope by importing the <kbd>sys</kbd> module and printing <kbd>sys.path</kbd>. To extend the items available through <kbd>sys.path</kbd>, we can append new items to it using list attributes, such as append or extend.</p>
+<p>The <kbd>timeit</kbd> module supports a variety of switches, and can be used to run individual lines of code or entire scripts. The <kbd>-v</kbd> switch prints more verbose output, and is increasingly more verbose when supplied with additional <kbd>v</kbd> switches. The <kbd>-n</kbd> switch is the number of times to execute the code or script (for example, the number of executions per measuring period). We can use the <kbd>-r</kbd> switch to specify how many times to repeat a measurement (defaults to <kbd>3</kbd>). Increasing this will allow us to calculate a more accurate average execution speed. Finally, the <kbd>-s</kbd> switch is a statement to be run once on the first round of execution, in this case, to allow us to import the script we made. For further documentation, please visit <a href="http://docs.python.org/3/library/timeit.html">http://docs.python.org/3/library/timeit.html</a> or run <kbd>python -m timeit -h</kbd>.</p>
+<p>The output generated on our computer when timing both methods is captured in the following screenshot. Performance may vary depending on the machine. For our first test, we measured the time it took to run three one million cycles of our script. On the first cycle, we imported our module, <kbd>rot13</kbd>, before calling it. On the second test, we similarly measured three one-million cycles of the built-in Python 2 <kbd>decode()</kbd> functions:</p>
+<div><img src="img/4a42bb2c-e3a3-452b-8dbe-5b982a4a4104.png" style="width:43.17em;height:13.17em;"/></div>
+<p>It turns out that there is good reason to not reinvent the wheel. Our custom <kbd>rot_code()</kbd> function is significantly slower than the built-in method when run a thousand times. Odds are we will not call this function a thousand times; for the <kbd>UserAssist</kbd> key, this function will likely be called only hundreds of times. However, if we were working with more data or had a particularly slow script, we could begin timing individual functions or lines of code to identify poorly optimized code.</p>
+<p>As an aside, you can also use the <kbd>time.time()</kbd> function before and after a function call and calculate the elapsed time by subtracting the two times. This alternative approach is slightly simpler to implement but not as robust.</p>
+<p>You have now learned about the <kbd>UserAssist</kbd> artifact, ROT-13 encoding, and a mechanism to audit our code. Let's shift focus and examine other modules that will be used in this chapter. One of those modules, <kbd>yarp</kbd>, will be used to access and interact with the <kbd>UserAssist</kbd> key and values.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Working with the yarp library</h1>
+                
+            
+            
+                
+<p>The <strong>yarp</strong> (short for <strong>Yet Another Registry Parser</strong>) library can be used to obtain keys and values from registry hives. Python provides a built-in registry module named <kbd>_winreg</kbd>; however, this module only works on Windows machines. The <kbd>_winreg</kbd> module interacts with the registry on the system running the module. It does not support opening external registry hives.</p>
+<p>The <kbd>yarp</kbd> library allows us to interact with supplied registry hives and can be run on non-Windows machines. The <kbd>yarp</kbd> library can be downloaded from <a href="https://github.com/msuhanov/yarp">https://github.com/msuhanov/yarp</a>. On the project's GitHub page, click on the releases section to see a list of all stable versions and download the desired version. For this chapter, we use version 1.0.25. Once the archived file is downloaded and extracted, we can run the included <kbd>setup.py</kbd> file to install the module. In a Command Prompt, execute the following code in the module's top-level directory:</p>
+<pre><strong>python setup.py install</strong> </pre>
+<p>This should install the <kbd>yarp</kbd> library successfully on your machine. We can confirm by opening the Python interactive prompt and typing <kbd>import yarp</kbd>. We will receive an error if the module was not installed successfully. With <kbd>yarp</kbd> installed, let's begin learning how we can leverage this module for our needs.</p>
+<p>First, we need to import the <kbd>Registry</kbd> class from the <kbd>yarp</kbd> module. Then, we use the <kbd>RegistryHive</kbd> function and pass it the registry object we want to query. In this example, we have copied the <kbd>NTUSER.DAT</kbd> registry file to our current working directory, which allows us to supply just the filename and not the path. Next, we use the <kbd>find_key</kbd> method to navigate to our key of interest. In this case, we are interested in the <kbd>RecentDocs</kbd> registry key. This key contains recent active files separated by extension:</p>
+<pre><strong>&gt;&gt;&gt; from yarp import Registry</strong><br/><strong>&gt;&gt;&gt; reg_file = open('NTUSER.DAT', 'rb')
+&gt;&gt;&gt; reg = Registry.RegistryHive(reg_file) 
+&gt;&gt;&gt; recent_docs = reg.find_key('SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\RecentDocs')</strong></pre>
+<p>If we print the <kbd>recent_docs</kbd> variable, we can see that it contains 151 values with 75 subkeys, which may contain additional values and subkeys. In addition, we can use the <kbd>last_written_timestamp()</kbd> method to see the last written time of the registry key:</p>
+<pre><strong>&gt;&gt;&gt; print(recent_docs) 
+RegistryKey, name: RecentDocs, subkeys: 75, values: 151
+ 
+&gt;&gt;&gt; print(recent_docs.last_written_timestamp()) # Last Written Time 
+datetime.datetime(2018, 11, 20, 3, 14, 40, 286516)</strong> </pre>
+<p>We can iterate over the values in the <kbd>recent_docs</kbd> key using the <kbd>subkeys()</kbd> function in a for loop. For each value, we can access the <kbd>name()</kbd>, <kbd>value()</kbd>, and <kbd>values_count()</kbd> methods, among others. When accessing a value (as opposed to a subkey), we can also access the value's raw data by using the <kbd>raw_data()</kbd> function. For our purposes, we use the <kbd>raw_data()</kbd> function when we want to work with the underlying binary data. We have the following code:</p>
+<pre><strong>&gt;&gt;&gt; for i, value in enumerate(recent_docs.subkeys()): 
+...     print('{}) {}: {}'.format(i, value.name(), value.values_count())) 
+...  
+0) .001: 2</strong><br/><strong>1) .1: 2</strong><br/><strong>2) .7z: 2</strong><br/><strong>3) .AAE: 2
+... </strong> </pre>
+<p>Another useful feature of the <kbd>yarp</kbd> module is a provided means of querying for a certain subkey or value. This is provided by the <kbd>subkey()</kbd>, <kbd>value()</kbd>, or <kbd>find_key()</kbd> functions. A <kbd>None</kbd> value is generated when a subkey is not present when using the <kbd>subkey()</kbd> function:</p>
+<pre><strong>&gt;&gt;&gt; if recent_docs.subkey('.docx'): 
+...     print('Found docx subkey.') 
+...  
+Found docx subkey. 
+&gt;&gt;&gt; if recent_docs.subkey('.1234abcd') is None: 
+...     print('Did not find 1234abcd subkey.') 
+...  
+None</strong></pre>
+<p>The <kbd>find_key()</kbd> function takes a path and can find a subkey recursively through multiple levels. The <kbd>subkey()</kbd> and <kbd>value()</kbd> functions search only child elements. We can use these functions to confirm that a key or value exists before trying to navigate to them. <kbd>yarp</kbd> has a number of other relevant features not covered here, including recovering deleted registry keys and values, carving registry keys and values, and supporting transaction log files.</p>
+<p>With the <kbd>yarp</kbd> module, finding keys and their values is straightforward. However, when the values are not strings and are instead binary data, we have to rely on another module to make sense of the mess. For all binary needs, the <kbd>struct</kbd> module is an excellent candidate.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Introducing the struct module</h1>
+                
+            
+            
+                
+<p>The <kbd>struct</kbd> module is part of the standard Python library and is incredibly useful. The <kbd>struct</kbd> library is used to convert C structures to or from binary data. Full documentation for this module can be found at <a href="http://docs.python.org/3/library/struct.html">http://docs.python.org/3/library/struct.html</a>.</p>
+<p>For forensic purposes, the most important function in the struct module is the <kbd>unpack()</kbd> method. This method takes a format string representing the objects to be extracted from the binary data. It is important that the size dictated by the format string correlates to the size of the binary data supplied to the function.</p>
+<p>The format string informs the <kbd>unpack()</kbd> function of what kind of data is in the binary object and how it should be interpreted. If we do not correctly identify the types of data or try to unpack more or less than what is provided, the <kbd>struct</kbd> module will throw an exception. The following is a table of the most common characters we use to build our format strings. The standard size column indicates the expected size of the binary object in bytes:</p>
+<table border="1" style="border-collapse: collapse;width: 55.2957%">
+<tbody>
+<tr>
+<td style="width: 13%">
+<p class="TableColumnHeadingPACKT"><strong>Character</strong></p>
+</td>
+<td style="width: 16%">
+<p class="TableColumnHeadingPACKT"><strong>Python object</strong></p>
+</td>
+<td style="width: 23.3719%">
+<p class="TableColumnHeadingPACKT"><strong>Standard size (bytes)</strong></p>
+</td>
+</tr>
+<tr>
+<td style="width: 13%">
+<p class="TableColumnContentPACKT"><kbd>h</kbd></p>
+</td>
+<td style="width: 16%">
+<p class="TableColumnContentPACKT">Integer</p>
+</td>
+<td style="width: 23.3719%">
+<p class="TableColumnContentPACKT">2</p>
+</td>
+</tr>
+<tr>
+<td style="width: 13%">
+<p class="TableColumnContentPACKT"><kbd>i</kbd></p>
+</td>
+<td style="width: 16%">
+<p class="TableColumnContentPACKT">Integer</p>
+</td>
+<td style="width: 23.3719%">
+<p class="TableColumnContentPACKT">4</p>
+</td>
+</tr>
+<tr>
+<td style="width: 13%">
+<p class="TableColumnContentPACKT"><kbd>q</kbd></p>
+</td>
+<td style="width: 16%">
+<p class="TableColumnContentPACKT">Integer</p>
+</td>
+<td style="width: 23.3719%">
+<p class="TableColumnContentPACKT">8</p>
+</td>
+</tr>
+<tr>
+<td style="width: 13%">
+<p class="TableColumnContentPACKT"><kbd>s</kbd></p>
+</td>
+<td style="width: 16%">
+<p class="TableColumnContentPACKT">String</p>
+</td>
+<td style="width: 23.3719%">
+<p class="TableColumnContentPACKT">1</p>
+</td>
+</tr>
+<tr>
+<td style="width: 13%">
+<p class="TableColumnContentPACKT"><kbd>x</kbd></p>
+</td>
+<td style="width: 16%">
+<p class="TableColumnContentPACKT">N/A</p>
+</td>
+<td style="width: 23.3719%">
+<p class="TableColumnContentPACKT">N/A</p>
+</td>
+</tr>
+</tbody>
+</table>
+<p> </p>
+<p>There are additional characters that can be used in format strings. For example, other characters can interpret binary data as floats, Booleans, and other various C structures. The <kbd>x</kbd> character is simply a padding character that can be used to ignore bytes we're not interested in.</p>
+<p>Additionally, an optional starting character can be used to define byte order, size, and alignment. The default is native byte order, size, and alignment. As we cannot predict the environment the script might be running on, it is often not advisable to use any native option. Instead, we can specify little or big endian byte order with standard sizes using the <kbd>&lt;" and "&gt;</kbd> symbols, respectively. Let's practice with a few examples.</p>
+<p>First, open an interactive prompt and import <kbd>struct</kbd>. Next, we assign 0x01000000 to a variable. In Python 3, hex notation is specified by an escape character and an <kbd>x</kbd> before every two hexadecimal characters. The length of our hex data is four bytes, and to interpret this as an integer, we use the <kbd>i</kbd> character. Interpreting the hex as a little endian integer returns a value of <kbd>1</kbd>:</p>
+<pre><strong>&gt;&gt;&gt; import struct 
+&gt;&gt;&gt; raw_data = b'\x01\x00\x00\x00' # Integer (1) 
+&gt;&gt;&gt; print(struct.unpack('&lt;i', raw_data)) # Little-Endian 
+(1,) </strong></pre>
+<p>The <kbd>&lt;i</kbd> and <kbd>&gt;i</kbd> represents the string format. We are telling the <kbd>unpack()</kbd> method to interpret <kbd>raw_data</kbd> as a four-byte integer in little or big endian byte ordering. The struct module returns the unpacked data as a tuple. By default, Python will print a single element tuple in parenthesis with a trailing comma, as seen in the following output:</p>
+<pre><strong>&gt;&gt;&gt; print(struct.unpack('&gt;i', raw_data)) # Big-Endian 
+(16777216,) 
+&gt;&gt;&gt; print(type(struct.unpack('&gt;i', raw_data))) 
+&lt;class 'tuple'&gt; </strong></pre>
+<p>Let's look at another example. We can interpret <kbd>rawer_data</kbd> as three 4-byte integers by using three <kbd>i</kbd> characters. Alternatively, we can prepend a number to the format character to parse multiple values in a row. In both cases, when interpreted as a little endian, we receive the integers <kbd>1</kbd>, <kbd>5</kbd>, and <kbd>4</kbd>. If we aren't interested in the middle integer, we can skip it with the <kbd>4x</kbd> character:</p>
+<pre><strong>&gt;&gt;&gt; rawer_data = b'\x01\x00\x00\x00\x05\x00\x00\x00\x04\x00\x00\x00' 
+&gt;&gt;&gt; print(struct.unpack('&lt;iii', rawer_data)) 
+(1, 5, 4) 
+&gt;&gt;&gt; print(struct.unpack('&lt;3i', rawer_data)) 
+(1, 5, 4) 
+&gt;&gt;&gt; print(struct.unpack('&lt;i4xi', rawer_data)) # "skip" 4 bytes 
+(1, 4) </strong></pre>
+<p>We raised the possibility of errors with struct earlier in this section. Now, let's purposely create errors with struct to understand what they mean. We receive an error for the following two examples because we tried to <kbd>unpack()</kbd> more or fewer values than were actually present in the <kbd>rawer_data</kbd> variable used previously. This can cause some initial frustration when trying to unpack a large amount of binary data. Always be sure to check the math, the byte order, and whether the size is standard or native:</p>
+<pre><strong>&gt;&gt;&gt; print(struct.unpack('&lt;4i', rawer_data)) 
+struct.error: unpack requires a buffer of 16 bytes
+&gt;&gt;&gt; print(struct.unpack('&lt;2i', rawer_data)) 
+struct.error: unpack requires a buffer of 8 bytes</strong> </pre>
+<p>Let's take it one step further and parse a <kbd>UserAssist</kbd> value using the struct module. We will parse a Windows XP value, which represents the easiest scenario as it is only 16 bytes in length. The byte offsets of a Windows XP UserAssist value are recorded in the following table:</p>
+<table border="1" style="border-collapse: collapse;width: 41.6781%">
+<tbody>
+<tr>
+<td style="width: 14%">
+<p class="TableColumnHeadingPACKT"><strong>Byte offset</strong></p>
+</td>
+<td style="width: 14%">
+<p class="TableColumnHeadingPACKT"><strong>Value</strong></p>
+</td>
+<td style="width: 10.7355%">
+<p class="TableColumnHeadingPACKT"><strong>Object</strong></p>
+</td>
+</tr>
+<tr>
+<td style="width: 14%">
+<p class="TableColumnContentPACKT">0-3</p>
+</td>
+<td style="width: 14%">
+<p class="TableColumnContentPACKT">Session ID</p>
+</td>
+<td style="width: 10.7355%">
+<p class="TableColumnContentPACKT">Integer</p>
+</td>
+</tr>
+<tr>
+<td style="width: 14%">
+<p class="TableColumnContentPACKT">4-7</p>
+</td>
+<td style="width: 14%">
+<p class="TableColumnContentPACKT">Count</p>
+</td>
+<td style="width: 10.7355%">
+<p class="TableColumnContentPACKT">Integer</p>
+</td>
+</tr>
+<tr>
+<td style="width: 14%">
+<p class="TableColumnContentPACKT">8-15</p>
+</td>
+<td style="width: 14%">
+<p class="TableColumnContentPACKT">FILETIME</p>
+</td>
+<td style="width: 10.7355%">
+<p class="TableColumnContentPACKT">Integer</p>
+</td>
+</tr>
+</tbody>
+</table>
+<p> </p>
+<p>The following hex dump is saved into the file <kbd>Neguhe Qrag.bin</kbd>. The file is packaged with the code bundle that can be downloaded from <a href="https://packtpub.com/books/content/support">https://packtpub.com/books/content/support</a>:</p>
+<pre>0000: 0300 0000 4800 0000  |....H... 
+0010: 01D1 07C4 FA03 EA00  |........ </pre>
+<p>When unpacking data from a file object, we need to open it in the <kbd>rb</kbd> mode rather than the default <kbd>r</kbd> mode to ensure that we can read the data as bytes. Once we have the raw data, we can parse it using our specific character format. We know that the first 8 bytes are two 4-byte integers (<kbd>2i</kbd>), and then one 8-byte integer (<kbd>q</kbd>) representing the FILETIME of the <kbd>UserAssist</kbd> value. We can use indexing on the returned tuple to print out each extracted integer:</p>
+<pre><strong>&gt;&gt;&gt; rawest_data = open('Neguhe Qrag.bin', 'rb').read()<br/>&gt;&gt;&gt; parsed_data = struct.unpack('&lt;2iq', rawest_data)<br/>&gt;&gt;&gt; print('Session ID: {}, Count: {}, FILETIME: {}'.format(parsed_data[0], parsed_data[1], parsed_data[2]))<br/>...<br/>Session ID: 3, Count: 72, FILETIME: 6586952011847425 </strong></pre>
+<p>Once we have parsed the <kbd>UserAssist</kbd> values in our script, we will present the results in a report-ready format. In the past, we have used CSV and HTML for output reports. Frequently, reports are often reviewed in spreadsheet format using software such as Microsoft Excel. To provide reports that fully leverage this software, we will learn how to create XSLX-formatted spreadsheets as an output of our script.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Creating spreadsheets with the xlsxwriter module</h1>
+                
+            
+            
+                
+<p><kbd>xlsxwriter</kbd> (version 1.1.2) is a useful third-party module that can write data to Excel spreadsheets. There are a plethora of Excel-supported modules for Python, but we chose this module because it was highly robust and well-documented. As the name suggests, this module can only be used to write Excel spreadsheets. The <kbd>xlsxwriter</kbd> module supports cell and conditional formatting, charts, tables, filters, and macros, among others. This module can be installed with <kbd>pip</kbd>:</p>
+<pre><strong>pip install xlsxwriter==1.1.2</strong> </pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Adding data to a spreadsheet</h1>
+                
+            
+            
+                
+<p>Let's quickly create a script named <kbd>simplexlsx.v1.py</kbd> for this example. On lines 2 and 3, we import the <kbd>xlsxwriter</kbd> and <kbd>datetime</kbd> modules. The data we are going to be plotting, including the column names, is stored as nested lists in the <kbd>school_data</kbd> variable. Each list is a row of information we will want to store in the Excel spreadsheet, with the first element containing the column names:</p>
+<pre>002 import xlsxwriter<br/>003 from datetime import datetime
+...  
+033 school_data = [['Department', 'Students', 'Cumulative GPA',<br/>034                 'Final Date'],<br/>035                ['Computer Science', 235, 3.44,<br/>036                datetime(2015, 7, 23, 18, 0, 0)],<br/>037                ['Chemistry', 201, 3.26,<br/>038                datetime(2015, 7, 25, 9, 30, 0)],<br/>039                ['Forensics', 99, 3.8,<br/>040                datetime(2015, 7, 23, 9, 30, 0)],<br/>041                ['Astronomy', 115, 3.21,<br/>042                datetime(2015, 7, 19, 15, 30, 0)]]</pre>
+<p>The <kbd>write_xlsx()</kbd> function, defined on line 45, is responsible for writing our data to a spreadsheet. First, we must create our Excel spreadsheet using the <kbd>Workbook()</kbd> function and supplying the desired name of the file as an input. On line 53, we create a worksheet using the <kbd>add_worksheet()</kbd> function. This function can take the desired title of the worksheet or use the default name <kbd>Sheet N</kbd>, where <kbd>N</kbd> represents a number:</p>
+<pre>045 def write_xlsx(data):<br/>046     """<br/>047     The write_xlsx function creates an XLSX spreadsheet from a<br/>048     list of lists<br/>049     :param data: A list of lists to be written in the spreadsheet<br/>050     :return: Nothing<br/>051     """<br/>052     workbook = xlsxwriter.Workbook('MyWorkbook.xlsx')<br/>053     main_sheet = workbo<br/>ok.add_worksheet('MySheet')</pre>
+<p>The <kbd>date_format</kbd> variable stores a custom number format we will use to display our <kbd>datetime</kbd> objects in the desired human-readable format. On line 58, we begin to enumerate through our data to write. The conditional on line 59 is used to handle the first item, the column names, in the data list. We use the <kbd>write()</kbd> function and supply a numerical row and column. Alternatively, for instance, rather than using numerical values to represent the column and row to write the data to, we could have also used Excel notation such as <kbd>A1</kbd> to signify the data should be written to the first column and row:</p>
+<pre>055     date_format = workbook.add_format(<br/>056     {'num_format': 'mm/dd/yy hh:mm:ss AM/PM'})<br/>057 <br/>058     for i, entry in enumerate(data):<br/>059         if i == 0:<br/>060             main_sheet.write(i, 0, entry[0])<br/>061             main_sheet.write(i, 1, entry[1])<br/>062             main_sheet.write(i, 2, entry[2])<br/>063             main_sheet.write(i, 3, entry[3])</pre>
+<p>The <kbd>write()</kbd> method will try to write the appropriate data type for an object when it can detect that data's type. However, we can use different write methods to specify the correct format. These specialized writers preserve the data type in Excel, so we can use the appropriate data type-specific Excel functions for the object. Since we know the data types within the entry list, we can manually specify when to use the general <kbd>write()</kbd> function versus the <kbd>write_number()</kbd> function:</p>
+<pre>064         else:<br/>065             main_sheet.write(i, 0, entry[0])<br/>066             main_sheet.write_number(i, 1, entry[1])<br/>067             main_sheet.write_number(i, 2, entry[2])</pre>
+<p>For the fourth entry in the list, the <kbd>datetime</kbd> object, we supply the <kbd>write_datetime()</kbd> function with our <kbd>date_format</kbd> defined on line 55. After our data is written to the workbook, we use the <kbd>close()</kbd> function to close and save our spreadsheet. On line 73, we call the <kbd>write_xlsx()</kbd> function, passing it the <kbd>school_data</kbd> list we built earlier, as follows:</p>
+<pre>068             main_sheet.write_datetime(i, 3, entry[3], date_format)<br/>069 <br/>070     workbook.close()<br/>071 <br/>072 <br/>073 write_xlsx(school_data)</pre>
+<p>A table of <kbd>write</kbd> functions and the objects they preserve is presented as follows:</p>
+<table border="1" style="border-collapse: collapse;width: 57.359%">
+<tbody>
+<tr>
+<td style="width: 22%">
+<p class="TableColumnHeadingPACKT"><strong>Function</strong></p>
+</td>
+<td style="width: 33.438%">
+<p class="TableColumnHeadingPACKT"><strong>Supported objects</strong></p>
+</td>
+</tr>
+<tr>
+<td style="width: 22%">
+<p class="TableColumnContentPACKT"><kbd>write_string</kbd></p>
+</td>
+<td style="width: 33.438%">
+<p class="TableColumnContentPACKT"><kbd>str</kbd></p>
+</td>
+</tr>
+<tr>
+<td style="width: 22%">
+<p class="TableColumnContentPACKT"><kbd>write_number</kbd></p>
+</td>
+<td style="width: 33.438%">
+<p class="TableColumnContentPACKT"><kbd>int</kbd>, <kbd>float</kbd>, <kbd>long</kbd></p>
+</td>
+</tr>
+<tr>
+<td style="width: 22%">
+<p class="TableColumnContentPACKT"><kbd>write_datetime</kbd></p>
+</td>
+<td style="width: 33.438%">
+<p class="TableColumnContentPACKT"><kbd>datetime</kbd> objects</p>
+</td>
+</tr>
+<tr>
+<td style="width: 22%">
+<p class="TableColumnContentPACKT"><kbd>write_boolean</kbd></p>
+</td>
+<td style="width: 33.438%">
+<p class="TableColumnContentPACKT"><kbd>bool</kbd></p>
+</td>
+</tr>
+<tr>
+<td style="width: 22%">
+<p class="TableColumnContentPACKT"><kbd>write_url</kbd></p>
+</td>
+<td style="width: 33.438%">
+<p class="TableColumnContentPACKT"><kbd>str</kbd></p>
+</td>
+</tr>
+</tbody>
+</table>
+<p>When the script is invoked at the command line, a spreadsheet named <kbd>MyWorkbook.xlsx</kbd> is created. When we convert this to a table, we can sort by any of our values and use Excel functions and features we are all familiar with. Had we failed to preserve the data types, values such as our dates might be displayed differently than intended:</p>
+<div><img src="img/6ebf556b-de5e-4dcd-90d4-4920d67fd960.png" style="width:38.92em;height:10.75em;"/></div>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Building a table</h1>
+                
+            
+            
+                
+<p>Being able to write data to an Excel file and preserve the object type is already a step up over CSV, but we can do better. Often, the first thing an examiner will do with an Excel spreadsheet is convert the data into a table and begin the frenzy of sorting and filtering the data set. However, we can convert our data range to a table using <kbd>xlsxwriter</kbd>. In fact, writing a table with <kbd>xlsxwriter</kbd> is arguably easier than writing each row individually. The code discussed in this section is represented in the <kbd>simplexlsx.v2.py</kbd> file.</p>
+<p>For this iteration, we have removed the initial list in the <kbd>school_data</kbd> variable that contained the column names. Our new <kbd>write_xlsx()</kbd> function writes the header separately, which we will see later:</p>
+<pre>034 school_data = [['Computer Science', 235, 3.44,<br/>035                 datetime(2015, 7, 23, 18, 0, 0)],<br/>036                 ['Chemistry', 201, 3.26,<br/>037                 datetime(2015, 7, 25, 9, 30, 0)],<br/>038                 ['Forensics', 99, 3.8,<br/>039                 datetime(2015, 7, 23, 9, 30, 0)],<br/>040                 ['Astronomy', 115, 3.21,<br/>041                 datetime(2015, 7, 19, 15, 30, 0)]]</pre>
+<p>Lines 44 through 55 are identical to the previous iteration of the function. Writing our table to the spreadsheet is accomplished on line 58. See the following code:</p>
+<pre>044 def write_xlsx(data):<br/>045     """<br/>046     The write_xlsx function creates an XLSX spreadsheet from a<br/>047     list of lists<br/>048     :param data: A list of lists to be written in the spreadsheet<br/>049     :return: Nothing<br/>050     """<br/>051     workbook = xlsxwriter.Workbook('MyWorkbook.xlsx')<br/>052     main_sheet = workbook.add_worksheet('MySheet')<br/>053 <br/>054     date_format = workbook.add_format(<br/>055     {'num_format': 'mm/dd/yy hh:mm:ss AM/PM'})</pre>
+<p>The <kbd>add_table()</kbd> function takes multiple arguments. First, we pass a string representing the top-left and bottom-right cells of the table in Excel notation. We use the length variable, defined on line 56, to calculate the necessary length of our table. The second argument is a little more confusing; this is a dictionary with two keys, data and columns. The <kbd>data</kbd> key has the value of our data variable, which is perhaps poorly named in this case. The <kbd>columns</kbd> key defines each column header and, optionally, its format, as seen on line 62:</p>
+<pre>056     length = str(len(data) + 1)<br/>057 <br/>058     main_sheet.add_table(('A1:D' + length),<br/>059     {'data': data,<br/>060     'columns': [{'header': 'Department'}, {'header': 'Students'},<br/>061                 {'header': 'Cumulative GPA'},<br/>062                 {'header': 'Final Date', 'format': date_format}]})<br/>063 <br/>064     workbook.close()</pre>
+<p>In fewer lines than the previous example, we've managed to create a more useful output built as a table. Now, our spreadsheet has our specified data already converted into a table and ready to be sorted.</p>
+<p>There are more possible keys and values that can be supplied during the construction of a table. Please consult the documentation (<a href="http://xlsxwriter.readthedocs.org">http://xlsxwriter.readthedocs.org</a>) for more details on advanced usage.</p>
+<p>This process is simple when we are working with nested lists representing each row of a worksheet. Data structures not in this format require a combination of both methods demonstrated in our previous iterations to achieve the same effect. For example, we can define a table to span across a certain number of rows and columns and then use the <kbd>write()</kbd> function for those cells. However, to prevent unnecessary headaches, we recommend keeping data in nested lists where possible.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Creating charts with Python</h1>
+                
+            
+            
+                
+<p>Finally, let's create a chart with <kbd>xlsxwriter</kbd>. The module supports a variety of different chart types, including line, scatter, bar, column, pie, and area. We use charts to summarize data in meaningful ways. This is particularly useful when working with large datasets, allowing examiners to gain some preliminary understanding of the data before getting into the weeds.</p>
+<p>Let's modify the previous iteration yet again to display a chart. We will save this modified file as <kbd>simplexlsx.v3.py</kbd>. On line 65, we are going to create a variable named <kbd>department_grades</kbd>. This variable will be our chart object created by the <kbd>add_chart()</kbd> method. For this method, we pass in a dictionary specifying keys and values. In this case, we specify the type of the chart to be a column chart:</p>
+<pre>065     department_grades = workbook.add_chart({'type':'column'})</pre>
+<p>On line 66, we use the <kbd>set_title()</kbd> function and again pass in a dictionary of parameters. We set the name key equal to our desired title. At this point, we need to tell the chart what data to plot. We do this with the <kbd>add_series()</kbd> function. Each category key maps to the Excel notation specifying the horizontal axis data. The vertical axis is represented by the <kbd>values</kbd> key. With the data to plot specified, we use the <kbd>insert_chart()</kbd> function to plot the data in the spreadsheet. We give this function a string representing the cell that will act as an anchor to plot the top-left corner of the chart to:</p>
+<pre>066     department_grades.set_title(<br/>067     {'name':'Department and Grade distribution'})<br/>068     department_grades.add_series(<br/>069     {'categories':'=MySheet!$A$2:$A$5',<br/>070     'values':'=MySheet!$C$2:$C$5'})<br/>071     main_sheet.insert_chart('A8', department_grades)<br/>072     workbook.close()</pre>
+<p>Running this version of the script will convert our data into a table and generate a column chart, comparing departments by their cumulative grades. We can clearly see that, unsurprisingly, the Physics department has the highest GPA earners in the school's program. This information is easy enough to eyeball for such a small dataset. However, when working with data orders of greater magnitude, creating summarizing graphics can be particularly useful to understand the big picture:</p>
+<div><img src="img/e646a0eb-8a11-4cfe-bde6-4b14cf4c64cd.png"/></div>
+<p>Be aware that there is a great deal of additional functionality in the <kbd>xlsxwriter</kbd> module that we will not use in our script. This is an extremely powerful module, and we recommend it for any operation that requires writing Excel spreadsheets.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">The UserAssist framework</h1>
+                
+            
+            
+                
+<p>Our <kbd>UserAssist</kbd> framework is made up of three scripts, <kbd>userassist_parser.py</kbd>, <kbd>csv_writer.py</kbd>, and <kbd>xlsx_writer.py</kbd>. The <kbd>userassist_parser.py</kbd> script handles the bulk of the processing logic and then passes the results to the CSV or XLSX writer. The directory structure of our framework is shown as follows. Our writers are contained within a directory named <kbd>Writers</kbd>. Remember that for a directory to be searchable by Python, it needs to include the <kbd>__init__.py</kbd> file. This file may be empty, contain functions and classes, or contain code to be executed upon import:</p>
+<pre>  |-- userassist_parser.py 
+  |-- Writers 
+      |-- __init__.py 
+      |-- csv_writer.py 
+      |-- xlsx_writer.py </pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Developing our UserAssist logic processor – userassist_parser.py</h1>
+                
+            
+            
+                
+<p>The <kbd>userassist_parser.py</kbd> script is responsible for handling user input, creating a log file, and parsing <kbd>UserAssist</kbd> data from the <kbd>NTUSER.DAT</kbd> file. On lines 2 through 9, we import familiar and new modules to facilitate our tasks. The <kbd>yarp</kbd> and <kbd>struct</kbd> modules will grant us access to and then extract objects from the <kbd>UserAssist</kbd> binary data, respectively. We import our <kbd>xlsx_writer</kbd> and <kbd>csv_writer</kbd> modules, which are in the <kbd>Writers</kbd> directory. Other used modules have been introduced in previous chapters:</p>
+<pre>001 """UserAssist parser leveraging the YARP library."""<br/>002 from __future__ import print_function<br/>003 import argparse<br/>004 import struct<br/>005 import sys<br/>006 import logging<br/>007 import os<br/>008 from Writers import xlsx_writer, csv_writer<br/>009 from yarp import Registry</pre>
+<p>The <kbd>KEYS</kbd> variable defined as an empty list on line 45 will store parsed <kbd>UserAssist</kbd> values. The <kbd>main()</kbd> function, defined on line 48, will handle all coordinating logic. It calls functions to parse the <kbd>UserAssist</kbd> key and then to write the results. The <kbd>create_dictionary()</kbd> function uses the <kbd>Registry</kbd> module to find and store <kbd>UserAssist</kbd> value names and raw data in a dictionary for each GUID.</p>
+<p>On line 134, we define the <kbd>parse_values()</kbd> function, which processes the binary data of each <kbd>UserAssist</kbd> value using <kbd>struct</kbd>. During this method, we determine if we are working with Windows XP- or Windows 7-based <kbd>UserAssist</kbd> data based on length. The <kbd>get_name()</kbd> function is a small function that separates the executable name from the full path:</p>
+<pre>045 KEYS = [] 
+...  
+048 def main(): 
+... 
+085 def create_dictionary(): 
+... 
+134 def parse_values(): 
+...  
+176 def get_name(): </pre>
+<p>On lines 202 through 212, we create our argument parser object, which takes two positional arguments and one optional argument. Our <kbd>REGISTRY</kbd> input is the <kbd>NTUSER.DAT</kbd> file of interest. The <kbd>OUTPUT</kbd> argument is the path and filename of the desired output file. The optional <kbd>-l</kbd> switch is the path of the log file. If this is not supplied, the log file is created in the current working directory:</p>
+<pre>202 if __name__ == '__main__':<br/>203     parser = argparse.ArgumentParser(description=__description__,<br/>204                                      epilog='Developed by ' +<br/>205                                      __author__ + ' on ' +<br/>206                                      __date__)<br/>207     parser.add_argument('REGISTRY', help='NTUSER Registry Hive.')<br/>208     parser.add_argument('OUTPUT',<br/>209     help='Output file (.csv or .xlsx)')<br/>210     parser.add_argument('-l', help='File path of log file.')<br/>211 <br/>212     args = parser.parse_args()</pre>
+<p>If the user supplies a log path, we check on line 215 if the path exists. If it does not exist, we use the <kbd>os.makedirs()</kbd> function to create the log directory. In either case, we instantiate the <kbd>log_path</kbd> variable with the supplied directory and the log file. On line 220, we create our log and write startup details in the same manner as previous chapters, before calling <kbd>main()</kbd> on line 227:</p>
+<pre>214     if args.l:<br/>215         if not os.path.exists(args.l):<br/>216             os.makedirs(args.l)<br/>217         log_path = os.path.join(args.l, 'userassist_parser.log')<br/>218     else:<br/>219         log_path = 'userassist_parser.log'<br/>220     logging.basicConfig(filename=log_path, level=logging.DEBUG,<br/>221                         format=('%(asctime)s | %(levelname)s | '<br/>222                         '%(message)s'), filemode='a')<br/>223 <br/>224     logging.info('Starting UserAssist_Parser')<br/>225     logging.debug('System ' + sys.platform)<br/>226     logging.debug('Version ' + sys.version)<br/>227     main(args.REGISTRY, args.OUTPUT)</pre>
+<p>The following flow chart depicts the interconnected functions within our <kbd>UserAssist</kbd> framework. Here, we can see how the <kbd>main()</kbd> function calls and receives data from the <kbd>create_dictionary()</kbd> and <kbd>parse_values()</kbd> functions. The <kbd>parse_values()</kbd> function separately calls the <kbd>get_name()</kbd> function:</p>
+<p class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-703 image-border" src="img/fc43a4f9-08e2-4833-8939-e1202ce69efd.png" style="width:80.42em;height:41.08em;"/></p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Evaluating the main() function</h1>
+                
+            
+            
+                
+<p>The <kbd>main()</kbd> function sends the registry file to be processed before calling the appropriate methods to write the <kbd>out_file</kbd>. On line 61, we call the <kbd>create_dictionary()</kbd> function to create a list of dictionaries containing <kbd>UserAssist</kbd> data mapped to the executable's name:</p>
+<pre>048 def main(registry, out_file):<br/>049     """<br/>050     The main function handles main logic of script.<br/>051     :param registry: Registry Hive to process<br/>052     :param out_file: The output path and file<br/>053     :return: Nothing.<br/>054     """<br/>055     if os.path.basename(registry).lower() != 'ntuser.dat':<br/>056         print(('[-] {} filename is incorrect (Should be '<br/>057                'ntuser.dat)').format(registry))<br/>058         logging.error('Incorrect file detected based on name')<br/>059         sys.exit(1)<br/>060     # Create dictionary of ROT-13 decoded UA key and its value<br/>061     apps = create_dictionary(registry)</pre>
+<p>Next, this dictionary is fed into the <kbd>parse_values()</kbd> method that appends parsed data to the <kbd>KEYS</kbd> list we created on line 45. This function returns an integer representing the type of <kbd>UserAssist</kbd> data parsed. This function returns a value of <kbd>0</kbd> for Windows XP <kbd>UserAssist</kbd> values and <kbd>1</kbd> for Windows 7. We log this information for troubleshooting purposes:</p>
+<pre>062     ua_type = parse_values(apps)<br/>063 <br/>064     if ua_type == 0:<br/>065         logging.info('Detected XP-based Userassist values.')<br/>066 <br/>067     else:<br/>068         logging.info(('Detected Win7-based Userassist values. '<br/>069                       'Contains Focus values.'))</pre>
+<p>Once data is processed, it can be sent to our writers. We use the <kbd>endswith()</kbd> method to identify what the extension is of the user-supplied output. If the output ends with <kbd>.xlsx</kbd> or <kbd>.csv</kbd>, we send the data to our <kbd>excel_writer()</kbd> or <kbd>csv_writer()</kbd> functions, respectively, as follows:</p>
+<pre>071     # Use .endswith string function to determine output type<br/>072     if out_file.lower().endswith('.xlsx'):<br/>073         xlsx_writer.excel_writer(KEYS, out_file)<br/>074     elif out_file.lower().endswith('.csv'):<br/>075         csv_writer.csv_writer(KEYS, out_file)</pre>
+<p>If the user does not include an extension in their output, we write a warning to the log and write the data to a CSV file in the current working directory. We chose a CSV output because it represents the simplest and most portable option of our supported output formats. In addition, if the user wanted to examine their data in a spreadsheet application, they could easily import and convert the CSV document to an XLSX format:</p>
+<pre>076     else:<br/>077     print(('[-] CSV or XLSX extension not detected in '<br/>078            'output. Writing CSV to current directory.'))<br/>079     logging.warning(('.csv or .xlsx output not detected. '<br/>080                      'Writing CSV file to current '<br/>081                      'directory.'))<br/>082     csv_writer.csv_writer(KEYS, 'Userassist_parser.csv')</pre>
+<p>Both writers accept the same arguments: <kbd>KEYS</kbd> and <kbd>out_file</kbd>. The <kbd>KEYS</kbd> list, which was defined on line 45, is a container of <kbd>UserAssist</kbd> dictionaries. We packaged our data as a list of dictionaries in order to use the dictionary keys to dictate which headers were present. The <kbd>out_file</kbd> is the path and name of the desired output.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Defining the create_dictionary() function</h1>
+                
+            
+            
+                
+<p>The <kbd>create_dictionary()</kbd> function prepares the <kbd>UserAssist</kbd> data for processing. This function pulls all values within each <kbd>UserAssist</kbd> GUID key. It creates a dictionary where the keys are the ROT-13 decoded executable name, and the values are the respective binary data. This binary data is extracted now, so we can process it in a later function:</p>
+<pre>085 def create_dictionary(registry):<br/>086     """<br/>087     The create_dictionary function creates a list of dictionaries<br/>088     where keys are the ROT-13 decoded app names and values are<br/>089     the raw hex data of said app.<br/>090     :param registry: Registry Hive to process<br/>091     :return: apps_list, A list containing dictionaries for<br/>092     each app<br/>093     """</pre>
+<p>On line 97, we try to open the registry file provided by the user. If there is an error accessing the input file, we catch the error, log it, and exit gracefully with an error code of <kbd>2</kbd>:</p>
+<pre>094     try:<br/>095         # Open the registry file to be parsed<br/>096         registry_file = open(registry, "rb")<br/>097         reg = Registry.RegistryHive(registry_file)<br/>098     except (IOError, UnicodeDecodeError) as e:<br/>099         msg = 'Invalid NTUSER.DAT path or Registry ID.'<br/>100         print('[-]', msg)<br/>101         logging.error(msg)<br/>102         sys.exit(2)</pre>
+<p>If we can open the registry file, we then try to navigate to the <kbd>UserAssist</kbd> key. We use a conditional to catch the scenario where the <kbd>UserAssist</kbd> key is not found in the supplied registry file. Note that, for this error, we use the integer, <kbd>3</kbd>, to differentiate from our previous exit scenario:</p>
+<pre>104     # Navigate to the UserAssist key<br/>105     ua_key = reg.find_key(<br/>106     ('SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer'<br/>107     '\\UserAssist'))<br/>108     if ua_key is None:<br/>109         msg = 'UserAssist Key not found in Registry file.'<br/>110         print('[-]', msg)<br/>111         logging.error(msg)<br/>112         sys.exit(3)</pre>
+<p>On line 113, we create a list named <kbd>apps_list</kbd>, which will store <kbd>UserAssist</kbd> dictionaries. If we were able to find the <kbd>UserAssist</kbd> key, we loop through each <kbd>ua_subkey</kbd>, a GUID, and check their count subkey. This is an important step; as Windows has evolved, more GUIDs have been added to the <kbd>UserAssist</kbd> key. Rather than hardcoding these values, which could miss new GUIDs added in future versions of Windows, we opted for a more dynamic process that will discover and handle new GUIDs across many versions of Windows:</p>
+<pre>113     apps_list = []<br/>114     # Loop through each subkey in the UserAssist key<br/>115     for ua_subkey in ua_key.subkeys():<br/>116         # For each subkey in the UserAssist key, detect a subkey<br/>117         # called Count that has more than 0 values to parse.</pre>
+<p>This process involves checking each GUIDs that has a subkey named <kbd>Count</kbd>, which stores the actual <kbd>UserAssist</kbd> application values. On line 118, we determine if the GUID has a subkey named <kbd>Count</kbd> with one or more values. This ensures that we find all the <kbd>UserAssist</kbd> values present on the system:</p>
+<pre>118         if(ua_subkey.subkey('Count') and<br/>119         ua_subkey.subkey('Count').values_count() &gt; 0):</pre>
+<p>We create an apps dictionary on line 120 and begin to loop through each value under the <kbd>Count</kbd> subkey. For each value, we add the ROT-13-decoded name as the key, and associate it with its <kbd>raw_data</kbd> as the value. Once all the values in the GUID have been added to the dictionary, it is appended to <kbd>apps_list</kbd> and the cycle repeats. Once all of the GUIDs have been processed, our list is returned to the <kbd>main()</kbd> function:</p>
+<pre>120             apps = {}<br/>121             for v in ua_subkey.subkey('Count').values():<br/>122                 if sys.version_info[0] == 2:<br/>123                     apps[v.name().encode('utf-8').decode(<br/>124                     'rot-13')] = v.data_raw()<br/>125                 elif sys.version_info[0] == 3:<br/>126                     import codecs<br/>127                     enc = codecs.getencoder('rot-13')<br/>128                     apps[enc(str(v.name()))[0]] = v.data_raw()<br/>129 <br/>130                 apps_list.append(apps)<br/>131     return apps_list</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Extracting data with the parse_values() function</h1>
+                
+            
+            
+                
+<p>The <kbd>parse_values()</kbd> function takes the list of GUID dictionaries as its input and uses struct to parse the binary data. As we've discussed, there are two types of <kbd>UserAssist</kbd> keys we will support: Windows XP and Windows 7. The following two tables break down the relevant data structures we will parse. Windows XP-based keys are 16 bytes in length and contain a Session ID, Count, and FILETIME timestamp:</p>
+<table border="1" style="border-collapse: collapse;width: 36.1761%">
+<tbody>
+<tr>
+<td style="width: 13%">
+<p class="TableColumnHeadingPACKT"><strong>Byte offset</strong></p>
+</td>
+<td style="width: 12%">
+<p class="TableColumnHeadingPACKT"><strong>Value</strong></p>
+</td>
+<td style="width: 10%">
+<p class="TableColumnHeadingPACKT"><strong>Object</strong></p>
+</td>
+</tr>
+<tr>
+<td style="width: 13%">
+<p class="TableColumnContentPACKT">0-3</p>
+</td>
+<td style="width: 12%">
+<p class="TableColumnContentPACKT">Session ID</p>
+</td>
+<td style="width: 10%">
+<p class="TableColumnContentPACKT">Integer</p>
+</td>
+</tr>
+<tr>
+<td style="width: 13%">
+<p class="TableColumnContentPACKT">4-7</p>
+</td>
+<td style="width: 12%">
+<p class="TableColumnContentPACKT">Count</p>
+</td>
+<td style="width: 10%">
+<p class="TableColumnContentPACKT">Integer</p>
+</td>
+</tr>
+<tr>
+<td style="width: 13%">
+<p class="TableColumnContentPACKT">8-15</p>
+</td>
+<td style="width: 12%">
+<p class="TableColumnContentPACKT">FILETIME</p>
+</td>
+<td style="width: 10%">
+<p class="TableColumnContentPACKT">Integer</p>
+</td>
+</tr>
+</tbody>
+</table>
+<div><p> </p>
+<p>Windows 7 artifacts are 72 bytes in length containing a session ID, count, focus count/time, and FILETIME timestamp:</p>
+<table border="1" style="border-collapse: collapse;width: 44.1541%">
+<tbody>
+<tr>
+<td style="width: 13%">
+<p class="TableColumnHeadingPACKT"><strong>Byte offset</strong></p>
+</td>
+<td style="width: 16%">
+<p class="TableColumnHeadingPACKT"><strong>Value</strong></p>
+</td>
+<td style="width: 11.2149%">
+<p class="TableColumnHeadingPACKT"><strong>Object</strong></p>
+</td>
+</tr>
+<tr>
+<td style="width: 13%">
+<p class="TableColumnContentPACKT">0-3</p>
+</td>
+<td style="width: 16%">
+<p class="TableColumnContentPACKT">Session ID</p>
+</td>
+<td style="width: 11.2149%">
+<p class="TableColumnContentPACKT">Integer</p>
+</td>
+</tr>
+<tr>
+<td style="width: 13%">
+<p class="TableColumnContentPACKT">4-7</p>
+</td>
+<td style="width: 16%">
+<p class="TableColumnContentPACKT">Count</p>
+</td>
+<td style="width: 11.2149%">
+<p class="TableColumnContentPACKT">Integer</p>
+</td>
+</tr>
+<tr>
+<td style="width: 13%">
+<p class="TableColumnContentPACKT">8-11</p>
+</td>
+<td style="width: 16%">
+<p class="TableColumnContentPACKT">Focus count</p>
+</td>
+<td style="width: 11.2149%">
+<p class="TableColumnContentPACKT">Integer</p>
+</td>
+</tr>
+<tr>
+<td style="width: 13%">
+<p class="TableColumnContentPACKT">12-15</p>
+</td>
+<td style="width: 16%">
+<p class="TableColumnContentPACKT">Focus time</p>
+</td>
+<td style="width: 11.2149%">
+<p class="TableColumnContentPACKT">Integer</p>
+</td>
+</tr>
+<tr>
+<td style="width: 13%">
+<p class="TableColumnContentPACKT">16-59</p>
+</td>
+<td style="width: 16%">
+<p class="TableColumnContentPACKT">???</p>
+</td>
+<td style="width: 11.2149%">
+<p class="TableColumnContentPACKT">N/A</p>
+</td>
+</tr>
+<tr>
+<td style="width: 13%">
+<p class="TableColumnContentPACKT">60-67</p>
+</td>
+<td style="width: 16%">
+<p class="TableColumnContentPACKT">FILETIME</p>
+</td>
+<td style="width: 11.2149%">
+<p class="TableColumnContentPACKT">Integer</p>
+</td>
+</tr>
+<tr>
+<td style="width: 13%">
+<p class="TableColumnContentPACKT">68-71</p>
+</td>
+<td style="width: 16%">
+<p class="TableColumnContentPACKT">???</p>
+</td>
+<td style="width: 11.2149%">
+<p class="TableColumnContentPACKT">N/A</p>
+</td>
+</tr>
+</tbody>
+</table>
+<div><p> </p>
+<p>On lines 143 through 146, we set up our function by instantiating the <kbd>ua_type</kbd> variable and logging execution status. This <kbd>ua_type</kbd> variable will be used to document which type of <kbd>UserAssist</kbd> value we're working with. On lines 148 and 149, we loop through each value in each dictionary to identify its type and parse it:</p>
+<pre>134 def parse_values(data):<br/>135     """<br/>136     The parse_values function uses struct to unpack the raw value<br/>137     data from the UA key<br/>138     :param data: A list containing dictionaries of UA<br/>139     application data<br/>140     :return: ua_type, based on the size of the raw data from<br/>141     the dictionary values.<br/>142     """<br/>143     ua_type = -1<br/>144     msg = 'Parsing UserAssist values.'<br/>145     print('[+]', msg)<br/>146     logging.info(msg)<br/>147 <br/>148     for dictionary in data:<br/>149         for v in dictionary.keys():</pre>
+<p>On lines 151 and 159, we use the <kbd>len()</kbd> function to identify the type of <kbd>UserAssist</kbd> key. For Windows XP-based data, we need to extract two 4-byte integers followed by an 8-byte integer. We also want to interpret this data in little endian using standard sizes. We accomplish this on line 152 with <kbd>&lt;2iq</kbd> as the struct format string. The second argument we pass to the unpack method is the raw binary data for the particular key from the GUID dictionary:</p>
+<pre>150             # WinXP based UA keys are 16 bytes<br/>151             if len(dictionary[v]) == 16:<br/>152                 raw = struct.unpack('&lt;2iq', dictionary[v])<br/>153                 ua_type = 0<br/>154                 KEYS.append({'Name': get_name(v), 'Path': v,<br/>155                 'Session ID': raw[0], 'Count': raw[1],<br/>156                 'Last Used Date (UTC)': raw[2],<br/>157                 'Focus Time (ms)': '', 'Focus Count': ''})</pre>
+<p>The Windows 7-based data is slightly more complicated. There are bytes in the middle and end of the binary data that we are not interested in parsing and yet, because of the nature of struct, we must account for them in our format. The format string we use for this task is <kbd>&lt;4i44xq4x</kbd>, which accounts for the four 4-byte integers, the 44 bytes of intervening space, the 8-byte integer, and the remaining 4 bytes we will ignore:</p>
+<pre>158             # Win7 based UA keys are 72 bytes<br/>159             elif len(dictionary[v]) == 72:<br/>160                 raw = struct.unpack('&lt;4i44xq4x', dictionary[v])<br/>161                 ua_type = 1<br/>162                 KEYS.append({'Name': get_name(v), 'Path': v,<br/>163                 'Session ID': raw[0], 'Count': raw[1], <br/>164                 'Last Used Date (UTC)': raw[4],<br/>165                 'Focus Time (ms)': raw[3],'Focus Count': raw[2]})</pre>
+<p>As we parse <kbd>UserAssist</kbd> records, we append them to the <kbd>KEYS</kbd> list for storage. When we append the parsed values, we wrap them in curly braces to create our inner dictionary object. We also call the <kbd>get_name()</kbd> function on the <kbd>UserAssist</kbd> value name to separate the executable from its path. Note that regardless of the type of <kbd>UserAssist</kbd> key, we still create the same keys in our dictionary. This will ensure that all our dictionaries have the same structure and will help streamline our CSV and XLSX output functions.</p>
+<p>If a <kbd>UserAssist</kbd> value is not 16 or 72 bytes (which can happen), then that value is skipped and the user is notified of the name and size that was passed over. From our experience, these values were not forensically relevant, and so we decided to pass on them. On line 173, the <kbd>UserAssist</kbd> type is returned to the <kbd>main()</kbd> function:</p>
+<pre>166             else:<br/>167                 # If the key is not WinXP or Win7 based -- ignore.<br/>168                 msg = 'Ignoring {} value that is {} bytes'.format(<br/>169                 str(v), str(len(dictionary[v])))<br/>170                 print('[-]', msg)<br/>171                 logging.info(msg)<br/>172                 continue<br/>173     return ua_type</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Processing strings with the get_name() function</h1>
+                
+            
+            
+                
+<p>The <kbd>get_name()</kbd> function uses string operations to separate the executable from the path name. From testing, we found that a colon, backslash, or both characters were present in the path. Because this pattern exists, we can try to split this information using these characters to extract the name:</p>
+<pre>176 def get_name(full_name):<br/>177     """<br/>178     the get_name function splits the name of the application<br/>179     returning the executable name and ignoring the<br/>180     path details.<br/>181     :param full_name: the path and executable name<br/>182     :return: the executable name<br/>183     """</pre>
+<p>On line 185, we check to see if both colon and backslashes are in the <kbd>full_name</kbd> variable. If this is true, we use the <kbd>rindex()</kbd> function to get the index of the rightmost occurrence of the substring for both elements. On line 187, we check to see if the right-most index for the colon is found later in the string than the backslash. The element with the greatest index is used as the delimiter for the <kbd>split()</kbd> function. To get the last substring in the list (our executable name), we use the <kbd>-1</kbd> index:</p>
+<pre>184     # Determine if '\\' and ':' are within the full_name<br/>185     if ':' in full_name and '\\' in full_name:<br/>186         # Find if ':' comes before '\\'<br/>187         if full_name.rindex(':') &gt; full_name.rindex('\\'):<br/>188             # Split on ':' and return the last element <br/>189             # (the executable)<br/>190             return full_name.split(':')[-1]<br/>191         else:<br/>192             # Otherwise split on '\\'<br/>193             return full_name.split('\\')[-1]</pre>
+<p>On lines 196 and 198, we handle the alternative scenarios and split on either the colon or backslash, and return the last element in the list of substrings:</p>
+<pre>194     # When just ':' or '\\' is in the full_name, split on<br/>195     # that item and return the last element (the executable)<br/>196     elif ':' in full_name:<br/>197         return full_name.split(':')[-1]<br/>198     else:<br/>199         return full_name.split('\\')[-1]</pre>
+<p>This completes the logic in our <kbd>userassist_parser.py</kbd> script. Now, let's turn our attention to our two writer functions responsible for writing our parsed data in a useful format.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Writing Excel spreadsheets – xlsx_writer.py</h1>
+                
+            
+            
+                
+<p>The <kbd>xlsx_writer.py</kbd> script contains the logic for creating an excel document containing our processed <kbd>UserAssist</kbd> values. In addition to this, this script also creates an additional worksheet that contains summarizing charts of our data. The <kbd>xlsxwriter</kbd> is imported on line 1 and is the third-party module we use to create the Excel document. The <kbd>itemgetter</kbd> function, imported on line 3, will be used and explained in the sorting functions later in this section. We have seen the <kbd>datetime</kbd> and <kbd>logging</kbd> modules from previous chapters:</p>
+<pre>001 from __future__ import print_function<br/>002 import xlsxwriter<br/>003 from operator import itemgetter<br/>004 from datetime import datetime, timedelta<br/>005 import logging</pre>
+<p>There are six functions in the <kbd>xlsx_writer.py</kbd> script. The coordinating logic is handled by the <kbd>excel_writer()</kbd> function defined on line 36. This function creates our Excel workbook object and then hands it off to the <kbd>dashboard_writer()</kbd> and <kbd>userassist_writer()</kbd> functions to create the dashboard and <kbd>UserAssist</kbd> worksheets, respectively.</p>
+<p>The remaining three functions, <kbd>file_time()</kbd>, <kbd>sort_by_count()</kbd>, and <kbd>sort_by_date()</kbd>, are helper functions used by the dashboard and <kbd>UserAssist</kbd> writers. The <kbd>file_time()</kbd> function is responsible for converting FILETIME objects that we parsed from the raw <kbd>UserAssist</kbd> data into <kbd>datetime</kbd> objects. The sorting functions are used to sort the data by either count or date. We use these sorting functions to answer some basic questions about our data. What are the most-used applications? What are the least-used applications? What were the last 10 applications used on the machine (according to <kbd>UserAssist</kbd>)?</p>
+<pre>036 excel_writer(): 
+... 
+071 dashboard_writer(): 
+... 
+156 userassist_writer(): 
+... 
+201 file_time(): 
+... 
+214 sort_by_count(): 
+... 
+227 sort_by_date():</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Controlling output with the excel_writer() function</h1>
+                
+            
+            
+                
+<p>The <kbd>excel_writer()</kbd> function is the glue for this script. The headers list on line 47 is a list containing our desired column names. These column names also conveniently correlate to the keys in our <kbd>UserAssist</kbd> dictionaries we will be writing. On line 49, we create the <kbd>Workbook</kbd> object we will write to. On the next line, we create our <kbd>title_format</kbd>, which controls the color, font, size, and other style options for our spreadsheet header. We have the following code:</p>
+<pre>036 def excel_writer(data, out_file):<br/>037     """<br/>038     The excel_writer function handles the main logic of writing<br/>039     the excel output<br/>040     :param data: the list of lists containing parsed UA data<br/>041     :param out_file: the desired output directory and filename<br/>042     for the excel file<br/>043     :return: Nothing<br/>044     """<br/>045     print('[+] Writing XLSX output.')<br/>046     logging.info('Writing XLSX to ' + out_file + '.')<br/>047     headers = ['Name', 'Path', 'Session ID', 'Count',<br/>048     'Last Used Date (UTC)', 'Focus Time (ms)', 'Focus Count']<br/>049     wb = xlsxwriter.Workbook(out_file)<br/>050     title_format = wb.add_format({'bold': True,<br/>051     'font_color': 'white', 'bg_color': 'black', 'font_size': 30,<br/>052     'font_name': 'Calibri', 'align': 'center'})</pre>
+<p>The <kbd>title_format</kbd> is similar to the <kbd>date_format</kbd> we created when we previously discussed the <kbd>xlsxwriter</kbd> module. This format is a dictionary containing keywords and values. Specifically, we'll use this format when creating a title and subtitle rows so it sticks out from other data in our spreadsheet.</p>
+<p>On lines 54 through 59, we convert our dictionaries back into lists. This might seem to you as though we made the wrong data type choice to store our data, and perhaps you have a point. However, storing our data in lists will immensely simplify writing out XSLX output. Once we see how the CSV writer handles the data, it will become clearer why we originally use dictionaries. In addition, the use of dictionaries allows us to easily understand the stored data without need for review of the code or documentation:</p>
+<pre>054     # A temporary list that will store dictionary values<br/>055     tmp_list = []<br/>056     for dictionary in data:<br/>057         # Adds dictionary values to a list ordered by the headers<br/>058         # Adds an empty string is the key does not exist<br/>059         tmp_list.append([dictionary.get(x, '') for x in headers])</pre>
+<p>We use list comprehension to append data from our dictionary in the proper order. Let's break it down. On line 59, we iterate through each <kbd>UserAssist</kbd> dictionary. As we know, dictionaries do not store data by index and instead store by key mapping. However, we want our data to be written in a certain order as dictated by our headers list. The <kbd>x</kbd> in the headers loop allows us to iterate over that list. For each <kbd>x</kbd>, we use the <kbd>get()</kbd> method to return the value for <kbd>x</kbd> if found in the dictionary or an empty string.</p>
+<p>On line 61 and 62, we call the two worksheet writers for the dashboard and <kbd>UserAssist</kbd> data. After the last of those functions exit, we <kbd>close()</kbd> the workbook object. It is incredibly important to close the workbook. Failing to do so will throw an exception that might prevent us from transferring our Excel document from memory to disk. Take a look at the following code:</p>
+<pre>061     dashboard_writer(wb, tmp_list, title_format)<br/>062     userassist_writer(wb, tmp_list, headers, title_format)<br/>063 <br/>064     wb.close()<br/>065     msg =('Completed writing XLSX file. '<br/>066           'Program exiting successfully.')<br/>067     print('[*]', msg)<br/>068     logging.info(msg)</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Summarizing data with the dashboard_writer() function</h1>
+                
+            
+            
+                
+<p>The aim of the <kbd>dashboard_writer()</kbd> function is to provide the analyst or reviewer with some graphics that summarize our <kbd>UserAssist</kbd> data. We chose to present the top 10, bottom 10, and most recent 10 executables to the user. This function is our longest and requires the most logic.</p>
+<p>On line 81, we add our dashboard worksheet object to the workbook. Next, we merge the first row from the <kbd>A</kbd> to <kbd>Q</kbd> columns and write our company name, <kbd>XYZ Corp</kbd>, using our title format created in the <kbd>excelWriter()</kbd> function. Similarly, we create a subtitle row to identify this worksheet as our dashboard on line 83, as follows:</p>
+<pre>071 def dashboard_writer(workbook, data, ua_format):<br/>072     """<br/>073     the dashboard_writer function creates the 'Dashboard'<br/>074     worksheet, table, and graphs<br/>075     :param workbook: the excel workbook object<br/>076     :param data: the list of lists containing parsed UA data<br/>077     :param ua_format: the format object for the title and<br/>078     subtitle row<br/>079     :return: Nothing<br/>080     """<br/>081     dashboard = workbook.add_worksheet('Dashboard')<br/>082     dashboard.merge_range('A1:Q1', 'XYZ Corp', ua_format)<br/>083     dashboard.merge_range('A2:Q2', 'Dashboard', ua_format)</pre>
+<p>On line 87, we create and add a <kbd>date_format</kbd> to the workbook in order to properly format our dates. On lines 92 and 93, we make function calls to the two sorting functions. We use list slicing to carve the sorted data to create our sublists: <kbd>topten</kbd>, <kbd>leastten</kbd>, and <kbd>lastten</kbd>. For the <kbd>topten</kbd> executables used by count, we grab the last 10 elements in the sorted list. For the <kbd>leastten</kbd>, we simply perform the inverse. For the <kbd>lastten</kbd>, we grab the first 10 results in the sorted dates list, as follows:</p>
+<pre>085     # The format to use to convert datetime object into a human<br/>086     # readable value<br/>087     date_format = workbook.add_format({<br/>088     'num_format': 'mm/dd/yy h:mm:ss'})<br/>089 <br/>090     # Sort our original input by count and date to assist with<br/>091     # creating charts.<br/>092     sorted_count = sort_by_count(data)<br/>093     sorted_date = sort_by_date(data)<br/>094 <br/>095     # Use list slicing to obtain the most and least frequently<br/>096     # used UA apps and the most recently used UA apps<br/>097     topten = sorted_count[-10:]<br/>098     leastten = sorted_count[:10]<br/>099     lastten = sorted_date[:10]</pre>
+<p>On line 103, we iterate over the elements in the <kbd>lastten</kbd> list. We must convert each timestamp into a <kbd>datetime</kbd> object. The <kbd>datetime</kbd> object is stored in the first index of the <kbd>UserAssist</kbd> list we created and is converted by the <kbd>file_time()</kbd> function:</p>
+<pre>101     # For the most recently used UA apps, convert the FILETIME<br/>102     # value to datetime format<br/>103     for element in lastten:<br/>104         element[1] = file_time(element[1])</pre>
+<p>On lines 108 through 116, we create our three tables for our top, bottom, and most recent data points. Note how these tables start on row 100. We chose to place them far away from the top of the spreadsheet so the user sees the tables we will add instead of the raw data. As we saw when describing tables in the <kbd>xlsxwriter</kbd> section, the second argument of the <kbd>add_table()</kbd> function is a dictionary containing keywords for header names and formats. There are other keywords that could be provided for additional functionality. For example, we use the <kbd>format</kbd> keyword to ensure that our <kbd>datetime</kbd> objects are displayed as desired using our <kbd>date_format</kbd> variable. We have the following code:</p>
+<pre>106     # Create a table for each of the three categories, specifying<br/>107     # the data, column headers, and formats for specific columns<br/>108     dashboard.add_table('A100:B110',<br/>109     {'data': topten, 'columns': [{'header': 'App'},<br/>110     {'header': 'Count'}]})<br/>111     dashboard.add_table('D100:E110',<br/>112     {'data': leastten, 'columns': [{'header': 'App'},<br/>113     {'header': 'Count'}]})<br/>114     dashboard.add_table('G100:H110',<br/>115     {'data': lastten, 'columns': [{'header': 'App'},<br/>116     {'header': 'Date (UTC)', 'format': date_format}]})</pre>
+<p>On lines 118 to 153, we create our charts for the three tables. After instantiating <kbd>top_chart</kbd> as a pie chart, we set the title and the scale in the <em>X</em> and <em>Y</em> direction. During testing, we realized that the figure would be too small to adequately display all of the information, and so we used a larger scale:</p>
+<pre>118     # Create the most used UA apps chart<br/>119     top_chart = workbook.add_chart({'type': 'pie'})<br/>120     top_chart.set_title({'name': 'Top Ten Apps'})<br/>121     # Set the relative size to fit the labels and pie chart within<br/>122     # chart area<br/>123     top_chart.set_size({'x_scale': 1, 'y_scale': 2})</pre>
+<p> </p>
+<p>On line 127, we add the series for our pie chart; identifying the categories and values is straightforward. All we need to do is define the rows and columns we want to plot. The <kbd>data_labels</kbd> key is an additional option that can be used to specify the value's format of the plotted data. In this case, we chose the <kbd>'percentage'</kbd> option as seen on line 130, as follows:</p>
+<pre>125     # Add the data as a series by specifying the categories and<br/>126     # values<br/>127     top_chart.add_series(<br/>128     {'categories': '=Dashboard!$A$101:$A$110',<br/>129     'values': '=Dashboard!$B$101:$B$110',<br/>130     'data_labels': {'percentage': True}})<br/>131     # Add the chart to the 'Dashboard' worksheet<br/>132     dashboard.insert_chart('A4', top_chart)</pre>
+<p>With this setup, our pie chart will be split based on usage count, the legend will contain the name of the executable, and the percentage will show the relative execution in comparison to the other nine executables. After creating the chart, we call <kbd>insert_chart()</kbd> to add it to the dashboard worksheet. The <kbd>least_chart</kbd> is created in the same manner, as follows:</p>
+<pre>134     # Create the least used UA apps chart<br/>135     least_chart = workbook.add_chart({'type': 'pie'})<br/>136     least_chart.set_title({'name': 'Least Used Apps'})<br/>137     least_chart.set_size({'x_scale': 1, 'y_scale': 2})<br/>138 <br/>139     least_chart.add_series(<br/>140     {'categories': '=Dashboard!$D$101:$D$110',<br/>141     'values': '=Dashboard!$E$101:$E$110',<br/>142     'data_labels': {'percentage': True}})<br/>143     dashboard.insert_chart('J4', least_chart)</pre>
+<p>Finally, we create and add the <kbd>last_chart</kbd> to our spreadsheet. In an effort to save trees, this is handled in the same fashion as we previously discussed. This time, however, our chart is a column chart and we've modified the scale to be appropriate for the type of chart:</p>
+<pre>145     # Create the most recently used UA apps chart<br/>146     last_chart = workbook.add_chart({'type': 'column'})<br/>147     last_chart.set_title({'name': 'Last Used Apps'})<br/>148     last_chart.set_size({'x_scale': 1.5, 'y_scale': 1})<br/>149 <br/>150     last_chart.add_series(<br/>151     {'categories': '=Dashboard!$G$101:$G$110',<br/>152     'values': '=Dashboard!$H$101:$H$110'})<br/>153     dashboard.insert_chart('D35', last_chart)</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Writing artifacts in the userassist_writer() function</h1>
+                
+            
+            
+                
+<p>The <kbd>userassist_writer()</kbd> function is similar to the previous dashboard function. The difference is that this function creates a single table containing our raw data without any of the additional accouterments. On lines 167 through 169, we create the <kbd>UserAssist</kbd> worksheet object and add our title and subtitle to the spreadsheet. On line 173, we once again create a <kbd>date_format</kbd> to properly display dates, as follows:</p>
+<pre>156 def userassist_writer(workbook, data, headers, ua_format):<br/>157     """<br/>158     The userassist_writer function creates the 'UserAssist'<br/>159     worksheet and table<br/>160     :param workbook: the excel workbook object<br/>161     :param data: the list of lists containing parsed UA data<br/>162     :param headers: a list of column names for the spreadsheet<br/>163     :param ua_format: the format object for the title and subtitle<br/>164     row<br/>165     :return: Nothing<br/>166     """<br/>167     userassist = workbook.add_worksheet('UserAssist')<br/>168     userassist.merge_range('A1:H1', 'XYZ Corp', ua_format)<br/>169     userassist.merge_range('A2:H2', 'Case ####', ua_format)<br/>170 <br/>171     # The format to use to convert datetime object into a<br/>172     # human readable value<br/>173     date_format = workbook.add_format(<br/>174     {'num_format': 'mm/dd/yy h:mm:ss'})</pre>
+<p>On line 178, we loop through the outer list and convert the FILETIME object into a <kbd>datetime</kbd> object using our prebuilt function. We also add an integer to the beginning of the list so that examiners can quickly determine how many <kbd>UserAssist</kbd> records are there by looking at the index:</p>
+<pre>176     # Convert the FILETIME object to datetime and insert the 'ID'<br/>177     # value as the first element in the list<br/>178     for i, element in enumerate(data):<br/>179         element[4] = file_time(element[4])<br/>180         element.insert(0, i + 1)</pre>
+<p>On line 188, we begin creating our <kbd>UserAssist</kbd> table. We use the length variable, created in line 184, to determine the appropriate number distance to the bottom-right corner of the table. Note that the length is the length of the list plus three. We added three to this length because we need to account for our title and subtitle rows, taking up the first two columns, and the difference between how Python and Excel count. We have the following code:</p>
+<pre>182     # Calculate how big the table should be. Add 3 to account for<br/>183     # the title and header rows.<br/>184     length = len(data) + 3<br/>185 <br/>186     # Create the table; depending on the type (WinXP v. Win7) add<br/>187     # additional headers<br/>188     userassist.add_table(('A3:H' + str(length)),<br/>189                          {'data': data,<br/>190                          'columns': [{'header': 'ID'},<br/>191                          {'header': 'Name'},<br/>192                          {'header': 'Path'},<br/>193                          {'header': 'Session ID'},<br/>194                          {'header': 'Count'},<br/>195                          {'header': 'Last Run Time (UTC)',<br/>196                          'format': date_format},<br/>197                          {'header': 'Focus Time (MS)'},<br/>198                          {'header': 'Focus Count'}]})</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Defining the file_time() function</h1>
+                
+            
+            
+                
+<p>This is a very small helper function. The FILETIME object we parsed with the struct library is an 8-byte integer representing the count of 100-nanosecond units since 01/01/1601. This date is used by most Microsoft operating systems and applications as a common reference point in time.</p>
+<p>Therefore, to get the date it represents, we need to add the FILETIME value to the <kbd>datetime</kbd> object representing 01/01/1601 with the <kbd>timedelta()</kbd> function. The <kbd>timedelta</kbd> function calculates the number of days and hours an integer represents. We can then add the output from the <kbd>timedelta()</kbd> function directly to the <kbd>datetime</kbd> object to arrive at the correct date. In order to arrive at the correct magnitude, we need to divide the FILETIME value by <kbd>10</kbd>, as follows:</p>
+<pre>201 def file_time(ft):<br/>202     """<br/>203     The file_time function converts the FILETIME objects into<br/>204     datetime objects<br/>205     :param ft: the FILETIME object<br/>206     :return: the datetime object<br/>207     """<br/>208     if ft is not None and ft != 0:<br/>209         return datetime(1601, 1, 1) + timedelta(microseconds=ft / 10)<br/>210     else:<br/>211         return 0</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Processing integers with the sort_by_count() function</h1>
+                
+            
+            
+                
+<p>The <kbd>sort_by_count()</kbd> function sorts the inner lists based on their execution count value. This is a somewhat complicated one-liner, so let's take it apart step by step. To begin, let's focus on the <kbd>sorted(data, key=itemgetter(3))</kbd> step first. Python includes a built-in <kbd>sorted()</kbd> method to sort data by a key, normally an integer. We can supply the <kbd>sorted()</kbd> function with a key to tell it what to sort by and return a new sorted list.</p>
+<p>As with any new piece of code, let's look at a simple example in the interactive prompt:</p>
+<pre><strong>&gt;&gt;&gt; from operator import itemgetter</strong> 
+<strong>&gt;&gt;&gt; test = [['a', 2], ['b', 5], ['c', -2], ['d', 213], ['e', 40], ['f', 1]]</strong> 
+<strong>&gt;&gt;&gt; print(sorted(test, key=itemgetter(1)))</strong>
+<strong>[['c', -2], ['f', 1], ['a', 2], ['b', 5], ['e', 40], ['d', 213]]</strong> 
+<strong>&gt;&gt;&gt; print(sorted(test, key=itemgetter(1), reverse=True))</strong> 
+<strong>[['d', 213], ['e', 40], ['b', 5], ['a', 2], ['f', 1], ['c', -2]]</strong> 
+<strong>&gt;&gt;&gt; print(sorted(test, key=itemgetter(0)))</strong> 
+<strong>[['a', 2], ['b', 5], ['c', -2], ['d', 213], ['e', 40], ['f', 1]]</strong> </pre>
+<p>In the preceding example, we've created an outer list that contains inner lists with two elements: a character and a number. Next, we sort this list and use the number in the first index of the inner lists as the key. By default, <kbd>sorted()</kbd> will sort in ascending order. To sort in descending order, you need to supply the <kbd>reverse=True</kbd> argument. If we wanted to sort by letter, we would provide the <kbd>itemgetter()</kbd> with the value of <kbd>0</kbd> to specify to sort on elements found at that location.</p>
+<p>Now, all that is left is to understand what <kbd>x[0:5:3]</kbd> means. Why are we even doing this in the first place? We are using list slicing to only grab the first and third element, that is, the name and count of the executable, to use for our table.</p>
+<p>Remember that slicing notation supports three optional components: <em>List[x:y:z], </em>were, <em>x</em> = start index, <em>y</em> = end index, <em>z</em> = step.</p>
+<p>In this example, we start at index 0 and stop at index 5, taking steps of 3. If we do this, we will only get the elements at the zero and third position of the list before reaching the end.</p>
+<p>Now, the statement <kbd>x[0:5:3]</kbd> for <kbd>x</kbd> in <kbd>sorted(data, key=itemgetter(3))</kbd> will loop through the newly sorted list and only retain the zero and third-positioned elements in each list. We then wrap this entire statement in a pair of square brackets in order to preserve our outer and inner list structure that <kbd>xlsxwriter</kbd> prefers.</p>
+<p>The list object also has a <kbd>sort()</kbd> method that is syntactically similar to the <kbd>sorted()</kbd> function. However, the <kbd>sort()</kbd> function is more memory-friendly as it does not create a new list, but rather sorts the current list in place. Because memory consumption is not a big concern for a dataset, that might contain a few hundred entries at most and, as we did not want to modify the original list, we chose to use the <kbd>sorted()</kbd> function. We have the following code:</p>
+<pre>214 def sort_by_count(data):<br/>215     """<br/>216     The sort_by_count function sorts the lists by their count<br/>217     element<br/>218     :param data: the list of lists containing parsed UA data<br/>219     :return: the sorted count list of lists<br/>220     """<br/>221     # Return only the zero and third indexed item (the name and<br/>222     # count values) in the list after it has been sorted by the<br/>223     # count<br/>224     return [x[0:5:3] for x in sorted(data, key=itemgetter(3))]</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Processing datetime objects with the sort_by_date() function</h1>
+                
+            
+            
+                
+<p>The <kbd>sort_by_date()</kbd> function is very similar to the <kbd>sort_by_count()</kbd> function except that it uses different indices. Since a <kbd>datetime</kbd> object is really just a number, we can easily sort by that as well. Supplying <kbd>reverse=True</kbd> allows us to sort in descending order.</p>
+<p>Once again, we're first creating a new sorted list using the datetime in position 4 as the key. We are then only retaining the zero- and fourth-positioned elements in each list and wrapping all of that inside another list to preserve our nested list structure:</p>
+<pre>227 def sort_by_date(data):<br/>228     """<br/>229     The sort_by_date function sorts the lists by their datetime<br/>230     object<br/>231     :param data: the list of lists containing parsed UA data<br/>232     :return: the sorted date list of lists<br/>233     """<br/>234     # Supply the reverse option to sort by descending order<br/>235     return [x[0:6:4] for x in sorted(data, key=itemgetter(4),<br/>236     reverse=True)]</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Writing generic spreadsheets – csv_writer.py</h1>
+                
+            
+            
+                
+<p>The <kbd>csv_writer.py</kbd> script is fairly straightforward compared with the previous two scripts we've written. This script is responsible for the CSV output of our <kbd>UserAssist</kbd> data. The <kbd>csv_writer.py</kbd> script has two functions: <kbd>csv_writer()</kbd> and the helper function, <kbd>file_time()</kbd>. We explained the <kbd>file_time()</kbd> function in the <kbd>xlsx_writer</kbd> section, and it will not be repeated here as it has the same implementation.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Understanding the csv_writer() function</h1>
+                
+            
+            
+                
+<p>The <kbd>csv_writer()</kbd> function, defined on line 38, is slightly different from the way we have been creating CSV output in previous chapters. We normally start by creating our headers list, creating a writer object, and writing the headers list and each sublist in our data variable. This time, instead of using <kbd>writer()</kbd>, we will use the <kbd>DictWriter()</kbd> method to handle writing our <kbd>UserAssist</kbd> dictionaries for us:</p>
+<pre>001 from __future__ import print_function<br/>002 import sys<br/>003 if sys.version_info[0] == 2:<br/>004     import unicodecsv as csv<br/>005 elif sys.version_info[0] == 3:<br/>006     import csv<br/>007 from datetime import datetime, timedelta<br/>008 import logging
+...
+038 def csv_writer(data, out_file):<br/>039     """<br/>040     The csv_writer function writes the parsed UA data to a csv<br/>041     file<br/>042     :param data: the list of lists containing parsed UA data<br/>043     :param out_file: the desired output directory and filename<br/>044     for the csv file<br/>045     :return: Nothing<br/>046     """<br/>047     print('[+] Writing CSV output.')<br/>048     logging.info('Writing CSV to ' + out_file + '.')</pre>
+<p>On line 49, we do still create our headers list as normal. However, this list plays a more important role. This list contains the name of each key that will appear in our <kbd>UserAssist</kbd> dictionaries and in the order we want to display them. The <kbd>DictWriter()</kbd> method will allow us to then order our dictionaries by this list to ensure that our data is presented in the appropriate sequence. Depending on whether Python 2 or 3 is running the code, we open the <kbd>csvfile</kbd> using the appropriate method. Look at the following code:</p>
+<pre>049     headers = ['ID', 'Name', 'Path', 'Session ID', 'Count',<br/>050     'Last Used Date (UTC)', 'Focus Time (ms)', 'Focus Count']<br/>051 <br/>052     if sys.version_info[0] == 2:<br/>053         csvfile = open(out_file, "wb")<br/>054     elif sys.version_info[0] == 3:<br/>055         csvfile = open(out_file, "w", newline='',<br/>056         encoding='utf-8')</pre>
+<p>We start by creating our <kbd>csvfile</kbd> object and our writer. The <kbd>DictWriter()</kbd> method takes a file object as its required argument and optional keyword arguments. The <kbd>fieldnames</kbd> argument will ensure that the dictionary keys are written in the appropriate order. The <kbd>extrasaction</kbd> keyword is set to ignore scenarios where a dictionary contains a keyword that is not in the <kbd>fieldnames</kbd> list. If this option was not set, we would receive an exception if there was an extra unaccounted-for key in the dictionary. In our scenario, we should never encounter this issue as we have hardcoded the keys. However, if for some reason there are extra keys, we would rather the <kbd>DictWriter()</kbd> ignore them than crash, as follows:</p>
+<pre>058     with csvfile:<br/>059         writer = csv.DictWriter(csvfile, fieldnames=headers,<br/>060         extrasaction='ignore')</pre>
+<p>With the <kbd>DictWriter()</kbd> object, we can call the <kbd>writeheader()</kbd> method to automatically write the supplied field names:</p>
+<pre>061         # Writes the header from list supplied to fieldnames<br/>062         # keyword argument<br/>063         writer.writeheader()</pre>
+<p>Note that we do some additional processing on each dictionary before writing it. First, we add the ID key to the current loop count. Next, on line 71, we call the <kbd>fileTime()</kbd> method to convert the FILETIME object into a <kbd>datetime</kbd> format. Finally, on line 73, we write our dictionary to the CSV output file:</p>
+<pre>065         for i, dictionary in enumerate(data):<br/>066             # Insert the 'ID' value to each dictionary in the<br/>067             # list. Add 1 to start ID at 1 instead of 0.<br/>068             dictionary['ID'] = i + 1<br/>069             # Convert the FILETIME object in the fourth index to<br/>070             # human readable value<br/>071             dictionary['Last Used Date (UTC)'] = file_time(<br/>072             dictionary['Last Used Date (UTC)'])<br/>073             writer.writerow(dictionary)</pre>
+<p>After all the dictionaries have been written, we <kbd>flush()</kbd> and <kbd>close()</kbd> the handle on the <kbd>csvfile</kbd> object. And with that, we log the successful completion of our CSV script. All that's left at this point is to actually run our new framework:</p>
+<pre>075         csvfile.flush()<br/>076         csvfile.close()<br/>077         msg = 'Completed writing CSV file. Program exiting successfully.'<br/>078         print('[*]', msg)<br/>079         logging.info(msg)</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Running the UserAssist framework</h1>
+                
+            
+            
+                
+<p>Our script is capable of parsing both Windows XP- and Windows 7-based <kbd>UserAssist</kbd> keys. However, let's focus our attention on the differences between the CSV and XLSX output options. Using the <kbd>xlsxwriter</kbd> module and seeing the output should make the advantages of writing directly to an excel file over CSV clear. While you do lose the portability of the CSV document, you gain a lot more functionality. The following is the screenshot of running the <kbd>userassist.py</kbd> script against a Vista <kbd>NTUSER.DAT</kbd> and creating an XLSX output:</p>
+<div><img src="img/29ff171f-7815-454a-b2a8-cc8540a30495.png" style="width:43.50em;height:30.67em;"/></div>
+<p>The CSV output is not capable of preserving Python objects or crafting report-ready spreadsheets. The upside of a CSV report, besides the portability, is that writing the module itself is very simple. We were able to write the main logic in just a few lines of code compared with over 100 lines for the Excel document, which clearly took more time to develop.</p>
+<p>Being able to write a customized Excel report is great, but comes at a time cost. It might not always be a feasible addition for the forensic developer as time constraints often play a large role in the development cycle and dictate what you can and cannot do. However, if time permits, this can save the hassle of performing this process manually by the examiner and allow more time for analysis.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Challenge</h1>
+                
+            
+            
+                
+<p>We talked extensively about the additions that Windows 7 brought to the <kbd>UserAssist</kbd> artifact. However, there are even more changes that we did not account for in our current implementation of the <kbd>UserAssist</kbd> framework. With Windows 7, some common folder names were replaced with GUIDs. The following is a table of some examples of folders and their respective GUIDs:</p>
+<table border="1" style="border-collapse: collapse;width: 76.7538%">
+<tbody>
+<tr>
+<td style="width: 23%">
+<p class="TableColumnHeadingPACKT"><strong>Folder</strong></p>
+</td>
+<td style="width: 52.8595%">
+<p class="TableColumnHeadingPACKT"><strong>GUID</strong></p>
+</td>
+</tr>
+<tr>
+<td style="width: 23%">
+<p class="TableColumnContentPACKT"><kbd>UserProfiles</kbd></p>
+</td>
+<td style="width: 52.8595%">
+<p class="TableColumnContentPACKT"><kbd>{0762D272-C50A-4BB0-A382-697DCD729B80}</kbd></p>
+</td>
+</tr>
+<tr>
+<td style="width: 23%">
+<p class="TableColumnContentPACKT"><kbd>Desktop</kbd></p>
+</td>
+<td style="width: 52.8595%">
+<p class="TableColumnContentPACKT"><kbd>{B4BFCC3A-DB2C-424C-B029-7FE99A87C641}</kbd></p>
+</td>
+</tr>
+<tr>
+<td style="width: 23%">
+<p class="TableColumnContentPACKT"><kbd>Documents</kbd></p>
+</td>
+<td style="width: 52.8595%">
+<p class="TableColumnContentPACKT"><kbd>{FDD39AD0-238F-46AF-ADB4-6C85480369C7}</kbd></p>
+</td>
+</tr>
+<tr>
+<td style="width: 23%">
+<p class="TableColumnContentPACKT"><kbd>Downloads</kbd></p>
+</td>
+<td style="width: 52.8595%">
+<p class="TableColumnContentPACKT"><kbd>{374DE290-123F-4565-9164-39C4925E467B}</kbd></p>
+</td>
+</tr>
+</tbody>
+</table>
+<p><br/>
+An improvement to our script might involve finding these and other common folder GUIDs, and replacing them with the true path. A list of some of these common GUIDs can be found on Microsoft's MSDN website at <a href="http://msdn.microsoft.com/en-us/library/bb882665.aspx">http://msdn.microsoft.com/en-us/library/bb882665.aspx</a>.</p>
+<p>Alternatively, the graph we chose to chart the last 10 executables may not be the best way of presenting dates graphically. It might be worthwhile to create a more timeline-focused graph to better represent that data. Try using some of the other built-in graphs and their features to become more familiar with the graphing features of <kbd>xlsxwriter</kbd>.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Summary</h1>
+                
+            
+            
+                
+<p>This was a module-centric chapter, where we added three new modules to our toolkit. In addition, we gained an understanding of the <kbd>UserAssist</kbd> artifact and how to parse it. While these concepts are important, our brief detour with <kbd>timeit</kbd> may prove most valuable going forward.</p>
+<p>As developers, there will be times where the execution of our scripts is lacking or, on large datasets, takes an absurd amount of time. In these situations, modules such as <kbd>timeit</kbd> can help audit and evaluate code to identify more efficient solutions for a given situation. The code for this project can be downloaded from GitHub or Packt, as described in the <em>Preface</em>.</p>
+<p>In the next chapter, we will introduce how to hash files in Python. Specifically, we will focus on hashing blocks of data to identify identical and similar files. This is referred to as "fuzzy hashing." This technique is useful when evaluating objects that share a similar root, such as malware. We could take a known sample of malware we suspect was used on a system, fuzzy hash it, and search for matches on the system. Instead of finding an identical match, we receive a 90% match on an obscure file, which upon further inspection turns out to be a new variant of the malware that might otherwise have gone unnoticed. We will cover multiple methods to implement this functionality and the logic behind the process.</p>
+
+
+            
+
+            
+        
+    </body></html>

@@ -1,0 +1,674 @@
+<html><head></head><body>
+		<div><h1 id="_idParaDest-378" class="chapter-number"><a id="_idTextAnchor1327"/><a id="_idTextAnchor1328"/><a id="_idTextAnchor1329"/><a id="_idTextAnchor1330"/>12</h1>
+			<h1 id="_idParaDest-379"><a id="_idTextAnchor1331"/>Introduction to macOS and iOS Threats</h1>
+			<p>Apple Inc. (originally Apple Computer Company) was founded back in 1976 to sell one of the world’s first <strong class="bold">personal computers</strong> (<strong class="bold">PCs</strong>) as we know them now. By now, Apple Inc. is an industry giant with a valuation of many billions of dollars. However, not everybody is aware that its modern operating systems (such as macOS, iOS, watchOS, and tvOS) are primarily based on the <strong class="bold">NeXTSTEP</strong> solution developed by the <strong class="bold">NeXT, Inc.</strong>, a company founded by Steve Jobs following his resignation from Apple in 1985 and later acquired by Apple in 1997. All modern Apple operating systems are based on a set of components unified as the <strong class="bold">Darwin</strong> operating system, which is based on the XNU hybrid kernel.</p>
+			<p>Multiple Apple products became famous for their high quality and reliability, with their users enjoying the feeling of security and often strongly believing that there was no malware for Mac. Indeed, the number of malicious samples successfully targeting this platform is significantly lower than Windows. There are multiple reasons for this, including different security and business models, as well as the different markets of these platforms. However, as long as the number of potential targets that use these systems increases, we will also see an increase in effort to develop malware for Apple-driven platforms. Here, we will look at various threats that target users of macOS and iOS operating systems and will learn how to analyze them.</p>
+			<p>To streamline our learning, the chapter is divided into the following main sections: </p>
+			<ul>
+				<li>Understanding the role of the security model</li>
+				<li>File formats and APIs</li>
+				<li>Attack stages</li>
+				<li>Advanced techniques </li>
+				<li>Static and dynamic analysis of macOS and iOS samples</li>
+				<li>The analysis workflow</li>
+			</ul>
+			<h1 id="_idParaDest-380"><a id="_idTextAnchor1332"/><a id="_idTextAnchor1333"/><a id="_idTextAnchor1334"/>Understanding the role of the security model</h1>
+			<p>In many cases, malware <a id="_idIndexMarker1814"/>uses design weaknesses in the system architecture in order to achieve its goals. Examples could be unauthorized access to sensitive data, tampering with security measures, or modification of system files to achieve persistence or stealth. Thus, the security model plays a vital role in reducing the attack surface, and in this way, reducing the number of techniques available to malware authors.</p>
+			<p>Now, let’s take a look at security models introduced in macOS and iOS and see why they are important when we talk about malicious code.<a id="_idTextAnchor1335"/></p>
+			<h2 id="_idParaDest-381"><a id="_idTextAnchor1336"/>macOS</h2>
+			<p>macOS (previously<a id="_idIndexMarker1815"/> Mac OS X and OS X) has gone through multiple iterations since it was first introduced in 2001. Prior to that, a series of operating systems developed between 1984 to 2001 for the Macintosh family of PC was in use; now, they are known by the colloquial<a id="_idIndexMarker1816"/> term <strong class="bold">Classic Mac OS</strong>. macOS belongs to the family of Macintosh operating systems derived from NeXTSTEP. This operating system was originally based on Unix (particularly, BSD with the Mach microkernel). Using a Unix-derived architecture was a completely new direction compared to the previous Mac OS solutions.</p>
+			<p>Apart from traditional C/C++ languages, the main programming languages that Apple supports in <a id="_idIndexMarker1817"/>their <a id="_idIndexMarker1818"/>products are <strong class="bold">Objective-C</strong> and <strong class="bold">Swift</strong> (since 2014). Interactions between applications and the OS are possible through the native API, called <strong class="bold">Cocoa</strong>, derived<a id="_idIndexMarker1819"/> from OPENSTEP; prior to that, the Carbon API was used.</p>
+			<p>There are multiple mechanisms implemented in the operating system that aim to boost security while always keeping usability in the mind. Let’s go through some of the<a id="_idTextAnchor1337"/> most important <a id="_idTextAnchor1338"/>ones.</p>
+			<h3>Security policies</h3>
+			<p>macOS utilizes <a id="_idIndexMarker1820"/>several security controls derived from BSD. In particular, it utilizes traditional discretionary access restrictions to system resources and files that are based on user and group IDs. In this case, permissions are granted mainly at the level of folders, files, and apps, and are controlled at many levels, including kernel components. In addition, macOS implements mandatory access controls to power <a id="_idIndexMarker1821"/>multiple important features, such as sandboxing or <strong class="bold">System Integrity Pro<a id="_idTextAnchor1339"/>tection</strong>. System Integrity Protection was introduced<a id="_idIndexMarker1822"/> in <strong class="bold">OS X 10.11</strong> and enforces read-only access to specific critical filesystem locations, even for the root user, which are applied to all running processes. The following locations are protected:</p>
+			<ul>
+				<li><code>/usr</code></li>
+				<li><code>/bin</code></li>
+				<li><code>/sbin</code></li>
+				<li><code>/System</code></li>
+				<li>Apps pre-installed with macOS</li>
+			</ul>
+			<div><div><img src="img/Figure_12.1_B18500.jpg" alt="Figure 12.1 – No write access for one of the protected directories even with sudo&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 12.1 – No write access for one of the protected directories even with sudo</p>
+			<p>These paths can be accessed only by the processes signed by Apple as having a reason to work with them, such as Apple software updates. Thus, system files and resources, including kernels, are separated from the user’s app space so that malicious code can’t easily access it. The root user is disabled by default, but it can be enabled in system preferences when necessary.</p>
+			<p>Tasks and resources are administrated by introducing secure communication channels, called <strong class="bold">Mach ports</strong>. Ports <a id="_idIndexMarker1823"/>are unidirectional endpoints that connect a client requesting service and a server that provides it, where a resource specified by a port generally has a single receiver and multiple possible senders. Permissions to access a port in particular ways by<a id="_idIndexMarker1824"/> tasks are called port rights. Ports are an essential part of the macOS <strong class="bold">inter-process communication</strong> (<strong class="bold">IPC</strong>), which includes multiple forms, such as classi<a id="_idTextAnchor1340"/>c message <a id="_idIndexMarker1825"/>queues, semaphores, or remote procedure calls. Bypassing the associated permissions shouldn’t be possible unless some vulnerability is discovered, such as CVE-2021-30869<a id="_idIndexMarker1826"/> used in the <strong class="bold">Dazzle<a id="_idTextAnchor1341"/>Spy</strong> threat.</p>
+			<h3>Filesystem hierarchy and encryption</h3>
+			<p>Let’s take a look at the most common directories that can be found on the modern <a id="_idTextAnchor1342"/>versions of macOS and learn a bit more <a id="_idTextAnchor1343"/>about them.</p>
+			<h4>Directory structure</h4>
+			<p>Here are some<a id="_idIndexMarker1827"/> of the most crucial directories (in terms of malware analysis) and their purpose:</p>
+			<ul>
+				<li><code>/Applications:</code> This location is automatically used to install apps shared by all users.</li>
+				<li><code>Library:</code> There are multiple library directories that can be used by apps:<ul><li><code>~/Library</code>: The directory in the current user’s home directory.</li><li><code>/Library</code>: A location to store libraries shared between users.</li><li><code>/System/Library</code>: This location can be used only by Apple.</li></ul></li>
+				<li><code>/Volumes</code>: Stores subdirectories for mounted disks.</li>
+				<li><code>/System</code>: Contains system-related resources.</li>
+				<li><code>/Users</code>: Contains user home directories. Each contains its own subdirectories, including user-specific <code>Applications</code> and <code>Library</code> folders (the last one is hidden in more recent versions of macOS).</li>
+			</ul>
+			<p>Apart from that, there are various Unix-specific directories, such as <code>/bin</code>, <code>/sbin</code>, <code>/var</code>, <code>/us<a id="_idTextAnchor1344"/><a id="_idTextAnchor1345"/>r</code>, and <code>/tmp</code>.</p>
+			<h3>Encryption</h3>
+			<p>Apple uses <a id="_idIndexMarker1828"/>its own <strong class="bold">Apple FileSystem</strong> (<strong class="bold">APFS</strong>) that<a id="_idIndexMarker1829"/> offers multiple modern features, including strong encryption. All Mac computers are shipped with<a id="_idIndexMarker1830"/> the <strong class="bold">FileVault</strong> disk encryption system, which utilizes<a id="_idIndexMarker1831"/> the <strong class="bold">Advanced Encryption Standard</strong> (<strong class="bold">AES</strong>) algorithm to protect critical data. It is also possible to encrypt the whole disk and make it accessible only with valid credentials or a recovery key (FileVault 2). Once the user enables the FileVault feature, authentication is required before using <a id="_idIndexMarker1832"/>the <strong class="bold">Target Disk mode</strong>, where a device can be attached to another machine and become accessible as an external device (making it possible for attackers to access sensitive data). Newer models of Mac computers are shipped with a dedicated Apple T2 chip (or its successors) and have disk encryption enabled by default. In this case, the optional FileVault provides extra protection by requiring credentials to be provided before decryption – otherwise, encrypted SSDs can be decrypted by simply attaching them to the corresponding Mac. In addition, the Apple T2 security chip <a id="_idIndexMarker1833"/>enables <strong class="bold">Secure Boot</strong> to implement a chain of trust rooted in hardware, where the software integrity is assured at every next step of booting, making bootkit creation extremely hard.</p>
+			<p>All Macs are also shipped with the<a id="_idIndexMarker1834"/> built-in <strong class="bold">Time Machine</strong> backup feature, which allows you to restore files once they are lost or damaged, for example, due to a ransomware attack. In this case, it is also possible to encrypt backups for extra security and use external storage to make them inaccessible to malware (especially wipers and ransomware).</p>
+			<p>Finally, it is possible to create encrypted disk<a id="_idIndexMarker1835"/> images using <strong class="bold">Disk Utility</strong> and use them as secure containers for sensitive information. In this case, either 128-bit or 256-bit AES encryption is <a id="_idIndexMarker1836"/>possible.</p>
+			<p>All these techniques make it more difficult for attackers to get access to s<a id="_idTextAnchor1346"/><a id="_idTextAnchor1347"/><a id="_idTextAnchor1348"/>ensitive information.</p>
+			<h3>Apps protection</h3>
+			<p>There are several <a id="_idIndexMarker1837"/>built-in features available in macOS that en<a id="_idTextAnchor1349"/>sure that only trusted applications are in<a id="_idTextAnchor1350"/>stalled on the system.</p>
+			<h4>Gatekeeper</h4>
+			<p>One of the<a id="_idIndexMarker1838"/> first technologies worth mentioning is<a id="_idIndexMarker1839"/> called <strong class="bold">Gatekeeper</strong>. It gives users direct control over which apps are allowed to be installed. Thus, it is possible to enforce the policy by allowing only apps from the App Store to be used. All apps aiming to appear on the App Store should be signed with a certificate issued by Apple and reviewed by its engineers to ensure that they are generally free of bugs, up to date, secure, and don’t compromise the user experience in any way.</p>
+			<p>Default Gatekeeper settings also allow applications from outside the App Store that still have a valid developer ID signature, which means the app is signed using a certificate issued by Apple. In addition, it is possible to submit an app to Apple <a id="_idIndexMarker1840"/>for <strong class="bold">notarizing</strong>. In this case, the files are checked by automatic malware scanning and signature checking; as a result, the ticket is distributed with the app and available online. So, when the user executes such an app, they get a notification that it has been checked by Apple for the presence of malicious functionality. Unsigned applications will be restricted in rights by mandatory access controls and cause alerts.</p>
+			<p>Another anti-malware feature implemented in <a id="_idIndexMarker1841"/>Gatekeeper is <code>ls –l@</code> command:</p>
+			<div><div><img src="img/Figure_12.2_B18500.jpg" alt="Figure 12.2 – An extended attribute com.apple.quarantine in action&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 12.2 – An extended attribute com.apple.quarantine in action</p>
+			<p>All apps from the App Store are sandboxed and don’t have access to the data of other apps, other than by using dedicated APIs. For apps distributed outside the App Store, this feature is optional but highly recommended.</p>
+			<p>A non-sandboxed app has the same access rights as the user executing it, which means if it gets compromised by exploiting some vulnerability, the a<a id="_idTextAnchor1352"/>ttacker gets user privileges. The way <strong class="bold">App Sandbox</strong> handles<a id="_idIndexMarker1845"/> this is by only providing an app with the access rights it needs to perform its tasks; additional access may be explicitly granted by a user:</p>
+			<div><div><img src="img/Figure_12.3_B18500.jpg" alt="Figure 12.3 – App Sandbox explained&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 12.3 – App Sandbox explained</p>
+			<p>Here are examples<a id="_idIndexMarker1846"/> of the resources that a sandboxed app has to request explicitly in order to use:</p>
+			<ul>
+				<li>Hardware (such as a camera or microphone)</li>
+				<li>Networks</li>
+				<li>App data (such as a cal<a id="_idTextAnchor1353"/><a id="_idTextAnchor1354"/><a id="_idTextAnchor1355"/>endar or contacts)</li>
+				<li>User files</li>
+			</ul>
+			<h2 id="_idParaDest-382"><a id="_idTextAnchor1356"/>Other technologies</h2>
+			<p>macOS features an<a id="_idIndexMarker1847"/> embedded antivirus solution called <strong class="bold">XProtect</strong> that <a id="_idIndexMarker1848"/>detects malware using signatures and can block its installation. This technology aims to prevent infection, but if it happens, another built-in program<a id="_idIndexMarker1849"/> called the <strong class="bold">Malware Removal Tool </strong>(<strong class="bold">MRT</strong>) is supposed to monitor potential malware activity and remediate infections.</p>
+			<p>In addition, a built-in firewall can provide network protection. Finally, automatic security updates improve the overall level of system security.</p>
+			<p>Now, let’<a id="_idTextAnchor1357"/>s compare it with the iOS setup.</p>
+			<h2 id="_idParaDest-383"><a id="_idTextAnchor1358"/>iOS</h2>
+			<p>In contrast with <a id="_idIndexMarker1850"/>macOS, which is mainly developed for PC use cases, iOS was created later to power mobile devices—and this fact affects the security model introduced with it. Other newer operating systems, such as watchOS and tvOS, are extensively based on it, so we will focus mainly on iOS in this chapter.</p>
+			<p>Similar to macOS, the development can be done in the Objective-C and Swift programming languages, and the API in this case is <a id="_idIndexMarker1851"/>called <strong class="bold">Cocoa Touch</strong>, which also includes mobile-oriented features, such as gesture recognition. All iOS-powered<a id="_idTextAnchor1359"/> devices use ARM-based processors.</p>
+			<p>Now, let’s take a look at <a id="_idIndexMarker1852"/>the different layer<a id="_idTextAnchor1360"/>s of protection implemented in iOS.</p>
+			<h3>System security</h3>
+			<p>The first thing <a id="_idIndexMarker1853"/>that is worth mentioning here is the secure boot chain. This means that all components involved in the system code execution are signed by Apple and thus comprise a chain of trust, including the following:</p>
+			<ul>
+				<li><strong class="bold">Boot ROM</strong>: The first code<a id="_idIndexMarker1854"/> that is being executed once the device is turned on. Located in the read-only memory, it verifies the next stage, either <a id="_idIndexMarker1855"/>the <strong class="bold">iBoot</strong> bootloader (on newer processors) or the <strong class="bold">Low-Level Bootloader</strong> (<strong class="bold">LLB</strong>). A<a id="_idIndexMarker1856"/> failure at this stage results in the device<a id="_idIndexMarker1857"/> entering <strong class="bold">Device Firmware Upgrade</strong> (<strong class="bold">DFU</strong>) mode.</li>
+				<li><strong class="bold">LLB</strong>: Available on older devices shipped with A9 and older A-series CPUs, it is eventually responsi<a id="_idTextAnchor1361"/>ble for verifying and loading the iBoot.</li>
+				<li><strong class="bold">iBoot</strong>: Once<a id="_idIndexMarker1858"/> finished, it verifies the OS kernel before allowing it to be loaded. A failure at either the iBoot or LLB stage results in the device entering recovery mode.</li>
+				<li><strong class="bold">iOS kernel</strong>: After <a id="_idIndexMarker1859"/>the initialization, a mechanism called <strong class="bold">Kernel Integrity Protection</strong> (<strong class="bold">KIP</strong>) is <a id="_idIndexMarker1860"/>enabled. The idea behind it is to keep the kernel and driver code in a protected memory region that is not accessible for write operations once the booting completes.</li>
+			</ul>
+			<p>In both recovery and DFU modes, the device can be updated or restored to a valid state of the OS. The difference between them is that the recovery mode works mainly through iBoot, which is essentially a part of the operating system, so it can be updated or modified if necessary. In contrast, the DFU is part of the <strong class="bold">Read-Only Memory </strong>(<strong class="bold">ROM</strong>) and <a id="_idIndexMarker1861"/>cannot be tampered with.</p>
+			<p>When available, the secure enclave coprocessor is responsible for cryptographic operations that confirm the integrity and overall data protection. It runs a dedicated updatable Secure Enclave OS that is also verified by the Secure Enclave boot ROM.</p>
+			<p>As we can see, the startup process ensures that only Apple-signed code can be installed and <a id="_idIndexMarker1862"/>executed, which serves as protection against bootkits and similar threats. Apart from this, Apple strongly opposes downgrading software to older, less secure versions (either by a user or by an attacker), so it introduces a mechanism <a id="_idIndexMarker1863"/>called <strong class="bold">system software authorization</strong> that prevents its installation. All system updates can be installed either through iTunes, when a full image of the OS is being do<a id="_idTextAnchor1362"/>wnloaded and installed, or through <a id="_idIndexMarker1864"/>an <strong class="bold">Over-The-Air </strong>(<strong class="bold">OTA</strong>) mechanism, whe<a id="_idTextAnchor1363"/>re only components related to updates are used.</p>
+			<h3>Data encryption and password management</h3>
+			<p>In terms of <a id="_idIndexMarker1865"/>encryption, Apple<a id="_idIndexMarker1866"/> introduced several important features to make it both extremely robust and highly productive. Each iOS device has its <strong class="bold">Unique ID</strong> (<strong class="bold">UID</strong>) and <strong class="bold">Group ID</strong> (<strong class="bold">GID</strong>) to be used in cryptographic operations, where the UID is unique to the device and the GID is shared across all processors of the same type. These values are fused or compiled into the Secure Enclave and CPU during manufacturing; each device gets its own values that are not accessible directly by either software, firmware, or through debugging interfaces (such as JTAG). Cryptographic keys are generated inside the Secure Enclave utilizing a true <strong class="bold">Hardware Random Number Generator</strong> (<strong class="bold">HRNG</strong>), which <a id="_idIndexMarker1867"/>are generally more secure<a id="_idIndexMarker1868"/> than <strong class="bold">Pseudo-Random Number Generators</strong> (<strong class="bold">PRNGs</strong>). In addition, a dedicated technology<a id="_idIndexMarker1869"/> called <strong class="bold">Effaceable Storage</strong> is responsible for secure<a id="_idTextAnchor1364"/>ly erasing saved keys once they are no longer needed. File encryption is implemented based on the technology called Data Protection. It generates a new 256-bit AES key for each file created on the device. On newer devices, AES-XTS encryption mode is used, while older devices feature AES-CBC mode. This per-file key is then wrapped (encrypted) with the corresponding class key, which varies for different types of data and is handled differently according to it. Here are the classes supported at the moment:</p>
+			<ul>
+				<li><strong class="bold">Class A – complete protection</strong>: Class keys are wrapped using both a UID and passcode; decrypted keys are discarded after the device is locked.</li>
+				<li><strong class="bold">Class B – protected unless open</strong>: Class keys are used together with elliptic curve cryptography to handle files that should be written when the device is locked.</li>
+				<li><strong class="bold">Class C – protected until first user authentication</strong>: The default class for all third-party app data. It’s pretty much the same as Class A, but the main difference is that the decrypted class keys are not wiped once the device is locked. This provides protection against attacks that utilize a reboot.</li>
+				<li><strong class="bold">Class D – no protection</strong>: Class keys are encrypted using only the UID. They are stored in Effaceable Storage and can be quickly wiped if necessary.</li>
+			</ul>
+			<p>Finally, the wrapped key is stored in the file’s metadata, which is encrypted using the filesystem key. While the class keys are encrypted/wrapped using UID and some of them with the passcode, the filesystem key is wrapped using the effaceable key stored in the Effaceable Storage. Once the effaceable key is deleted (for example, using a remote wipe or the <strong class="bold">Erase All Content and Settings</strong> options), it makes the content of all files inaccessible by any means.</p>
+			<p>When the user sets a passcode, Data Protection becomes enabled automatically. As it is connected to the device’s UID (which we now know is not accessible), it is impossible to brute-force passcodes without the device being physically present. There are several other mechanisms implemented to complicate brute-forcing, for example, a large count of iterations to slow it down, time delays, or automatic data wiping after entering several consecutive invalid values. Other authentication mechanisms, such as TouchID and FaceID, work closely with this technology.</p>
+			<p>All sensitive data that belongs to apps can be stored in the iOS keychain, which is an SQLite database where values are encrypted using the AES-256-GCM algorithm. This keychain also introduces its own classes to handle different types of data. This way, developers can prevent access to certain data under particular circumstances, for example, when the device is locked. Keychain items can be shared by several apps, but only when they come from the same developer. Finally, all class keys for file protection and keychain<a id="_idIndexMarker1870"/> are<a id="_idIndexMarker1871"/> administrated <a id="_idIndexMarker1872"/>using <strong class="bold">keybags</strong>. There are several types of them used at the moment in iOS:</p>
+			<ul>
+				<li><strong class="bold">User keybag</strong>: This stores<a id="_idIndexMarker1873"/> wrapped class keys involved in the normal device operation.</li>
+				<li><strong class="bold">Device keybag</strong>: This stores <a id="_idIndexMarker1874"/>wrapped class keys associated with device-specific data operations.</li>
+				<li><strong class="bold">Backup keybag</strong>: This is <a id="_idIndexMarker1875"/>used when the encrypted backup is created using iTunes.</li>
+				<li><strong class="bold">iCloud backup</strong>: Similar to<a id="_idIndexMarker1876"/> the backup keybag, it is used for iCloud backups.</li>
+				<li><strong class="bold">Escrow keybag</strong>: This is<a id="_idIndexMarker1877"/> used for iTunes syncing <a id="_idIndexMarker1878"/>and <strong class="bold">Mobile Device Management </strong>(<strong class="bold">MDM</strong>).</li>
+			</ul>
+			<p>Saved user passwords are kept in the dedicated storage, called the <strong class="bold">Password AutoFill</strong> keychain. In <a id="_idIndexMarker1879"/>addition, the iCloud keychain mechanism is responsible for synchronizing credentials across multiple devices. Together, these technologies provide functionality to generate strong passwords, fill in credentials on the websites and apps of your choosing, and securely share them.</p>
+			<p>It is impossible for apps to access credentials without explicit user consent. In addition, you may need approval from the application or website developer. This approach makes unsolicited<a id="_idIndexMarker1880"/> data <a id="_idIndexMarker1881"/>access much more difficult.</p>
+			<h3>App security</h3>
+			<p>iOS requires all<a id="_idIndexMarker1882"/> code running on the device to be signed using a valid Apple-issued certificate, to ensure its integrity and that it comes from a trusted source. Unlike macOS, this rule is enforced, and the sideloading of apps outside the App Store is not supported for purposes other than app development. A notable exception to this rule is code signed <a id="_idIndexMarker1883"/>with <strong class="bold">Enterprise Program</strong> certificates, which mainly aim to allow the distribution of proprietary software for internal use or intra-organization beta testing. Later, we will see how this technology can be misused by malware. Usually, this is done using MDM; in this case, a special enterprise-provisioning profile is created on the device.</p>
+			<p>Once the developer joins the Apple developer program, their identity needs to be verified before the certificate can be issued. Since 2015, there is also an option for developers to sign their code for free, but it has multiple limitations, such as a short expiration date, lack of access to certain features for apps, and a small number of devices on which the app can be executed. In addition, all app code must be verified by Apple to confir<a id="_idTextAnchor1365"/>m that it is free of obvious bugs and doesn’t pose a risk to users. While it frameworks can be loaded inside the apps, the system validates the signatures of all loaded libraries at launch time using team identifiers.</p>
+			<p>It may be quite difficult for the attacker to obtain a full valid certificate, but even in the case of success, Apple has an option to promptly revoke the compromised entry and thus protect the majority of devices.</p>
+			<p>All apps are sandboxed, so they can only access the resources necessary to perform their function. They run under the non-privileged mobile user and there are no APIs that allow self-privilege escalation. Each app has its own directory to store files and can’t gather or alter information associated with other applications – only apps that belong to the same App Group and come from the same developer can access a limited set of shared items.</p>
+			<p>The following directories are <a id="_idIndexMarker1884"/>commonly used by sandboxed apps:</p>
+			<ul>
+				<li><code>&lt;app_name&gt;.app</code>: The app’s bundle, available for read-only operations.</li>
+				<li><code>Documents/</code>: This location is supposed to be used to store user-generated content.</li>
+				<li><code>Library/</code>: This can be used to store any non-user files. Some of the most commonly used subdirectories here are <code>Application Support</code> and <code>Caches</code>.</li>
+				<li><code>tmp/</code>: This is used to store temporary files that don’t persist between app launches.</li>
+			</ul>
+			<p>The exact location at which apps are installed varies among the different versions of iOS.</p>
+			<p>There are dedicated APIs that can be used to allow safe interaction between apps. In addition, the apps’ extensions (signed executables shipped with the app) can be used for inter-process communications as well; in this case, each extension has its own address space. All this makes it very difficult for attackers to access or tamper with sensitive information, or to affect the system.</p>
+			<p>The way that third-party apps can access sensitive data is controlled by mechanisms called <strong class="bold">entitlements</strong>. These <a id="_idIndexMarker1885"/>are digitally signed credentials, associated with apps, for handling privileged operations. Beyond this, features such as <strong class="bold">Address Space Layout Randomization </strong>(<strong class="bold">ASLR</strong>), ARM’s <strong class="bold">Execute Never </strong>(<strong class="bold">XN</strong>), and stack <a id="_idIndexMarker1886"/>canaries <a id="_idIndexMarker1887"/>are used to provide protection against exploits that leverage memory-corruption vulnerabilities. Finally, the entire partition that stores the operating system is mounted as read-only to prevent tampering.</p>
+			<p>One last thing worth mentioning is the <a id="_idIndexMarker1888"/>Apple <strong class="bold">FairPlay</strong> DRM protection, which may also be used to apply encryption to the app once it is downloaded so that the encrypted block can be decrypted only on the appr<a id="_idTextAnchor1366"/><a id="_idTextAnchor1367"/>oved device that is requesting it. It may complicate the life of reverse-engineers doin<a id="_idTextAnchor1368"/>g a static analysis of the sample, as the decrypted<a id="_idIndexMarker1889"/> version needs to be obtained first, so this is worth keeping in mind.</p>
+			<p>Now, it is time to dive deeper into the various file formats widely used in Apple operating systems to manage executables.</p>
+			<h1 id="_idParaDest-384"><a id="_idTextAnchor1369"/>File formats and APIs</h1>
+			<p>Knowing <a id="_idIndexMarker1890"/>about <a id="_idIndexMarker1891"/>file formats and their structure is important for static analysis, as it becomes possible to know exactly where to search for particular artifacts of interest. In terms of dynamic analysis, knowledge about the structure is particularly useful, as this way, we know <a id="_idTextAnchor1370"/>how to run the sample properly and the order in which the code is goin<a id="_idTextAnchor1371"/>g to be executed, so we won’t miss an important part of the functionality.</p>
+			<h2 id="_idParaDest-385"><a id="_idTextAnchor1372"/>Mach-O</h2>
+			<p>This format is the<a id="_idIndexMarker1892"/> main executable format on macOS and iOS operating systems. It has pretty much the same role as PE on Windows or ELF on Linux-based systems. It is also used to store <a id="_idTextAnchor1373"/>object code, shared l<a id="_idTextAnchor1374"/>ibraries, and core dumps. There are two types of these files: <strong class="bold">thin</strong> and <strong class="bold">fat</strong>.</p>
+			<h3>Thin</h3>
+			<p>This is the <a id="_idIndexMarker1893"/>most <a id="_idIndexMarker1894"/>common type of Mach-O file. It is composed of the following parts:</p>
+			<ul>
+				<li><strong class="bold">A header</strong>: Contains <a id="_idIndexMarker1895"/>general information about the file. Here is its structure according to the official source code:<pre>struct mach_header {
+  unsigned long magic; /* mach magic number identifier */
+  cpu_type_t cputype; /* cpu specifier */
+  cpu_subtype_t cpusubtype; /* machine specifier */     
+  unsigned long filetype; /* type of file */
+  unsigned long ncmds; /* number of load commands */
+  unsigned long sizeofcmds; /* the size of load commands */
+  unsigned long flags; /* flags */
+};</pre></li>
+			</ul>
+			<p>The difference between 32-bit and 64-bit versions of this header lies mainly in the extra reserved field added to the end of this structure, and the slightl<a id="_idTextAnchor1375"/><a id="_idTextAnchor1376"/>y different magic values used: <code>0xfeedface</code> for 32-bit and <code>0xfeedfacf</code> for 64-bit.</p>
+			<ul>
+				<li><strong class="bold">Load commands</strong>: These<a id="_idIndexMarker1896"/> can perform multiple actions, most importantly defining the segments present in the file, where each block contains information about a particular segment and the corresponding sections, including offsets and sizes. This data can be used to load the executable correctly in memory. Here is <a id="_idIndexMarker1897"/>the <a id="_idIndexMarker1898"/>structure of the command describing a segment:<pre>struct segment_command {
+  unsigned long cmd; /* LC_SEGMENT */
+  unsigned long cmdsize; /* size of section structs */
+  char segname[16]; /* segment name */
+  unsigned long vmaddr; /* memory address of this segment */
+  unsigned long vmsize; /* memory size of this segment */
+  unsigned long fileoff; /* file offset of this segment */
+  unsigned long filesize; /* amount to map from the file */ 
+  vm_prot_t maxprot; /* maximum VM protection */
+  vm_prot_t initprot; /* initial VM protection */
+  unsigned long nsects; /* number of sections in segment */ 
+  unsigned long flags; /* flags */
+ };</pre></li>
+			</ul>
+			<p>The same fields are used within 32-bit and 64-bit architectures (<code>LC_SEGMENT</code> and <code>LC_SEGMENT_64</code> commands, respectively) – the difference will only be the sizes of the fields.</p>
+			<p>It is followed by <a id="_idIndexMarker1899"/>a set <a id="_idIndexMarker1900"/>of structures that describe the sections:</p>
+			<pre>struct section {
+  char sectname[16]; /* name of this section */
+  char segname[16]; /* segment this section goes in */
+  unsigned long addr; /* memory address of this section */
+  unsigned long size; /* size in bytes of this section */
+  unsigned long offset; /* file offset of this section */
+  unsigned long align; /* section alignment (power of 2) */
+  unsigned long reloff; /* file offset of relocation entries */
+  unsigned long nreloc; /* number of relocation entries */
+  unsigned long flags; /* flags (section type and attributes) */
+  unsigned long reserved1; /* reserved */
+  unsigned long reserved2; /* reserved */
+};</pre>
+			<p>In terms of malware analysis, another load command that might be of interest to<a id="_idTextAnchor1377"/> an analyst is <code>LC_LOAD_DYLIB</code>, which is responsible for loading additional libraries.</p>
+			<ul>
+				<li><code>__DATA</code> or <code>__text</code>, respectively. Here are some of the most important segments and sections in terms of malware analysis that can be<a id="_idIndexMarker1902"/> found in <a id="_idIndexMarker1903"/>the majority of Mach-O files:<ul><li><code>TEXT</code>: This segment is read-only, as it contains executable code and constant data:<ul><li><code>text</code>: Contains actual compiled machine code</li><li><code>const</code>: Generic constant data used by the executable</li><li><code>cstring</code>: Stores string constants</li></ul></li><li><code>DATA</code>: This contains non-constant data, so it is available for both read and write operations:<ul><li><code>data</code>: Used to store initialized global variables</li><li><code>common</code>: Stores uninitialized external global variables</li><li><code>bss</code>: Keeps uninitialized static variables</li><li><code>const</code>: Contains constant data available for relocation</li></ul></li></ul></li>
+			</ul>
+			<p>The files that implement this format contain machine code associated with one platform only. At the moment, it is ARM for iOS and x86-64 or ARM for macOS; older versions of macOS were based on PowerPC and later, IA-32 architectures.</p>
+			<p>The format has undergone a few changes with the introduction of Mac OS X 10.6, which made newer executables incompatible with older versions of the OS. These changes included<a id="_idIndexMarker1904"/> the <a id="_idIndexMarker1905"/>following:</p>
+			<ul>
+				<li>Different load commands</li>
+				<li>A n<a id="_idTextAnchor1378"/><a id="_idTextAnchor1379"/><a id="_idTextAnchor1380"/>ew format for the link-edit table data used by a dynamic linker (the <code>__LINKEDIT</code> segment)</li>
+			</ul>
+			<h3>Fat</h3>
+			<p>Fat binaries (also<a id="_idIndexMarker1906"/> known <a id="_idIndexMarker1907"/>as multi-architecture binaries or universal binaries) are quite unique, as they are used to store code for several different architectures. The format includes a custom fat header, followed by a set of Mach-O files:</p>
+			<div><div><img src="img/Figure_12.4_B18500.jpg" alt="Figure 12.4 – A fat Mach-O executable ﬁle&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 12.4 – A fat Mach-O executable ﬁle</p>
+			<p>Here is the header structure:</p>
+			<pre class="source-code">
+struct fat_header {
+  unsigned long magic; /* FAT_MAGIC */
+  unsigned long nfat_arch; /* number of structs that follow */
+};</pre>
+			<p>The magic value, in this case, is <code>0xcafebabe</code>.</p>
+			<p>This header is followed by several <code>fat_arch</code> structures, whose amount is equal to the value specified by the <code>nfat_arch</code> field:</p>
+			<pre class="source-code">
+struct fat_arch {
+  cpu_type_t cputype; /* cpu specifier (int) */ 
+  cpu_subtype_t cpusubtype; /* machine specifier (int) */
+  unsigned long offset; /* file offset to this object file */ 
+  unsigned long size<a id="_idTextAnchor1381"/>; /* size of this object file */
+  unsigned long align; /* alignment as a power of 2 */
+};</pre>
+			<p>All these<a id="_idIndexMarker1908"/> structures <a id="_idIndexMarker1909"/>can be found in the officially published Apple source code.</p>
+			<div><div><img src="img/Figure_12.5_B18500.jpg" alt="Figure 12.5 – IDA conﬁrming which thin Mach-O ﬁle in the fat binary should be analyzed&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 12.5 – IDA conﬁrming which thin Mach-O ﬁle in the fat binary should be analyzed</p>
+			<p><a id="_idTextAnchor1382"/>Usually, it <a id="_idIndexMarker1910"/>m<a id="_idTextAnchor1383"/>akes <a id="_idIndexMarker1911"/>sense to stick to the architecture that the engineer is most comfortable working with.</p>
+			<h2 id="_idParaDest-386"><a id="_idTextAnchor1384"/>Application bundles (.app)</h2>
+			<p>Bundles are <a id="_idIndexMarker1912"/>directories that store everything that the app needs in order to successfully perform its operations. It allows related files to be grouped together and distributed as a single entity. In the case of both macOS and iOS systems, they generally include the following:</p>
+			<ul>
+				<li><strong class="bold">An executable</strong>: Contains the code that defines the logic behind an application with the main entry point.</li>
+				<li><strong class="bold">Resources</strong>: <a id="_idTextAnchor1385"/>All data files located outside the executable, such as images, sounds, or configuration files.</li>
+				<li><strong class="bold">Additional support files</strong>: Examples include various templates, plugins, and frameworks.</li>
+				<li><strong class="bold">Info.plist</strong>: This is an obligatory information property list that contains configuration information required by the system.</li>
+			</ul>
+			<p>The most common extension associated with application bundles here is <code>.app</code>. The file hierarchy is slightly different for iOS and macOS; for the former, all required files are located in the root folder, while for the latter, they are located in the dedicated <code>Contents</code> folder, with the code located in the <code>MacOS</code> subdirectory and resources in the <code>Resources</code> subdirectory <a id="_idIndexMarker1913"/>in<a id="_idTextAnchor1386"/><a id="_idTextAnchor1387"/>side it. Other common standard subdirectories used are <code>PlugIns</code>, <code>Frameworks</code>, and <code>SharedSupport</code>.</p>
+			<h3>Info.plist</h3>
+			<p>As has already <a id="_idIndexMarker1914"/>been mentioned, <code>Info.plist</code> provides<a id="_idIndexMarker1915"/> important app-related metadata to the system at runtime. The requir<a id="_idTextAnchor1388"/>ed values are slightly different for macOS and iOS; let’s go through the most important of them.</p>
+			<h3>macOS</h3>
+			<p>Here is a list of <a id="_idIndexMarker1916"/>important values with a brief explanation for each:</p>
+			<ul>
+				<li><code>CFBundleName</code>: The short name of the bundle</li>
+				<li><code>CFBundleDisplayName</code>: The localized name of the app</li>
+				<li><code>CFBundleIdentifier</code>: A string that identifies an app in the system in reverse <code>com.example.hello</code>)</li>
+				<li><code>CFBundleVersion</code>: The build version number of the bundle</li>
+				<li><code>CFBundlePackageType</code>: Always <code>APPL</code> for applications</li>
+				<li><code>CFBundleSignature</code>: The short code for the bundle</li>
+				<li><code>CFBundleExecutable</code>: Probabl<a id="_idTextAnchor1389"/><a id="_idTextAnchor1390"/>y the most important field for malware analysis, as it defines the name of the main executable file</li>
+			</ul>
+			<h3>iOS</h3>
+			<p>Now, let’s take<a id="_idIndexMarker1918"/> a look at the fields for iOS apps:</p>
+			<ul>
+				<li><code>CFBundleDisplayName</code>: The<a id="_idIndexMarker1919"/> localized name of the app, displayed underneath the application icon.</li>
+				<li><code>CFBundleIdentifier</code>: The string that identifies an app in the system in reverse DNS format, which is the same as in macOS.</li>
+				<li><code>CFBundleVersion</code>: The build version number of the bundle.</li>
+				<li><code>CFBundleIconFiles</code>: This stores an array with the filenames of the icons used. </li>
+				<li><code>LSRequiresIPhoneOS</code>: A Boolean value indicating whether the bundle should run only on iOS; it is automatically set to <code>True</code> by the Xcode IDE.</li>
+				<li><code>UIRequiredDeviceCapabilities</code>: Defines device-related features required for the app to run.</li>
+				<li><code>CFBundleExecutable</code>: The name of the main executable. It is generally expected to be the same as the application name without the <code>.app</code> extension.</li>
+			</ul>
+			<div><div><img src="img/Figure_12.6_B18500.jpg" alt="Figure 12.6 – A CFBundleExecutable field in the Info.plist file of an AceDeceiver threat&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 12.6 – A CFBundleExecutable field in the Info.plist file of an AceDeceiver threat</p>
+			<p>Besides XML<a id="_idIndexMarker1920"/> and JSON, <code>.plist</code> files can also be encoded using the binary format. In this case, they will look as follows:</p>
+			<div><div><img src="img/Figure_12.7_B18500.jpg" alt="Figure 12.7 – A binary-encoded .plist file of the ZergHelper threat&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 12.7 – A binary-encoded .plist file of the ZergHelper threat</p>
+			<p>The standard <code>file</code> tool will display the following message for such files: </p>
+			<pre>Info.plist; Apple binary property list</pre>
+			<p>To conv<a id="_idTextAnchor1391"/><a id="_idTextAnchor1392"/>ert them to a human-readable format, use the standard <code>plutil</code> tool: <code>plutil -convert xml1 Info.plist</code>.</p>
+			<h2 id="_idParaDest-387"><a id="_idTextAnchor1393"/>Installer packages (.pkg)</h2>
+			<p>These files<a id="_idIndexMarker1921"/> commonly have the <code>.pkg</code> file extension and are used to group and store related files together, preserving the file hierarchy. Then, they can be extracted and ins<a id="_idTextAnchor1394"/>talled using the installer application <a id="_idIndexMarker1922"/>on macOS. Internally, they implement <code>xar</code> tool:</p>
+			<div><div><img src="img/Figure_12.8_B18500.jpg" alt="Figure 12.8 – The content of the .pkg file listed using the xar tool&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 12.8 – The content of the .pkg file listed using the xar tool</p>
+			<p class="callout-heading">Important note</p>
+			<p class="callout">It is not recommended to use 7-Zip for extraction in this case, as it doesn’t see all the files present in the archive compared to the <code>xar</code> tool, which may lead to some artifacts that are important from the analysis perspective being overlooked. <em class="italic">Figure 12.9</em> is an example of the incomplete data visible when using 7-Zip.</p>
+			<div><div><img src="img/Figure_12.9_B18500.jpg" alt="Figure 12.9 – 7-Zip only displaying a subset of the files present in the archive compared to the xar tool&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 12.9 – 7-Zip only displaying a subset of the files present in the archive compared to the <code>xar</code> tool</p>
+			<p>Aside from looking for Mach-O executables in the <code>Payload</code> directory, also check the <code>PackageInfo</code> file, as it may point to scripts that will be executed during the installation, commonly located in the <code>Scripts</code> archive. Anothe<a id="_idTextAnchor1395"/>r place to check is the <code>Distribution</code> file if <a id="_idIndexMarker1923"/>present, as it may contain executable JavaScript code.</p>
+			<h2 id="_idParaDest-388"><a id="_idTextAnchor1396"/>Apple disk images (.dmg)</h2>
+			<p>This is another <a id="_idIndexMarker1924"/>common way to distribute applications for macOS; the corresponding disk image files generally have the <code>.dmg</code> file extension. They can be used as a mountable disk or volume for storing files of various types. The native format used for this nowadays<a id="_idIndexMarker1925"/> is the <code>koly</code> value at its start. In order to get access to the files inside, the disk image can be mounted or converted using standard tools bundled with Apple operating systems, such <a id="_idIndexMarker1927"/>as the <strong class="bold">hdiutil</strong> console. On other operating systems, it is possible to use tools <a id="_idIndexMarker1928"/>such as <strong class="bold">dmg2img</strong> to <a id="_idTextAnchor1398"/>convert these files into a non-proprietary disk <a id="_idTextAnchor1399"/>image format <a id="_idIndexMarker1929"/>and then mount them as usual. Alternatively, they can be unpacked using tools such as 7-Zip.</p>
+			<h2 id="_idParaDest-389"><a id="_idTextAnchor1400"/>iOS app store packages (.ipa)</h2>
+			<p><code>.ipa</code>. All <code>.ipa</code> files should contain the <code>Payload</code> directory with the <code>.app</code> bundle directory inside, which may also contain various metadata for iTunes and the App Store. In terms of implementation, the ZIP format is used here, which means that these files can be unpacked using any standard tools able to handle ZIP files<a id="_idTextAnchor1401"/>.</p>
+			<p>Now that we are familiar with the most common file types used in Apple systems, let’s explore their APIs.</p>
+			<h2 id="_idParaDest-390"><a id="_idTextAnchor1402"/>APIs</h2>
+			<p>Apple provides a rich<a id="_idIndexMarker1931"/> set of APIs to developers that aim to let them perform any task in a robust and secure way. The <code>NS</code> prefix commonly used in names stands for NeXTSTEP – the platform that they were originally designed for. The <code>CF</code> prefix is an abbreviation of the <strong class="bold">Core Foundation</strong> framework, which<a id="_idIndexMarker1932"/> is a C API for macOS and iOS. The reason they co-exist and sometimes provide similar functionalities is mainly historical, as this is the result of merging the Classic Mac OS toolbox and OPENSTEP specification. There is even a special term for using the corresponding logic interchangeably: toll-free bridging.</p>
+			<p>Here are some examples of classes commonly misused by malware:</p>
+			<ul>
+				<li><code>NSFileHandle</code> and <code>NSFileManager</code>.</li>
+			</ul>
+			<p>Low-level functionality can also be implemented using classes from the <code>InputStream</code> and its counterpart, <code>CFReadStream</code>. Another option is the <code>NSWorkspace</code> class from <code>NSString</code> methods; for example, <code>stringWithContentsOfFile</code>.</p>
+			<ul>
+				<li><code>NSTask</code> class. The <code>NSWorkspace</code> class, among others, can also be used to iterate through running apps (for example, to search for antivirus solutions) and launch new ones. It is also possible to use the <code>Process</code> class from the <strong class="bold">Streams, Sockets, and Port</strong> group of the Foundation framework.</li>
+				<li><code>NSURLSession</code>.</li><li><code>NSHost</code> or <code>NSSocketPort</code>.</li><li><code>CFNetwork</code>: This framework can be utilized to work with network artifacts as well. Some examples of the corresponding classes are <code>CFHTTP</code> and <code>CFFTP</code>.</li><li><code>CFSocket</code>: This class from the Core Foundation framework can also be used, which represents a communication channel implemented with a BSD socket.</li><li><code>NSString</code>: This method can be used to access networking functionality as well, for example, <code>stringWithContentsOfURL</code>.</li></ul></li>
+			</ul>
+			<p>In disassembly, things will look a little bit different. Particularly, the <code>objc_msgSend</code> function will appear quite often, as it is used by the compiler to interact with instances of classes by sending messages and receiving the results. In order to figure out the actual functionality, we need to map selector arguments to the corresponding human-readable valu<a id="_idTextAnchor1403"/>es, a job generally done by disassemblers and decompilers. Here is how it may be<a id="_idIndexMarker1934"/> presented in the debugger:</p>
+			<div><div><img src="img/Figure_12.10_B18500.jpg" alt="Figure 12.10 – An example of XcodeGhost’s disassembly in IDA preparing a web request&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 12.10 – An example of XcodeGhost’s disassembly in IDA preparing a web request</p>
+			<p>We have already lear<a id="_idTextAnchor1404"/><a id="_idTextAnchor1405"/>ned enough about how malware samples may look, so now let’s explore what their most common functions would be.</p>
+			<h1 id="_idParaDest-391"><a id="_idTextAnchor1406"/>Attack stages</h1>
+			<p>Regardless of the<a id="_idIndexMarker1935"/> targeted architecture, generally, malware has to go through the same stages in order to ach<a id="_idTextAnchor1407"/><a id="_idTextAnchor1408"/><a id="_idTextAnchor1409"/>ieve its goals; however, the implementation can be quite different. Let’s go through the most important of them.</p>
+			<h2 id="_idParaDest-392"><a id="_idTextAnchor1410"/>Jailbreaks on demand</h2>
+			<p>To begin, let’s<a id="_idIndexMarker1936"/> talk about jailbreaks in greater detail. Jailbreaking generally <a id="_idIndexMarker1937"/>applies to iOS mobile devices and involves obtaining elevated privileges in order to remove certain software restrictions. There are multiple reasons why users may want to do this to their devices:</p>
+			<ul>
+				<li><strong class="bold">Getting access to extra functionality</strong>: In this case, a user becomes able to tweak the operating system appearance or get access to unsupported features.</li>
+				<li><strong class="bold">Unlocking carrier-locked phones</strong>: This may help unlock devices so that they can be used with other mobile carriers.</li>
+				<li><strong class="bold">Installing unapproved or pirated software</strong>: Here, examples include older versions of software, custom input systems (popular in China), or generic App Store software from other markets without paying for it.</li>
+			</ul>
+			<p>While the terms jailbreaking and rooting are often used interchangeably, jailbreaking is actually a broader term, as it also involves unlocking the bootloader in order to modify the operating system, for example, to allow easy app sideloading (that is, the installation of unsigned apps or apps distributed outside the App Store).</p>
+			<p>There are several common<a id="_idIndexMarker1938"/> types of jailbreaks for iOS, based on the way the kernel is patched:</p>
+			<ul>
+				<li><strong class="bold">Untethered</strong>: The jailbreak is applied after simply rebooting the device, without any need to use a PC during the booting process.</li>
+				<li><strong class="bold">Tethered</strong>: A PC is required to turn on the mobile device each time it is rebooted – otherwise, the device becomes dysfunctional.</li>
+				<li><strong class="bold">Semi-tethered</strong>: The PC is required to run the modified code during the boot, but it can still boot on its own, providing limited access to some basic functionality. </li>
+				<li><strong class="bold">Semi-untethered</strong>: This requires the kernel to be patched every time the device is rebooted. In this case, it can be accomplished without a PC, with the help of a<a id="_idIndexMarker1939"/> dedicated app installed on the device.</li>
+			</ul>
+			<p>Older jailbreaking tools, such <a id="_idIndexMarker1940"/>as <code>sshd</code> files in the filesystem.</p>
+			<p>As we can see, generally, there is no obvious solution for generic malware to silently apply a<a id="_idIndexMarker1943"/> jailbreak when running either on the device itself or the connected PC without interaction with a legitimate user. Thus, many malware f<a id="_idTextAnchor1412"/>amilies prefer to either target already-jailbroken devices or rely on other techniques in order to achieve their goals.</p>
+			<h2 id="_idParaDest-393"><a id="_idTextAnchor1413"/>Initial access</h2>
+			<p>As we know<a id="_idIndexMarker1944"/> now, the application-related policies are quite different for macOS and iOS. If macOS still makes it possible for users to install programs outside the App Store, lower their security settings to allow unsigned applications, and create programs that don’t incorporate App Sandbox, all this is not possible on iOS without jailbreaking the device. Thus, the common penetration vectors differ for these operating systems.</p>
+			<p>As the App Store infrastructure is quite well-protected against malicious apps, especially because of the obligatory signing of quite expensive certificates that can be promptly revoked, therefore deactivating the corresponding threat on the vast majority of devices, mass malware authors rarely follow this path. Still, there are some exceptions to this rule, for example, when malware authors get access to stolen certificates or inject malicious functionality into legitimate software. An example of this could be an <strong class="bold">XcodeGhost</strong> threat <a id="_idIndexMarker1945"/>that managed to get access to developers’ machines via a compromised Xcode IDE downloaded from a third-party website and injected malicious logic into legitimate iOS apps. Another approach was chosen by the authors <a id="_idIndexMarker1946"/>of <strong class="bold">XcodeSpy</strong> and <strong class="bold">XCSSET</strong> threats, which <a id="_idIndexMarker1947"/>embedded into distributed Xcode projects and executed payloads when the developer would build them.</p>
+			<p>A creative way to bypass the revocation of malicious apps was used by the authors of <strong class="bold">AceDeceiver</strong>, who managed to upload their app to the App Store by checking the physical location and presenting benign functionality to users located outside of China. The attackers managed to intercept the authorization token used by the Apple FairPlay DRM technology, which is unique to each app but the same for all devices. Eventually, this token allowed the attackers to perform FairPlay MITM attacks – when a client running on the connec<a id="_idTextAnchor1414"/>ted PC can use it to install an app to non-jailbroken iOS devices, even after the actual app was removed from the App Store. Another app that managed to bypass the Apple review<a id="_idIndexMarker1948"/> was <strong class="bold">ZergHelper</strong>. In order to install apps on non-jailbroken devices, it implemented a part of the Xcode functionality responsible for automatically obtaining free developer certificates. Originally intended to be used to sign apps that can run only on<a id="_idIndexMarker1949"/> the personal developer’s device, in this case, they were used to sign unwanted apps on the fly, before installing them on the victim’s device associated with the requested certificate:</p>
+			<div><div><img src="img/Figure_12.11_B18500.jpg" alt="Figure 12.11 – ZergHelper dynamically obtaining developer certificates&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 12.11 – ZergHelper dynamically obtaining developer certificates</p>
+			<p>One more notable <a id="_idIndexMarker1950"/>example is <strong class="bold">WireLurker</strong>, distributed via Chinese app stores where it trojanized hundreds of apps. In this case, even if the device wasn’t jailbroken, it was possible to collect some basic information about the system and install unwanted apps signed with Enterprise Program certificates.</p>
+			<p>Overall, many iOS threats primarily target jailbroken devices to be able to get access to sensitive information or required system features – on modern systems, there is no easy way to elevate privileges from the device itself, so users commonly jailbreak their own devices by manually signing jailbreaking apps using their own certificates and allowing them access to the device settings. Cydia repositories are among the most common places where malware authors host their brainchildren. A notable exception to this rule was <a id="_idIndexMarker1951"/>the <strong class="bold">Pegasus</strong> malware, which leveraged a zero-day exploit that targeted the Safari browser, so it was enough for users to click on the phishing link in order to get infected.</p>
+			<p>For macOS, attackers these days mainly focus on simpler options, such as hosting malicious apps on third-party websites, application stores, or torrent networks and relying on social engineering techniques to trick users into installing them. In the case of the <strong class="bold">KeRanger</strong> threat, a<a id="_idIndexMarker1952"/> legitimate website was compromised and the corresponding software was trojanized. The use of exploits that target browsers is quite rare nowadays. In addition, just as with Windows users, it is possible to get infected by opening a Microsoft Office document that contains a malicious macro and allowing it to be executed. In some cases, malware authors may still prefer to propagate through the App Store using stolen certificates to bypass Gatekeeper. This particularly applies to malware families that don’t care whether they are detected and deleted in a day or two, as their aim<a id="_idIndexMarker1953"/> is to affect as many users as possible in a very short time. A good example <a id="_idTextAnchor1415"/>is ranso<a id="_idTextAnchor1416"/>mware, whose job is done as long as it manages to encrypt a victim’s files and then deliver instructions on how to pay a ransom.</p>
+			<h2 id="_idParaDest-394"><a id="_idTextAnchor1417"/>Execution and persistence</h2>
+			<p>Once the first-stage<a id="_idIndexMarker1954"/> malware enters the targeted machine, it generally needs to settle down, deliver, and configure additional modules (commonly by downloading or extracting them fr<a id="_idTextAnchor1418"/>om its body), and then make sure it will survive the system reboot. That’s what execution and persistence stage<a id="_idTextAnchor1419"/>s are mainly about.The deployment mechanisms vary for macOS and iOS systems. Let’s take a look at each of them in greater detail.</p>
+			<h3>macOS </h3>
+			<p>There are multiple <a id="_idIndexMarker1955"/>places where malware can hide from the user on the macOS system. Here are some of the most common locations:</p>
+			<ul>
+				<li><code>/tmp</code>: One<a id="_idIndexMarker1956"/> of the most popular locations to put intermediate files, as malware can be sure it will have write access there with pretty much any standard privileges.</li>
+				<li><code>~/Library</code> and <code>/Library</code>: Another location misused by malware aiming to look benign and hide among legitimate apps. The <code>Application Support</code> subdirectory is commonly used here as well.</li>
+				<li><code>~/Library/Safari/Extensions</code>: This location is generally used to install unwanted browser extensions for Safari.</li>
+				<li><code>~/Library/Application Support/Google/Chrome/Default/Extensions</code>: Here, unwanted browser extensions are installed for Chrome.</li>
+			</ul>
+			<p>Persistence is commonly achieved by adding the corresponding <code>.plist</code> file to one of the following<a id="_idIndexMarker1957"/> locations:</p>
+			<ul>
+				<li><code>/Library/LaunchDaemons</code>: System-wide daemons provided by the administrator, which can start without a user being logged in.</li>
+			</ul>
+			<div><div><img src="img/Figure_12.12_B18500.jpg" alt="Figure 12.12 – Malware establishing persistence by copying its .plist file to /Library/LaunchDaemons/&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 12.12 – Malware establishing persistence by copying its .plist file to /Library/LaunchDaemons/</p>
+			<ul>
+				<li><code>/Library/LaunchAgents</code>: Per-user agents provided by the administrator that are invoked when the user logs in.</li>
+				<li><code>~/Library/LaunchAgents</code>: Per-user agents provided by the user that are invoked when the user logs in.</li>
+				<li><code>/System/Library/LaunchDaemons</code> and <code>/System/Library/LaunchAgents</code>: Per-user agents provided by the OS that are invoked when the user logs in. Here is an example of it being used by malware:</li>
+			</ul>
+			<div><div><img src="img/Figure_12.13_B18500.jpg" alt="Figure 12.13 – The WireLurker threat using the /System/Library/LaunchDaemons path&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 12.13 – The WireLurker threat using the /System/Library/LaunchDaemons path</p>
+			<p>Persistence can be also achieved by various other means such as using the <code>cron</code> tool or performing <code>dylib</code>) is placed in a path that<a id="_idIndexMarker1959"/><a id="_idTextAnchor1421"/> a legitimate victim application searches for and loads at runtime.</p>
+			<p>Now, let’s take a quick look at how things are organized in iOS.</p>
+			<h3>iOS</h3>
+			<p>For non-jailbroken <a id="_idIndexMarker1960"/>devices, malware<a id="_idIndexMarker1961"/> often hides in trojanized legitimate software packages (clean software with inserted malicious code). For the end user, the app looks and behaves as expected, while simultaneously performing malicious actions in the background.</p>
+			<p>For jailbroken devices, malware has access to multiple locations throughout the system, so in this case, the choice depends mainly on the preferences of the attackers.</p>
+			<p>As with macOS, persistence can be achieved by placing a <code>.plist</code> file in one of the <code>.../Library/LaunchDaemons</code> directories.</p>
+			<h2 id="_idParaDest-395"><a id="_idTextAnchor1422"/>Impact</h2>
+			<p>Now, let’s talk <a id="_idIndexMarker1962"/>about the actual negative effects that malware may cause. In many cases, the motivation behind the attack can be the same whether it occurs on a mobile device or a PC. Nowadays, both provide access to a <a id="_idTextAnchor1423"/>large amount of sensitive information and have enough computational power to perform actions that malware authors may be interested in.</p>
+			<h3>macOS</h3>
+			<p>To begin, most <a id="_idIndexMarker1963"/>of the malware types affecting Mac users strongly resemble the threats targeting Windows users – the difference is mainly in the scope and implementation. Thus, macOS Terminal actually uses Unix shells, so malware can create shell scripts and utilize the various commands that we discussed in the previous <a href="B18500_11.xhtml#_idTextAnchor1188"><em class="italic">Chapter 11</em></a>, <em class="italic">Dissecting Linux and IoT Malware</em>. Here are some of the other commands that are commonly misused on Mac computers:</p>
+			<ul>
+				<li><code>curl</code>: As with Linux, this tool can be used to interact with the C&amp;C.</li>
+				<li><code>killall</code>: This allows you to kill particular processes by their names.</li>
+				<li><code>openssl</code>: This can be used to decode next-stage payloads.</li>
+				<li><code>funzip</code>: This standard tool allows attackers to easily chain decompression with other commands supporting both ZIP and GZIP formats.</li>
+				<li><code>sqlite3</code>: Commonly used to parse the history of downloaded files.</li>
+				<li><code>pfctl</code>: This allows attackers to communicate<a id="_idIndexMarker1964"/> with the <code>iptables</code> on Linux.</li>
+				<li><code>launchctl</code>: A command-line tool for interacting with services. For example, as we can see in <em class="italic">Figure 12.6</em>, malware may attempt to load another payload executing <code>launchctl load</code> functionality.</li>
+				<li><code>pbcopy</code> and <code>pbpaste</code>: This allows the attackers to copy-<a id="_idTextAnchor1424"/>paste the content of the clipboard.</li>
+				<li><code>chflags</code>: This tool can be used to change a file’s or folder’s flag, for example, to hide or unhide it.</li>
+				<li><code>mdfind</code>: An alternative to the classic <code>find</code> tool that allows the attackers to search for files indexed by Spotlight.</li>
+				<li><code>defaults</code>: This can be used to read and modify system preferences, such as configuration profiles to control the browser’s behavior. For example, the following entries can be used to change the start pages:<ul><li><code>HomePage</code> (Safari)</li><li><code>HomepageLocation</code> (Chrome) </li><li><code>NewTabPageLocation</code> (Chrome) </li><li><code>RestoreOnStartupURLs</code> (Chrome)</li></ul></li>
+			</ul>
+			<p>Meanwhile, the<a id="_idIndexMarker1965"/> following entries can be used to set a custom search engine:</p>
+			<ul>
+				<li><code>NSPreferredWebServices</code> | <code>NSWebServicesProviderWebSearch</code> (Safari)</li>
+				<li><code>DefaultSearchProviderSearchURL</code> (Chrome) </li>
+				<li><code>DefaultSearchProviderNewTabURL</code> (Chrome) </li>
+				<li><code>DefaultSearchProviderName</code> (Chrome)</li>
+			</ul>
+			<p>In addition, unlike many Linux distributions, modern macOS is shipped with Python, so malware can rely on its presence as well.</p>
+			<div><div><img src="img/Figure_12.14_B18500.jpg" alt="Figure 12.14 – Python code used by the CookieMiner malware&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 12.14 – Python code used by the CookieMiner malware</p>
+			<p>Now, let’s go through some of the recent examples of malware categories commonly targeting Mac users:</p>
+			<ul>
+				<li><strong class="bold">Infostealers</strong>: Generally, there <a id="_idIndexMarker1966"/>is a lot of <a id="_idIndexMarker1967"/>sensitive information stored on PCs that attackers might be interested in, especially financial information. A good example in this case is the <strong class="bold">CookieMiner</strong> family, which <a id="_idIndexMarker1968"/>steals browser credentials and cookies to get access to cryptocurrency wallets. In addition, it accesses iTunes backups to access private text messages, as well as saved credentials and credit card details. Another <a id="_idIndexMarker1969"/>example is <strong class="bold">MaMi</strong>, which installs an additional <a id="_idIndexMarker1970"/>root CA certificate and incorporat<a id="_idTextAnchor1425"/>es DNS hijacking to intercept victims’ traffic by performing a MITM attack.</li>
+			</ul>
+			<div><div><img src="img/Figure_12.15_B18500.jpg" alt="Figure 12.15 – MaMi malware installing a custom root certificate&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 12.15 – MaMi malware installing a custom root certificate</p>
+			<ul>
+				<li><strong class="bold">Cryptocurrency miners</strong>: As <a id="_idIndexMarker1971"/>with any other platform, this type of malware utilizes the infected system’s resources to mine cryptocurrencies for attackers. Examples of such tools <a id="_idIndexMarker1972"/>are <strong class="bold">mshelper</strong> and the aforementioned <strong class="bold">CookieMiner</strong>.</li>
+				<li><strong class="bold">Adware and Potentially Unwanted Programs</strong> (<strong class="bold">PUPs</strong>): There<a id="_idIndexMarker1973"/> are multiple types of<a id="_idIndexMarker1974"/> programs that don’t perform a truly malicious activity, but still create problems for users. For<a id="_idIndexMarker1975"/> example, <strong class="bold">Shlayer</strong> (also known<a id="_idIndexMarker1976"/> as <strong class="bold">Crossrider</strong>) and <strong class="bold">Bundlore</strong>, commonly <a id="_idIndexMarker1977"/>distributed as cracks, keygens, or Flash Player installers, use shell scripts to deliver various undesirable programs. One of the programs<a id="_idIndexMarker1978"/> discovered is <strong class="bold">Advanced Mac Cleaner</strong>, which is unique, as it utilizes Siri’s voice to notify users about bogus problems with their machine. Some threats change the homepages or search engines in browsers (such <a id="_idIndexMarker1979"/>as <strong class="bold">Smart Search</strong> or <strong class="bold">WeKnow</strong>); in <a id="_idIndexMarker1980"/>many cases, configuration profiles and browser extensions are used for this purpose. PUPs can have quite serious consequences if they are implemented in a particular way. One example is a <strong class="bold">Pirrit</strong> family, which <a id="_idIndexMarker1981"/>can set up a<a id="_idIndexMarker1982"/> proxy <a id="_idIndexMarker1983"/>mainly using the PF to redirect user traffic through it, and in this way, inject ads.</li>
+				<li><strong class="bold">Backdoors or Remote Access Tools</strong> (<strong class="bold">RATs</strong>): A<a id="_idIndexMarker1984"/> classic example of a full-fledged backdoor<a id="_idIndexMarker1985"/> is <strong class="bold">Fruitfly</strong>, which managed to remain undetected for several years. It had multiple functions, such as screenshot capturing, controlling the mouse, and executing arbitrary commands. Its propagation involved scanning for specific ports, such as <strong class="bold">Back to My Mac</strong> (<strong class="bold">BTMM</strong>, discontinued<a id="_idIndexMarker1986"/> in macOS Mojave), the <strong class="bold">Apple Filing Protocol</strong> (<strong class="bold">AFP</strong>), formerly<a id="_idIndexMarker1987"/> the <strong class="bold">AppleTalk Filing Protocol</strong>, <strong class="bold">Apple Remote Desktop</strong> (based <a id="_idIndexMarker1988"/>on<a id="_idIndexMarker1989"/> the VNC protocol), and the traditional SSH port, and then testing them against weak credentials. Some notorious APT actors, such as Lazarus, also develop tools to target Mac users. In this case, their functionality remains identical to the one available for Windows payloads, such as the ability to search for, read, write, and wipe arbitrary files, execute arbitrary commands, as well as carry out self-updating and deleting mechanisms.</li>
+				<li><strong class="bold">Downloaders</strong>: Microsoft Office for macOS re-enabled support for macros back in 2011, and after this, it became possible to target Mac users with bogus documents that also contained malicious macros. In most cases, these macros are used to download and deploy other, more powerful modules. <a id="_idTextAnchor1426"/>While many attackers nowadays execute PowerShell commands from macros on the Windows platform, for macOS, the Python language is generally used for this purpose.</li>
+				<li><strong class="bold">Ransomware</strong>: macOS users are not immune to ransomware either. A classic example <a id="_idIndexMarker1990"/>is <strong class="bold">KeRanger</strong>, which encrypts victims’ files and then leaves instructions on paying<a id="_idIndexMarker1991"/> money in<a id="_idIndexMarker1992"/> order to get them back. </li>
+			</ul>
+			<div><div><img src="img/Figure_12.16_B18500.jpg" alt="Figure 12.16 – The KeRanger malware preparing a ransom-related note&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 12.16 – The KeRanger malware preparing a ransom-related note</p>
+			<p>The KeRanger threat was signed with a valid certificate to bypass Gatekeeper and used a C&amp;C located in the Tor network. A more creative way to do this was used by<a id="_idIndexMarker1993"/> the <code>&lt;a href=”mailto:...”</code> and <code>&lt;a href=”itunes:...”</code> attributes.</p>
+			<p>A more recent example of ransomware<a id="_idIndexMarker1996"/> malware is <strong class="bold">EvilQuest</strong>.</p>
+			<h3>iOS</h3>
+			<p>It’s worth<a id="_idIndexMarker1997"/> mentioning that the number of threats successfully targeting iOS devices is significantly lower than on macOS, thanks to the strong security architecture enforced on it. Over the last few years, there were very few big incidents involving malware for this platform. Here are some of the most notorious ones:</p>
+			<ul>
+				<li><strong class="bold">Droppers or installers</strong>: Examples of such threats <a id="_idIndexMarker1998"/>include <strong class="bold">YiSpecter</strong> and <strong class="bold">WireLurker</strong>, which<a id="_idIndexMarker1999"/> were able to target both jailbroken and non-jailbroken devices, as the samples were signed with enterprise certificates. Here, private APIs were misused in order to install arbitrary apps. Another example<a id="_idIndexMarker2000"/> is <strong class="bold">AceDeceiver</strong>, which abused Apple FairPlay DRM tokens, instead of using enterprise certificates in order to install unwanted apps on the victims’ devices.</li>
+				<li><strong class="bold">Backdoors or RATs</strong>: This category of malware is commonly used by surveillance agencies and governments to target particular individuals. Over the past few years, there were multiple reports that mentioned them, including the following:<ul><li><strong class="bold">FinFisher</strong>: Developed by Gamma Group, which sells surveillance tools to governments, this <a id="_idIndexMarker2001"/>allows access to various types of data on a victim’s jailbroken device, such as communications, including messages, calls, and emails, as well as contacts, arbitrary files, geolocation data, and the ability to eavesdrop on live calls.</li><li><strong class="bold">Remote Control System</strong> (<strong class="bold">RCS</strong>): A surveillance tool developed by HackingTeam th<a id="_idTextAnchor1428"/>at <a id="_idIndexMarker2002"/>requires the targeted device to be jailbroken. The platform functionality includes the recording of video and audio communications and accessing the camera and GPS data.</li><li><strong class="bold">Inception</strong> (also known <a id="_idIndexMarker2003"/>as <strong class="bold">Cloud Atlas</strong>): Malware involved in this espionage campaign targeted multiple platforms, including implants for jailbroken iOS devices.</li><li><strong class="bold">XAgent</strong>: This tool is <a id="_idIndexMarker2004"/>supposed to provide rich functionality, including the retrieval of messages and pictures, contacts lists, and geolocation information, as well as the ability to control a microphone to record audio.</li><li><strong class="bold">Pegasus</strong>: This was<a id="_idIndexMarker2005"/> developed by the NSO group. Apart from the usual data collection, this threat also collects users’ credentials and can perform audio and video recording. A distinctive feature of this threat was the ability to silently jailbreak devices using a set of exploits that all leveraged zero-day vulnerabilities at the time of its discovery.</li></ul></li>
+				<li><strong class="bold">Infostealers</strong>: One of the examples where stolen credentials immediately led to a financial<a id="_idIndexMarker2006"/> loss for the users was the <strong class="bold">AppBuyer</strong> threat, which<a id="_idIndexMarker2007"/> was hooking network APIs to get access to victims’ Apple IDs and passwords and using them to buy apps. Another example threat that targeted jailbroken devices and incorporated a similar hooking <a id="_idIndexMarker2008"/>mechanism is <strong class="bold">KeyRaider</strong>, only in this case, it was used to steal credentials, certificates, and private keys.</li>
+				<li><strong class="bold">Adware fee stealers</strong>: Here, malware generates re<a id="_idTextAnchor1429"/>venue for the attackers by simulating or hijacking user views or clicks on adve<a id="_idTextAnchor1430"/>rtisements. An example of such a threat<a id="_idIndexMarker2009"/> is <strong class="bold">AdThief</strong>, built on top of Cydia Substrate, which targeted jailbroken devices in order to redirect advertisement revenues to its authors.</li>
+			</ul>
+			<h2 id="_idParaDest-396"><a id="_idTextAnchor1431"/>Other attack techniques</h2>
+			<p>Apart from using<a id="_idIndexMarker2010"/> traditional malicious code that executes on the system, there are other attack vectors that can be used to access sensitive information or enable surveillance. While not all of them involve using malicious software as we know it,<a id="_idTextAnchor1432"/><a id="_idTextAnchor1433"/><a id="_idTextAnchor1434"/> it is still important to be aware of them, as in many cases, they may be the actual reason for a system compromise. Here is a list of the most notorious examples for macOS and iOS.</p>
+			<h3>macOS</h3>
+			<p>There are <a id="_idIndexMarker2011"/>multiple types of attack that can be performed once the attacker gets physical access to the device. They are commonly known <a id="_idIndexMarker2012"/>as <strong class="bold">evil maid attacks</strong>, based on the scenario where a hotel maid can subvert unattended devices left in the room. Many of them have been addressed over the last few years. Let’s have a look at the most common techniques:</p>
+			<ul>
+				<li><strong class="bold">A DMA attack</strong>: Attackers<a id="_idIndexMarker2013"/> can access the content of the RAM that contains sensitive information <a id="_idIndexMarker2014"/>through the <strong class="bold">Direct Memory Access</strong> (<strong class="bold">DMA</strong>) mechanism. An example of such a threat is <strong class="bold">ThunderClap</strong>, which <a id="_idIndexMarker2015"/>utilizes Thunderbolt ports.</li>
+				<li><strong class="bold">A cold boot attack</strong>: Attackers <a id="_idIndexMarker2016"/>rely on the data remanence of the RAM. The target machine is cold-booted (after a hard reboot), using an OS from the removable disk. Then, the attacker dumps the content of the pre-boot physical memory into a file. The firmware password aims to prevent this type of attack by requesting authentication before letting anybody boot from an external drive.</li>
+				<li><strong class="bold">Direct access to a physical drive</strong>: This approach works very well when the hard drive is not encrypted. The attacker may be able to boot from a removable drive or connect it to another machine in order to read the data from it. In the case that the hard drive is encrypted (by FileVault 2 for Mac computers), a possible way to bypass this is to replace the startup disk with a bogus one that displays a lock screen that has the same appearance as the normal one, steal the credentials entered by the user once they return, and then access the hard drive. To address this issue, a firmware password can be enabled. While it is still possible to wipe a firmware password on older devices by connecting directly to the EFI chip with dedicated hardware, the Secure Boot option is supposed to handle this attack vector.</li>
+				<li><strong class="bold">A network evil maid attack</strong>: This can be considered more of<a id="_idTextAnchor1435"/><a id="_idTextAnchor1436"/><a id="_idTextAnchor1437"/> a phishing attack, where <a id="_idIndexMarker2017"/>the whole victim’s device is replaced by an identical-looking one that sends firmware or lockscreen passwords to the attacker, who now owns the original <a id="_idIndexMarker2018"/>device.</li>
+			</ul>
+			<h3>iOS</h3>
+			<p>These techniques <a id="_idIndexMarker2019"/>generally require physical access to the device. Many of them are known under the umbrella term of <strong class="bold">malicious charger attacks</strong>, as <a id="_idIndexMarker2020"/>they can be performed once the mobile device is connected (using its physical port) to malevolent hardware:</p>
+			<ul>
+				<li><strong class="bold">Juice jacking</strong>: Named <a id="_idIndexMarker2021"/>after the natural need to “juice up” (as in, charge) devices, this classic attack relies on the USB transfer mode turning on once the device is connected to the attacker’s device simulating a charging socket, which gives attackers access to the phone’s data. To address this issue, Apple now asks the user to confirm whether they trust the connected device.</li>
+				<li><strong class="bold">Videojacking</strong>: In this case, the attacker exploits the fact that the Apple connector can be used <a id="_idIndexMarker2022"/>as an HDMI connector. Once the device is connected, it becomes possible to monitor everything that happens on the mobile device’s screen.</li>
+				<li><strong class="bold">Trustjacking</strong>: This is a<a id="_idIndexMarker2023"/> relatively new type of attack that utilizes iTunes Wi-Fi Sync technology. The idea here is that once the user connects their device to a PC or a malicious charger and confirms that they trust it, the attacker can silently enable iTunes Wi-Fi Sync, which allows them to control the device remotely once it is connected to the network. As a result, the attacker has the following powerful remote abilities:<ul><li>Viewing the device’s screen by making a series of screenshots</li><li>Accessing a wide range of sensitive information through iTunes backup, including SMS/iMessage history, private photos, and app data</li><li>Installing other apps</li></ul></li>
+			</ul>
+			<p>Here are some notable exceptions that don’t rely on physical access:</p>
+			<ul>
+				<li><strong class="bold">Malicious profiles</strong>: This attack utilizes iOS profiles, generally used by mobile carriers and MDM administrators to set up network settings. There are multiple ways the user may receive such a profile, including through social engineering or via replacing a legitimate profile by utilizing an MITM attack over an insecure connection. This allows an attacker to perform various malicious actions, such as installing root CA certificates and setting up a VPN or proxy, and thus interceptin<a id="_idTextAnchor1438"/>g all of the user’s traffic. To address this issue, newer iOS versions added an extra step for the user to manually approve the installation of a root CA certificate (unless it is done via MDM).</li>
+				<li><strong class="bold">Activation Lock</strong>: This is a <strong class="bold">Find My iPhone</strong> feature that allows users to remotely<a id="_idIndexMarker2024"/> lock their lost or stolen device, so it <a id="_idTextAnchor1439"/>can’t be used by thieves. However, once the Apple ID and the corresponding passwords are stolen (for example, through phishing), it becomes possible for the attack<a id="_idTextAnchor1440"/>ers to activate it remotely and demand a ransom for unlocking the device. These are some of the most common <a id="_idIndexMarker2025"/>attacks affecting macOS and iOS systems. Now, let’s talk about less common techniques.</li>
+			</ul>
+			<h1 id="_idParaDest-397"><a id="_idTextAnchor1441"/>Advanced techniques</h1>
+			<p>Even though the number of malicious samples targeting macOS and iOS users is significantly lower than for other more prevalent platfor<a id="_idTextAnchor1442"/>ms, such as Windows and Android, we can still distinguish bet<a id="_idTextAnchor1443"/>ween the generic and more advanced techniques implemented. They involve non-standard or difficult-to-implement approaches that usually aim to complicate the analysis and to prolong the infection.</p>
+			<h2 id="_idParaDest-398"><a id="_idTextAnchor1444"/>Anti-analysis and detection tricks</h2>
+			<p>Some<a id="_idIndexMarker2026"/> malware families<a id="_idIndexMarker2027"/> that target macOS and iOS incorporate universal techniques to complicate analysis and detections that work for most other platforms as well. Here are some examples:</p>
+			<ul>
+				<li><strong class="bold">Detection of protection software</strong>: In this case, malware checks for the presence of the corresponding files or processes and generally either terminates itself, or tries to disable them in order to remain undetected. An example is the <strong class="bold">CookieMiner</strong> family checking for the presence of the <strong class="bold">Little Snitch</strong> firewall on macOS. Classic AV checks are also possible, as you can see in the following figure:</li>
+			</ul>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US"> </p>
+			<div><div><img src="img/Figure_12.17_B18500.jpg" alt="Figure 12.17 – A list of antiviruses to search for in CrescentCore malware&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 12.17 – A list of antiviruses to search for in CrescentCore malware</p>
+			<ul>
+				<li><strong class="bold">Code and data obfuscation</strong>: The <a id="_idIndexMarker2028"/>malware tries to complicate <a id="_idIndexMarker2029"/>the analysis by making itself unreadable in disassembly.</li>
+			</ul>
+			<div><div><img src="img/Figure_12.18_B18500.jpg" alt="Figure 12.18 – Custom xor-based encryption used in Pirrit malware&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 12.18 – Custom xor-based encryption used in Pirrit malware</p>
+			<ul>
+				<li><strong class="bold">Checks for self-integrity</strong>: The<a id="_idIndexMarker2030"/> malware calculates checksums<a id="_idIndexMarker2031"/> against its body in order to detect any changes taking place.</li>
+				<li><code>ptrace</code> with the <code>PT_DENY_ATTACH</code> argument.</li>
+				<li><strong class="bold">Detection of reverse-engineering tools</strong>: One of the most common approaches here is the detection of attached debuggers.</li>
+				<li><code>ioreg</code> and <code>sysctl</code>, returning information about the system’s hardware, as done <a id="_idIndexMarker2032"/>by the <strong class="bold">MacRansom</strong> malware family.</li>
+				<li><strong class="bold">Sandbox evasion</strong>: In this case, the malware exploits some limitations of the sandboxing software in order to avoid exposure. The most common approach here would be to start a malicious activity after a certain delay to reach the sandbox’s timeout limit. If a sandbox is aware o<a id="_idTextAnchor1445"/><a id="_idTextAnchor1446"/><a id="_idTextAnchor1447"/>f this technique and skips the sleep stage, the malware can easily detect it by checking whether the time passed <a id="_idIndexMarker2033"/>during<a id="_idIndexMarker2034"/> the sleep stage matches its expectations.</li>
+			</ul>
+			<p>Now, let’s talk about other techniques.</p>
+			<h2 id="_idParaDest-399"><a id="_idTextAnchor1448"/>Misusing dynamic data exchange (DDE)</h2>
+			<p>Apart from<a id="_idIndexMarker2035"/> using macros in MS Office documents, there is another, less common way to execute code. In this case, attackers rely on the DDE functionality. One way to do so is to use the <code>DDEAUTO</code> statement (currently disabled by default). Another option recently used to spread the cross-platform <strong class="bold">Adwind</strong> RAT is<a id="_idIndexMarker2036"/> to abuse the function<a id="_idTextAnchor1449"/> logic implemented in Microsoft Excel. Please refer to <a href="B18500_10.xhtml#_idTextAnchor1106"><em class="italic">Chapter 10</em></a>, <em class="italic">S<a id="_idTextAnchor1450"/>cripts and Macros – Reversing, Deobfuscation, and Debugging</em>, for more information. Attackers can always try to utilize social engineering tricks in order to make the user enable any required functionality.</p>
+			<h2 id="_idParaDest-400"><a id="_idTextAnchor1451"/>User hiding</h2>
+			<p>This technique<a id="_idIndexMarker2037"/> can be used to hide a newly created user from the configuration and login screens. The idea here is<a id="_idTextAnchor1452"/> to set a <code>Hide500Users</code> property within the <code>/Library/Preferences/com.apple<a id="_idTextAnchor1453"/>.loginwindow.plist</code> file. In this case, all users with a UID lower than 500 won’t be present on these screens. An example of a threat that uses this technique to hide an illegitimate user is Pirrit malware.</p>
+			<h2 id="_idParaDest-401"><a id="_idTextAnchor1454"/>Using AppleScript</h2>
+			<p>AppleScript was<a id="_idIndexMarker2038"/> originally developed to automate certain tasks within Apple systems. However, its functionality is commonly misused by various malware families as well. For example, the aforementioned Pirrit threat managed to use it to inject JavaScript payloads into browsers. To perform code injection, the <code>osascript</code> command-line tool can be used. Here are snippets with examples for different<a id="_idTextAnchor1455"/> browsers:</p>
+			<ul>
+				<li>Safari: <pre>tell application "Safari" to do JavaScript "&lt;payload&gt;" in current tab of first window</pre></li>
+				<li>Chrome: <pre>tell application "Google Chrome" to execute front window's active tab JavaScript "&lt;payload&gt;"</pre></li>
+			</ul>
+			<p>Besides this, it is possible to use <code>osascript</code> for other purposes; for example, <strong class="bold">CookieMiner</strong> used it to set up environments before delivering other modules, as you can see in the following figure:</p>
+			<div><div><img src="img/Figure_12.19_B18500.jpg" alt="Figure 12.19 – The ﬁrst-stage payload of the CookieMiner threat misusing the osascript functionality&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 12.19 – The ﬁrst-stage payload of the CookieMiner threat misusing the osascript functionality</p>
+			<p>Finally, malware can use<a id="_idIndexMarker2039"/> so-called <code>.scpt</code>. <code>osadecompile</code> tool cannot decompile run-only scripts, so other tools such as <code>applescript-disassembler</code> and <code>aevt_decompile</code> have to be used to present the script’s functionality in a human-readable form.</p>
+			<h2 id="_idParaDest-402"><a id="_idTextAnchor1457"/>API hijacking</h2>
+			<p>This <a id="_idIndexMarker2041"/>technique is found when infostealers target jailbroken iOS devices. The idea here is to intercept certain APIs in order to get access to sensitive data before it gets encrypted or after it has been decrypted. One example <a id="_idIndexMarker2042"/>could be <code>SSLRead</code> and <code>SSLWrite</code> from the <code>itunesstored</code> process with the help of <strong class="bold">Cydia Substrate</strong>, otherwise <a id="_idIndexMarker2043"/>known<a id="_idIndexMarker2044"/> as <strong class="bold">MobileSubstrate</strong>:</p>
+			<div><div><img src="img/Figure_12.20_B18500.jpg" alt="Figure 12.20 – A parsed .plist ﬁle from one of KeyRaider’s modules&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 12.20 – A parsed .plist ﬁle from one of KeyRaider’s modules</p>
+			<h2 id="_idParaDest-403"><a id="_idTextAnchor1458"/>Other techniques</h2>
+			<p>There are other techniques that are not common among macOS malware developers and serve more as features of certain malware families. For example, while most threats that target Apple systems rely on Bash, AppleScript, and Python for scripting, the <code>installation-check</code> element in the standard <code>Distribution</code> XML file present in <code>.pkg</code> samples:</p>
+			<div><div><img src="img/Figure_12.21_B18500.jpg" alt="Figure 12.21 – The Silver Sparrow threat using JavaScript code during its installation&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 12.21 – The Silver Sparrow threat using JavaScript code during its installation</p>
+			<p>Another interesting<a id="_idIndexMarker2045"/> example is the <code>.dmg</code> files that don’t contain executables as they are. Instead, the next-stage payload is dynamically decrypted and loaded using an embedded bash script, as you can see in the following figure:</p>
+			<div><div><img src="img/Figure_12.22_B18500.jpg" alt="Figure 12.22 – Bundlore using an embedded script to decrypt the next-stage payload&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 12.22 – Bundlore using an embedded script to decrypt the next-stage payload</p>
+			<p>Sometimes, malware developers get quite creative at introducing new ways to run their malware. Fo<a id="_idTextAnchor1459"/><a id="_idTextAnchor1460"/><a id="_idTextAnchor1461"/>r <a id="_idIndexMarker2046"/>example, the authors <a id="_idIndexMarker2047"/>of the <strong class="bold">LoudMiner</strong> threat have the whole VM running with the help of QEMU to mine cryptocurrency and utilize their victim’s resources.</p>
+			<p>Finally, let’s briefly mention the topic of rootkits.</p>
+			<h2 id="_idParaDest-404"><a id="_idTextAnchor1462"/>Rootkits for Mac – do they exist?</h2>
+			<p>It might <a id="_idIndexMarker2048"/>be surprising <a id="_idIndexMarker2049"/>to some people, but rootkits targeting macOS do exist. One of the most notable examples in this category of threats<a id="_idIndexMarker2050"/> is the <strong class="bold">Rubylin</strong> rootkit. Among its features is the ability to hide files, directories, and processes, as well as users and ports from particular tools. Most of the techniques used in this case are different implementations of the approaches that we covered in <a href="B18500_07.xhtml#_idTextAnchor669"><em class="italic">Chapter 7</em></a>, <em class="italic">Understanding Kernel-Mode Rootkits</em>, dedicated to Windows kernel-mode threats, but this time for the XNU kernel. As there are pretty much no notorious malware families that extensively use these techniques for malicious purposes, it falls outside the scope of this book. If you’re curious, you can find more information about its internals by reading the Phrack article, <em class="italic">Revisiting Mac OS X Kernel Rootkits</em>, in <em class="italic">issue 69</em>.</p>
+			<p>Now <a id="_idIndexMarker2051"/>that <a id="_idIndexMarker2052"/>we know enough about how macOS and iOS are organized and what their executable files look like, let’s talk about how to analyze the malware targeting them.</p>
+			<h1 id="_idParaDest-405"><a id="_idTextAnchor1463"/>Static and dynamic analysis of macOS and iOS samples</h1>
+			<p>As we know now, the most common programming languages that are used to write code for Apple platforms are Objective-C and Swift. The disassembly will look different depending on which language the malware a<a id="_idTextAnchor1464"/><a id="_idTextAnchor1465"/>uthor chooses, but in both cases, pretty much the same tools can be used for analysis.</p>
+			<p>Let’s take a look at the options available on the market in order to facilitate the reverse-engineering of macOS and iOS p<a id="_idTextAnchor1466"/>rograms.</p>
+			<h2 id="_idParaDest-406"><a id="_idTextAnchor1467"/>Static analysis</h2>
+			<p>For engineers who don’t<a id="_idIndexMarker2053"/> have immediate access<a id="_idTextAnchor1468"/> to a Mac computer or a VM available to run malware on, it is beneficial that most of the static analysis tools are available on multiple platforms, so the analysis can be performed on other operating systems as well.</p>
+			<h3>Retrieving samples</h3>
+			<p>Before any <a id="_idIndexMarker2054"/>actual malicious code can be analyzed, it first needs to be obtained. Here is how it can be done, depending on the way it is distributed:</p>
+			<ul>
+				<li><strong class="bold">7-Zip</strong>: This tool can <a id="_idIndexMarker2055"/>be used to extract actual executables from both DMG and IPA packages:</li>
+			</ul>
+			<div><div><img src="img/Figure_12.23_B18500.jpg" alt="Figure 12.23 – Looking inside the DMG ﬁle&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 12.23 – Looking inside the DMG ﬁle</p>
+			<p>While it is possible to extract some files from <code>.deb</code> packages using this tool, a more reliable way here is to use the standard <code>ar</code> tool with the <code>x</code> argument, <code>ar x &lt;sample&gt;.deb</code>. As we have already mentioned, for <code>.pkg</code> archives, the <code>xar</code> tool is highly recommended over 7-Zip.</p>
+			<ul>
+				<li><code>Mobile Applications</code> subdirectory.</li>
+				<li><strong class="bold">iMazing</strong>: This commercial <a id="_idIndexMarker2057"/>third-party alternative to iTunes can be used to manage apps <a id="_idIndexMarker2058"/>from the official App Store and get app data from the device without jailbreaks.</li>
+			</ul>
+			<h3>Disassemblers and decompilers</h3>
+			<p>Here is a list <a id="_idIndexMarker2059"/>of tools commonly used to work <a id="_idIndexMarker2060"/>with the disassembly of samples:</p>
+			<ul>
+				<li><strong class="bold">IDA</strong>: As with Windows and Linux, this powerful tool can also be used to analyze Mach-O files.</li>
+				<li><strong class="bold">Hopper</strong>: This product actually started from the Mac platform, so the authors are perfectly familiar with its internals. It features both a disassembler and decompiler and supports both the Objective-C and Swift languages.</li>
+				<li><strong class="bold">radare2</strong>: A strong open source alternative to the previous tools, this framework allows engineers to disassemble and analyze Mach-O files:</li>
+			</ul>
+			<div><div><img src="img/Figure_12.24_B18500.jpg" alt="Figure 12.24 – An example of the disassembled Mach-O ﬁle for the ARM platform in radare2&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 12.24 – An example of the disassembled Mach-O ﬁle for the ARM platform in radare2</p>
+			<p>In order<a id="_idIndexMarker2061"/> to <a id="_idIndexMarker2062"/>load a 64-bit ARM Mach-O sample (either as a standalone thin file or as part of a fat binary), use <code>-a arm -b 6<a id="_idTextAnchor1472"/><a id="_idTextAnchor1473"/><a id="_idTextAnchor1474"/>4</code> arguments.</p>
+			<ul>
+				<li><strong class="bold">RetDec</strong>: This cross-platform decompiler supports multiple file formats, including Mach-O, for several architectures.</li>
+				<li><strong class="bold">Ghidra</strong>: A newcomer in the arsenal of reverse-engineers, Ghidra also supports Apple executables.</li>
+			</ul>
+			<h3>Auxiliary tools and libraries</h3>
+			<p>The following are <a id="_idIndexMarker2063"/>the auxiliary tools and libraries for static analysis:</p>
+			<ul>
+				<li><code>.plist</code> into readable formats, such as XML. For non-macOS platforms, it is installed together with iTunes.</li>
+				<li><strong class="bold">otool</strong> or <strong class="bold">MachOView</strong>: Mac <a id="_idIndexMarker2065"/>console <a id="_idIndexMarker2066"/>tools that allows us to view different parts of Mach-O files.</li>
+				<li><strong class="bold">class-dump</strong> or <strong class="bold">class-dump-z</strong>: These tools can be used to generate Objective-C headers from Mach-O files.</li>
+				<li><strong class="bold">LIEF</strong>: A cross-platform library that can be used to <a id="_idTextAnchor1475"/>both parse and modify Mach-O executabl<a id="_idTextAnchor1476"/>es.</li>
+				<li><strong class="bold">Capstone</strong>: A cross-platform disassembly framework that powers multiple reverse-engineering tools.</li>
+			</ul>
+			<p>Apart from this, many basic universal tools, such as <code>file</code>, <code>strings</code>, or <code>nm</code>, can be used to extract information from executables.</p>
+			<h2 id="_idParaDest-407"><a id="_idTextAnchor1477"/>Dynamic and behavioral analysis</h2>
+			<p>While static analysis tools are pretty much the same for macOS and iOS files, the dynamic analys<a id="_idTextAnchor1478"/>is toolset varies drastically due to different security models implemented in both operating systems. It is possible t<a id="_idTextAnchor1479"/>o install macOS on the virtual machine, but for iOS, having a real device is usually the only reliable option.</p>
+			<h3>macOS</h3>
+			<p>Dynamic<a id="_idIndexMarker2067"/> analysis of executables for macOS is quite straightforward <a id="_idTextAnchor1480"/>and doesn’t involve any special extra steps.</p>
+			<h4>Debuggers</h4>
+			<p>Performing step-by-step <a id="_idIndexMarker2068"/>debugging is extremely useful in many cases, for example, when we have to deal with obfuscated code and understand the logic behind certain operations. Luckily, there are multiple powerful tools available that make this possible:</p>
+			<ul>
+				<li><code>mac_server</code> and <code>mac_server64</code> (as well as <code>mac_server_arm64</code> and <code>mac_server_arm64e</code> for ARM-based systems), making it possible to perform debugging on another machine under the OS of preference. When you perform debugging using them, make sure that they are executed on the remote machine with sudo privileges. In the IDA dialog window, after selecting the <code>23946</code>), and the parameters required by a sample (if there are any).</li>
+			</ul>
+			<p>In case the other fields are incorrect (for example, left untouched and this way, associated with a local file, rather than a remote <a id="_idTextAnchor1481"/>machine), modern versions of IDA will ask whether it should copy the file specified in the <strong class="bold">Input file</strong> field to the remote computer:</p>
+			<div><div><img src="img/Figure_12.25_B18500.jpg" alt="Figure 12.25 – Debugging WireLurker targeting macOS remotely in IDA located on a Windows machine&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 12.25 – Debugging WireLurker targeting macOS remotely in IDA located on a Windows machine</p>
+			<ul>
+				<li><code>r2</code>, it is generally required to either run this tool with sudo perm<a id="_idTextAnchor1482"/>issions or sign it.</li>
+				<li><strong class="bold">GDB or LLDB</strong>: It is also possible to debug<a id="_idTextAnchor1483"/> programs using the GDB debugger or LLDB, which shares many of GDB’s commands.</li>
+			</ul>
+			<p>These tools <a id="_idIndexMarker2069"/>have already been described in detail in <a href="B18500_11.xhtml#_idTextAnchor1188"><em class="italic">Chapter 11</em></a>, <em class="italic">Dissecting Linux and IoT Malware</em>, and all that knowledge can be applied here as well.</p>
+			<h4>Monitoring and dynamic instrumentation</h4>
+			<p>Commonly<a id="_idIndexMarker2070"/> referred to as behavioral analysis, running malware in a real or simulated environment with various monitors to track system changes can provide a quick and valuable insight into malware functionality. In addition, it may be useful to change the behavior of the executed sample on the fly. Here are some of the most popular tools that make it possible on macOS:</p>
+			<ul>
+				<li><code>syscall</code> details, as an alternative to <strong class="bold">strace</strong> on Linux.</li></ul></li>
+			</ul>
+			<p class="callout-heading">Important note</p>
+			<p class="callout">In order to make this tool work, you may <a id="_idIndexMarker2076"/>need <code>csrutil status</code> command to check whether it is currently enabled.</p>
+			<ul>
+				<li><strong class="bold">fsmon</strong>: Allows <a id="_idIndexMarker2077"/>an<a id="_idIndexMarker2078"/> analyst to retrieve filesystem event<a id="_idTextAnchor1484"/>s for a specified location. </li>
+			</ul>
+			<p>Beyond these, there are multiple standard macOS tools that can be used to monitor system activity, such as <code>lsof</code> or <code>fs_usage</code> for file operations.</p>
+			<div><div><img src="img/Figure_12.26_B18500.jpg" alt="Figure 12.26 – Using the fs_usage tool for behavioral analysis&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 12.26 – Using the fs_usage tool for behavioral analysis</p>
+			<ul>
+				<li><code>frida-trace</code> utility. It understands Objective-C methods, so their names can be passed using the <code>-m</code> argument.</li>
+				<li><strong class="bold">Cycrypt</strong>: Another <a id="_idIndexMarker2080"/>option for engineers to explore and modify running applications – it utilizes Objective-C++ and JavaScript syntax.</li>
+				<li><strong class="bold">Mac-A-Mal</strong>: Not exactly<a id="_idIndexMarker2081"/> a monitoring<a id="_idTextAnchor1485"/> tool, this project extends Cuckoo Sandbox to macOS threats.</li>
+				<li><strong class="bold">Qiling</strong>: This powerful<a id="_idIndexMarker2082"/> emulation framework supports Mach-O files.</li>
+			</ul>
+			<p>All these <a id="_idIndexMarker2083"/>tools are pretty easy to set up and start using – just follow the latest official documentation for them.</p>
+			<h4>Network analysis</h4>
+			<p>In terms of <a id="_idIndexMarker2084"/>network analysis, this can be easily done on the device itself. In this case, popular solutions such as <strong class="bold">Wireshark</strong> and <strong class="bold">tcpdump</strong> can<a id="_idIndexMarker2085"/> be used. To intercept and decode<a id="_idTextAnchor1486"/> HTTPS traffic, <strong class="bold">Fiddler</strong> and the commercial <strong class="bold">Charles</strong> proxy can be used. In addition, it is always possible to redirect the traffic of interest (for example, by setting up a proxy or performing DNS hijacking) to a MITM solution, such<a id="_idIndexMarker2086"/> as <strong class="bold">Burp Suite</strong>.</p>
+			<h3>iOS</h3>
+			<p>More stringent <a id="_idIndexMarker2087"/>security controls and App Sandbox on iOS generally prevent researchers from performing analysis straight away, so often the use of jailbroken devices <a id="_idIndexMarker2088"/>with the <strong class="bold">Cydia</strong> package manager installed is preferred here. Its name derives from <em class="italic">Cydia pomonella</em>, known as the codling moth, a major pest in the apple industry. Cydia provides an alternative app m<a id="_idTextAnchor1487"/><a id="_idTextAnchor1488"/><a id="_idTextAnchor1489"/>arket with lots of tools that are useful for reverse-engineering purposes.</p>
+			<p>Besides Cydia, it makes sense to get OpenSSH (if it is not already installed) because it enables the engineer to execute commands on the testing device from the connected PC.</p>
+			<h4>Installers and loaders</h4>
+			<p>The first thing that <a id="_idIndexMarker2089"/>may be tricky is to deliver malware to the testing system. The following tools should be used on the PC that the jailbroken device is connected to:</p>
+			<ul>
+				<li><strong class="bold">Cydia Impactor</strong>: A cross-platform <a id="_idIndexMarker2090"/>GUI tool to install IPA files on iOS. It doesn’t necessarily require jailbreaking, as it can sign apps using a free developer certificate associated with the device owner:</li>
+			</ul>
+			<div><div><img src="img/Figure_12.27_B18500.jpg" alt="Figure 12.27 – The interface of the Cydia Impactor tool&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 12.27 – The interface of the Cydia Impactor tool</p>
+			<p>In order to use this tool, there is no need to<a id="_idIndexMarker2091"/> install <code>.ipa</code> file over its interface. Then, the tool will ask for an Apple ID and the corresponding password. Keep in mind that this should be not the main set of credentials used to log in to the Apple website but an app-specific password that can be generated at <a href="https://appleid.apple.com">https://appleid.apple.com</a>.</p>
+			<p>If the developer certificate hasn’t been recently approved, it should be done on the device by going to <strong class="bold">Settings</strong> | <strong class="bold">General</strong> and then either selecting the <strong class="bold">Profiles</strong> or <strong class="bold">Device Management</strong> option (the exact name may vary depending on the iOS version). There, it is possible to manually approve the loaded app, which requires an internet connection.</p>
+			<ul>
+				<li><strong class="bold">ios-deploy</strong>: Designed <a id="_idIndexMarker2092"/>to work on non-jailbroken devices, this console Mac tool allows the installation and debugging of apps<a id="_idTextAnchor1490"/> on the connected device. </li>
+				<li><strong class="bold">iFunbox</strong>: A free file-management<a id="_idIndexMarker2093"/> and app-management tool for iOS devices, it also allows the installation of IPA packages.</li>
+				<li><code>.ipa</code> files, relying on the standard <code>codesign</code> tool. These tools are distributed in the form of apps and tools to be executed on the mobile device:</li>
+				<li><code>-b</code> argument) apps using the command line.</li>
+				<li><code>.deb</code> files on iOS devices. </li>
+				<li><strong class="bold">AppSync Unified</strong>: This <a id="_idIndexMarker2097"/>app allows the installation of u<a id="_idTextAnchor1491"/>nsigned IPA files on iOS devices. Even though anybody can get a free certificate for sideloading, there are multiple <a id="_idIndexMarker2098"/>limitations, such as a limited number of devices or apps allowed, so the user may want to bypass using it.</li>
+			</ul>
+			<p>Now, let’s talk about debuggers.</p>
+			<h4>Debuggers</h4>
+			<p>The list of the most<a id="_idIndexMarker2099"/> common debuggers in this case is pretty much the same as for macOS. The main difference here will be in the setup, as iOS is used to power mobile devices, and it is generally more convenient to perform debugging on the PC:</p>
+			<ul>
+				<li><code>debugserver</code>. In order to use IDA this way, generally, a separate <code>ios_deploy</code> tool should be obtained from its official website.</li>
+				<li><strong class="bold">radare2</strong>: Unsurprisingly, this powerful toolset can be used for bot<a id="_idTextAnchor1492"/>h the static and dynamic analysis of iOS samples. For <a id="_idIndexMarker2100"/>debugging, a <strong class="bold">r2lldb</strong> pl<a id="_idTextAnchor1493"/>ugin can be used.</li>
+				<li><code>debugserver</code>.</li>
+			</ul>
+			<h4>Dumping and decryption</h4>
+			<p>As we know now, as<a id="_idIndexMarker2101"/> part of the copyright protection measures implemented in iOS, apps that come from the official App Store are encrypted. While this technology is supposed to fight piracy, it may also complicate malware analysis. Here are some of the best tools that can be used to decrypt samples:</p>
+			<ul>
+				<li><strong class="bold">Clutch</strong>: This tool can be used to dump iOS apps so that they can be dis<a id="_idTextAnchor1494"/><a id="_idTextAnchor1495"/><a id="_idTextAnchor1496"/>assembled and analyzed. For newer versions of iOS, the entitlements may need to be fixed with a help of the <strong class="bold">ldid</strong> tool available on Cydia.</li>
+				<li><strong class="bold">frida-ios-dump</strong>: A newer IPA dumping script based on the <strong class="bold">Frida</strong> framework.</li>
+			</ul>
+			<p>Now, what about monitoring apps running in memory?</p>
+			<h4>Monitors and in-memory patching</h4>
+			<p>It is also <a id="_idIndexMarker2102"/>possible to set up monitoring tools for iOS, even <a id="_idIndexMarker2103"/>though it may require some non-standard approaches. Luckily, there are multiple existing tools that make this possible:</p>
+			<ul>
+				<li><strong class="bold">Cydia Substrate</strong>: Formerly <a id="_idIndexMarker2104"/>called <strong class="bold">MobileSubstrate</strong>, this is a framework for developing runtime patches for system functions on iOS.</li>
+				<li><strong class="bold">Theos</strong>: A suite of development tools for iOS. One of these utilities is <strong class="bold">logify</strong>, which can be used to generate files that allow engineers to hook class methods.</li>
+				<li><strong class="bold">Cycrypt</strong>: A set of tools that enables engineers to modify the functionality of the running app through injections of the required logic.</li>
+				<li><code>frida-trace</code>.</li>
+				<li><strong class="bold">objection</strong>: A runtime exploration toolset based on <strong class="bold">Frida</strong>, it provides a soluti<a id="_idTextAnchor1497"/>on to many real-world situations that engineers may face when analyzing iOS samples, such as bypassing SSL pinning.</li>
+				<li><strong class="bold">fsmon</strong>: This<a id="_idTextAnchor1498"/> open source tool can be used to monitor filesystem events.</li>
+				<li><strong class="bold">FLEX</strong>: A unique set of tools that runs on the device itself and allows in-app exploration, such as network history or the state of App Sandbox’s filesystem.</li>
+			</ul>
+			<p>Alright, what <a id="_idIndexMarker2105"/>about analyzing network <a id="_idIndexMarker2106"/>activity?</p>
+			<h4>Network analysis</h4>
+			<p>Apple <a id="_idIndexMarker2107"/>provides a <code>tcpdump</code> on the Mac to record the mobile device’s traffic. In addition, just as with macOS, it is poss<a id="_idTextAnchor1499"/>ible to redirect required network traffic to a MITM solution of your choice and review or modify it if necessary.</p>
+			<p>Now we know what tools we should use at different stages of the analysis, let’s summarize the steps that we may need to go through to define the workflow.</p>
+			<h1 id="_idParaDest-408"><a id="_idTextAnchor1500"/>The analysis workflow</h1>
+			<p>When analyzing <a id="_idIndexMarker2110"/>malware that is targeting Apple systems (whether it be macOS or iOS), the following workflow can be used:</p>
+			<ol>
+				<li>Understand the available indicators of a compromise. Is it possible that they are related to an activity that doesn’t involve the usage of malicious code?</li>
+				<li>Once the candidate for a malicious sample is identified, start by obtaining it and any related files and performing static analysis.</li>
+				<li>If there are multiple files available within one bundle, find out which one is supposed to be executed first. Generally, it is defined in the <code>Info.plist</code> file in the <code>CFBundleExecutable</code> field. Also, check the executable that has the same name as the bundle, but without the <code>.app</code> extension.</li>
+				<li>Carefully review the strings and import functions present in binary payloads, as they may offer some insight into the malware’s functionality. Pay particular attention to the import functions mentioned in the <em class="italic">File formats and APIs</em> section and their analogous. If there are no valid strings, check for the presence of encryption and obfuscation code.</li>
+			</ol>
+			<p>Continue the analysis using references to strings as landmarks, keeping the markup accurate. Also, carefully review the code close to the sample’s entry point, as it may contain arguments that parse functionality.</p>
+			<ol>
+				<li value="5">Extract all indicators of compromise, such as contacted IP addresses and URLs, the file paths and names used, and other modules delivered. This information can be used not only to find additional related samples and identify the exact malware family involved but also to better protect already-affected systems and prevent further infections by sharing them with other organizations, security providers, and <a id="_idIndexMarker2111"/>law enforcement agencies (it may also help track down the attackers).</li>
+				<li>If possible, try to understand the full infection chain. How did the malware enter the target system – can it spread further? To answer this question, you may need to perform a forensic analysis on the affected machine(s) or review security logs. This is helpful for securing existing systems and preventing the infection from reoccurring.</li>
+			</ol>
+			<p>All this information will allow you to confirm the exact purpose and type of the malware (at this stage, we already know how they look), which is extremely useful for estimating the risks and losses involved.</p>
+			<ol>
+				<li value="7">Before performing dynamic analysis, during the static analysis stage, confirm what environment the malware expects and whether any command-line arguments or dependencies are required.</li>
+				<li>If the testing system is already set up, run the malware with monitors to confirm the functionality identified during the static analysis (this is usually a quick task to complete).</li>
+				<li>If you need to understand some complicated interaction with the system, or decrypt or deobfuscate certain logic, perform a step-by-step dynamic analysis for related code blo<a id="_idTextAnchor1501"/>cks in your debugger of choice.</li>
+			</ol>
+			<p>Choose your analysis strategy depending on the questions that need to be answered, and the time and<a id="_idIndexMarker2112"/> setup available. Some steps may be modified or completely omitted if they fall outside the scope of the report that needs to be delivered.</p>
+			<h1 id="_idParaDest-409"><a id="_idTextAnchor1502"/>Summary</h1>
+			<p>In this chapter, we learned about the security models of macOS and iOS to understand potential attack vectors, and dived deeper into the file formats used on these operating systems to see what malicious samples may look like. Then, we went through the tools available to analyze malware that targets macOS and iOS users and provided guidelines on how they can be used. After this, we put our knowledge into practice and went through all the major attack stages generally implemented by malware, from the initial penetration to the action phase, and learned how they may look in real-life scenarios. Finally, we covered the advanced techniques utilized by more high-profile malware families.</p>
+			<p>Equipped with this knowledge, you now have the upper hand in analyzing pretty much any type of threat that targets these systems. As a result, you can provide better protection from unwarranted cyberattacks and mitigate further risks.</p>
+			<p>In <a href="B18500_13.xhtml#_idTextAnchor1503"><em class="italic">Chapter 13</em></a>, <em class="italic">Analyzing Android Malware Samples</em>, we are going to cover another popular mobile operating system, Android, and we will learn how to deal with the malware that targets it. Read on!</p>
+		</div>
+		<div><div></div>
+		</div>
+	</body></html>

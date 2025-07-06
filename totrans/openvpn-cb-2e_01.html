@@ -1,0 +1,442 @@
+<html><head></head><body><div><div><div><div><h1 class="title"><a id="ch01"/>Chapter 1.  Point-to-Point Networks </h1></div></div></div><p>In this chapter, we will cover the following:</p><div><ul class="itemizedlist"><li class="listitem">The shortest setup possible</li><li class="listitem">OpenVPN secret keys</li><li class="listitem">Multiple secret keys</li><li class="listitem">Plaintext tunnel</li><li class="listitem">Routing</li><li class="listitem">Configuration files versus the command line</li><li class="listitem">IP-less configurations</li><li class="listitem">Complete site-to-site setup</li><li class="listitem">Three-way routing</li><li class="listitem">Using IPv6</li></ul></div><div><div><div><div><h1 class="title"><a id="ch01lvl1sec7"/>Introduction</h1></div></div></div><p>The recipes in this chapter will provide an introduction to configuring OpenVPN. They are based on a point-to-point type of network, meaning that only a single client can connect at a given time.</p><p>A point-to-point network is very useful when connecting to a small number of sites or clients. It is easier to set up, as no certificates or <strong>public key infrastructure</strong> (<strong>PKI</strong>) is required. Also, routing is slightly easier to configure as no client-specific configuration files containing <code class="literal">--iroute</code> statements are required.</p><p>The drawbacks of a point-to-point network are as follows:</p><div><ul class="itemizedlist"><li class="listitem">The lack of having perfect forward secrecy-a key compromise may result in a total disclosure of previous sessions</li><li class="listitem">The secret key must exist in plaintext form on each VPN peer</li></ul></div></div></div>
+<div><div><div><div><h1 class="title"><a id="ch01lvl1sec8"/>The shortest setup possible</h1></div></div></div><p>This recipe will explain the shortest setup possible when using OpenVPN. For this setup, you require two computers that are connected over a network (LAN or Internet). We will use both a TUN-style network and a TAP-style network and will focus on the differences between them. A TUN device is used mostly for VPN tunnels where only IP traffic is used. A TAP device allows all the Ethernet frames to be passed over the OpenVPN tunnel, hence providing support for non-IP based protocols, such as IPX and AppleTalk.</p><p>While this may seem useless at first glance, it can be very useful to quickly test whether OpenVPN can connect to a remote system.</p><div><div><div><div><h2 class="title"><a id="ch01lvl2sec7"/>Getting ready</h2></div></div></div><p>Install OpenVPN 2.3.9 or higher on two computers. Make sure the computers are connected over a network. For this recipe, the server computer was running CentOS 6 Linux and OpenVPN 2.3.9 and the client was running Windows 7 Pro 64bit and OpenVPN 2.3.10.</p></div><div><div><div><div><h2 class="title"><a id="ch01lvl2sec8"/>How to do it...</h2></div></div></div><p>Here are the steps that you need to follow:</p><div><ol class="orderedlist arabic"><li class="listitem">Launch the server-side (listening) OpenVPN process for the TUN-style network:<pre class="programlisting">
+<strong>          [root@server]# openvpn --ifconfig 10.200.0.1 10.200.0.2 \</strong>
+<strong>            --dev tun</strong>
+</pre><div><h3 class="title"><a id="note3"/>Note</h3><p>The preceding command should be entered as a single line. The character <code class="literal">\</code> is used to denote the fact that the command continues on the next line.</p></div></li><li class="listitem">Then, launch the client-side OpenVPN process:<pre class="programlisting">
+<strong>         [WinClient] C:\&gt;"\Program Files\OpenVPN\bin\openvpn.exe" \</strong>
+<strong>            --ifconfig 10.200.0.2 10.200.0.1 --dev tun \</strong>
+<strong>            --remote openvpnserver.example.com</strong>
+</pre><p>The following screenshot shows how a connection is established:</p><div><img src="img/image00329.jpeg" alt="How to do it..."/></div><p style="clear:both; height: 1em;"> </p><p>As soon as the connection is established, we can ping the other end of the tunnel.</p></li><li class="listitem">Next, stop the tunnel by pressing the <em><strong>F4 </strong></em>function key in the command window and restart both ends of the tunnel using the TAP device.</li><li class="listitem">Launch the server-side (listening) OpenVPN process for the TAP-style network:<pre class="programlisting">
+<strong>[root@server]# openvpn --ifconfig 10.200.0.1 255.255.255.0 \</strong>
+<strong>        --dev tap</strong>
+</pre></li><li class="listitem">Then launch the client-side OpenVPN process:<pre class="programlisting">
+<strong>          [WinClient] C:\&gt;"</strong>
+<strong>\Program Files\OpenVPN\bin\openvpn.exe" \</strong>
+<strong>            --ifconfig 10.200.0.2 255.255.255.0 --dev tap \</strong>
+<strong>            --remote openvpnserver.example.com</strong>
+</pre></li></ol><div></div><p>The connection will now be established and we can again ping the other end of the tunnel.</p></div><div><div><div><div><h2 class="title"><a id="ch01lvl2sec9"/>How it works...</h2></div></div></div><p>The server listens on UDP port <code class="literal">1194</code>, which is the OpenVPN default port for incoming connections. The client connects to the server on this port. After the initial handshake, the server configures the first available TUN device with the IP address <code class="literal">10.200.0.1</code> and it expects the remote end (the Peer address) to be <code class="literal">10.200.0.2</code>.</p><p>The client does the opposite: after the initial handshake, the first TUN or TAP-Win32 device is configured with the IP address <code class="literal">10.200.0.2</code>. It expects the remote end (the Peer address) to be <code class="literal">10.200.0.1</code>. After this, the VPN is established.</p><div><h3 class="title"><a id="note4"/>Note</h3><p>Notice the warning:</p><p><strong>******* WARNING *******: all encryption and authentication features disabled -- all data will be tunnelled as cleartext</strong></p><p>Here, the data is not secure: all of the data that is sent over the VPN tunnel can be read!</p></div></div><div><div><div><div><h2 class="title"><a id="ch01lvl2sec10"/>There's more...</h2></div></div></div><p>Let's look at a couple of different scenarios and check whether they would modify the process.</p><div><div><div><div><h3 class="title"><a id="ch01lvl3sec0"/>Using the TCP protocol</h3></div></div></div><p>In the previous example, we chose the UDP protocol. It would not have made any difference if we had chosen the TCP protocol, provided that we had done that on the server side (the side without <code class="literal">--remote</code>) as well as the client side. The following is the code for doing this on the server side:</p><pre class="programlisting">
+<strong>[root@server]# openvpn --ifconfig 10.200.0.1 10.200.0.2 \</strong>
+<strong>    --dev tun --proto tcp-server</strong>
+</pre><p>Here's the code for the client side:</p><pre class="programlisting">
+<strong>[root@client]# openvpn --ifconfig 10.200.0.2 10.200.0.1 \</strong>
+<strong>    --dev tun --proto tcp-client --remote openvpnserver.example.com</strong>
+</pre></div><div><div><div><div><h3 class="title"><a id="ch01lvl3sec1"/>Forwarding non-IP traffic over the tunnel</h3></div></div></div><p>With the TAP-style interface, it is possible to run non-IP traffic over the tunnel. For example, if AppleTalk is configured correctly on both sides, we can query a remote host using the <code class="literal">aecho</code> command:</p><pre class="programlisting">
+<strong>aecho openvpnserver</strong>
+<strong>22 bytes from 65280.1: aep_seq=0. time=26. ms</strong>
+<strong>22 bytes from 65280.1: aep_seq=1. time=26. ms</strong>
+<strong>22 bytes from 65280.1: aep_seq=2. time=27. ms</strong>
+</pre><p>A <code class="literal">tcpdump -nnel -i tap0</code> command shows that the type of traffic is indeed non-IP-based AppleTalk.</p></div></div></div>
+<div><div><div><div><h1 class="title"><a id="ch01lvl1sec9"/>OpenVPN secret keys</h1></div></div></div><p>This recipe uses OpenVPN secret keys to secure the VPN tunnel. It is very similar to the previous recipe, but this time, we will use a shared secret key to encrypt the traffic between the client and the server.</p><div><div><div><div><h2 class="title"><a id="ch01lvl2sec11"/>Getting ready</h2></div></div></div><p>Install OpenVPN 2.3.9 or higher on two computers. Make sure the computers are connected over a network. For this recipe, the server computer was running CentOS 6 Linux and OpenVPN 2.3.9 and the client was running Windows 7 64 bit and OpenVPN 2.3.10.</p></div><div><div><div><div><h2 class="title"><a id="ch01lvl2sec12"/>How to do it...</h2></div></div></div><div><ol class="orderedlist arabic"><li class="listitem">First, generate a secret key on the server (listener):<pre class="programlisting">
+<strong>          [root@server]# openvpn --genkey --secret secret.key</strong>
+</pre></li><li class="listitem">Transfer this key to the client side over a secure channel (for example, using <code class="literal">scp</code>).</li><li class="listitem">Next, launch the server-side (listening) OpenVPN process:<pre class="programlisting">
+<strong>          [root@server]# openvpn --ifconfig 10.200.0.1 10.200.0.2 \</strong>
+<strong>            --dev tun --secret secret.key</strong>
+</pre></li><li class="listitem">Then, launch the client-side OpenVPN process:<pre class="programlisting">
+<strong>         [WinClient] C:\&gt;"\Program Files\OpenVPN\bin\openvpn.exe" \</strong>
+<strong>           --ifconfig 10.200.0.2 10.200.0.1 \</strong>
+<strong>           --dev tun --secret secret.key \</strong>
+<strong>           --remote openvpnserver.example.com</strong>
+</pre></li></ol><div></div><p>The connection is now established, as shown in the following screenshot:</p><div><img src="img/image00330.jpeg" alt="How to do it..."/></div><p style="clear:both; height: 1em;"> </p></div><div><div><div><div><h2 class="title"><a id="ch01lvl2sec13"/>How it works...</h2></div></div></div><p>This example works exactly as the first one: the server listens to the incoming connections on UDP port <code class="literal">1194</code>. The client connects to the server on this port. After the initial handshake, the server configures the first available TUN device with the IP address <code class="literal">10.200.0.1</code> and it expects the remote end (Peer address) to be <code class="literal">10.200.0.2</code>. The client does the opposite.</p></div><div><div><div><div><h2 class="title"><a id="ch01lvl2sec14"/>There's more...</h2></div></div></div><p>By default, OpenVPN uses two symmetric keys when setting up a point-to-point connection:</p><div><ul class="itemizedlist"><li class="listitem">A cipher key to encrypt the contents of the packets being exchanged.</li><li class="listitem">An HMAC key to sign packets. When packets arrive that are not signed using the appropriate HMAC key, they are dropped immediately. This is the first line of defense against a "denial-of-service" attack.</li><li class="listitem">The same set of keys are used on both ends and both keys are derived from the file specified using the <code class="literal">--secret</code> parameter.</li></ul></div><p>An OpenVPN secret key file is formatted as follows:</p><pre class="programlisting"># 
+# 2048 bit OpenVPN static key 
+# 
+-----BEGIN OpenVPN Static key V1----- 
+&lt;16 lines of random bytes&gt; 
+-----END OpenVPN Static key V1----- 
+</pre><p>From the random bytes, the OpenVPN Cipher and HMAC keys are derived. Note that these keys are the same for each session.</p></div><div><div><div><div><h2 class="title"><a id="ch01lvl2sec15"/>See also</h2></div></div></div><div><ul class="itemizedlist"><li class="listitem">The next recipe, <em>Multiple secret keys</em>, will explain the format of secret keys in detail</li></ul></div></div></div>
+<div><div><div><div><h1 class="title"><a id="ch01lvl1sec10"/>Multiple secret keys</h1></div></div></div><p>As stated in the previous recipe, OpenVPN uses two symmetric keys when setting up a point-to-point connection. However, it is also possible to use shared yet asymmetric keys in point-to-point mode. OpenVPN will use four keys in this case:</p><div><ul class="itemizedlist"><li class="listitem">A cipher key on the client side</li><li class="listitem">An HMAC key on the client side</li><li class="listitem">A cipher key on the server side</li><li class="listitem">An HMAC key on the server side</li></ul></div><p>The same keying material is shared by both sides of the point-to-point connection, but the keys that are derived for encrypting and signing the data are different for each side. This recipe explains how to set up OpenVPN in this manner and how the keys can be made visible.</p><div><div><div><div><h2 class="title"><a id="ch01lvl2sec16"/>Getting ready</h2></div></div></div><p>For this recipe, we use the <code class="literal">secret.key</code> file from the previous recipe. Install OpenVPN 2.3.9 or higher on two computers. Make sure the computers are connected over a network. For this recipe, the server computer was running CentOS 6 Linux and OpenVPN 2.3.9 and the client was running Windows 7 64 bit and OpenVPN 2.3.10. We'll use the <code class="literal">secret.key</code> file from the <em>OpenVPN secret keys</em> recipe here.</p></div><div><div><div><div><h2 class="title"><a id="ch01lvl2sec17"/>How to do it...</h2></div></div></div><div><ol class="orderedlist arabic"><li class="listitem">Launch the server-side (listening) OpenVPN process with an extra option to the <code class="literal">--secret</code> parameter and with more verbose logging:<pre class="programlisting">
+<strong>          [root@server]# openvpn \</strong>
+<strong>            --ifconfig 10.200.0.1 10.200.0.2 \</strong>
+<strong>            --dev tun --secret secret.key 0 \</strong>
+<strong>            --verb 7</strong>
+</pre></li><li class="listitem">Then launch the client-side OpenVPN process:<pre class="programlisting">
+<strong>         [WinClient] C:\&gt;"\Program Files\OpenVPN\bin\openvpn.exe" \</strong>
+<strong>           --ifconfig 10.200.0.2 10.200.0.1 \</strong>
+<strong>           --dev tun --secret secret.key 1\</strong>
+<strong>           --remote openvpnserver \</strong>
+<strong>           --verb 7</strong>
+</pre></li></ol><div></div><p>The connection will be established with a lot of debugging messages.</p><p>If we look through the server-side messages (searching for <code class="literal">crypt</code>), we can find the negotiated keys on the server side. Note that the output has been reformatted for clarity:</p><pre class="programlisting">... Static Encrypt: 
+Cipher 'BF-CBC' initialized with 128 bit key 
+... Static Encrypt:  
+CIPHER KEY: <strong>80797ddc 547fbdef 79eb353f 2a1f3d1f</strong> 
+... Static Encrypt: 
+Using 160 bit message hash 'SHA1' for HMAC authentication 
+... Static Encrypt:  
+HMAC KEY: <strong>c752f254 cc4ac230 83bd8daf 6141e73d 844764d8</strong> 
+... Static Decrypt:  
+Cipher 'BF-CBC' initialized with 128 bit key 
+... Static Decrypt:  
+CIPHER KEY: <strong>8cf9abdd 371392b1 14b51523 25302c99</strong> 
+... Static Decrypt:  
+Using 160 bit message hash 'SHA1' for HMAC authentication 
+... Static Decrypt:  
+HMAC KEY: <strong>39e06d8e 20c0d3c6 0f63b3e7 d94f35af bd744b27 
+</strong>
+</pre><p>On the client side, we will find the same keys but the "Encrypt" and "Decrypt" keys would have been reversed:</p><pre class="programlisting">... Static Encrypt:  
+Cipher 'BF-CBC' initialized with 128 bit key 
+... Static Encrypt:  
+CIPHER KEY: <strong>8cf9abdd 371392b1 14b51523 25302c99</strong> 
+... Static Encrypt:  
+Using 160 bit message hash 'SHA1' for HMAC authentication 
+... Static Encrypt:  
+HMAC KEY: <strong>39e06d8e 20c0d3c6 0f63b3e7 d94f35af bd744b27</strong> 
+... Static Decrypt:  
+Cipher 'BF-CBC' initialized with 128 bit key 
+... Static Decrypt:  
+CIPHER KEY: <strong>80797ddc 547fbdef 79eb353f 2a1f3d1f</strong> 
+... Static Decrypt:  
+Using 160 bit message hash 'SHA1' for HMAC authentication 
+... Static Decrypt:  
+HMAC KEY: <strong>c752f254 cc4ac230 83bd8daf 6141e73d 844764d8 
+</strong>
+</pre><p>If you look at the keys carefully, you will see that each one of them is mirrored on the client and the server side.</p></div><div><div><div><div><h2 class="title"><a id="ch01lvl2sec18"/>How it works...</h2></div></div></div><p>OpenVPN derives all the keys from the <code class="literal">static.key</code> file, provided there is enough entropy (randomness) in the file to reliably generate four keys. All the keys generated using the following will have enough entropy:</p><pre class="programlisting">
+<strong>$ openvpn --genkey --secret secret.key</strong>
+</pre><p>An OpenVPN static key file is 2,048 bits in size. The cipher keys are each 128 bits, whereas the HMAC keys are 160 bits each, for a total of 776 bits. This allows OpenVPN to easily generate four random keys from the static key file, even if a cipher is chosen that requires a larger initialization key.</p></div><div><div><div><div><h2 class="title"><a id="ch01lvl2sec19"/>There's more...</h2></div></div></div><p>The same secret key files are used in a client/server setup when the <code class="literal">tls-auth ta.key</code> parameter is used.</p></div><div><div><div><div><h2 class="title"><a id="ch01lvl2sec20"/>See also</h2></div></div></div><div><ul class="itemizedlist"><li class="listitem">The <em>Setting up the public and private keys</em> recipe from <a class="link" title="Chapter 2.  Client-server IP-only Networks" href="part0025.xhtml#aid-NQU21">Chapter 2</a>, <em>Client-server IP-only Networks</em>, in which the <code class="literal">tls-auth</code> key is generated in a very similar manner</li></ul></div></div></div>
+<div><div><div><div><h1 class="title"><a id="ch01lvl1sec11"/>Plaintext tunnel</h1></div></div></div><p>In the very first recipe, we created a tunnel in which the data traffic was not encrypted. To create a completely plain text tunnel, we also disable the HMAC authentication. This can be useful when debugging a bad connection, as all traffic over the tunnel can now easily be monitored. In this recipe, we will look at how to do this. This type of tunnel is also useful when doing performance measurements, as it is the least CPU-intensive tunnel that can be established.</p><div><div><div><div><h2 class="title"><a id="ch01lvl2sec21"/>Getting ready</h2></div></div></div><p>Install OpenVPN 2.3.9 or higher on two computers. Make sure the computers are connected over a network. For this recipe, the server computer was running CentOS 6 Linux and OpenVPN 2.3.9 and the client was running Fedora 22 Linux and OpenVPN 2.3.10.</p><p>As we are not using any encryption, no secret keys are needed.</p></div><div><div><div><div><h2 class="title"><a id="ch01lvl2sec22"/>How to do it...</h2></div></div></div><div><ol class="orderedlist arabic"><li class="listitem">Launch the server-side (listening) OpenVPN process:<pre class="programlisting">
+<strong>         [root@server]# openvpn \</strong>
+<strong>            --ifconfig 10.200.0.1 10.200.0.2 \</strong>
+<strong>            --dev tun --auth none</strong>
+</pre></li><li class="listitem">Then launch the client-side OpenVPN process:<pre class="programlisting">
+<strong>         [root@client]# openvpn \</strong>
+<strong>            --ifconfig 10.200.0.2 10.200.0.1 \</strong>
+<strong>            --dev tun --auth none\</strong>
+<strong>            --remote openvpnserver.example.com</strong>
+</pre></li><li class="listitem">The connection will be established with the following two warning messages as the output:<pre class="programlisting">
+<strong>
+<strong>... ******* WARNING *******: null cipher specified, no encryption will be 
+                      used</strong>
+</strong>
+<strong>
+<strong>... ******* WARNING *******: null MAC specified, no authentication will 
+                      be used</strong>
+</strong>
+</pre></li></ol><div></div></div><div><div><div><div><h2 class="title"><a id="ch01lvl2sec23"/>How it works...</h2></div></div></div><p>With this setup, absolutely no encryption is performed. All of the traffic that is sent over the tunnel is encapsulated in an OpenVPN packet and then sent as is.</p></div><div><div><div><div><h2 class="title"><a id="ch01lvl2sec24"/>There's more...</h2></div></div></div><p>To actually view the traffic, we can use <code class="literal">tcpdump</code>; follow these steps:</p><div><ol class="orderedlist arabic"><li class="listitem">Set up the connection as outlined.</li><li class="listitem">Start <code class="literal">tcpdump</code> and listen on the network interface, not the tunnel interface itself:<pre class="programlisting">
+<strong>       [root@client]# tcpdump -l -w -  -i eth0 -s 0 host 
+           openvpnserver | strings</strong>
+</pre></li><li class="listitem">Now, send some text across the tunnel, using something like <code class="literal">nc</code> (Netcat). First, launch <code class="literal">nc</code> on the server side:<pre class="programlisting">
+<strong>       [server]$ nc -l 31000</strong>
+</pre></li><li class="listitem">On the client side, launch the <code class="literal">nc</code> command in client mode and type <code class="literal">hello</code> and <code class="literal">goodbye</code>:<pre class="programlisting">
+<strong>       [client]$ nc 10.200.0.1 3100</strong>
+<strong>         hello</strong>
+<strong>         goodbye</strong>
+</pre></li><li class="listitem">In the <code class="literal">tcpdump</code> window, you should now see the following:<div><img src="img/image00331.jpeg" alt="There's more..."/></div><p style="clear:both; height: 1em;"> </p></li><li class="listitem">Press <em>Ctrl</em> + <em>C</em> to terminate <code class="literal">tcpdump</code> as well as <code class="literal">nc</code>.</li></ol><div></div></div></div>
+<div><div><div><div><h1 class="title"><a id="ch01lvl1sec12"/>Routing</h1></div></div></div><p>The point-to-point type of networks are great if you want to connect two networks together over a static, encrypted tunnel. If you only have a small number of endpoints (fewer than four), then routing is far easier than using a client/server setup as described in <a class="link" title="Chapter 2.  Client-server IP-only Networks" href="part0025.xhtml#aid-NQU21">Chapter 2</a>, <em>Client-server IP-only Networks</em>.</p><div><div><div><div><h2 class="title"><a id="ch01lvl2sec25"/>Getting ready</h2></div></div></div><p>For this recipe, we will use the following network layout:</p><div><img src="img/image00332.jpeg" alt="Getting ready"/></div><p style="clear:both; height: 1em;"> </p><p>Install OpenVPN 2.3.9 or higher on two computers. Make sure the computers are connected over a network. For this recipe, the server computer was running CentOS 6 Linux and OpenVPN 2.3.9 and the client was running Windows 7 64 bit and OpenVPN 2.3.10. We'll use the <code class="literal">secret.key</code> file from the <em>OpenVPN secret keys</em> recipe here.</p></div><div><div><div><div><h2 class="title"><a id="ch01lvl2sec26"/>How to do it...</h2></div></div></div><div><ol class="orderedlist arabic"><li class="listitem">First, establish the connection, but also make sure OpenVPN has daemonized itself:<pre class="programlisting">
+<strong>          [root@server]# openvpn \</strong>
+<strong>            --ifconfig 10.200.0.1 10.200.0.2 \</strong>
+<strong>            --dev tun --secret secret.key \</strong>
+<strong>            --daemon --log /tmp/openvpnserver.log</strong>
+</pre></li><li class="listitem">Then, launch the client-side OpenVPN process:<pre class="programlisting">
+<strong>          [client]$ openvpn \</strong>
+<strong>            --ifconfig 10.200.0.2 10.200.0.1 \</strong>
+<strong>            --dev tun --secret secret.key \</strong>
+<strong>            --remote openvpnserver \</strong>
+<strong>            --daemon --log /tmp/openvpnclient.log</strong>
+</pre></li><li class="listitem">The connection is established:<pre class="programlisting">
+<strong>      [server]$ tail -1 /tmp/openvpnserver.log</strong>
+<strong>           Initialization Sequence Completed</strong>
+</pre></li></ol><div></div><p>Now we add routing:</p><div><ol class="orderedlist arabic"><li class="listitem">On the server side, we add a static route:<pre class="programlisting">
+<strong>      [root@server]# route add -net 192.168.4.0/24 gw 10.200.0.2</strong>
+</pre></li><li class="listitem">On the client side, we need to do two things:<p>Make sure that you have the IP traffic forwarding enabled. On Linux, this can be achieved using the following:</p><pre class="programlisting">
+<strong>             [root@client]# sysctl -w net.ipv4.ip_forward=1</strong>
+</pre><div><h3 class="title"><a id="note5"/>Note</h3><p>Note that this setting does not survive a reboot of the system.</p></div><p>On the Windows client on the client-side LAN, make sure there is a route back to the OpenVPN server:</p><pre class="programlisting">
+<strong>            C:&gt; route add 10.200.0.0 mask 255.255.255.0 192.168.4.5</strong>
+</pre><div><h3 class="title"><a id="note6"/>Note</h3><p>Here, <code class="literal">192.168.4.5</code> is the LAN IP address of the OpenVPN client.</p></div></li><li class="listitem">From the server, we can now ping machines on the client LAN. First, ping the LAN IP of the OpenVPN client:<pre class="programlisting">
+<strong>        [root@server]# ping -c 2 192.168.4.5</strong>
+<strong>        PING 192.168.4.5 (192.168.4.5) 56(84) bytes of data.</strong>
+<strong>        64 bytes from 192.168.4.5: icmp_seq=0 ttl=64 time=31.7 ms</strong>
+<strong>        64 bytes from 192.168.4.5: icmp_seq=1 ttl=64 time=31.3 ms</strong>
+<strong>       --- 192.168.4.5 ping statistics ---</strong>
+<strong>        2 packets transmitted, 2 received, 0% packet loss, time   </strong>
+<strong>        1000ms</strong>
+<strong>       rtt min/avg/max/mdev = 31.359/31.537/31.716/0.251 ms, pipe 2</strong>
+</pre></li><li class="listitem">Then, ping the LAN IP of a machine on the OpenVPN client LAN:<pre class="programlisting">
+<strong>          [root@server]# ping -c 2 192.168.4.164</strong>
+<strong>        [server]$ ping -c 2 192.168.4.164</strong>
+<strong>       PING 192.168.4.164 (192.168.4.164) 56(84) bytes of data.</strong>
+<strong>       64 bytes from 192.168.4.164: icmp_seq=0 ttl=63 time=31.9 ms</strong>
+<strong>       64 bytes from 192.168.4.164: icmp_seq=1 ttl=63 time=31.4 ms</strong>
+<strong>       --- 192.168.4.164 ping statistics ---</strong>
+<strong>       2 packets transmitted, 2 received, 0% packet loss, time </strong>
+<strong>        1001ms</strong>
+<strong>       rtt min/avg/max/mdev = 31.486/31.737/31.989/0.308 ms, pipe 2</strong>
+</pre></li></ol><div></div></div><div><div><div><div><h2 class="title"><a id="ch01lvl2sec27"/>How it works...</h2></div></div></div><p>In our network setup, the LAN we want to reach is behind the OpenVPN client, so we have to add a route to the server:</p><pre class="programlisting">
+<strong>[server]$ route add -net 192.168.4.0/24 gw 10.200.0.2</strong>
+</pre><p>On the client side, we need to do two things:</p><div><ul class="itemizedlist"><li class="listitem">Make sure that the routing is enabled. If you want routing to remain enabled after a reboot, edit the <code class="literal">/etc/sysctl.cnf</code> file:<pre class="programlisting">        net.ipv4.ip_forward = 1 
+</pre></li><li class="listitem">We also need to make sure that there is a route back to the OpenVPN server on the client LAN. This can be done by adding a route to the LAN gateway or by adding a static route to each of the machines on the client LAN. In this recipe, we added a route to a Windows client that is in the same LAN as the OpenVPN client:<pre class="programlisting">
+<strong>        C:&gt; route add 10.200.0.0 mask 255.255.255.0 192.168.4.5</strong>
+</pre></li></ul></div><p>Here, <code class="literal">192.168.4.5</code> is the LAN IP address of the OpenVPN client.</p></div><div><div><div><div><h2 class="title"><a id="ch01lvl2sec28"/>There's more...</h2></div></div></div><p>Let's discuss a bit about routing issues and how to automate the setup.</p><div><div><div><div><h3 class="title"><a id="ch01lvl3sec2"/>Routing issues</h3></div></div></div><p>On the OpenVPN users mailing list, a large number of the problems that are reported have something to do with routing issues. Most of them have little to do with OpenVPN itself, but more with understanding the routing and the flow of packets over the network. <a class="link" title="Chapter 7. Troubleshooting OpenVPN - Routing" href="part0082.xhtml#aid-2E6E41">Chapter 7</a>, <em>Troubleshooting OpenVPN - Routing</em>, provides some recipes to diagnose and fix the most common routing problems.</p></div><div><div><div><div><h3 class="title"><a id="ch01lvl3sec3"/>Automating the setup</h3></div></div></div><p>It is also possible to add the appropriate routes when the tunnel first comes up. This can be done using the <code class="literal">--route</code> statement:</p><pre class="programlisting">
+<strong>[server]$ openvpn \</strong>
+<strong>    --ifconfig 10.200.0.1 10.200.0.2 \</strong>
+<strong>    --dev tun --secret secret.key \</strong>
+<strong>    --daemon --log /var/log/openvpnserver-1.5.log \</strong>
+<strong>    --route 192.168.4.0 255.255.255.0</strong>
+</pre><p>Note that on the client LAN, the route back to the server still has to be set manually.</p></div></div><div><div><div><div><h2 class="title"><a id="ch01lvl2sec29"/>See also</h2></div></div></div><div><ul class="itemizedlist"><li class="listitem">The <em>Three-way routing</em> recipe, later on in this chapter, where a more complicated setup using three remote sites is explained</li><li class="listitem"><a class="link" title="Chapter 7. Troubleshooting OpenVPN - Routing" href="part0082.xhtml#aid-2E6E41">Chapter 7</a>, <em>Troubleshooting OpenVPN - Routing</em></li></ul></div></div></div>
+<div><div><div><div><h1 class="title"><a id="ch01lvl1sec13"/>Configuration files versus the command line</h1></div></div></div><p>Most recipes in this book can be carried out without using configuration files. However, in most real-life cases, a configuration file is much easier to use than a lengthy command line. It is important to know that OpenVPN actually treats configuration file entries and command-line parameters identically. The only difference is that all command-line parameters start with a double dash (<code class="literal">--</code>) whereas the configuration file entries do not. This makes it very easy to overrule the configuration file entries using an extra command-line parameter.</p><div><div><div><div><h2 class="title"><a id="ch01lvl2sec30"/>Getting ready</h2></div></div></div><p>Install OpenVPN 2.3.9 or higher on two computers. Make sure the computers are connected over a network. For this recipe, the server computer was running CentOS 6 Linux and OpenVPN 2.3.9 and the client was running Windows 7 64 bit and OpenVPN 2.3.10. In this recipe, we'll use the <code class="literal">secret.key</code> file from the <em>OpenVPN secret keys</em> recipe.</p></div><div><div><div><div><h2 class="title"><a id="ch01lvl2sec31"/>How to do it...</h2></div></div></div><div><ol class="orderedlist arabic"><li class="listitem">Create a configuration file based on an earlier recipe:<pre class="programlisting">
+<strong>       dev tun</strong>
+<strong>       port 1194</strong>
+<strong>       ifconfig 10.200.0.1 10.200.0.2</strong>
+<strong>       secret secret.key </strong>
+<strong>       remote openvpnserver.example.com</strong>
+<strong>       verb 3</strong>
+</pre></li><li class="listitem">Save this file as <code class="literal">example1-6-client.conf</code>.</li><li class="listitem">Launch the server-side (listening) OpenVPN process on a non-standard port:<pre class="programlisting">
+<strong>          [root@server]# openvpn \</strong>
+<strong>            --ifconfig 10.200.0.1 10.200.0.2 \</strong>
+<strong>            --dev tun --secret secret.key \</strong>
+<strong>            --port 11000</strong>
+</pre></li><li class="listitem">Then launch the client-side OpenVPN process and add an extra command-line parameter:<pre class="programlisting">
+<strong>          [WinClient] C:\&gt;"\Program Files\OpenVPN\bin\openvpn.exe" \</strong>
+<strong>            --config client.conf \</strong>
+<strong>            --port 11000</strong>
+</pre></li></ol><div></div><p>The connection is established:</p><pre class="programlisting">
+<strong>Jan 11 16:14:04 2016 UDPv4 link local (bound): [undef]</strong>
+<strong>Jan 11 16:14:04 2016 UDPv4 link remote: [AF_INET]172.16.8.1:11000</strong>
+<strong>Jan 11 16:14:06 2016 Peer Connection Initiated with [AF_INET]172.16.8.1:11000</strong>
+<strong>Jan 11 16:14:12 2016 TEST ROUTES: 0/0 succeeded len=0 ret=1 a=0 u/d=up</strong>
+<strong>Jan 11 16:14:12 2016 Initialization Sequence Completed</strong>
+</pre></div><div><div><div><div><h2 class="title"><a id="ch01lvl2sec32"/>How it works...</h2></div></div></div><p>The command line and the configuration file are read and parsed from left to right and top to bottom. This means that most options that are specified before the configuration file can be overruled by the entries in that file. Similarly, the options specified after the following directive overrule the entries in that file:</p><pre class="programlisting">
+<strong>--config client.conf</strong>
+</pre><p>Hence, the following option overruled the line "<code class="literal">port 1194</code>" from the configuration file:</p><pre class="programlisting">
+<strong>--port 11000</strong>
+</pre><p>However, some options can be specified multiple times, in which case, the first occurrence "wins." In such a case, it is also possible to specify the option before specifying the <code class="literal">--config</code> directive.</p></div><div><div><div><div><h2 class="title"><a id="ch01lvl2sec33"/>There's more...</h2></div></div></div><p>Here is another example that shows the importance of the ordering of the command-line parameters:</p><pre class="programlisting">
+<strong>C:\&gt;"\Program Files\OpenVPN\bin\openvpn.exe" \</strong>
+<strong>    --verb 0 \</strong>
+<strong>    --config client.conf \</strong>
+<strong>    --port 11000</strong>
+</pre><p>This produces the exact same connection log as shown before. The <code class="literal">verb 3</code> command from the <code class="literal">client.conf</code> configuration file overruled <code class="literal">--verb 0</code>, as specified on the command line. However, refer to the following command line:</p><pre class="programlisting">
+<strong>C:\&gt;"\Program Files\OpenVPN\bin\openvpn.exe" \</strong>
+<strong>    --config client.conf \</strong>
+<strong>    --port 11000 \</strong>
+<strong>    --verb 0</strong>
+</pre><p>Using this command line, the connection log will remain entirely empty, yet the VPN connection will be in functioning mode.</p><div><div><div><div><h3 class="title"><a id="ch01lvl3sec4"/>Exceptions to the rule</h3></div></div></div><p>Some of the newer features of OpenVPN deviate slightly from this principle, most notably the <code class="literal">&lt;connection&gt;</code> blocks and the inline certificates. Some people prefer to write the following command:</p><pre class="programlisting">
+<strong>remote openvpnserver.example.com 1194</strong>
+</pre><p>They prefer this instead of the following command:</p><pre class="programlisting">
+<strong>port 1194</strong>
+<strong>remote openvpnserver.example.com</strong>
+</pre><p>The downside of this notation is that this is translated as a connection block by OpenVPN. For connection blocks, it is not possible to overrule the port using <code class="literal">--port 11000</code>.</p></div></div></div>
+<div><div><div><div><h1 class="title"><a id="ch01lvl1sec14"/>Complete site-to-site setup</h1></div></div></div><p>In this recipe, we set up a complete site-to-site network, using most of the built-in security features that OpenVPN offers. It is intended as a "one-stop-shop" example of how to set up a point-to-point network.</p><div><div><div><div><h2 class="title"><a id="ch01lvl2sec34"/>Getting ready</h2></div></div></div><p>Install OpenVPN 2.3.9 or higher on two computers. Make sure the computers are connected over a network. For this recipe, the server computer was running CentOS 6 Linux and OpenVPN 2.3.9 and the client was running Fedora 22 Linux and OpenVPN 2.3.10. We'll use the <code class="literal">secret.key</code> file from the <em>OpenVPN secret keys</em> recipe here.</p><p>We will use the following network layout:</p><div><img src="img/image00333.jpeg" alt="Getting ready"/></div><p style="clear:both; height: 1em;"> </p><p>Make sure routing (IP forwarding) is configured on both the server and client.</p></div><div><div><div><div><h2 class="title"><a id="ch01lvl2sec35"/>How to do it...</h2></div></div></div><div><ol class="orderedlist arabic"><li class="listitem">Create the server configuration file:<pre class="programlisting">        dev tun 
+        proto udp 
+        local  openvpnserver.example.com 
+        lport  1194 
+        remote openvpnclient.example.com 
+        rport  1194 
+ 
+        secret secret.key 0 
+        ifconfig 10.200.0.1 10.200.0.2 
+        route 192.168.4.0 255.255.255.0 
+ 
+        user  nobody 
+        group nobody  # use "group nogroup" on some distros 
+        persist-tun 
+        persist-key 
+        keepalive 10 60 
+        ping-timer-rem 
+ 
+        verb 3 
+        daemon 
+        log-append /tmp/openvpn.log 
+</pre></li><li class="listitem">Save it as <code class="literal">example1-7-server.conf</code>.</li><li class="listitem">On the client side, create the configuration file:<pre class="programlisting">        dev tun 
+        proto udp 
+        local  openvpnclient.example.com 
+        lport  1194 
+        remote openvpnserver.example.com 
+        rport  1194 
+ 
+        secret secret.key 1 
+        ifconfig 10.200.0.2 10.200.0.1 
+        route 172.31.32.0 255.255.255.0 
+ 
+        user  nobody 
+        group nobody  # use "group nogroup" on some distros 
+        persist-tun 
+        persist-key 
+        keepalive 10 60 
+        ping-timer-rem 
+ 
+        verb 3 
+        daemon 
+        log-append /tmp/openvpn.log 
+</pre></li><li class="listitem">Save it as <code class="literal">example1-7-client.conf</code>.</li><li class="listitem">Then start the tunnel on both ends. The following is for the server end:<pre class="programlisting">
+<strong>          [root@server]# openvpn --config example1-7-server.conf</strong>
+</pre><p>Here's the code for the client end:</p><pre class="programlisting">
+<strong>          [root@client]# openvpn --config example1-7-client.conf</strong>
+</pre><p>Now our site-to-site tunnel is established.</p></li><li class="listitem">Check the log files on both the client and server to verify that the connection has been established.</li><li class="listitem">After the connection comes up, the machines on the LANs behind both the end points can be reached over the OpenVPN tunnel. For example, when we ping a machine on the client-side LAN from the server, we will see the following:<div><img src="img/image00334.jpeg" alt="How to do it..."/></div><p style="clear:both; height: 1em;"> </p></li></ol><div></div></div><div><div><div><div><h2 class="title"><a id="ch01lvl2sec36"/>How it works...</h2></div></div></div><p>The client and server configuration files are very similar:</p><div><ul class="itemizedlist"><li class="listitem">The server listens only on one interface and one UDP port</li><li class="listitem">The server accepts connections only from a single IP address and port</li><li class="listitem">The client has these options mirrored</li></ul></div><p>Here is the set of configuration options:</p><pre class="programlisting">user  nobody 
+group nobody 
+persist-tun 
+persist-key 
+keepalive 10 60 
+ping-timer-rem 
+</pre><p>These options are used to make the connection more robust and secure, as follows:</p><p>The OpenVPN process runs as user <code class="literal">nobody</code> and group <code class="literal">nobody</code> after the initial connection is established. Even if somebody is able to take control of the OpenVPN process itself, he or she would still only be <code class="literal">nobody</code> and not <code class="literal">root</code>. Note that on some Linux distributions, <code class="literal">nogroup</code> is used instead.</p><p>The <code class="literal">persist-tun</code> and <code class="literal">persist-key</code> options are used to ensure that the connection comes back automatically if the underlying network is disrupted. These options are necessary when using <code class="literal">user nobody</code> and <code class="literal">group nobody</code> (or <code class="literal">group nogroup</code>).</p><p>The <code class="literal">keepalive</code> and <code class="literal">ping-timer-rem</code> options cause OpenVPN to send a periodic "ping" message over the tunnel to ensure that both ends of the tunnel remain up and running.</p></div><div><div><div><div><h2 class="title"><a id="ch01lvl2sec37"/>There's more...</h2></div></div></div><p>This point-to-point setup can also be used to evade restrictive firewalls. The data stream between the two endpoints is not recognizable and very hard to decipher. When OpenVPN is run in client/server (see <a class="link" title="Chapter 2.  Client-server IP-only Networks" href="part0025.xhtml#aid-NQU21">Chapter 2</a>, <em>Client-server IP-only Networks</em>), the traffic is recognizable as OpenVPN traffic due to the initial TLS handshake.</p></div><div><div><div><div><h2 class="title"><a id="ch01lvl2sec38"/>See also</h2></div></div></div><div><ul class="itemizedlist"><li class="listitem">The last recipe in this chapter, <em>Using IPv6</em>, which builds upon this recipe by adding support for IPv6 traffic</li><li class="listitem"><a class="link" title="Chapter 7. Troubleshooting OpenVPN - Routing" href="part0082.xhtml#aid-2E6E41">Chapter 7</a>, <em>Troubleshooting OpenVPN - Routing</em>, in which the most common routing issues are explained</li></ul></div></div></div>
+<div><div><div><div><h1 class="title"><a id="ch01lvl1sec15"/>Three-way routing</h1></div></div></div><p>For a small number (less than four) of fixed endpoints, a point-to-point setup is very flexible. In this recipe, we set up three OpenVPN tunnels between three sites, including routing between the endpoints. By setting up three tunnels, we create redundant routing so that all the sites are connected even if one of the tunnels is disrupted.</p><div><div><div><div><h2 class="title"><a id="ch01lvl2sec39"/>Getting ready</h2></div></div></div><p>Install OpenVPN 2.3.9 or higher on two computers. Make sure the computers are connected over a network. For this recipe, the server computer was running CentOS 6 Linux and OpenVPN 2.3.9 and the client was running Fedora 22 Linux and OpenVPN 2.3.10.</p><p>We will use the following network layout:</p><div><img src="img/image00335.jpeg" alt="Getting ready"/></div><p style="clear:both; height: 1em;"> </p><p>Make sure that the routing (IP forwarding) is configured on all the OpenVPN endpoints.</p></div><div><div><div><div><h2 class="title"><a id="ch01lvl2sec40"/>How to do it...</h2></div></div></div><div><ol class="orderedlist arabic"><li class="listitem">We generate three static keys:<pre class="programlisting">
+<strong>          [root@siteA]# openvpn --genkey --secret AtoB.key</strong>
+<strong>          [root@siteA]# openvpn --genkey --secret AtoC.key</strong>
+<strong>          [root@siteA]# openvpn --genkey --secret BtoC.key</strong>
+</pre></li><li class="listitem">Transfer these keys to all the endpoints over a secure channel (for example, using <code class="literal">scp</code>).</li><li class="listitem">Create the server (listener) configuration file named <code class="literal">example1-8-serverBtoA.conf</code>:<pre class="programlisting">        dev tun 
+        proto udp 
+        port  1194 
+ 
+        secret AtoB.key 0 
+        ifconfig 10.200.0.1 10.200.0.2 
+ 
+        route 192.168.4.0 255.255.255.0 vpn_gateway 5 
+        route 192.168.6.0 255.255.255.0 vpn_gateway 10 
+        route-delay 
+ 
+        keepalive 10 60 
+        verb 3 
+</pre></li><li class="listitem">Next, create an <code class="literal">example1-8-serverCtoA.conf</code> file:<pre class="programlisting">        dev tun 
+        proto udp 
+        port  1195 
+ 
+        secret AtoC.key 0 
+        ifconfig 10.200.0.5 10.200.0.6 
+ 
+        route 192.168.4.0 255.255.255.0 vpn_gateway 5 
+        route 192.168.5.0 255.255.255.0 vpn_gateway 10 
+        route-delay 
+ 
+        keepalive 10 60 
+        verb 3 
+</pre></li><li class="listitem">Also, create an <code class="literal">example1-8-serverBtoC.conf</code> file:<pre class="programlisting">        dev tun 
+        proto udp 
+        port  1196 
+ 
+        secret BtoC.key 0 
+        ifconfig 10.200.0.9 10.200.0.10 
+ 
+        route 192.168.4.0 255.255.255.0 vpn_gateway 10 
+        route 192.168.6.0 255.255.255.0 vpn_gateway 5 
+        route-delay 
+ 
+        keepalive 10 60 
+        verb 3 
+</pre></li><li class="listitem">Now, create the client (connector) configuration files, <code class="literal">example1-8-clientAtoB.conf</code>:<pre class="programlisting">        dev tun 
+        proto udp 
+        remote siteB 
+        port  1194 
+ 
+        secret AtoB.key 1 
+        ifconfig 10.200.0.2 10.200.0.1 
+ 
+        route 192.168.5.0 255.255.255.0 vpn_gateway 5 
+        route 192.168.6.0 255.255.255.0 vpn_gateway 10 
+        route-delay 
+ 
+        keepalive 10 60 
+        verb 3 
+</pre></li><li class="listitem">Also, create an <code class="literal">example1-8-clientAtoC.conf</code> file:<pre class="programlisting">        dev tun 
+        proto udp 
+        remote siteC 
+        port  1195 
+ 
+        secret AtoC.key 1 
+        ifconfig 10.200.0.6 10.200.0.5 
+ 
+        route 192.168.5.0 255.255.255.0 vpn_gateway 10 
+        route 192.168.6.0 255.255.255.0 vpn_gateway 5 
+        route-delay 
+ 
+        verb 3 
+</pre></li><li class="listitem">And finally, create <code class="literal">example1-8-clientCtoB.conf</code>:<pre class="programlisting">        dev tun 
+        proto udp 
+        remote siteB 
+        port  1196 
+ 
+        secret BtoC.key 1 
+        ifconfig 10.200.0.10 10.200.0.9 
+ 
+        route 192.168.4.0 255.255.255.0 vpn_gateway 10 
+        route 192.168.5.0 255.255.255.0 vpn_gateway 5 
+        route-delay 
+ 
+        keepalive 10 60 
+        verb 3 
+</pre></li></ol><div></div><p>First, we start all the listener tunnels:</p><pre class="programlisting">
+<strong>[root@siteB]# openvpn --config example1-8-serverBtoA.conf</strong>
+<strong>[root@siteB]# openvpn --config example1-8-serverBtoC.conf</strong>
+<strong>[root@siteC]# openvpn --config example1-8-serverCtoA.conf</strong>
+</pre><p>These are followed by the connector tunnels:</p><pre class="programlisting">
+<strong>[root@siteA]# openvpn --config example1-8-clientAtoB.conf</strong>
+<strong>[root@siteA]# openvpn --config example1-8-clientAtoC.conf</strong>
+<strong>[root@siteC]# openvpn --config example1-8-clientCtoB.conf</strong>
+</pre><p>And with that, our three-way site-to-site network is established.</p></div><div><div><div><div><h2 class="title"><a id="ch01lvl2sec41"/>How it works...</h2></div></div></div><p>It can be clearly seen that the number of configuration files gets out of hand too quickly. In principle, two tunnels would have been sufficient to connect three remote sites, but then there would have been no redundancy.</p><p>With the third tunnel and with the configuration options, there are always two routes available for each remote network:</p><pre class="programlisting">
+<strong>route 192.168.5.0 255.255.255.0 vpn_gateway 5</strong>
+<strong>route 192.168.6.0 255.255.255.0 vpn_gateway 10</strong>
+<strong>route-delay</strong>
+<strong>keepalive 10 60</strong>
+</pre><p>For example, site A has two routes to site B (LAN <code class="literal">192.168.5.0</code>/<code class="literal">24</code>), as seen from the following routing table:</p><pre class="programlisting">
+<strong>[siteA]$ ip route show</strong>
+<strong>[...]</strong>
+<strong>192.168.5.0/24 via 10.200.0.1 dev tun0  metric 5</strong>
+<strong>192.168.5.0/24 via 10.200.0.5 dev tun1  metric 10</strong>
+<strong>[...]</strong>
+</pre><p>These are the two routes to site A:</p><div><ul class="itemizedlist"><li class="listitem">Via the "direct" tunnel to site B; this route has the lowest metric</li><li class="listitem">Via an indirect tunnel: first to site C and then to site B; this route has a higher metric and is not chosen until the first route is down</li></ul></div><p>This setup has the advantage that if one tunnel fails, then after 60 seconds, the connection and its corresponding routes are dropped and restarted. The backup route to the other network then automatically takes over and all three sites can reach each other again.</p><p>When the direct tunnel is restored, the direct routes are also restored and the network traffic will automatically choose the best path to the remote site.</p></div><div><div><div><div><h2 class="title"><a id="ch01lvl2sec42"/>There's more...</h2></div></div></div><p>Let's discuss a bit about scalability and routing protocols.</p><div><div><div><div><h3 class="title"><a id="ch01lvl3sec5"/>Scalability</h3></div></div></div><p>In this recipe, we connect three remote sites. This results in six different configuration files that provide the limitations of the point-to-point setup. In general, to connect <em>n</em> number of possible sites with full redundancy, you will have <em>n * ( n - 1 )</em> configuration files. This is manageable for up to four sites, but after that, a server/multiple-client setup, as described in the next chapters, is much easier.</p></div><div><div><div><div><h3 class="title"><a id="ch01lvl3sec6"/>Routing protocols</h3></div></div></div><p>To increase the availability of the networks, it is better to run a routing protocol, such as RIPv2 or OSPF. Using a routing protocol, the failing routes are discovered much faster, resulting in less network downtime.</p></div></div><div><div><div><div><h2 class="title"><a id="ch01lvl2sec43"/>See also</h2></div></div></div><div><ul class="itemizedlist"><li class="listitem"><a class="link" title="Chapter 7. Troubleshooting OpenVPN - Routing" href="part0082.xhtml#aid-2E6E41">Chapter 7</a>, <em>Troubleshooting OpenVPN - Routing</em>, in which the most common routing issues are explained</li></ul></div></div></div>
+<div><div><div><div><h1 class="title"><a id="ch01lvl1sec16"/>Using IPv6</h1></div></div></div><p>In this recipe, we extend the complete site-to-site network recipe to include support for IPv6.</p><div><div><div><div><h2 class="title"><a id="ch01lvl2sec44"/>Getting ready</h2></div></div></div><p>Install OpenVPN 2.3.9 or higher on two computers. Make sure the computers are connected over a network. For this recipe, the server computer was running CentOS 6 Linux and OpenVPN 2.3.9 and the client was running Fedora 22 Linux and OpenVPN 2.3.10. We'll use the <code class="literal">secret.key</code> file from the <em>OpenVPN secret keys</em> recipe here.</p><p>We will use the following network layout:</p><div><img src="img/image00336.jpeg" alt="Getting ready"/></div><p style="clear:both; height: 1em;"> </p></div><div><div><div><div><h2 class="title"><a id="ch01lvl2sec45"/>How to do it...</h2></div></div></div><div><ol class="orderedlist arabic"><li class="listitem">Create the server configuration file:<pre class="programlisting">        dev tun 
+        proto udp 
+        local  openvpnserver.example.com 
+        lport  1194 
+        remote openvpnclient.example.com 
+        rport  1194 
+ 
+        secret secret.key 0 
+        ifconfig 10.200.0.1 10.200.0.2 
+        route 192.168.4.0 255.255.255.0 
+ 
+        tun-ipv6 
+        ifconfig-ipv6 2001:db8:100::1 2001:db8:100::2 
+ 
+        user  nobody 
+        group nobody  # use "group nogroup" on some distros 
+        persist-tun 
+        persist-key 
+        keepalive 10 60 
+        ping-timer-rem 
+ 
+        verb 3 
+        daemon 
+        log-append /tmp/openvpn.log 
+</pre></li><li class="listitem">Save it as <code class="literal">example1-9-server.conf</code>.</li><li class="listitem">On the client side, create the configuration file:<pre class="programlisting">        dev tun 
+        proto udp 
+        local  openvpnclient.example.com 
+        lport  1194 
+        remote openvpnserver.example.com 
+        rport  1194 
+ 
+        secret secret.key 1 
+        ifconfig 10.200.0.2 10.200.0.1 
+        route 172.31.32.0 255.255.255.0 
+ 
+        tun-ipv6 
+        ifconfig-ipv6 2001:db8:100::2 2001:db8:100::1 
+ 
+        user  nobody 
+        group nobody  # use "group nogroup" on some distros 
+        persist-tun 
+        persist-key 
+        keepalive 10 60 
+        ping-timer-rem 
+ 
+        verb 3 
+</pre></li><li class="listitem">Save it as <code class="literal">example1-9-client.conf</code>.</li><li class="listitem">Then start the tunnel on both ends The following is for the server end:<pre class="programlisting">
+<strong>          [root@server]# openvpn --config example1-9-server.conf</strong>
+</pre><p>This is the code for the client end:</p><pre class="programlisting">
+<strong>          [root@client]# openvpn --config example1-9-client.conf</strong>
+</pre><p>Now our site-to-site tunnel is established.</p></li><li class="listitem">After the connection comes up, the machines on the LANs behind both end points can be reached over the OpenVPN tunnel. Notice that the client OpenVPN session is running in the foreground.</li><li class="listitem">Next, ping the IPv6 address of the server endpoint to verify that IPv6 traffic over the tunnel is working:<pre class="programlisting">         <strong>[client]$ ping6 -c 4 2001:db8:100::1</strong>
+         <strong>PING 2001:db8:100::1(2001:db8:100::1) 56 data bytes</strong>
+         <strong>64 bytes from 2001:db8:100::1: icmp_seq=1 ttl=64 time=7.43 ms</strong>
+         <strong>64 bytes from 2001:db8:100::1: icmp_seq=2 ttl=64 time=7.54 ms</strong>
+         <strong>64 bytes from 2001:db8:100::1: icmp_seq=3 ttl=64 time=7.77 ms</strong>
+         <strong>64 bytes from 2001:db8:100::1: icmp_seq=4 ttl=64 time=7.42 ms</strong>
+         <strong>--- 2001:db8:100::1 ping statistics ---</strong>
+         <strong>4 packets transmitted, 4 received, 0% packet loss, time 3005ms</strong>
+         <strong>rtt min/avg/max/mdev = 7.425/7.546/7.778/0.177 ms</strong>
+</pre></li><li class="listitem">Finally, abort the client-side session by pressing <em>Ctrl</em> + <em>C</em>. The following screenshot lists the full client-side log:<div><img src="img/image00337.jpeg" alt="How to do it..."/></div><p style="clear:both; height: 1em;"> </p></li></ol><div></div></div><div><div><div><div><h2 class="title"><a id="ch01lvl2sec46"/>How it works...</h2></div></div></div><p>Both client and server configuration files are very similar to the ones from the <em>Complete site-to-site setup</em> recipe, with the addition of the following two lines:</p><pre class="programlisting">tun-ipv6 
+ifconfig-ipv6 2001:db8:100::2 2001:db8:100::1 
+</pre><p>This enables IPv6 support, next to the default IPv4 support.</p><p>Also, in the client configuration, the options <code class="literal">daemon</code> and <code class="literal">log-append</code> are not present, hence all of the OpenVPN output is sent to the screen and the process continues running in the foreground.</p></div><div><div><div><div><h2 class="title"><a id="ch01lvl2sec47"/>There's more...</h2></div></div></div><p>Let's talk a bit about log file errors and the IPv6-only tunnel.</p><div><div><div><div><h3 class="title"><a id="ch01lvl3sec7"/>Log file errors</h3></div></div></div><p>If we take a closer look at the client-side connection output, we will see a few error messages after pressing <em>
+<strong>Ctrl</strong>
+</em> + <em>
+<strong>C</strong>
+</em>, most notably the following:</p><pre class="programlisting">RTNETLINK answers: operation not permitted 
+</pre><p>This is a side-effect when you use the <code class="literal">user nobody</code> option to protect an OpenVPN setup, and it often confuses new users. What happens is this:</p><p>OpenVPN starts as <code class="literal">root</code>, opens the appropriate <code class="literal">tun</code> device, and sets the right IPv4 and IPv6 addresses on this <code class="literal">tun</code> interface.</p><p>For extra security, OpenVPN then switches to <code class="literal">nobody</code>, dropping all the privileges associated with <code class="literal">root</code>.</p><p>When OpenVPN terminates (in our case, by pressing <em>
+<strong>Ctrl</strong>
+</em> + <em>
+<strong>C</strong>
+</em>), it closes the access to the <code class="literal">tun</code> device and tries to remove the IPv4 and IPv6 addresses assigned to that device. At this point, the error messages appear, as <code class="literal">nobody</code> is not allowed to perform these operations.</p><p>Upon termination of the OpenVPN process, the Linux kernel closes the <code class="literal">tun</code> device and all the configuration settings are removed.</p><p>In this case, these error messages are harmless, but in general, one should pay close attention to the warning and error messages that are printed by OpenVPN.</p></div><div><div><div><div><h3 class="title"><a id="ch01lvl3sec8"/>IPv6-only tunnel</h3></div></div></div><p>With OpenVPN 2.3, the IPv6-only tunnel is required to always enable IPv4 support. From OpenVPN 2.4 on, it is possible to set up an IPv6-only connection.</p></div></div><div><div><div><div><h2 class="title"><a id="ch01lvl2sec48"/>See also</h2></div></div></div><p>The recipe <em>Complete site-to-site setup</em>, earlier in this chapter, in which an IPv4-only site-to-site setup is explained in detail.</p><p>The last recipe of <a class="link" title="Chapter 6. Troubleshooting OpenVPN - Configurations" href="part0071.xhtml#aid-23MNU1">Chapter 6</a>, <em>Troubleshooting OpenVPN - Configurations</em>, which explains how to interpret the OpenVPN log files in detail.</p></div></div></body></html>

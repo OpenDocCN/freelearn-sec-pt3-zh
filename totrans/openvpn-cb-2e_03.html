@@ -1,0 +1,477 @@
+<html><head></head><body><div><div><div><div><h1 class="title"><a id="ch03"/>Chapter 3. Client-server Ethernet-style Networks</h1></div></div></div><p>    In this chapter, we will cover the following topics:</p><div><ul class="itemizedlist"><li class="listitem">Simple configuration - non-bridged</li><li class="listitem">Enabling client-to-client traffic</li><li class="listitem">Bridging - Linux</li><li class="listitem">Bridging - Windows</li><li class="listitem">Checking broadcast and non-IP traffic</li><li class="listitem">An external DHCP</li><li class="listitem">Using the status file</li><li class="listitem">The management interface</li><li class="listitem">Integrating IPv6 into TAP-style networks</li></ul></div><div><div><div><div><h1 class="title"><a id="ch03lvl1sec30"/>Introduction</h1></div></div></div><p>The recipes in this chapter will cover the deployment model of a single server with multiple remote clients capable of forwarding Ethernet traffic.</p><p>We will look at several common configurations, including bridging, the use of an external DHCP server, and also the use of the <code class="literal">OpenVPN</code> status file. Please note that bridging should only be used as a last resort. Most of the functionality provided by bridging can be achieved through other methods. Moreover, there are many disadvantages to using bridging, especially in terms of performance and security.</p></div></div>
+<div><div><div><div><h1 class="title"><a id="ch03lvl1sec31"/>Simple configuration - non-bridged</h1></div></div></div><p>This recipe will demonstrate how to set up a TAP-based connection in client or server mode using certificates. It also uses masquerading to allow the OpenVPN clients to reach all the machines behind the OpenVPN server. The advantage of masquerading is that with it, no special routes are needed on the server LAN. Masquerading for OpenVPN servers is available only on the Linux and UNIX variants. This recipe is similar to the <em>Server-side routing </em>recipe from the previous chapter.</p><div><div><div><div><h2 class="title"><a id="ch03lvl2sec103"/>Getting ready</h2></div></div></div><p>Set up the client and server certificates using the first recipe from <a class="link" title="Chapter 2.  Client-server IP-only Networks" href="part0025.xhtml#aid-NQU21">Chapter 2</a>, <em>Client-server IP-only Networks</em>. For this recipe, both the server computer and the client computer were running CentOS 6 Linux and OpenVPN 2.3.10.</p><p>We use the following network layout:</p><div><img src="img/image00352.jpeg" alt="Getting ready"/></div><p style="clear:both; height: 1em;"> </p></div><div><div><div><div><h2 class="title"><a id="ch03lvl2sec104"/>How to do it...</h2></div></div></div><div><ol class="orderedlist arabic"><li class="listitem">Create the server configuration file:<pre class="programlisting">        tls-server &#13;
+        proto udp &#13;
+        port 1194 &#13;
+        dev tap &#13;
+ &#13;
+        server 192.168.99.0 255.255.255.0 &#13;
+ &#13;
+        tls-auth /etc/openvpn/cookbook/ta.key 0 &#13;
+        ca       /etc/openvpn/cookbook/ca.crt &#13;
+        cert     /etc/openvpn/cookbook/server.crt &#13;
+        key      /etc/openvpn/cookbook/server.key &#13;
+        dh       /etc/openvpn/cookbook/dh2048.pem &#13;
+ &#13;
+        persist-key &#13;
+        persist-tun &#13;
+        keepalive 10 60 &#13;
+ &#13;
+        push "route 10.198.0.0 255.255.0.0" &#13;
+ &#13;
+        user  nobody &#13;
+        group nobody   # use "group nogroup" on some distros &#13;
+ &#13;
+        daemon &#13;
+        log-append /var/log/openvpn.log &#13;
+</pre><p>Save it as <code class="literal">example-3-1-server.conf</code>. Note that on some Linux distributions, the group <code class="literal">nogroup</code> is used instead of <code class="literal">nobody</code>.</p></li><li class="listitem">Start the server:<pre class="programlisting">
+<strong>      [root@server]# openvpn --config example3-1-server.conf</strong>
+</pre></li><li class="listitem">Set up IP forwarding and an <code class="literal">iptables</code> masquerading rule:<pre class="programlisting">
+<strong>    [root@server]# sysctl -w net.ipv4.ip_forward=1</strong>
+<strong>    [root@server]# iptables -t nat -I POSTROUTING -i tap+ -o eth0 \</strong>
+<strong>       -s 192.168.99.0/24 -j MASQUERADE</strong>
+</pre></li><li class="listitem">Next, create the client configuration file:<pre class="programlisting">        client &#13;
+        proto udp &#13;
+        remote openvpnserver.example.com &#13;
+        port 1194 &#13;
+        dev tap &#13;
+        nobind &#13;
+ &#13;
+        remote-cert-tls server &#13;
+        tls-auth /etc/openvpn/cookbook/ta.key 1 &#13;
+        ca   /etc/openvpn/cookbook/ca.crt &#13;
+        cert /etc/openvpn/cookbook/client1.crt &#13;
+        key  /etc/openvpn/cookbook/client1.key &#13;
+</pre><p>Save it as <code class="literal">example-3-1-client.conf</code>.</p></li><li class="listitem">Start the client:<pre class="programlisting">
+<strong>      [root@client]# openvpn --config example3-1-client.conf</strong>
+</pre><p>The output generated is shown as follows:</p><div><img src="img/image00353.jpeg" alt="How to do it..."/></div><p style="clear:both; height: 1em;"> </p></li><li class="listitem">After the connection is established, we can verify that it is working. First, we ping the server:<pre class="programlisting">
+<strong>      [client]$ ping -c 2 192.168.99.1</strong>
+<strong>PING 192.168.99.1 (192.168.99.1) 56(84) bytes of data.</strong>
+<strong>64 bytes from 192.168.99.1: icmp_seq=1 ttl=64 time=25.3 ms</strong>
+<strong>64 bytes from 192.168.99.1: icmp_seq=2 ttl=64 time=25.2 ms</strong>
+</pre><p>Second, we ping a host on the server-side LAN:</p><pre class="programlisting">
+<strong>     [client]$ ping -c 2 10.198.0.1</strong>
+<strong>PING 10.198.0.1 (10.198.0.1) 56(84) bytes of data.</strong>
+<strong>64 bytes from 10.198.0.1: icmp_seq=1 ttl=63 time=29.2 ms</strong>
+<strong>64 bytes from 10.198.0.1: icmp_seq=2 ttl=63 time=25.3 ms</strong>
+</pre></li></ol><div></div></div><div><div><div><div><h2 class="title"><a id="ch03lvl2sec105"/>How it works...</h2></div></div></div><p>When the server starts, it configures the first available TAP interface with the IP address <code class="literal">192.168.99.1</code>. After that, the server listens on the UDP port 1194 for incoming connections, which serves as an OpenVPN default.</p><p>The client connects to the server on this port. After the initial TLS handshake using both the client and server certificates, the client is assigned the IP address <code class="literal">192.168.99.2</code>. The client configures its first available TAP interface using this information; after this, the VPN is established.</p><p>Apart from the OpenVPN configuration, this recipe also uses an <code class="literal">iptables</code> command to enable the client to reach Site B's LAN without having to set up additional routes on Site B's LAN gateway. The following command instructs the Linux kernel to rewrite all of the traffic coming from the subnet <code class="literal">192.168.99.0/24</code> (which is our OpenVPN subnet) and that is leaving the Ethernet interface <code class="literal">eth0</code>:</p><pre class="programlisting">
+<strong>[root@server]# iptables -t nat -I POSTROUTING -i tap+ -o eth0 \</strong>
+<strong>-s 192.168.99.0/24 -j MASQUERADE</strong>
+</pre><p>Each of these packets has its source address rewritten so that it appears as if it is coming from the OpenVPN server itself instead of coming from the OpenVPN client. The <code class="literal">iptables</code> module keeps track of these rewritten packets so that when a return packet is received, the reverse is done and the packets are forwarded back to the OpenVPN client again. This is an easy method to enable routing to work, but there is a drawback when many clients are used: it would not be possible to distinguish traffic on Site B's LAN if it is coming from the OpenVPN server itself, from client1via the VPN tunnel or from clientN via the VPN tunnel.</p></div><div><div><div><div><h2 class="title"><a id="ch03lvl2sec106"/>There's more...</h2></div></div></div><p>There are a few things to keep in mind when setting up a TAP-style network.</p><div><div><div><div><h3 class="title"><a id="ch03lvl3sec34"/>Differences between TUN and TAP</h3></div></div></div><p>The differences between this setup and the <em>Server-side routing</em> recipe of the previous chapter are minimal. There are a few subtle differences, however, which can lead to unforeseen effects if you are not aware of them:</p><div><ul class="itemizedlist"><li class="listitem">When using a TAP adapter, the full Ethernet frame is encapsulated. This causes a slightly larger overhead.</li><li class="listitem">All the machines that are connected to a TAP-style network form a single broadcast domain. The effects of this will become clearer in the next recipe.</li><li class="listitem">If bridging is needed, a TAP-style tunnel is required.</li></ul></div></div><div><div><div><div><h3 class="title"><a id="ch03lvl3sec35"/>Using the TCP protocol</h3></div></div></div><p>In this example, we chose the UDP protocol. The configuration files in this recipe can be easily converted to use the TCP protocol by changing the following line:</p><pre class="programlisting">proto udp &#13;
+</pre><p>Change this to:</p><pre class="programlisting">proto tcp &#13;
+</pre><p>Do this in both the client and server configuration files.</p><p>The UDP protocol normally gives optimal performance, but some routers and firewalls have problems forwarding UDP traffic. In such cases, the TCP protocol often does work.</p></div><div><div><div><div><h3 class="title"><a id="ch03lvl3sec36"/>Making IP forwarding permanent</h3></div></div></div><p>On most Linux systems, the proper way to permanently set up IP forwarding is as follows:</p><div><ul class="itemizedlist"><li class="listitem">Add the following line to the <code class="literal">/etc/sysctl.con</code> file:<pre class="programlisting">        net.ipv4.ip_forward=1 &#13;
+</pre></li><li class="listitem">Reload the <code class="literal">sysctl.conf</code> file using:<pre class="programlisting">
+<strong>      [root@server]# sysctl -p</strong>
+</pre></li></ul></div></div></div><div><div><div><div><h2 class="title"><a id="ch03lvl2sec107"/>See also</h2></div></div></div><div><ul class="itemizedlist"><li class="listitem">The <em>Server-side routing</em> recipe from <a class="link" title="Chapter 2.  Client-server IP-only Networks" href="part0025.xhtml#aid-NQU21">Chapter 2</a>, <em>Client-server IP-only Networks</em>, in which a basic TUN-style setup is explained</li></ul></div></div></div>
+<div><div><div><div><h1 class="title"><a id="ch03lvl1sec32"/>Enabling client-to-client traffic</h1></div></div></div><p>This recipe is a continuation of the previous recipe. It will demonstrate how to set up a TAP-based connection in client or server mode using certificates. Using the <code class="literal">client-to-client</code> directive, it will also enable different OpenVPN clients to contact each other. For TAP-based networks, this leads to some important side effects.</p><div><div><div><div><h2 class="title"><a id="ch03lvl2sec108"/>Getting ready</h2></div></div></div><p>We use the following network layout:</p><div><img src="img/image00354.jpeg" alt="Getting ready"/></div><p style="clear:both; height: 1em;"> </p><p>Set up the client and server certificates using the first recipe from <a class="link" title="Chapter 2.  Client-server IP-only Networks" href="part0025.xhtml#aid-NQU21">Chapter 2</a>, <em>Client-server IP-only Networks</em>.</p><p>For this recipe, the server was running CentOS 6 Linux and OpenVPN 2.3.10; both clients were running Windows 7 64 bit and OpenVPN 2.3.10. For the server, keep the configuration file <code class="literal">example3-1-server.conf</code> from the previous recipe at hand.</p></div><div><div><div><div><h2 class="title"><a id="ch03lvl2sec109"/>How to do it...</h2></div></div></div><div><ol class="orderedlist arabic"><li class="listitem">Create the server configuration file by adding a line to the <code class="literal">example3-1-server.conf</code> file:<pre class="programlisting">
+<strong>    client-to-client</strong>
+</pre><p>Save it as <code class="literal">example-3-2-server.conf</code>.</p></li><li class="listitem">Start the server:<pre class="programlisting">
+<strong>      [root@server]# openvpn --config example3-2-server.conf</strong>
+</pre></li><li class="listitem">Set up IP forwarding and an <code class="literal">iptables</code> masquerading rule:<pre class="programlisting">
+<strong>      [root@server]# sysctl -w net.ipv4.ip_forward=1</strong>
+<strong>      [root@server]# iptables -t nat -I POSTROUTING -i tap+ -o eth0 \</strong>
+<strong>      -s 192.168.99.0/24 -j MASQUERADE</strong>
+</pre></li><li class="listitem">Next, create the client configuration file for the first client:<pre class="programlisting">        client &#13;
+        proto udp &#13;
+        remote openvpnserver.example.com &#13;
+        port 1194 &#13;
+ &#13;
+        dev tap &#13;
+        nobind &#13;
+ &#13;
+        remote-cert-tls server &#13;
+        tls-auth "c:/program files/openvpn/config/ta.key" 1 &#13;
+        ca       "c:/program files/openvpn/config/ca.crt" &#13;
+        cert     "c:/program files/openvpn/config/client1.crt" &#13;
+        key      "c:/program files/openvpn/config/client1.key" &#13;
+ &#13;
+        verb 5 &#13;
+</pre><p>Save it as <code class="literal">example-3-2-client1.ovpn</code>.</p></li><li class="listitem">Similarly, for the second client, create the configuration file:<pre class="programlisting">        client &#13;
+        proto udp &#13;
+        remote openvpnserver.example.com &#13;
+        port 1194 &#13;
+ &#13;
+        dev tap &#13;
+        nobind &#13;
+ &#13;
+        remote-cert-tls server &#13;
+        tls-auth "c:/program files/openvpn/config/ta.key" 1 &#13;
+        ca       "c:/program files/openvpn/config/ca.crt" &#13;
+        cert     "c:/program files/openvpn/config/client2.crt" &#13;
+        key      "c:/program files/openvpn/config/client2.key" &#13;
+ &#13;
+ &#13;
+        verb 5 &#13;
+</pre><p>Save it as <code class="literal">example-3-2-client2.ovpn</code>.</p></li><li class="listitem">Start the Windows clients, one from the command line:<pre class="programlisting">
+<strong>      [WinClient1]C:&gt; cd \program files\openvpn\config</strong>
+<strong>      [WinClient1]C:&gt; ..\bin\openvpn --config example3-2-&#13;
+          client1.ovpn</strong>
+</pre><p>Start Client2 using the OpenVPN GUI:</p><div><img src="img/image00355.jpeg" alt="How to do it..."/></div><p style="clear:both; height: 1em;"> </p><p>As the private key file <code class="literal">client2.key</code> is protected using a passphrase, we will be prompted for it:</p><div><img src="img/image00356.jpeg" alt="How to do it..."/></div><p style="clear:both; height: 1em;"> </p></li><li class="listitem">After the connection is established, the GUI window will disappear and a balloon will pop up:<div><img src="img/image00357.jpeg" alt="How to do it..."/></div><p style="clear:both; height: 1em;"> </p><p>We can now verify that the VPN connection is working by doing this. First, ping the server:</p><pre class="programlisting">
+<strong>      [WinClient1]C:&gt; ping 192.168.99.1</strong>
+<strong>  Pinging 192.168.99.1 with 32 bytes of data:</strong>
+<strong>  Reply from 192.168.99.1: bytes=32 time=24ms TTL=64</strong>
+<strong>  Reply from 192.168.99.1: bytes=32 time=25ms TTL=64</strong>
+</pre><p>Then, ping the second client:</p><pre class="programlisting">
+<strong>      [WinClient1]C:&gt; ping 192.168.99.3</strong>
+<strong>  Pinging 192.168.99.3 with 32 bytes of data:</strong>
+<strong>  Reply from 192.168.99.3: bytes=32 time=49ms TTL=128</strong>
+<strong>  Reply from 192.168.99.3: bytes=32 time=50ms TTL=128</strong>
+</pre><p>Notice the higher round-trip time.</p></li><li class="listitem">Finally, verify that we can still ping a host on the server-side LAN:<pre class="programlisting">
+<strong>      [WinClient1]C:\&gt; ping -c 2 10.198.0.9</strong>
+<strong>  Pinging 10.198.0.9 with 32 bytes of data:</strong>
+<strong>  Reply from 10.198.0.9: bytes=32 time=25ms TTL=63</strong>
+<strong>  Reply from 10.198.0.9: bytes=32 time=25ms TTL=63</strong>
+</pre></li></ol><div></div></div><div><div><div><div><h2 class="title"><a id="ch03lvl2sec110"/>How it works...</h2></div></div></div><p>Both clients connect to the OpenVPN server in the regular manner. The following directive is all that is needed for the clients to see each other:</p><pre class="programlisting">client-to-client &#13;
+</pre><p>Communication between the clients will still pass through the OpenVPN server, which explains the higher round-trip time for the ICMP packets. The flow of an ICMP (<code class="literal">ping</code>) echo and reply is as follows:</p><div><ol class="orderedlist arabic"><li class="listitem">The OpenVPN client encrypts the packet and forwards it to the server over a secure link.</li><li class="listitem">The server decrypts the packet and determines that the packet needs to be forwarded to another OpenVPN client. Therefore, the packet is not forwarded to the kernel-routing modules, but is encrypted again and is forwarded to the second client.</li><li class="listitem">The second client receives the packet, decrypts it, and sends a reply back to the server over the secure link.</li><li class="listitem">The server decrypts the reply packet and determines that the packet needs to be forwarded to the first client. Therefore, the packet is not forwarded to the kernel-routing modules but is encrypted again and is forwarded to the original client.</li></ol><div></div></div><div><div><div><div><h2 class="title"><a id="ch03lvl2sec111"/>There's more...</h2></div></div></div><p>As always, there are some caveats to watch out for.</p><div><div><div><div><h3 class="title"><a id="ch03lvl3sec37"/>Broadcast traffic may affect scalability</h3></div></div></div><p>All machines that are connected to a TAP-style network form a single broadcast domain. When <code class="literal">client-to-client</code> is enabled, this means that all of the broadcast traffic from all the clients is forwarded to all other clients. Wireshark running on <code class="literal">client2</code> indeed shows a lot of broadcast packets from <code class="literal">client1</code>, all of which passed through the OpenVPN server. This can lead to a scalability problem when a large number of clients are connected.</p></div><div><div><div><div><h3 class="title"><a id="ch03lvl3sec38"/>Filtering traffic</h3></div></div></div><p>In the current version of OpenVPN, it is not possible to filter the traffic between VPN clients when the <code class="literal">client-to-client</code> directive is used. OpenVPN does have the capability for a filtering plugin, but this plugin is not maintained and requires extensive configuration.</p><p>A second method of filtering traffic between clients is to use the system's routing tables, in combination with a Linux kernel flag, <code class="literal">proxy_arp_pvlan</code>. This flag is available in modern Linux kernels (2.6.34+ or kernels with back-ported options). This flag instructs the Linux kernel to resend the ARP request back out of the same interface from where it came. It is exactly this flag that is needed for client-to-client traffic to work without using the <code class="literal">client-to-client</code> directive. Thus, in order to filter traffic, we first enable client-to-client traffic in tap mode by setting this flag:</p><pre class="programlisting"># echo 1 &gt; /proc/sys/net/ipv4/conf/tap0/proxy_arp_pvlan &#13;
+</pre><p>We can then use <code class="literal">iptables</code> command to filter traffic between clients.</p></div><div><div><div><div><h3 class="title"><a id="ch03lvl3sec39"/>TUN-style networks</h3></div></div></div><p>The <code class="literal">client-to-client</code> directive can also be used in TUN-style networks. It works in exactly the same manner as in this recipe, except that the OpenVPN clients do not form a single broadcast domain.</p></div></div></div>
+<div><div><div><div><h1 class="title"><a id="ch03lvl1sec33"/>Bridging - Linux</h1></div></div></div><p>This recipe will demonstrate how to set up a bridged OpenVPN server. In this mode, the local network and the VPN network are bridged, which means that all of the traffic from one network is forwarded to the other and vice versa.</p><p>This setup is often used to securely connect remote clients to a Windows-based LAN, but it is quite hard to get it right. In almost all cases, it suffices to use a TUN-style network with a local WINS server on the OpenVPN server itself. A bridged VPN does have its advantages, as will become apparent in the next few recipes.</p><p>However, there are also disadvantages to using bridging, especially in terms of performance: the performance of a bridged 100 Mbps Ethernet adapter is about half the performance of a non-bridged adapter.</p><div><div><div><div><h2 class="title"><a id="ch03lvl2sec112"/>Getting ready</h2></div></div></div><p>We use the following network layout:</p><div><img src="img/image00358.jpeg" alt="Getting ready"/></div><p style="clear:both; height: 1em;"> </p><p>Set up the client and server certificates using the first recipe from <a class="link" title="Chapter 2.  Client-server IP-only Networks" href="part0025.xhtml#aid-NQU21">Chapter 2</a>, <em>Client-server IP-only networks</em>. For this recipe, the server was running CentOS 6 Linux and OpenVPN 2.3.10. The client computer was running Windows 7 64 bit and OpenVPN 2.3.10. For the client, keep the client configuration file <code class="literal">example3-2-client2.ovpn</code> at hand.</p></div><div><div><div><div><h2 class="title"><a id="ch03lvl2sec113"/>How to do it...</h2></div></div></div><div><ol class="orderedlist arabic"><li class="listitem">Create the server configuration file:<pre class="programlisting">
+<strong>proto udp</strong>
+<strong>port 1194</strong>
+<strong>dev tap0 ## the '0' is extremely important</strong>
+<strong>server-bridge 192.168.4.65 255.255.255.0 192.168.4.128  &#13;
+        192.168.4.200</strong>
+<strong>push "route 192.168.4.0 255.255.255.0"</strong>
+<strong>tls-auth /etc/openvpn/cookbook/ta.key 0</strong>
+<strong>ca       /etc/openvpn/cookbook/ca.crt</strong>
+<strong>cert     /etc/openvpn/cookbook/server.crt</strong>
+<strong>key      /etc/openvpn/cookbook/server.key</strong>
+<strong>dh       /etc/openvpn/cookbook/dh2048.pem</strong>
+<strong>persist-key</strong>
+<strong>persist-tun</strong>
+<strong>keepalive 10 60</strong>
+<strong>user  nobody</strong>
+<strong>group nobody  # use "group nogroup" on some distros</strong>
+<strong>daemon</strong>
+<strong>log-append /var/log/openvpn.log</strong>
+</pre><p>Save it as <code class="literal">example-3-3-server.conf</code>.</p></li><li class="listitem">Next, create a script to start the network bridge:<pre class="programlisting">        #!/bin/bash &#13;
+ &#13;
+        br="br0" &#13;
+        tap="tap0" &#13;
+ &#13;
+        eth="eth0" &#13;
+        eth_ip="192.168.4.65" &#13;
+        eth_netmask="255.255.255.0" &#13;
+        eth_broadcast="192.168.4.255" &#13;
+ &#13;
+        openvpn --mktun --dev $tap &#13;
+ &#13;
+        brctl addbr $br &#13;
+        brctl addif $br $eth &#13;
+        brctl addif $br $tap &#13;
+        ifconfig $tap 0.0.0.0 promisc up &#13;
+        ifconfig $eth 0.0.0.0 promisc up &#13;
+        ifconfig $br $eth_ip netmask $eth_netmask \ &#13;
+        broadcast $eth_broadcast &#13;
+</pre><p>Save this script as <code class="literal">example3-3-bridge-start</code> file.</p></li><li class="listitem">Similarly, use a script to stop the Ethernet bridge:<pre class="programlisting">        #!/bin/bash &#13;
+ &#13;
+        br="br0" &#13;
+        tap="tap0" &#13;
+ &#13;
+        ifconfig $br down &#13;
+        brctl delbr $br &#13;
+        openvpn --rmtun --dev $tap &#13;
+</pre><p>Save this script as <code class="literal">example3-3-bridge-stop</code> file. These scripts are based on the <code class="literal">bridge-start</code> and <code class="literal">bridge-stop</code> examples, which are part of the OpenVPN distribution.</p></li><li class="listitem">Create the network bridge and verify that it is working:<pre class="programlisting">
+<strong>      [root@server]# bash example3-3-bridge-start</strong>
+<strong>  TUN/TAP device tap0 opened</strong>
+<strong>  Persist state set to: ON</strong>
+<strong>      [root@server]# brctl show</strong>
+<strong>  bridge name bridge id         STP enabled interfaces</strong>
+<strong>  br0         8000.00219bd2d422 no          eth0</strong>
+<strong>               tap0</strong>
+</pre></li><li class="listitem">Start the OpenVPN server:<pre class="programlisting">
+<strong>      [root@server]# openvpn --config example3-3-server.conf</strong>
+</pre></li><li class="listitem">Start the client:<div><img src="img/image00359.jpeg" alt="How to do it..."/></div><p style="clear:both; height: 1em;"> </p></li><li class="listitem">Check the assigned VPN address:<pre class="programlisting">
+<strong>      [WinClient]C:&gt; ipconfig /all</strong>
+<strong>      [...]</strong>
+<strong>  Ethernet adapter tun0:</strong>
+<strong>      Connection-specific DNS Suffix  . :</strong>
+<strong>      Description . . . . . . . . . . . : TAP-Win32 Adapter V9</strong>
+<strong>      Physical Address. . . . . . . . . : 00-FF-17-82-55-DB</strong>
+<strong>      Dhcp Enabled. . . . . . . . . . . : Yes</strong>
+<strong>      Autoconfiguration Enabled . . . . : Yes</strong>
+<strong>    IP Address. . . . . . . . . . . . : 192.168.4.128</strong>
+<strong>    Subnet Mask . . . . . . . . . . . : 255.255.255.0</strong>
+<strong>      Default Gateway . . . . . . . . . :</strong>
+<strong>    DHCP Server . . . . . . . . . . . : 192.168.4.0</strong>
+</pre></li><li class="listitem">Now, verify that we can ping a machine on the remote server LAN:<pre class="programlisting">
+<strong>      [WinClient]C:&gt; ping 192.168.4.164</strong>
+<strong>  Pinging 192.168.4.164 with 32 bytes of data:</strong>
+<strong>  Reply from 192.168.4.164: bytes=32 time=3ms TTL=64</strong>
+<strong>  Reply from 192.168.4.164: bytes=32 time=1ms TTL=64</strong>
+<strong>  Reply from 192.168.4.164: bytes=32 time=1ms TTL=64</strong>
+<strong>  Reply from 192.168.4.164: bytes=32 time&lt;1ms TTL=64</strong>
+</pre></li><li class="listitem">Remember to tear down the network bridge after stopping the OpenVPN server:<pre class="programlisting">
+<strong>      [root@server]# bash example3-3-bridge-stop</strong>
+<strong>  TUN/TAP device tap0 opened</strong>
+<strong>  Persist state set to: OFF</strong>
+</pre></li></ol><div></div></div><div><div><div><div><h2 class="title"><a id="ch03lvl2sec114"/>How it works...</h2></div></div></div><p>The <code class="literal">bridge-start</code> script forges a bond between two network adapters: on the one side, the LAN adapter <code class="literal">eth0</code>, and on the other side, the VPN adapter <code class="literal">tap0</code>. The main property of a network bridge is that all of the traffic is copied from one side to the other and vice versa. This allows us to set up a VPN where the client almost truly becomes a part of the server-side LAN.</p><p>The downside of a bridged network is the increased overhead and the performance penalty on the OpenVPN server itself: if there is a lot of broadcast traffic from many clients on either side, the bridge can become overloaded.</p></div><div><div><div><div><h2 class="title"><a id="ch03lvl2sec115"/>There's more...</h2></div></div></div><div><div><div><div><h3 class="title"><a id="ch03lvl3sec40"/>Fixed addresses and the default gateway</h3></div></div></div><p>In this recipe, the OpenVPN server is assigned a fixed address on the server LAN, as is done most often for a bridged interface. The difficulty with assigning a dynamic address to a network bridge is that it is not clear from which network the dynamic address should be chosen. This also enables us to specify a fixed server-bridge address in the server configuration file.</p><p>When using bridges, it is also important to check that the default route is available after the bridge is started. In most setups, <code class="literal">eth0</code> is assigned a dynamic address, including a default gateway. When the <code class="literal">bridge-start</code> script is executed, <code class="literal">br0</code> is assigned a fixed address, but as a side effect, the default gateway is often lost.</p></div><div><div><div><div><h3 class="title"><a id="ch03lvl3sec41"/>Name resolution</h3></div></div></div><p>One of the difficulties in setting up a bridged network in the proper fashion is related to name resolution. OpenVPN only does Ethernet (Layer2) or IP-based routing. Setting up a proper name resolution system (for example, a Domain Controller and/or a WINS server in a Windows network) can be tricky in a bridged environment as well.</p></div></div><div><div><div><div><h2 class="title"><a id="ch03lvl2sec116"/>See also</h2></div></div></div><div><ul class="itemizedlist"><li class="listitem">The next recipe in this chapter, in which bridging on a Windows server is explained</li></ul></div></div></div>
+<div><div><div><div><h1 class="title"><a id="ch03lvl1sec34"/>Bridging- Windows</h1></div></div></div><p>This recipe will demonstrate how to set up a bridged OpenVPN server on Windows. Bridging on Windows is slightly different from Linux or UNIX, but the concept is the same.</p><p>This recipe is very similar to the previous recipe, apart from the different methods used to set up bridging.</p><div><div><div><div><h2 class="title"><a id="ch03lvl2sec117"/>Getting ready</h2></div></div></div><p>Set up the client and server certificates using the first recipe from <a class="link" title="Chapter 2.  Client-server IP-only Networks" href="part0025.xhtml#aid-NQU21">Chapter 2</a>, <em>Client-server IP-only networks</em>.</p><p>For this recipe, the server computer was running Windows 7 64 bit and OpenVPN 2.3.10. The client computer was running Fedora 20 Linux and OpenVPN 2.3.10. For the Linux client, keep the client configuration file <code class="literal">example3-1-client.conf</code> at hand.</p><p>We use the following network layout:</p><div><img src="img/image00360.jpeg" alt="Getting ready"/></div><p style="clear:both; height: 1em;"> </p></div><div><div><div><div><h2 class="title"><a id="ch03lvl2sec118"/>How to do it...</h2></div></div></div><div><ol class="orderedlist arabic"><li class="listitem">Create the server configuration file:<pre class="programlisting">        proto udp &#13;
+        port 1194 &#13;
+        dev tap &#13;
+        dev-node tapbridge &#13;
+ &#13;
+        server-bridge 192.168.3.15 255.255.255.0 192.168.3.128 &#13;
+        192.168.3.250 &#13;
+ &#13;
+        dh       "c:/program files/openvpn/config/dh2048.pem" &#13;
+        tls-auth "c:/program files/openvpn/config/ta.key" 0 &#13;
+        ca       "c:/program files/openvpn/config/ca.crt" &#13;
+        cert     "c:/program files/openvpn/config/server.crt" &#13;
+        key      "c:/program files/openvpn/config/server.key" &#13;
+ &#13;
+        push "route 192.168.3.0 255.255.255.0" &#13;
+ &#13;
+        persist-key &#13;
+        persist-tun &#13;
+        keepalive 10 60 &#13;
+</pre><p>Save it as <code class="literal">example-3-4-server.conf</code>.</p></li><li class="listitem">Next, create the network bridge:<div><ul class="itemizedlist"><li class="listitem">Go to <strong>Network and Sharing Center</strong> and <strong>Change adapter settings</strong>.</li><li class="listitem"> Rename the <code class="literal">TAP-Win</code> adapter as <code class="literal">tapbridge</code> by right-clicking on it and selecting <strong>Rename</strong>. On the test computer used, the Ethernet adapter connected to the LAN was renamed to <code class="literal">eth0</code>.</li><li class="listitem">Select the two adapters that need to be bridged by pressing the <em>Ctrl</em> key and clicking on each adapter, then right-clicking and selecting <strong>Bridge Connections</strong>:<div><img src="img/image00361.jpeg" alt="How to do it..."/></div><p style="clear:both; height: 1em;"> </p></li></ul></div><p>
+</p><p>This will create a new bridge adapter icon in the control panel, usually named <strong>Network Bridge (...)</strong>.</p></li><li class="listitem">The network bridge is now ready to be configured:<div><img src="img/image00362.jpeg" alt="How to do it..."/></div><p style="clear:both; height: 1em;"> </p></li><li class="listitem">In a command window, verify that the bridge is configured correctly:<pre class="programlisting">
+<strong>      [winserver]C:&gt; netsh interface ip show address "Network &#13;
+          Bridge"</strong>
+<strong>  Configuration for interface "Network Bridge"</strong>
+<strong>  DHCP enabled:                     No</strong>
+<strong>  IP Address:                       192.168.3.15</strong>
+<strong>  SubnetMask:                       255.255.255.0</strong>
+<strong>  Default Gateway:                  192.168.3.1</strong>
+<strong>  GatewayMetric:                    5</strong>
+<strong>  InterfaceMetric:                  0</strong>
+</pre></li><li class="listitem">Start the OpenVPN server:<pre class="programlisting">
+<strong>      [winserver]C:&gt; cd \program files\openvpn\config</strong>
+<strong>      [winserver]C:&gt; ..\bin\openvpn --config example3-4-server.ovpn</strong>
+</pre></li><li class="listitem">The Windows firewall will pop up a security warning. Allow OpenVPN access to the VPN:<div><img src="img/image00363.jpeg" alt="How to do it..."/></div><p style="clear:both; height: 1em;"> </p></li><li class="listitem">Start the client:<pre class="programlisting">
+<strong>      [root@client]# openvpn --config example3-1-client.conf</strong>
+</pre></li><li class="listitem">Now, check the assigned VPN address and verify that we can ping a machine on the remote server LAN:<pre class="programlisting">
+<strong>      [client]$ /sbin/ifconfig tap1</strong>
+<strong>  tap1  Link encap:Ethernet  HWaddr A2:F4:E2:41:05:BF</strong>
+<strong>        inet addr:192.168.3.128  Bcast:192.168.3.255    </strong>
+<strong>        Mask:255.255.255.0</strong>
+<strong>[...]</strong>
+<strong>      [client]$ ping -c 2 192.168.3.1</strong>
+<strong>  PING 192.168.3.1 (192.168.3.1) 56(84) bytes of data.</strong>
+<strong>  64 bytes from 192.168.3.1: icmp_seq=1 ttl=128 time=24.0 ms</strong>
+<strong>  64 bytes from 192.168.3.1: icmp_seq=2 ttl=128 time=26.0 ms</strong>
+</pre></li></ol><div></div></div><div><div><div><div><h2 class="title"><a id="ch03lvl2sec119"/>How it works...</h2></div></div></div><p>Apart from the way the bridge is created and configured, this recipe is very similar to the previous one. The one thing to keep in mind is how the adapter is selected in the server configuration file:</p><pre class="programlisting">dev tap &#13;
+dev-node tapbridge &#13;
+</pre><p>On Linux and other UNIX variants, this could be achieved using a single line:</p><pre class="programlisting">dev tap0 &#13;
+</pre><p>But the naming scheme for the TAP adapters on Windows is different. To overcome this, the <code class="literal">dev-node</code> directive needs to be added.</p></div><div><div><div><div><h2 class="title"><a id="ch03lvl2sec120"/>See also</h2></div></div></div><div><ul class="itemizedlist"><li class="listitem">The previous recipe, where bridging on Linux is explained</li></ul></div></div></div>
+<div><div><div><div><h1 class="title"><a id="ch03lvl1sec35"/>Checking broadcast and non-IP traffic</h1></div></div></div><p>The main reason for a bridged setup is to create a single broadcast domain for all the clients connected, both via the VPN and via a regular network connection.</p><p>Another reason is the ability to route or forward non-IP based traffic, such as the older Novell IPX and Appletalk protocols.</p><p>This recipe focuses on the use of tools such as <code class="literal">tcpdump</code> and <code class="literal">wireshark</code> to detect whether the broadcast domain is functioning and if non-IP traffic is flowing in the correct manner.</p><div><div><div><div><h2 class="title"><a id="ch03lvl2sec121"/>Getting ready</h2></div></div></div><p>For this recipe, we use the setup from the <em>Bridging - Linux</em> recipe of this chapter. We use the following network layout:</p><div><img src="img/image00364.jpeg" alt="Getting ready"/></div><p style="clear:both; height: 1em;"> </p><p>For this recipe, the server computer was running CentOS 6 Linux and OpenVPN 2.3.9. For the server, keep the server configuration file <code class="literal">example3-3-server.conf</code> from the <em>Bridging - Linux</em> recipe ready. The first client computer was running Windows 7 64 bit and OpenVPN 2.3.10 and was in the same LAN segment as the OpenVPN server. The second client was running Windows XP and OpenVPN 2.1.1. For this client, keep the client configuration file <code class="literal">example3-2-client2.ovpn</code> from the <em>Enabling client-to-client traffic</em> recipe at hand.</p><p>Make sure that the AppleTalk and IPX protocols are installed on both the Windows machines. Bind the protocols to the Local Area Network adapters (this is the default setting).</p></div><div><div><div><div><h2 class="title"><a id="ch03lvl2sec122"/>How to do it...</h2></div></div></div><div><ol class="orderedlist arabic"><li class="listitem">Create the network bridge and verify that it is working:<pre class="programlisting">
+<strong>      [root@server]# bash example3-3-bridge-start</strong>
+<strong>  TUN/TAP device tap0 opened</strong>
+<strong>  Persist state set to: ON</strong>
+<strong>      [root@server]# brctl show</strong>
+<strong>  bridge name bridge id         STP enabled interfaces</strong>
+<strong>      br0         8000.00219bd2d422 no          eth0</strong>
+<strong>                                            tap0</strong>
+</pre></li><li class="listitem">Start the OpenVPN server:<pre class="programlisting">
+<strong>      [root@server]# openvpn --config example3-3-server.conf</strong>
+</pre></li><li class="listitem">Start the OpenVPN clients:<pre class="programlisting">
+<strong>      [WinClient1]C:&gt; cd \program files\openvpn\config</strong>
+<strong>      [WinClient1]C:&gt; ..\bin\openvpn --config example3-2-&#13;
+          client2.ovpn</strong>
+</pre><p>Start Client 2 using the OpenVPN GUI:</p><div><img src="img/image00365.jpeg" alt="How to do it..."/></div><p style="clear:both; height: 1em;"> </p><p>In this recipe, the Windows 7 client was assigned <code class="literal">192.168.4.64</code>. The Windows XP client was assigned <code class="literal">192.168.4.128</code>.</p></li><li class="listitem">After the client has successfully connected, we first check for ARP messages. On the server, run the <code class="literal">tcpdump</code> command and listen for traffic on the bridge interface <code class="literal">br0</code>:<div><img src="img/image00366.jpeg" alt="How to do it..."/></div><p style="clear:both; height: 1em;"> </p><p>In this output, <code class="literal">192.168.4.254</code> is the address of the server-side gateway. So the gateway is asking for ARP information and the ARP replies are coming from both the OpenVPN server and the OpenVPN client itself. This can only happen if the ARP request is forwarded over the bridge to the OpenVPN client.</p></li><li class="listitem">Next, on the Windows 7 client, check for the broadcast traffic coming from the Windows XP client. For this, we use Wireshark. Wireshark is available for both Linux and Windows. Configure it to capture all of the traffic from the Ethernet adapter. Here's an example of it:<div><img src="img/image00367.jpeg" alt="How to do it..."/></div><p style="clear:both; height: 1em;"> </p><p>In this output, we see a lot of Netbios broadcast traffic when the OpenVPN client first connects to the network.</p></li><li class="listitem">As a final example, we look for IPX traffic:<div><img src="img/image00368.jpeg" alt="How to do it..."/></div><p style="clear:both; height: 1em;"> </p><p>This shows that non-IP traffic is also forwarded over the bridge.</p></li></ol><div></div></div><div><div><div><div><h2 class="title"><a id="ch03lvl2sec123"/>How it works...</h2></div></div></div><p>All of the traffic that is forwarded over the bridge is intercepted by programs such as Wireshark. By filtering for certain types of traffic, it is easy to show that in a bridged setup, traffic from the OpenVPN clients is indeed flowing over the server-side LAN. This is very important when troubleshooting an almost-working setup.</p></div></div>
+<div><div><div><div><h1 class="title"><a id="ch03lvl1sec36"/>An external DHCP server</h1></div></div></div><p>In this recipe, we will configure a bridged OpenVPN server so that it uses an external DHCP server to assign addresses to the OpenVPN clients to further increase the integration of remote clients with the clients already present on the server-side LAN.</p><div><div><div><div><h2 class="title"><a id="ch03lvl2sec124"/>Getting ready</h2></div></div></div><p>We use the following network layout:</p><div><img src="img/image00369.jpeg" alt="Getting ready"/></div><p style="clear:both; height: 1em;"> </p><p>Set up the client and server certificates using the first recipe from <a class="link" title="Chapter 2.  Client-server IP-only Networks" href="part0025.xhtml#aid-NQU21">Chapter 2</a>, <em>Client-server IP-only Networks</em>. For this recipe, the server computer was running CentOS 6 Linux and OpenVPN 2.3.10. The client was running Windows 7 64 bit and OpenVPN 2.3.10. For this client, keep the client configuration file <code class="literal">example3-2-client2.ovpn</code> from the <em>Enabling client-to-client traffic</em> recipe at hand.</p></div><div><div><div><div><h2 class="title"><a id="ch03lvl2sec125"/>How to do it...</h2></div></div></div><div><ol class="orderedlist arabic"><li class="listitem">Create the server configuration file:<pre class="programlisting">        proto udp &#13;
+        port 1194 &#13;
+        dev tap0 &#13;
+ &#13;
+        server-bridge &#13;
+        push "route 0.0.0.0 255.255.255.255 net_gateway" &#13;
+ &#13;
+        tls-auth /etc/openvpn/cookbook/ta.key 0 &#13;
+        ca       /etc/openvpn/cookbook/ca.crt &#13;
+        cert     /etc/openvpn/cookbook/server.crt &#13;
+        key      /etc/openvpn/cookbook/server.key &#13;
+        dh       /etc/openvpn/cookbook/dh2048.pem &#13;
+ &#13;
+        persist-key &#13;
+        persist-tun &#13;
+        keepalive 10 60 &#13;
+ &#13;
+        user  nobody &#13;
+        group nobody  # use "group nogroup" on some distros &#13;
+ &#13;
+        daemon &#13;
+        log-append /var/log/openvpn.log &#13;
+</pre></li><li class="listitem">Save it as <code class="literal">example3-6-server.conf</code>.</li><li class="listitem">Start the server:<pre class="programlisting">
+<strong>      [root@server]# openvpn --config example3-6-server.conf</strong>
+</pre></li><li class="listitem">Start the Windows client:<div><img src="img/image00370.jpeg" alt="How to do it..."/></div><p style="clear:both; height: 1em;"> </p></li><li class="listitem">After the VPN connection is established, verify the IP address and the routing tables:<pre class="programlisting">
+<strong>      [WinClient]C:&gt; ipconfig /all</strong>
+<strong>  [...]</strong>
+<strong>  Ethernet adapter tapwin32-0</strong>
+<strong>    Connection-specific DNS Suffix  . : lan</strong>
+<strong>    Description . . . . . . . . . . . : TAP-Win32 Adapter V9</strong>
+<strong>    Physical Address. . . . . . . . . : 00-FF-17-82-55-DB</strong>
+<strong>    Dhcp Enabled. . . . . . . . . . . : Yes</strong>
+<strong>     Autoconfiguration Enabled . . . . : Yes</strong>
+<strong>     IP Address. . . . . . . . . . . . : 192.168.4.66</strong>
+<strong>     Subnet Mask . . . . . . . . . . . : 255.255.255.0</strong>
+<strong>     Default Gateway . . . . . . . . . : 192.168.4.254</strong>
+<strong>     DHCP Server . . . . . . . . . . . : 192.168.4.254</strong>
+<strong>     DNS Servers . . . . . . . . . . . : 192.168.4.254</strong>
+<strong>     [...]</strong>
+<strong>      [WinClient]C:&gt; netstat -rn</strong>
+<strong>     [...]</strong>
+<strong>     0.0.0.0  0.0.0.0         192.168.3.1    192.168.3.22  10</strong>
+<strong>     0.0.0.0  255.255.255.255 192.168.3.1    192.168.3.22   1</strong>
+<strong>     0.0.0.0  0.0.0.0         192.168.4.254 192.168.4.66   1</strong>
+<strong>     Default Gateway:        192.168.3.1</strong>
+<strong>     [...]</strong>
+</pre></li><li class="listitem">And finally, check that we can reach other hosts in the server-side LAN:<pre class="programlisting">
+<strong>      [WinClient]C:&gt; ping 192.168.4.64</strong>
+<strong>  Pinging 192.168.4.64 with 32 bytes of data:</strong>
+<strong>  Reply from 192.168.4.64: bytes=32 time=3ms TTL=64</strong>
+<strong>  Reply from 192.168.4.64: bytes=32 time=1ms TTL=64</strong>
+<strong>  Reply from 192.168.4.64: bytes=32 time=1ms TTL=64</strong>
+<strong>  Reply from 192.168.4.64: bytes=32 time&lt;1ms TTL=64</strong>
+</pre></li></ol><div></div></div><div><div><div><div><h2 class="title"><a id="ch03lvl2sec126"/>How it works...</h2></div></div></div><p>Here is the server directive:</p><pre class="programlisting">server-bridge &#13;
+</pre><p>Without any parameters, this directive instructs OpenVPN to not allocate a pool of IP addresses for the clients. So, all of the incoming DHCP requests from the clients are forwarded out over the bridge. The DHCP server on the server-side LAN then replies with an IP address.</p><p>The tricky part here is that the DHCP server almost always also returns a default gateway, which will be the LAN gateway. If a remote client sets its default gateway to the gateway of the LAN, funny things will happen, as in most cases the direct route to the OpenVPN server will be lost.</p><p>The following directive instructs the OpenVPN client to add an explicit default route via the <code class="literal">net_gateway</code>, which is always the LAN gateway at the client side:</p><pre class="programlisting">push "route 0.0.0.0 255.255.255.255 net_gateway" &#13;
+</pre><p>For Windows clients, this trick works and the default gateway remains intact.</p><p>For Linux clients, it is easier to tweak the <code class="literal">dhclient</code> and <code class="literal">network-scripts</code> settings. However, this is distribution-dependent.</p><p>With the default gateway intact, the OpenVPN client is properly assigned an address from the DHCP server on the server side.</p></div><div><div><div><div><h2 class="title"><a id="ch03lvl2sec127"/>There's more...</h2></div></div></div><p>When using an external DHCP setup, keep in mind the following.</p><div><div><div><div><h3 class="title"><a id="ch03lvl3sec42"/>DHCP server configuration</h3></div></div></div><p>The proper solution is to configure the DHCP server such that DHCP requests from the VPN clients do not get a default gateway assigned. This adds a burden to the administration of the server-side DHCP server.</p><p>In this case, it also makes sense to explicitly set a unique MAC address in each client configuration file using the following, for example:</p><pre class="programlisting">lladdr CA:C6:F8:FB:EB:3B &#13;
+</pre><p>On Linux, the MAC address is computed randomly when the TAP interface comes up, so each time the OpenVPN client is stopped and started, a new IP address is allocated. It is also possible to create a permanently fixed, static MAC address by using the system configuration scripts to bring up the TAP device before OpenVPN is started.</p></div><div><div><div><div><h3 class="title"><a id="ch03lvl3sec43"/>DHCP relay</h3></div></div></div><p>It is also possible to use an external DHCP server without using bridging. If the TAP adapter is configured before OpenVPN is started and the server configuration file from this recipe is used, then an external DHCP server can be used using the Linux <code class="literal">dhrelay</code> command:</p><pre class="programlisting">
+<strong>[root@server]# dhrelay -i tap0 -i eth0</strong>
+</pre><p>Make sure to list both the TAP adapter and the Ethernet adapter to which the external DHCP server is connected. By combining this with a <code class="literal">proxy-arp</code> script (see the 
+<em>Proxy ARP</em> recipe from <a class="link" title="Chapter 2.  Client-server IP-only Networks" href="part0025.xhtml#aid-NQU21">Chapter 2</a>, <em>Client-server IP-only Networks</em>), it eliminates the need to use bridging in most cases.</p></div><div><div><div><div><h3 class="title"><a id="ch03lvl3sec44"/>Tweaking /etc/sysconfig/network-scripts</h3></div></div></div><p>On RedHat, Fedora, and OpenSuSE-based systems, the TAP adapter is brought up using a script <code class="literal">/etc/sysconfig/network-scripts/ifup-tap0</code> and the following command:</p><pre class="programlisting">
+<strong>[root@client]# /sbin/ifup tap0</strong>
+</pre><p>By adding the line to the <code class="literal">/etc/sysconfig/network-scripts/ifup-tap0</code> file, the <code class="literal">dhclient</code> script ignores the gateway that is assigned from the DHCP server:</p><pre class="programlisting">GATEWAYDEV=eth0 &#13;
+</pre><p>A similar hack can be developed for Debian/Ubuntu-based systems.</p></div></div></div>
+<div><div><div><div><h1 class="title"><a id="ch03lvl1sec37"/>Using the status file</h1></div></div></div><p>OpenVPN offers several options to monitor the clients connected to a server. The most commonly used method is using a status file. This recipe will show how to use and read the OpenVPN status file. We will also focus on some subtleties of the status file in a TAP-style setup.</p><div><div><div><div><h2 class="title"><a id="ch03lvl2sec128"/>Getting ready</h2></div></div></div><p>Set up the client and server certificates using the first recipe from <a class="link" title="Chapter 2.  Client-server IP-only Networks" href="part0025.xhtml#aid-NQU21">Chapter 2</a>, <em>Client-server IP-only Networks</em>. For this recipe, the server computer was running CentOS 6 Linux and OpenVPN 2.3.10. The first client was running Fedora 20 Linux and OpenVPN 2.3.10. The second client was running Windows 7 64 bit and OpenVPN 2.3.10. For the Linux client, keep the client configuration file <code class="literal">example3-1-client.conf</code> at hand. For the Windows client, keep the client configuration file <code class="literal">example3-2-client2.ovpn</code> at hand.</p></div><div><div><div><div><h2 class="title"><a id="ch03lvl2sec129"/>How to do it...</h2></div></div></div><div><ol class="orderedlist arabic"><li class="listitem">Create the server configuration file by adding a line to the <code class="literal">example3-1-server.conf.</code> file:<pre class="programlisting">        status /var/log/openvpn.status &#13;
+</pre><p>Save it as <code class="literal">example3-7-server.conf</code>.</p></li><li class="listitem">Start the server:<pre class="programlisting">
+<strong>      [root@server]# openvpn --config example3-7-server.conf</strong>
+</pre></li><li class="listitem">First, start the Linux client using the configuration file from the earlier recipe and ping a host on the remote network:<pre class="programlisting">
+<strong>      [root@client1]# openvpn --config example3-1-client.conf</strong>
+<strong>      [root@client1]# ping 10.198.0.1</strong>
+</pre></li><li class="listitem">After the VPN is established, list the contents of the <code class="literal">openvpn.status</code> file (as user root):<pre class="programlisting">
+<strong>      [root@server]# cat /var/log/openvpn.status</strong>
+<strong>  OpenVPN CLIENT LIST</strong>
+<strong>  Updated,Wed Mar  2 17:34:39 2016</strong>
+<strong>  Common Name,Real Address,Bytes Received,Bytes Sent,Connected </strong>
+<strong>  Since</strong>
+<strong>  client1,192.168.4.65:50183,10024,10159,Wed Mar 2 17:26:48 &#13;
+          2016</strong>
+<strong>  ROUTING TABLE</strong>
+<strong>  Virtual Address,Common Name,Real Address,Last Ref</strong>
+<strong>  5e:52:73:5c:6a:ce,client1,192.168.4.65:50183,Wed Mar 2 &#13;
+          17:27:06 2016</strong>
+<strong>  GLOBAL STATS</strong>
+<strong>  Max bcast/mcast queue length,1</strong>
+<strong>  END</strong>
+</pre></li><li class="listitem">Start the Windows client:<div><img src="img/image00371.jpeg" alt="How to do it..."/></div><p style="clear:both; height: 1em;"> </p></li><li class="listitem">Ping a host on the remote network:<pre class="programlisting">
+<strong>      [WinClient2]C:&gt; ping 10.198.0.1</strong>
+</pre></li><li class="listitem">List the contents of the status file again on the server:<pre class="programlisting">
+<strong>      [root@server]# cat /var/log/openvpn.status</strong>
+<strong>       OpenVPN CLIENT LIST</strong>
+<strong>     Updated,Wed Mar  2 17:40:22 2016</strong>
+<strong>     Common Name,Real Address,Bytes Received,Bytes Sent,Connected</strong>
+<strong>     Since</strong>
+<strong>     client1,192.168.4.65:50183,10024,10159,Wed Mar  2 17:27:08  &#13;
+          2016</strong>
+<strong>      client2,192.168.4.64:50186,18055,9726,Wed Mar  2 17:26:48 &#13;
+          2016</strong>
+<strong>        ROUTING TABLE</strong>
+<strong>      Virtual Address,Common Name,Real Address,Last Ref</strong>
+<strong>      5e:52:73:5c:6a:ce,client1,192.168.4.65:50183,Wed Mar  2 &#13;
+          17:27:06 2016</strong>
+<strong>     00:ff:17:82:55:db,client2,192.168.4.64:50186,Wed Mar  2 &#13;
+          17:27:16 2016</strong>
+<strong>      GLOBAL STATS</strong>
+<strong>      Max bcast/mcast queue length,1</strong>
+<strong>      END</strong>
+</pre></li></ol><div></div></div><div><div><div><div><h2 class="title"><a id="ch03lvl2sec130"/>How it works...</h2></div></div></div><p>Each time a client connects to the OpenVPN server, the status file is updated with the connection information. The <strong>OPENVPN </strong>
+<strong>CLIENT</strong>
+<strong>LIST</strong> and <strong>ROUTING </strong>
+<strong>TABLE</strong> tables are the most interesting tables, as they show the following:</p><div><ul class="itemizedlist"><li class="listitem">Which clients are connected</li><li class="listitem">From which IP address the clients are connecting</li><li class="listitem">The number of bytes each client has received and transferred</li><li class="listitem">The time at which the client connected</li></ul></div><p>The routing table also shows which networks are routed to each client. This routing table is filled when clients start sending traffic that needs to be routed. The <code class="literal">ping</code> commands in the recipe were used to trigger the routing table entries.</p></div><div><div><div><div><h2 class="title"><a id="ch03lvl2sec131"/>There's more...</h2></div></div></div><p>When comparing this example with a TUN-style setup there are many similarities but also some differences:</p><div><div><div><div><h3 class="title"><a id="ch03lvl3sec45"/>Difference with TUN-style networks</h3></div></div></div><p>The major difference in the status file when using a TAP-style network compared to a TUN-style network (see the <em>Using the status file </em>recipe from <a class="link" title="Chapter 2.  Client-server IP-only Networks" href="part0025.xhtml#aid-NQU21">Chapter 2</a>, <em>Client-server IP-only Networks</em>) is in the <strong>ROUTING </strong>
+<strong>TABLE</strong>. The recipe from the previous chapter shows this:</p><pre class="programlisting">10.200.0.2,client1,192.168.4.65:56764,&lt;Date&gt; &#13;
+</pre><p>Whereas, in this recipe, we see the following:</p><pre class="programlisting">5e:52:73:5c:6a:ce,client1,192.168.4.65:50183,&lt;Date&gt; &#13;
+</pre><p>The address <code class="literal">5e:52:73:5c:6a:ce</code> is the randomly chosen MAC address of the tap adapter on the <code class="literal">client1</code> machine.</p></div><div><div><div><div><h3 class="title"><a id="ch03lvl3sec46"/>Disconnecting clients</h3></div></div></div><p>Note that when a client disconnects, the status file is not updated immediately. OpenVPN first tries to reconnect to the client based on the <code class="literal">keepalive</code> parameters in the server configuration file. The server configuration file in this recipe uses this:</p><pre class="programlisting">keepalive 10 60 &#13;
+</pre><p>This tells the server that it will ping the client every 10th second. The OpenVPN server will double the second argument: if it does not get a response after 2 * 60 seconds, the connection is restarted. The server will also tell the client to ping the server every 10 seconds and to restart the connection after 60 seconds if it does not get any response.</p><p>If the client explicitly closes the connection using the <code class="literal">explicit-exit-notify</code> directive or when a TCP-based setup is used, the server does not wait for ping responses from the client.</p></div></div><div><div><div><div><h2 class="title"><a id="ch03lvl2sec132"/>See also</h2></div></div></div><div><ul class="itemizedlist"><li class="listitem">The <em>Using the status file</em> recipe from <a class="link" title="Chapter 2.  Client-server IP-only Networks" href="part0025.xhtml#aid-NQU21">Chapter 2</a>, <em>Client-server IP-only Networks</em>, which explains how the status file can be configured and used for IP-only style networks</li></ul></div></div></div>
+<div><div><div><div><h1 class="title"><a id="ch03lvl1sec38"/>The management interface</h1></div></div></div><p>This recipe shows how OpenVPN can be managed using the management interface on the server.</p><div><div><div><div><h2 class="title"><a id="ch03lvl2sec133"/>Getting ready</h2></div></div></div><p>Set up the client and server certificates using the first recipe from <a class="link" title="Chapter 2.  Client-server IP-only Networks" href="part0025.xhtml#aid-NQU21">Chapter 2</a>, <em>Client-server IP-only Networks</em>.</p><p>For this recipe, the server computer was running CentOS 6 Linux and OpenVPN 2.3.10. The first client was running Fedora 20 Linux and OpenVPN 2.3.10. The second client was running Windows 7 64 bit and OpenVPN 2.3.10.</p><p>For the server, keep the configuration file <code class="literal">example3-1-server.conf</code> from the first recipe of this chapter at hand. For the Linux client, keep the client configuration file <code class="literal">example3-1-client.conf</code> from the first recipe of this chapter at hand. For the Windows client, keep the client configuration file <code class="literal">example3-2-client2.ovpn</code> from the <em>Enabling client-to-client traffic</em> recipe at hand.</p><p>We use the following network layout:</p><div><img src="img/image00372.jpeg" alt="Getting ready"/></div><p style="clear:both; height: 1em;"> </p></div><div><div><div><div><h2 class="title"><a id="ch03lvl2sec134"/>How to do it...</h2></div></div></div><div><ol class="orderedlist arabic"><li class="listitem">Create the server configuration file by adding a line to the <code class="literal">example3-1-server.conf</code> file:<pre class="programlisting">        management tunnel 23000 stdin &#13;
+</pre></li><li class="listitem">Save it as <code class="literal">example3-8-server.conf</code>.</li><li class="listitem">Start the server:<pre class="programlisting">
+<strong>[root@server]# openvpn --config example3-8-server.conf</strong>
+</pre><p>The OpenVPN server will now first ask for a password for the management interface.</p></li><li class="listitem">Start the clients using the configuration files from the earlier recipe:<pre class="programlisting">
+<strong>[root@client1]# openvpn --config example3-1-client.conf</strong>
+</pre></li><li class="listitem">Start the Windows client as well:<div><img src="img/image00373.jpeg" alt="How to do it..."/></div><p style="clear:both; height: 1em;"> </p></li><li class="listitem">After the VPN is established, we can connect from the server to the management interface of the OpenVPN client using the <code class="literal">telnet</code> program:<pre class="programlisting">
+<strong>[server]$ telnet 127.0.0.1 23000</strong>
+<strong>Trying 127.0.0.1...</strong>
+<strong>Connected to localhost.localdomain (127.0.0.1).</strong>
+<strong>Escape character is '^]'.</strong>
+<strong>ENTER PASSWORD:cookbook</strong>
+<strong>SUCCESS: password is correct</strong>
+<strong>&gt;INFO:OpenVPN Management Interface Version 1 -- type 'help' for &#13;
+        more info</strong>
+<strong>status</strong>
+<strong>OpenVPN CLIENT LIST</strong>
+<strong>Updated,Wed Mar  2 17:57:07 2016</strong>
+<strong>Common Name,Real Address,Bytes Received,Bytes Sent,Connected &#13;
+        Since</strong>
+<strong>client1,192.168.4.64:50209,7851,8095,Wed Mar  2 17:56:08 2016</strong>
+<strong>client2,192.168.4.5:50212,11696,7447,Wed Mar  2 17:56:45 2016</strong>
+<strong>ROUTING TABLE</strong>
+<strong>Virtual Address,Common Name,Real Address,Last Ref</strong>
+<strong>00:ff:17:82:55:db,client2,192.168.4.5:50212,Wed Mar  2 17:56:49 &#13;
+        2016</strong>
+<strong>1e:b8:95:e5:60:21,client1,192.168.4.64:50209,Wed Mar  2 &#13;
+        17:56:53 2016</strong>
+<strong>GLOBAL STATS</strong>
+<strong>Max bcast/mcast queue length,1</strong>
+<strong>END</strong>
+</pre><p>Note that it looks exactly like the status file from the previous recipe.</p></li><li class="listitem">It is also possible to disconnect a client:<pre class="programlisting">        kill client2 &#13;
+        SUCCESS: common name 'client2' found, 1 client(s) killed &#13;
+ &#13;
+        status &#13;
+        OpenVPN CLIENT LIST &#13;
+        Updated,Wed Mar  2 17:58:51 2016 &#13;
+        Common Name,Real Address,Bytes Received,Bytes Sent,Connected &#13;
+        Since &#13;
+        client1,192.168.4.64:50209,8381,8625,Wed Mar  2 17:56:08 2016 &#13;
+        ROUTING TABLE &#13;
+        Virtual Address,Common Name,Real Address,Last Ref &#13;
+        1e:b8:95:e5:60:21,client1,192.168.4.64:50209,Wed Mar  2 &#13;
+        17:56:53 2016 &#13;
+        GLOBAL STATS &#13;
+        Max bcast/mcast queue length,1 &#13;
+        END &#13;
+</pre></li><li class="listitem">Use <em>Ctrl</em> + <em>]</em> or exit to exit the telnet program.</li></ol><div></div></div><div><div><div><div><h2 class="title"><a id="ch03lvl2sec135"/>How it works...</h2></div></div></div><p>When the OpenVPN server starts, a special management interface is set up using the directive:</p><pre class="programlisting">management 127.0.0.1 23000 stdin &#13;
+</pre><p>The interface is set up with these parameters:</p><div><ul class="itemizedlist"><li class="listitem">The IP <code class="literal">127.0.0.1</code> to bind the management interface to localhost only.</li><li class="listitem">The port <code class="literal">23000</code> on which the management interface will be listening.</li><li class="listitem">The last parameter is the password file or the special keyword <code class="literal">stdin</code> to indicate that the management interface password will be specified when OpenVPN starts up. Note that this password is completely unrelated to the private key passphrases or any other user management passwords that OpenVPN uses.</li></ul></div><p>After the management interface comes up, the server operator can connect to it using <code class="literal">telnet</code> and can query the server. By typing the following, the operator can disconnect a client:</p><pre class="programlisting">kill &lt;clientcommonname&gt; &#13;
+</pre><p>Note that if the OpenVPN client is configured to reconnect automatically, it will do so after a few minutes.</p><p>When comparing the output of the management interface's <code class="literal">status</code> command with the status file output shown in the <em>Using the status file</em> recipe from <a class="link" title="Chapter 2.  Client-server IP-only Networks" href="part0025.xhtml#aid-NQU21">Chapter 2</a>, <em>Client-server IP-only Networks</em>, the major difference is the fact that here, the clients' MAC addresses are listed instead of the VPN IP addresses. The OpenVPN does not even need to know the clients' IP addresses, as they can be assigned by an external DHCP server.</p></div><div><div><div><div><h2 class="title"><a id="ch03lvl2sec136"/>There's more...</h2></div></div></div><p>The management interface can also be run on the OpenVPN clients. See the <em>Management interface</em> recipe in <a class="link" title="Chapter 2.  Client-server IP-only Networks" href="part0025.xhtml#aid-NQU21">Chapter 2</a>, <em>Client-server IP-only Networks</em>.</p><p>It is expected that the management interface will become more important in future versions of OpenVPN, both on the client and the server side, as the preferred method to programmatically interact with the OpenVPN software.</p></div><div><div><div><div><h2 class="title"><a id="ch03lvl2sec137"/>See also</h2></div></div></div><div><ul class="itemizedlist"><li class="listitem"><em>The Management interface</em> recipe from <a class="link" title="Chapter 2.  Client-server IP-only Networks" href="part0025.xhtml#aid-NQU21">Chapter 2</a>, <em>Client-server IP-only Networks,</em> in which the client-side management interface is explained</li><li class="listitem">The <em>Using the status file</em> recipe from <a class="link" title="Chapter 2.  Client-server IP-only Networks" href="part0025.xhtml#aid-NQU21">Chapter 2</a>, <em>Client-server IP-only Networks</em>, where the details of the status file for a TUN-style network are explained</li></ul></div></div></div>
+<div><div><div><div><h1 class="title"><a id="ch03lvl1sec39"/>Integrating IPv6 into TAP-style networks</h1></div></div></div><p>For the final recipe of this chapter, we will show how to integrate IPv6 settings into TAP-style networks. TAP-style networks have had support for IPv6 traffic longer than TUN-style networks, as a TAP-style network provides an Ethernet-like layer. This layer is capable of transporting almost any kind of network protocol, including IPv6. In OpenVPN 2.3, better IPv6 support was added so that an OpenVPN server could provide a DHCP pool with IPv6 addresses. In this recipe, we will show just how to do that.</p><div><div><div><div><h2 class="title"><a id="ch03lvl2sec138"/>Getting ready</h2></div></div></div><p>Set up the client and server certificates using the first recipe from <a class="link" title="Chapter 2.  Client-server IP-only Networks" href="part0025.xhtml#aid-NQU21">Chapter 2</a>, <em>Client-server IP-only Networks</em>. For this recipe, both the server computer and the client computer were running CentOS 6 Linux and OpenVPN 2.3.10. For the server, keep the configuration file <code class="literal">example3-1-server.conf</code> from the first recipe of this chapter at hand. For the client, keep the client configuration file <code class="literal">example3-1-client.conf</code> from the first recipe of this chapter at hand.</p><p>We use the following network layout:</p><div><img src="img/image00374.jpeg" alt="Getting ready"/></div><p style="clear:both; height: 1em;"> </p></div><div><div><div><div><h2 class="title"><a id="ch03lvl2sec139"/>How to do it...</h2></div></div></div><div><ol class="orderedlist arabic"><li class="listitem">Modify the server configuration file, <code class="literal">example3-1-server.conf</code>, by adding a line:<pre class="programlisting">        server-ipv6 2001:db8:99::0/112 &#13;
+</pre></li><li class="listitem">Save it as <code class="literal">example3-9-server.conf</code>.</li><li class="listitem">Start the server:<pre class="programlisting">
+<strong>[root@server]# openvpn --config example3-9-server.conf</strong>
+</pre></li><li class="listitem">Start the client:<pre class="programlisting">
+<strong>[root@client1]# openvpn --config example3-1-client.conf \</strong>
+<strong>                           --suppress-timestamps</strong>
+<strong>OpenVPN 2.3.10 x86_64-redhat-linux-gnu [SSL (OpenSSL)] [LZO]    &#13;
+        [EPOLL] [PKCS11] [MH] [IPv6] built on Jan  4 2016</strong>
+<strong>library versions: OpenSSL 1.0.1e-fips 11 Feb 2013, LZO 2.03</strong>
+<strong>Control Channel Authentication: using    &#13;
+        '/etc/openvpn/cookbook/ta.key' as a OpenVPN static key file</strong>
+<strong>UDPv4 link local: [undef]</strong>
+<strong>UDPv4 link remote: [AF_INET]openvpnserver:1194</strong>
+<strong>[openvpnserver] Peer Connection Initiated with     &#13;
+        [AF_INET]openvpnserver:1194</strong>
+<strong>TUN/TAP device tap0 opened</strong>
+<strong>do_ifconfig, tt-&gt;ipv6=1, tt-&gt;did_ifconfig_ipv6_setup=1</strong>
+<strong>/sbin/ip link set dev tap0 up mtu 1500</strong>
+<strong>/sbin/ip addr add dev tap0 192.168.99.2/24 broadcast &#13;
+        192.168.99.255</strong>
+<strong>/sbin/ip -6 addr add 2001:db8:99::1000/112 dev tap0</strong>
+<strong>Initialization Sequence Completed</strong>
+</pre><p>Note that we have suppressed timestamps in the log file using the command-line directive <code class="literal">--suppress-timestamps</code>.</p></li><li class="listitem">After the VPN is established, verify that we can reach the server using the <code class="literal">ping6</code> command:<pre class="programlisting">
+<strong>      [client]$   ping6 -c 4  2001:db8:99::1</strong>
+<strong>ping6 -c 4 2001:db8:99::1</strong>
+<strong>PING 2001:db8:99::1(2001:db8:99::1) 56 data bytes</strong>
+<strong>64 bytes from 2001:db8:99::1: icmp_seq=1 ttl=64 time=0.620 ms</strong>
+<strong>64 bytes from 2001:db8:99::1: icmp_seq=2 ttl=64 time=0.630 ms</strong>
+<strong>64 bytes from 2001:db8:99::1: icmp_seq=3 ttl=64 time=0.631 ms</strong>
+<strong>64 bytes from 2001:db8:99::1: icmp_seq=4 ttl=64 time=0.627 ms</strong>
+<strong>--- 2001:db8:99::1 ping statistics ---</strong>
+<strong>4 packets transmitted, 4 received, 0% packet loss, time &#13;
+          3000ms</strong>
+<strong>rtt min/avg/max/mdev = 0.620/0.627/0.631/0.004 ms</strong>
+</pre></li></ol><div></div></div><div><div><div><div><h2 class="title"><a id="ch03lvl2sec140"/>How it works...</h2></div></div></div><p>IPv6 support for TAP-style networks is nearly identical to IPv6 support for TUN-style networks. By adding a single line to the server configuration file, we provide IPv6 addresses to the connecting VPN clients:</p><pre class="programlisting">server-ipv6 2001:db8:99::0/112 &#13;
+</pre><p>The same directives, ending in <code class="literal">-ip6</code>, which apply to TUN-based setups, also apply to TAP-style networks.</p></div><div><div><div><div><h2 class="title"><a id="ch03lvl2sec141"/>There's more...</h2></div></div></div><p>The firewall rules for IPv6 traffic are slightly different from the firewall rules for IPv4 traffic. Also, with TAP-style networks, it is often useful to allow all incoming and outgoing traffic on the <code class="literal">tap+</code> adapter range. This can be especially helpful when debugging a non-working setup:</p><pre class="programlisting">
+<strong># iptables -I INPUT -i tap+ -j ACCEPT</strong>
+<strong># iptables -I OUTPUT -o tap+ -j ACCEPT</strong>
+<strong># ip6tables -I INPUT -i tap+ -j ACCEPT</strong>
+<strong># ip6tables -I OUTPUT -o tap+ -j ACCEPT</strong>
+<strong># iptables -I FORWARD -i tap+ -j ACCEPT</strong>
+<strong># iptables -I FORWARD -o tap+ -j ACCEPT</strong>
+<strong># ip6tables -I FORWARD -i tap+ -j ACCEPT</strong>
+<strong># ip6tables -I FORWARD -o tap+ -j ACCEPT</strong>
+</pre><p>Note that such rules should be used for debugging purposes only.</p></div><div><div><div><div><h2 class="title"><a id="ch03lvl2sec142"/>See also</h2></div></div></div><div><ul class="itemizedlist"><li class="listitem">The <em>Adding IPv6 support</em> recipe from <a class="link" title="Chapter 2.  Client-server IP-only Networks" href="part0025.xhtml#aid-NQU21">Chapter 2</a>, <em>Client-server IP-only Networks</em>, in which IPv6 support is added to a very similar TUN-style setup</li></ul></div></div></div></body></html>

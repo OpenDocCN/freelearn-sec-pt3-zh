@@ -1,0 +1,483 @@
+<html><head></head><body>
+        
+
+                            
+                    <h1 class="header-title">Cryptography</h1>
+                
+            
+            
+                
+<p>Cryptography is the practice of securing communications even when a third-party can view those communications. There are two-way symmetric and asymmetric encryption methods, as well as one-way hashing algorithms.</p>
+<p>Encryption is a critical part of the modern internet. With services such as <a href="http://www.LetsEncrypt.com">LetsEncrypt.com</a>, everyone has access to trusted SSL certificates. Our entire infrastructure relies on and trusts encryption to work to keep all our confidential data secret. It is important to properly encrypt and hash data correctly, and it is easy to misconfigure a service, leaving it vulnerable or exposed.</p>
+<p>This chapter covers examples and use cases for the following:</p>
+<ul>
+<li>Symmetric and asymmetric encryption</li>
+<li>Signing and verifying messages</li>
+<li>Hashing</li>
+<li>Storing passwords securely</li>
+<li>Generating secure random numbers</li>
+<li>Creating and using TLS/SSL certificates</li>
+</ul>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Hashing</h1>
+                
+            
+            
+                
+<p>Hashing is when a variable length message is transformed into a unique fixed-length alphanumeric string. There are various hashing algorithms available, such as MD5 and SHA1. Hashes are one-way and non-invertible, unlike symmetric encryption functions, such as AES, which can recover the original message if you have the key. Because hashes cannot be reversed, most of them are cracked by brute force. Crackers will build power-sucking rigs with several GPUs to hash every possible character combination until they find a hash that matches. They will also generate rainbow tables or files containing all of the hash outputs generated for quick lookup.</p>
+<p>Salting your hashes is important for this reason. Salting is the process of adding a random string to the end of the password, provided by a user, to add more randomness or entropy. Consider an application that stores user login information and hashed passwords for authentication. If two users had the same password, then their hash output would be identical. Without salts, a cracker might find multiple people who use the same password and would only need to crack the hash one time. By adding a unique salt to each user's password, you ensure that each user has a unique hash value. Salting reduces the effectiveness of rainbow tables because, even if they knew the salt that goes with each hash, they would have to generate a rainbow able to each salt, which is time consuming.</p>
+<p>Hashes are commonly used to validate passwords. Another common use is for file integrity. Large downloads often come with an MD5 or SHA1 hash of the file. After downloading you can hash the file to make sure that it matches the expected value. If it doesn't match, then the download was modified in some way. Hashing is also used as a way of recording indicators of compromise or IOCs. Files that are known to be malicious or dangerous are hashed, and that hash is stored in a catalog. These are often shared publicly so people can check suspicious files against known risks. It is much more efficient to store and compare a hash than the entire file.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Hashing small files</h1>
+                
+            
+            
+                
+<p>If a file is small enough to be contained in memory, the <kbd>ReadFile()</kbd> method works quickly. It loads the whole file into memory and then digests the data. The sum will be calculated with multiple different hash algorithms for demonstration:</p>
+<pre>package main<br/><br/>import (<br/>   "crypto/md5"<br/>   "crypto/sha1"<br/>   "crypto/sha256"<br/>   "crypto/sha512"<br/>   "fmt"<br/>   "io/ioutil"<br/>   "log"<br/>   "os"<br/>)<br/><br/>func printUsage() {<br/>   fmt.Println("Usage: " + os.Args[0] + " &lt;filepath&gt;")<br/>   fmt.Println("Example: " + os.Args[0] + " document.txt")<br/>}<br/><br/>func checkArgs() string {<br/>   if len(os.Args) &lt; 2 {<br/>      printUsage()<br/>      os.Exit(1)<br/>   }<br/>   return os.Args[1]<br/>}<br/><br/>func main() {<br/>   filename := checkArgs()<br/><br/>   // Get bytes from file<br/>   data, err := ioutil.ReadFile(filename)<br/>   if err != nil {<br/>      log.Fatal(err)<br/>   }<br/><br/>   // Hash the file and output results<br/>   fmt.Printf("Md5: %x\n\n", md5.Sum(data))<br/>   fmt.Printf("Sha1: %x\n\n", sha1.Sum(data))<br/>   fmt.Printf("Sha256: %x\n\n", sha256.Sum256(data))<br/>   fmt.Printf("Sha512: %x\n\n", sha512.Sum512(data))<br/>}</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Hashing large files</h1>
+                
+            
+            
+                
+<p>In the previous hashing example, the entire file to be hashed was loaded into memory before hashing. This is not practical or even possible when files reach a certain size. Physical memory limitations will come into play. Because the hashes are implemented as a block cipher, it will operate on one chunk at a time without the need to load the entire file in memory at once:</p>
+<pre>package main<br/><br/>import (<br/>   "crypto/md5"<br/>   "fmt"<br/>   "io"<br/>   "log"<br/>   "os"<br/>)<br/><br/>func printUsage() {<br/>   fmt.Println("Usage: " + os.Args[0] + " &lt;filename&gt;")<br/>   fmt.Println("Example: " + os.Args[0] + " diskimage.iso")<br/>}<br/><br/>func checkArgs() string {<br/>   if len(os.Args) &lt; 2 {<br/>      printUsage()<br/>      os.Exit(1)<br/>   }<br/>   return os.Args[1]<br/>}<br/><br/>func main() {<br/>   filename := checkArgs()<br/><br/>   // Open file for reading<br/>   file, err := os.Open(filename)<br/>   if err != nil {<br/>      log.Fatal(err)<br/>   }<br/>   defer file.Close()<br/><br/>   // Create new hasher, which is a writer interface<br/>   hasher := md5.New()<br/><br/>   // Default buffer size for copying is 32*1024 or 32kb per copy<br/>   // Use io.CopyBuffer() if you want to specify the buffer to use<br/>   // It will write 32kb at a time to the digest/hash until EOF<br/>   // The hasher implements a Write() function making it satisfy<br/>   // the writer interface. The Write() function performs the digest<br/>   // at the time the data is copied/written to it. It digests<br/>   // and processes the hash one chunk at a time as it is received.<br/>   _, err = io.Copy(hasher, file)<br/>   if err != nil {<br/>      log.Fatal(err)<br/>   }<br/><br/>   // Now get the final sum or checksum.<br/>   // We pass nil to the Sum() function because<br/>   // we already copied the bytes via the Copy to the<br/>   // writer interface and don't need to pass any new bytes<br/>   checksum := hasher.Sum(nil)<br/><br/>   fmt.Printf("Md5 checksum: %x\n", checksum)<br/>}</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Storing passwords securely</h1>
+                
+            
+            
+                
+<p>Now that we know how to hash, we can talk about securely storing passwords. Hashing is an important factor when it comes to protecting passwords. Other important factors are salting, using a cryptographically strong hash function, and the optional use of <strong>hash-based message authentication code</strong> (<strong>HMAC</strong>), which all add an additional secret key into the hashing algorithm.</p>
+<p>HMAC is an added layer that uses a secret key; so, even if an attacker got your database of hashed passwords with the salts, they would still have a difficult time cracking them without the secret key. The secret key should be stored in a separate location such as an environment variable rather than in the database with the hashed passwords and salts.</p>
+<p>This example application has limited use as it is. Use it as a reference for your own applications</p>
+<pre>package main<br/><br/>import (<br/>   "crypto/hmac"<br/>   "crypto/rand"<br/>   "crypto/sha256"<br/>   "encoding/base64"<br/>   "encoding/hex"<br/>   "fmt"<br/>   "io"<br/>   "os"<br/>)<br/><br/>func printUsage() {<br/>   fmt.Println("Usage: " + os.Args[0] + " &lt;password&gt;")<br/>   fmt.Println("Example: " + os.Args[0] + " Password1!")<br/>}<br/><br/>func checkArgs() string {<br/>   if len(os.Args) &lt; 2 {<br/>      printUsage()<br/>      os.Exit(1)<br/>   }<br/>   return os.Args[1]<br/>}<br/><br/>// secretKey should be unique, protected, private,<br/>// and not hard-coded like this. Store in environment var<br/>// or in a secure configuration file.<br/>// This is an arbitrary key that should only be used <br/>// for example purposes.<br/>var secretKey = "neictr98y85klfgneghre"<br/><br/>// Create a salt string with 32 bytes of crypto/rand data<br/>func generateSalt() string {<br/>   randomBytes := make([]byte, 32)<br/>   _, err := rand.Read(randomBytes)<br/>   if err != nil {<br/>      return ""<br/>   }<br/>   return base64.URLEncoding.EncodeToString(randomBytes)<br/>}<br/><br/>// Hash a password with the salt<br/>func hashPassword(plainText string, salt string) string {<br/>   hash := hmac.New(sha256.New, []byte(secretKey))<br/>   io.WriteString(hash, plainText+salt)<br/>   hashedValue := hash.Sum(nil)<br/>   return hex.EncodeToString(hashedValue)<br/>}<br/><br/>func main() {<br/>   // Get the password from command line argument<br/>   password := checkArgs()<br/>   salt := generateSalt()<br/>   hashedPassword := hashPassword(password, salt)<br/>   fmt.Println("Password: " + password)<br/>   fmt.Println("Salt: " + salt)<br/>   fmt.Println("Hashed password: " + hashedPassword)<br/>}</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Encryption</h1>
+                
+            
+            
+                
+<p>Encryption is different from hashing because it is reversible and the original message can be recovered. There are symmetric encryption methods that use a password or a shared key to encrypt and decrypt. There are also asymmetric encryption algorithms that operate with a public and private key pair. AES is an example of symmetric encryption, and it is used to encrypt ZIP files, PDF files, or an entire filesystem. RSA is an example of asymmetric encryption and is used for SSL, SSH keys, and PGP.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Cryptographically secure pseudo-random number generator (CSPRNG)</h1>
+                
+            
+            
+                
+<p>The <kbd>math</kbd> and <kbd>rand</kbd> packages do not provide the same amount of randomness that the <kbd>crypto/rand</kbd> package offers. Do not use <kbd>math/rand</kbd> for cryptographic applications.</p>
+<p>Read more about Go's <kbd>crypto/rand</kbd> package at <a href="https://golang.org/pkg/crypto/rand/">https://golang.org/pkg/crypto/rand/</a>.</p>
+<p>The following example will demonstrate how to generate random bytes, a random integer, or any other signed or unsigned type of integer:</p>
+<pre>package main<br/><br/>import (<br/>   "crypto/rand"<br/>   "encoding/binary"<br/>   "fmt"<br/>   "log"<br/>   "math"<br/>   "math/big"<br/>)<br/><br/>func main() {<br/>   // Generate a random int<br/>   limit := int64(math.MaxInt64) // Highest random number allowed<br/>   randInt, err := rand.Int(rand.Reader, big.NewInt(limit))<br/>   if err != nil {<br/>      log.Fatal(err)<br/>   }<br/>   fmt.Println("Random int value: ", randInt)<br/><br/>   // Alternatively, you could generate the random bytes<br/>   // and turn them into the specific data type needed.<br/>   // binary.Read() will only read enough bytes to fill the data type<br/>   var number uint32<br/>   err = binary.Read(rand.Reader, binary.BigEndian, &amp;number)<br/>   if err != nil {<br/>      log.Fatal(err)<br/>   }<br/>   fmt.Println("Random uint32 value: ", number)<br/><br/>   // Or just generate a random byte slice<br/>   numBytes := 4<br/>   randomBytes := make([]byte, numBytes)<br/>   rand.Read(randomBytes)<br/>   fmt.Println("Random byte values: ", randomBytes)<br/>}</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Symmetric encryption</h1>
+                
+            
+            
+                
+<p>Symmetric encryption is when the same key or password is used to encrypt and decrypt the data. Advanced Encryption Standard, also known as AES or Rijndael, is a symmetric encryption algorithm made standard by NIST in 2001.</p>
+<p>Data Encryption Standard, or DES, is another symmetric encryption algorithm that is older and less secure than AES. It should not be used over AES unless there is a specific requirement or specification to do so. Go standard library includes AES and DES packages.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">AES</h1>
+                
+            
+            
+                
+<p>This program will encrypt and decrypt a file using a key, which is basically a 32-byte (256-bit) password.</p>
+<p>When generating a key, encrypting, or decrypting, the output is sent to <kbd>STDOUT</kbd> or the Terminal typically. You can easily redirect the output to a file or another program using the <kbd>&gt;</kbd> operator. Refer to the usage patterns for examples. If you need to store the key or the encrypted data as an ASCII encoded string, use base64 encoding.</p>
+<p>At some point in this example, you will see the message being split into two pieces, the IV, and the cipher text. The initialization vector, or IV, is a random value that gets prepended to the actual encrypted message. Every time a message is encrypted with AES, a random value is generated and used as part of the encryption. The random value is called a nonce, which means simply a number that is only used once.</p>
+<p>Why are these one time values created? Especially, if they aren't kept secret and are put right in front of the encrypted message, what purpose does it serve? The random IV is used in a similar fashion to a salt. It is used primarily so that when the same message is encrypted repeatedly, the cipher text is different each time.</p>
+<p>To use <strong>Galois/Counter Mode</strong> (<strong>GCM</strong>) instead of CFB, change the encrypt and decrypt methods. GCM has better performance and efficiency because it allows parallel processing. Read more about GCM at <a href="https://en.wikipedia.org/wiki/Galois/Counter_Mode">https://en.wikipedia.org/wiki/Galois/Counter_Mode</a>.</p>
+<p>Start with an AES cipher and call <kbd>cipher.NewCFBEncrypter(block, iv)</kbd>. Then depending on whether you need to encrypt or decrypt, you will either call <kbd>.Seal()</kbd> with a nonce you generate, or call <kbd>.Open()</kbd> and pass it the separated nonce and cipher text:</p>
+<pre>package main<br/><br/>import (<br/>   "crypto/aes"<br/>   "crypto/cipher"<br/>   "crypto/rand"<br/>   "fmt"<br/>   "io"<br/>   "io/ioutil"<br/>   "os"<br/>   "log"<br/>)<br/><br/>func printUsage() {<br/>   fmt.Printf(os.Args[0] + `<br/><br/>Encrypt or decrypt a file using AES with a 256-bit key file.<br/>This program can also generate 256-bit keys.<br/><br/>Usage:<br/>  ` + os.Args[0] + ` [-h|--help]<br/>  ` + os.Args[0] + ` [-g|--genkey]<br/>  ` + os.Args[0] + ` &lt;keyFile&gt; &lt;file&gt; [-d|--decrypt]<br/><br/>Examples:<br/>  # Generate a 32-byte (256-bit) key<br/>  ` + os.Args[0] + ` --genkey<br/><br/>  # Encrypt with secret key. Output to STDOUT<br/>  ` + os.Args[0] + ` --genkey &gt; secret.key<br/><br/>  # Encrypt message using secret key. Output to ciphertext.dat<br/>  ` + os.Args[0] + ` secret.key message.txt &gt; ciphertext.dat<br/><br/>  # Decrypt message using secret key. Output to STDOUT<br/>  ` + os.Args[0] + ` secret.key ciphertext.dat -d<br/><br/>  # Decrypt message using secret key. Output to message.txt<br/>  ` + os.Args[0] + ` secret.key ciphertext.dat -d &gt; cleartext.txt<br/>`)<br/>}<br/><br/>// Check command-line arguments.<br/>// If the help or generate key functions are chosen<br/>// they are run and then the program exits<br/>// otherwise it returns keyFile, file, decryptFlag.<br/>func checkArgs() (string, string, bool) {<br/>   if len(os.Args) &lt; 2  || len(os.Args) &gt; 4 {<br/>      printUsage()<br/>      os.Exit(1)<br/>   }<br/><br/>   // One arg provided<br/>   if len(os.Args) == 2 {<br/>      // Only -h, --help and --genkey are valid one-argument uses<br/>      if os.Args[1] == "-h" || os.Args[1] == "--help" {<br/>         printUsage() // Print help text<br/>         os.Exit(0) // Exit gracefully no error<br/>      }<br/>      if os.Args[1] == "-g" || os.Args[1] == "--genkey" {<br/>         // Generate a key and print to STDOUT<br/>         // User should redirect output to a file if needed<br/>         key := generateKey()<br/>         fmt.Printf(string(key[:])) // No newline<br/>         os.Exit(0) // Exit gracefully<br/>      }<br/>   }<br/><br/>   // The only use options left is<br/>   // encrypt &lt;keyFile&gt; &lt;file&gt; [-d|--decrypt]<br/>   // If there are only 2 args provided, they must be the<br/>   // keyFile and file without a decrypt flag.<br/>   if len(os.Args) == 3 {<br/>      // keyFile, file, decryptFlag<br/>      return os.Args[1], os.Args[2], false <br/>   }<br/>   // If 3 args are provided,<br/>   // check that the last one is -d or --decrypt<br/>   if len(os.Args) == 4 {<br/>      if os.Args[3] != "-d" &amp;&amp; os.Args[3] != "--decrypt" {<br/>         fmt.Println("Error: Unknown usage.")<br/>         printUsage()<br/>         os.Exit(1) // Exit with error code<br/>      }<br/>      return os.Args[1], os.Args[2], true<br/>   }<br/>    return "", "", false // Default blank return<br/>}<br/><br/>func generateKey() []byte {<br/>   randomBytes := make([]byte, 32) // 32 bytes, 256 bit<br/>   numBytesRead, err := rand.Read(randomBytes)<br/>   if err != nil {<br/>      log.Fatal("Error generating random key.", err)<br/>   }<br/>   if numBytesRead != 32 {<br/>      log.Fatal("Error generating 32 random bytes for key.")<br/>   }<br/>   return randomBytes<br/>}<br/><br/>// AES encryption<br/>func encrypt(key, message []byte) ([]byte, error) {<br/>   // Initialize block cipher<br/>   block, err := aes.NewCipher(key)<br/>   if err != nil {<br/>      return nil, err<br/>   }<br/><br/>   // Create the byte slice that will hold encrypted message<br/>   cipherText := make([]byte, aes.BlockSize+len(message))<br/><br/>   // Generate the Initialization Vector (IV) nonce<br/>   // which is stored at the beginning of the byte slice<br/>   // The IV is the same length as the AES blocksize<br/>   iv := cipherText[:aes.BlockSize]<br/>   _, err = io.ReadFull(rand.Reader, iv)<br/>   if err != nil {<br/>      return nil, err<br/>   }<br/><br/>   // Choose the block cipher mode of operation<br/>   // Using the cipher feedback (CFB) mode here.<br/>   // CBCEncrypter also available.<br/>   cfb := cipher.NewCFBEncrypter(block, iv)<br/>   // Generate the encrypted message and store it<br/>   // in the remaining bytes after the IV nonce<br/>   cfb.XORKeyStream(cipherText[aes.BlockSize:], message)<br/><br/>   return cipherText, nil<br/>}<br/><br/>// AES decryption<br/>func decrypt(key, cipherText []byte) ([]byte, error) {<br/>   // Initialize block cipher<br/>   block, err := aes.NewCipher(key)<br/>   if err != nil {<br/>      return nil, err<br/>   }<br/><br/>   // Separate the IV nonce from the encrypted message bytes<br/>   iv := cipherText[:aes.BlockSize]<br/>   cipherText = cipherText[aes.BlockSize:]<br/><br/>   // Decrypt the message using the CFB block mode<br/>   cfb := cipher.NewCFBDecrypter(block, iv)<br/>   cfb.XORKeyStream(cipherText, cipherText)<br/><br/>   return cipherText, nil<br/>}<br/><br/>func main() {<br/>   // if generate key flag, just output a key to stdout and exit<br/>   keyFile, file, decryptFlag := checkArgs()<br/><br/>   // Load key from file<br/>   keyFileData, err := ioutil.ReadFile(keyFile)<br/>   if err != nil {<br/>      log.Fatal("Unable to read key file contents.", err)<br/>   }<br/><br/>   // Load file to be encrypted or decrypted<br/>   fileData, err := ioutil.ReadFile(file)<br/>   if err != nil {<br/>      log.Fatal("Unable to read key file contents.", err)<br/>   }<br/><br/>   // Perform encryption unless the decryptFlag was provided<br/>   // Outputs to STDOUT. User can redirect output to file.<br/>   if decryptFlag {<br/>      message, err := decrypt(keyFileData, fileData)<br/>      if err != nil {<br/>         log.Fatal("Error decrypting. ", err)<br/>      }<br/>      fmt.Printf("%s", message)<br/>   } else {<br/>      cipherText, err := encrypt(keyFileData, fileData)<br/>      if err != nil {<br/>         log.Fatal("Error encrypting. ", err)<br/>      }<br/>      fmt.Printf("%s", cipherText)<br/>   }<br/>}</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Asymmetric encryption</h1>
+                
+            
+            
+                
+<p>Asymmetric is when there are two keys for each party. A public and private key pair is required on each side. Asymmetric encryption algorithms include RSA, DSA, and ECDSA. The Go standard library has packages for RSA, DSA, and ECDSA. Some applications that use asymmetric encryption include <strong>Secure Shell</strong> (<strong>SSH</strong>), <strong>Secure Sockets Layer</strong> (<strong>SSL</strong>), and <strong>Pretty Good Privacy</strong> (<strong>PGP</strong>).</p>
+<p>SSL is the <strong>Secure Sockets Layer</strong> originally developed by Netscape, and version 2 was publicly released in 1995. It is used to encrypt communication between a server and a client providing confidentiality, integrity, and authentication. <strong>TLS</strong>, or <strong>Transport Layer Security</strong>, is the new version of SSL, with 1.2 being defined in 2008 as RFC 5246. The Go package for TLS does not completely implement the specification, but it implements the major parts. Read more about Go's <kbd>crypto/tls</kbd> package at <a href="https://golang.org/pkg/crypto/tls/">https://golang.org/pkg/crypto/tls/</a>.</p>
+<p>You can only encrypt things smaller than the key size, which is frequently 2048 bits. Because of this size limitation, asymmetric RSA encryption is not practical for encrypting entire documents, which easily exceed 2048 bits or 256 bytes. On the other hand, symmetric encryption such as AES can encrypt large documents, but it requires a shared key by both parties. TLS/SSL uses a combination of asymmetric and symmetric encryption. The initial connection and handshake is done using asymmetric encryption with the public and private keys of each party. Once the connection is established, a shared key is generated and shared. Once the shared key is known by both parties, the asymmetric encryption is dropped, and the rest of the communication is done using symmetric encryption such as AES using the shared key.</p>
+<p>The examples here will use RSA keys. We will cover generating your own public and private keys and saving them as PEM encoded files, digitally signing messages and verifying signatures. In the next section, we will use the keys to create a self-signed certificate and establish secure TLS connections.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Generating a public and private key pair</h1>
+                
+            
+            
+                
+<p>Before using asymmetric encryption, you need a public and private key pair. The private key must be kept secure and not shared with anyone. The public key should be shared with others.</p>
+<p><strong>RSA</strong> (<strong>Rivest-Shamir-Adleman</strong>) and <strong>ECDSA</strong> (<strong>Elliptic Curve Digital Signing Algorithm</strong>) algorithms are available in the Go standard library. ECDSA is considered more secure, but RSA is the most common algorithm used in SSL certificates.</p>
+<p>You have the option to password protect your private key. You don't need to do it, but it is an extra layer of security. Because the private key is so sensitive, it is recommended that you use password protection.</p>
+<p>If you want to password protect your private key file using a symmetric encryption algorithm, such as AES, you can use some of the standard library functions. The primary functions you will need are <kbd>x509.EncryptPEMBlock()</kbd>, <kbd>x509.DecryptPEMBlock()</kbd>, and <kbd>x509.IsEncryptedPEMBlock()</kbd>.</p>
+<p>To perform the equivalent operation of generating a private and public key file using OpenSSL, use the following:</p>
+<pre><strong># Generate the private key  
+openssl genrsa -out priv.pem 2048 
+# Extract the public key from the private key 
+openssl rsa -in priv.pem -pubout -out public.pem</strong> </pre>
+<p>You can learn more about PEM encoding with Go at <a href="https://golang.org/pkg/encoding/pem/">https://golang.org/pkg/encoding/pem/</a>. Refer to the following code:</p>
+<pre>package main<br/><br/>import (<br/>   "crypto/rand"<br/>   "crypto/rsa"<br/>   "crypto/x509"<br/>   "encoding/pem"<br/>   "fmt"<br/>   "log"<br/>   "os"<br/>   "strconv"<br/>)<br/><br/>func printUsage() {<br/>   fmt.Printf(os.Args[0] + `<br/><br/>Generate a private and public RSA keypair and save as PEM files.<br/>If no key size is provided, a default of 2048 is used.<br/><br/>Usage:<br/>  ` + os.Args[0] + ` &lt;private_key_filename&gt; &lt;public_key_filename&gt;       [keysize]<br/><br/>Examples:<br/>  # Store generated private and public key in privkey.pem and   pubkey.pem<br/>  ` + os.Args[0] + ` priv.pem pub.pem<br/>  ` + os.Args[0] + ` priv.pem pub.pem 4096`)<br/>}<br/><br/>func checkArgs() (string, string, int) {<br/>   // Too many or too few arguments<br/>   if len(os.Args) &lt; 3 || len(os.Args) &gt; 4 {<br/>      printUsage()<br/>      os.Exit(1)<br/>   }<br/><br/>   defaultKeySize := 2048<br/><br/>   // If there are 2 args provided, privkey and pubkey filenames<br/>   if len(os.Args) == 3 {<br/>      return os.Args[1], os.Args[2], defaultKeySize<br/>   }<br/><br/>   // If 3 args provided, privkey, pubkey, keysize<br/>   if len(os.Args) == 4 {<br/>      keySize, err := strconv.Atoi(os.Args[3])<br/>      if err != nil {<br/>         printUsage()<br/>         fmt.Println("Invalid keysize. Try 1024 or 2048.")<br/>         os.Exit(1)<br/>      }<br/>      return os.Args[1], os.Args[2], keySize<br/>   }<br/><br/>   return "", "", 0 // Default blank return catch-all<br/>}<br/><br/>// Encode the private key as a PEM file<br/>// PEM is a base-64 encoding of the key<br/>func getPrivatePemFromKey(privateKey *rsa.PrivateKey) *pem.Block {<br/>   encodedPrivateKey := x509.MarshalPKCS1PrivateKey(privateKey)<br/>   var privatePem = &amp;pem.Block {<br/>      Type: "RSA PRIVATE KEY",<br/>      Bytes: encodedPrivateKey,<br/>   }<br/>   return privatePem<br/>}<br/><br/>// Encode the public key as a PEM file<br/>func generatePublicPemFromKey(publicKey rsa.PublicKey) *pem.Block {<br/>   encodedPubKey, err := x509.MarshalPKIXPublicKey(&amp;publicKey)<br/>   if err != nil {<br/>      log.Fatal("Error marshaling PKIX pubkey. ", err)<br/>   }<br/><br/>   // Create a public PEM structure with the data<br/>   var publicPem = &amp;pem.Block{<br/>      Type:  "PUBLIC KEY",<br/>      Bytes: encodedPubKey,<br/>   }<br/>   return publicPem<br/>}<br/><br/>func savePemToFile(pemBlock *pem.Block, filename string) {<br/>   // Save public pem to file<br/>   publicPemOutputFile, err := os.Create(filename)<br/>   if err != nil {<br/>      log.Fatal("Error opening pubkey output file. ", err)<br/>   }<br/>   defer publicPemOutputFile.Close()<br/><br/><br/>   err = pem.Encode(publicPemOutputFile, pemBlock)<br/>   if err != nil {<br/>      log.Fatal("Error encoding public PEM. ", err)<br/>   }<br/>}<br/><br/>// Generate a public and private RSA key in PEM format<br/>func main() {<br/>   privatePemFilename, publicPemFilename, keySize := checkArgs()<br/><br/>   // Generate private key<br/>   privateKey, err := rsa.GenerateKey(rand.Reader, keySize)<br/>   if err != nil {<br/>      log.Fatal("Error generating private key. ", err)<br/>   }<br/><br/>   // Encode keys to PEM format<br/>   privatePem := getPrivatePemFromKey(privateKey)<br/>   publicPem := generatePublicPemFromKey(privateKey.PublicKey)<br/><br/>   // Save the PEM output to files<br/>   savePemToFile(privatePem, privatePemFilename)<br/>   savePemToFile(publicPem, publicPemFilename)<br/><br/>   // Print the public key to STDOUT for convenience<br/>   fmt.Printf("%s", pem.EncodeToMemory(publicPem))<br/>}</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Digitally signing a message</h1>
+                
+            
+            
+                
+<p>The purpose of signing a message is to let the recipient know the message came from the correct person. To sign a message, first generate the hash of the message and then use your private key to encrypt the hash. The encrypted hash is your signature.</p>
+<p>The recipient will decrypt your signature to get the original hash you provided, then they will hash the message themselves and see if the hash they generated themselves from the message matches the decrypted value of the signature. If they match, the recipient knows that the signature is valid and it came from the correct sender.</p>
+<p>Note that signing a message does not actually encrypt the message. You will still need to encrypt the message before sending it, if needed. You may not want to encrypt the message itself, if you want to post your message publicly. Others can still use the signature to verify who posted the message.</p>
+<p>Only messages smaller than the RSA key size can be signed. Because the SHA-256 hash always has the same output length, we can be sure that it is within the acceptable size limit. In this example, we are using the RSA PKCS#1 v1.5 standard signature with a SHA-256 hashing method.</p>
+<p>The Go programming language comes with functions in the core packages to handle signing and verifying. The primary function is <kbd>rsa.VerifyPKCS1v5</kbd>. This function takes care of hashing the message and then encrypting it with the private key.</p>
+<p>The following program will take a message and a private key and create a signature output to <kbd>STDOUT</kbd>:</p>
+<pre>package main<br/><br/>import (<br/>   "crypto"<br/>   "crypto/rand"<br/>   "crypto/rsa"<br/>   "crypto/sha256"<br/>   "crypto/x509"<br/>   "encoding/pem"<br/>   "fmt"<br/>   "io/ioutil"<br/>   "log"<br/>   "os"<br/>)<br/><br/>func printUsage() {<br/>   fmt.Println(os.Args[0] + `<br/><br/>Cryptographically sign a message using a private key.<br/>Private key should be a PEM encoded RSA key.<br/>Signature is generated using SHA256 hash.<br/>Output signature is stored in filename provided.<br/><br/>Usage:<br/>  ` + os.Args[0] + ` &lt;privateKeyFilename&gt; &lt;messageFilename&gt;   &lt;signatureFilename&gt;<br/><br/>Example:<br/>  # Use priv.pem to encrypt msg.txt and output to sig.txt.256<br/>  ` + os.Args[0] + ` priv.pem msg.txt sig.txt.256<br/>`)<br/>}<br/><br/>// Get arguments from command line<br/>func checkArgs() (string, string, string) {<br/>   // Need exactly 3 arguments provided<br/>   if len(os.Args) != 4 {<br/>      printUsage()<br/>      os.Exit(1)<br/>   }<br/><br/>   // Private key file name and message file name<br/>   return os.Args[1], os.Args[2], os.Args[3]<br/>}<br/><br/>// Cryptographically sign a message= creating a digital signature<br/>// of the original message. Uses SHA-256 hashing.<br/>func signMessage(privateKey *rsa.PrivateKey, message []byte) []byte {<br/>   hashed := sha256.Sum256(message)<br/><br/>   signature, err := rsa.SignPKCS1v15(<br/>      rand.Reader,<br/>      privateKey,<br/>      crypto.SHA256,<br/>      hashed[:],<br/>   )<br/>   if err != nil {<br/>      log.Fatal("Error signing message. ", err)<br/>   }<br/><br/>   return signature<br/>}<br/><br/>// Load the message that will be signed from file<br/>func loadMessageFromFile(messageFilename string) []byte {<br/>   fileData, err := ioutil.ReadFile(messageFilename)<br/>   if err != nil {<br/>      log.Fatal(err)<br/>   }<br/>   return fileData<br/>}<br/><br/>// Load the RSA private key from a PEM encoded file<br/>func loadPrivateKeyFromPemFile(privateKeyFilename string) *rsa.PrivateKey {<br/>   // Quick load file to memory<br/>   fileData, err := ioutil.ReadFile(privateKeyFilename)<br/>   if err != nil {<br/>      log.Fatal(err)<br/>   }<br/><br/>   // Get the block data from the PEM encoded file<br/>   block, _ := pem.Decode(fileData)<br/>   if block == nil || block.Type != "RSA PRIVATE KEY" {<br/>      log.Fatal("Unable to load a valid private key.")<br/>   }<br/><br/>   // Parse the bytes and put it in to a proper privateKey struct<br/>   privateKey, err := x509.ParsePKCS1PrivateKey(block.Bytes)<br/>   if err != nil {<br/>      log.Fatal("Error loading private key.", err)<br/>   }<br/><br/>   return privateKey<br/>}<br/><br/>// Save data to file<br/>func writeToFile(filename string, data []byte) error {<br/>   // Open a new file for writing only<br/>   file, err := os.OpenFile(<br/>      filename,<br/>      os.O_WRONLY|os.O_TRUNC|os.O_CREATE,<br/>      0666,<br/>   )<br/>   if err != nil {<br/>      return err<br/>   }<br/>   defer file.Close()<br/><br/>   // Write bytes to file<br/>   _, err = file.Write(data)<br/>   if err != nil {<br/>      return err<br/>   }<br/><br/>   return nil<br/>}<br/><br/>// Sign a message using a private RSA key<br/>func main() {<br/>   // Get arguments from command line<br/>   privateKeyFilename, messageFilename, sigFilename := checkArgs()<br/><br/>   // Load message and private key files from disk<br/>   message := loadMessageFromFile(messageFilename)<br/>   privateKey := loadPrivateKeyFromPemFile(privateKeyFilename)<br/><br/>   // Cryptographically sign the message<br/>   signature := signMessage(privateKey, message)<br/><br/>   // Output to file<br/>   writeToFile(sigFilename, signature)<br/>}</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Verifying a signature</h1>
+                
+            
+            
+                
+<p>In the previous example, we learned how to create a signature of a message for the recipient to verify. Now let's look at the process of verifying a signature.</p>
+<p>If you receive a message and a signature, you must first decrypt the signature using the sender's public key. Then hash the original message and see if your hash matches the decrypted signature. If your hash matches the decrypted signature, then you can be sure that the sender is the person who owns the private key that is paired with the public key you used to verify.</p>
+<p>To verify the signature, we are using the same algorithms (RSA PKCS#1 v1.5 with SHA-256) that were used to create the signature.</p>
+<p>This example requires two command-line arguments. The first argument is the public key of the person who created the signate and the second argument is the file with the signature. To create a signature file, use the sign program from the previous example and redirect the output to a file.</p>
+<p>Similar to the previous section, Go has a function in the standard library for verifying a signature. We can use <kbd>rsa.VerifyPKCS1v5()</kbd> to compare the message hash to the decrypted value of the signature and see whether they match:</p>
+<pre>package main<br/><br/>import (<br/>   "crypto"<br/>   "crypto/rsa"<br/>   "crypto/sha256"<br/>   "crypto/x509"<br/>   "encoding/pem"<br/>   "fmt"<br/>   "io/ioutil"<br/>   "log"<br/>   "os"<br/>)<br/><br/>func printUsage() {<br/>    fmt.Println(os.Args[0] + `<br/><br/>Verify an RSA signature of a message using SHA-256 hashing.<br/>Public key is expected to be a PEM file.<br/><br/>Usage:<br/>  ` + os.Args[0] + ` &lt;publicKeyFilename&gt; &lt;signatureFilename&gt; &lt;messageFilename&gt;<br/><br/>Example:<br/>  ` + os.Args[0] + ` pubkey.pem signature.txt message.txt<br/>`)<br/>}<br/><br/>// Get arguments from command line<br/>func checkArgs() (string, string, string) {<br/>   // Expect 3 arguments: pubkey, signature, message file names<br/>   if len(os.Args) != 4 {<br/>      printUsage()<br/>      os.Exit(1)<br/>   }<br/><br/>   return os.Args[1], os.Args[2], os.Args[3]<br/>}<br/><br/>// Returns bool whether signature was verified<br/>func verifySignature(<br/>   signature []byte,<br/>   message []byte,<br/>   publicKey *rsa.PublicKey) bool {<br/><br/>   hashedMessage := sha256.Sum256(message)<br/><br/>   err := rsa.VerifyPKCS1v15(<br/>      publicKey,<br/>      crypto.SHA256,<br/>      hashedMessage[:],<br/>      signature,<br/>   )<br/><br/>   if err != nil {<br/>      log.Println(err)<br/>      return false<br/>   }<br/>   return true // If no error, match.<br/>}<br/><br/>// Load file to memory<br/>func loadFile(filename string) []byte {<br/>   fileData, err := ioutil.ReadFile(filename)<br/>   if err != nil {<br/>      log.Fatal(err)<br/>   }<br/>   return fileData<br/>}<br/><br/>// Load a public RSA key from a PEM encoded file<br/>func loadPublicKeyFromPemFile(publicKeyFilename string) *rsa.PublicKey {<br/>   // Quick load file to memory<br/>   fileData, err := ioutil.ReadFile(publicKeyFilename)<br/>   if err != nil {<br/>      log.Fatal(err)<br/>   }<br/><br/>   // Get the block data from the PEM encoded file<br/>   block, _ := pem.Decode(fileData)<br/>   if block == nil || block.Type != "PUBLIC KEY" {<br/>      log.Fatal("Unable to load valid public key. ")<br/>   }<br/><br/>   // Parse the bytes and store in a public key format<br/>   publicKey, err := x509.ParsePKIXPublicKey(block.Bytes)<br/>   if err != nil {<br/>      log.Fatal("Error loading public key. ", err)<br/>   }<br/><br/>   return publicKey.(*rsa.PublicKey) // Cast interface to PublicKey<br/>}<br/><br/>// Verify a cryptographic signature using RSA PKCS#1 v1.5 with SHA-256<br/>// and a PEM encoded PKIX public key.<br/>func main() {<br/>   // Parse command line arguments<br/>   publicKeyFilename, signatureFilename, messageFilename :=   <br/>      checkArgs()<br/><br/>   // Load all the files from disk<br/>   publicKey := loadPublicKeyFromPemFile(publicKeyFilename)<br/>   signature := loadFile(signatureFilename)<br/>   message := loadFile(messageFilename)<br/><br/>   // Verify signature<br/>   valid := verifySignature(signature, message, publicKey)<br/><br/>   if valid {<br/>      fmt.Println("Signature verified.")<br/>   } else {<br/>      fmt.Println("Signature could not be verified.")<br/>   }<br/>}</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">TLS</h1>
+                
+            
+            
+                
+<p>We usually don't encrypt whole messages with RSA because it can only encrypt messages smaller than the key size. The solution to this is typically to begin the communication with small messages that use the RSA keys to encrypt. When they have established a secure channel, they can safely exchange a shared key that they can use to symmetrically encrypt the rest of their messages without the size limitations. This is the approach SSL and TLS take to establish a secure communication. The handshake takes cares of negotiating which encryption algorithms will be used when generating and sharing a symmetric key.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Generating a self-signed certificate</h1>
+                
+            
+            
+                
+<p>To create a self-signed certificate with Go, you need a public and private key pair. The x509 package has a function for creating a certificate. It requires the public and private key along with a template certificate with all the information. Since we are self-signing, the template certificate is also going to be used as the parent certificate doing the signing.</p>
+<p>Each application can treat self-signed certificates differently. Some applications will warn you if a certificate is self-signed, some will refuse to accept it, and others will happily use it without warning you. When you write your own applications, you will have to decide if you want to verify certificates or accept self-signed ones.</p>
+<p>The important function is <kbd>x509.CreateCertificate()</kbd>, referenced at <a href="https://golang.org/pkg/crypto/x509/#CreateCertificate">https://golang.org/pkg/crypto/x509/#CreateCertificate</a>. Here is the function signature:</p>
+<pre>func CreateCertificate (rand io.Reader, template, parent *Certificate, pub, <br/>   priv interface{}) (cert []byte, err error)</pre>
+<p>This example will take a private key and generate a certificate signed by it. It will save it to a file in PEM format. Once you create a self-signed certificate, you can use that certificate along with the private key to run secure TLS socket listeners and web servers.</p>
+<p>For the sake of brevity, this example hardcodes the certificate owner information and the hostname IP to be localhost. This is good enough for testing on your local machine.</p>
+<p>Modify these to suit your needs, customize the values, have them input through command-line arguments, or use standard input to get the values from the user dynamically, as shown in the following code block:</p>
+<pre>package main<br/><br/>import (<br/>   "crypto/rand"<br/>   "crypto/rsa"<br/>   "crypto/x509/pkix"<br/>   "crypto/x509"<br/>   "encoding/pem"<br/>   "fmt"<br/>   "io/ioutil"<br/>   "log"<br/>   "math/big"<br/>   "net"<br/>   "os"<br/>   "time"<br/>)<br/><br/>func printUsage() {<br/>   fmt.Println(os.Args[0] + ` - Generate a self signed TLS certificate<br/><br/>Usage:<br/>  ` + os.Args[0] + ` &lt;privateKeyFilename&gt; &lt;certOutputFilename&gt; [-ca|--cert-authority]<br/><br/>Example:<br/>  ` + os.Args[0] + ` priv.pem cert.pem<br/>  ` + os.Args[0] + ` priv.pem cacert.pem -ca<br/>`)<br/>}<br/><br/>func checkArgs() (string, string, bool) {<br/>   if len(os.Args) &lt; 3 || len(os.Args) &gt; 4 {<br/>      printUsage()<br/>      os.Exit(1)<br/>   }<br/><br/>   // See if the last cert authority option was passed<br/>   isCA := false // Default<br/>   if len(os.Args) == 4 {<br/>      if os.Args[3] == "-ca" || os.Args[3] == "--cert-authority" {<br/>         isCA = true<br/>      }<br/>   }<br/><br/>   // Private key filename, cert output filename, is cert authority<br/>   return os.Args[1], os.Args[2], isCA<br/>}<br/><br/>func setupCertificateTemplate(isCA bool) x509.Certificate {<br/>   // Set valid time frame to start now and end one year from now<br/>   notBefore := time.Now()<br/>   notAfter := notBefore.Add(time.Hour * 24 * 365) // 1 year/365 days<br/><br/>   // Generate secure random serial number<br/>   serialNumberLimit := new(big.Int).Lsh(big.NewInt(1), 128)<br/>   randomNumber, err := rand.Int(rand.Reader, serialNumberLimit)<br/>   if err != nil {<br/>      log.Fatal("Error generating random serial number. ", err)<br/>   }<br/><br/>   nameInfo := pkix.Name{<br/>      Organization: []string{"My Organization"},<br/>      CommonName: "localhost",<br/>      OrganizationalUnit: []string{"My Business Unit"},<br/>      Country:        []string{"US"}, // 2-character ISO code<br/>      Province:       []string{"Texas"}, // State<br/>      Locality:       []string{"Houston"}, // City<br/>   }<br/><br/>   // Create the certificate template<br/>   certTemplate := x509.Certificate{<br/>      SerialNumber: randomNumber,<br/>      Subject: nameInfo,<br/>      EmailAddresses: []string{"test@localhost"},<br/>      NotBefore: notBefore,<br/>      NotAfter: notAfter,<br/>      KeyUsage: x509.KeyUsageKeyEncipherment |   <br/>         x509.KeyUsageDigitalSignature,<br/>      // For ExtKeyUsage, default to any, but can specify to use<br/>      // only as server or client authentication, code signing, etc<br/>      ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageAny},<br/>      BasicConstraintsValid: true,<br/>      IsCA: false,<br/>   }<br/><br/>   // To create a certificate authority that can sign cert signing   <br/>   // requests, set these<br/>   if isCA {<br/>      certTemplate.IsCA = true<br/>      certTemplate.KeyUsage = certTemplate.KeyUsage |  <br/>         x509.KeyUsageCertSign<br/>   }<br/><br/>   // Add any IP addresses and hostnames covered by this cert<br/>   // This example only covers localhost<br/>   certTemplate.IPAddresses = []net.IP{net.ParseIP("127.0.0.1")}<br/>   certTemplate.DNSNames = []string{"localhost", "localhost.local"}<br/><br/>   return certTemplate<br/>}<br/><br/>// Load the RSA private key from a PEM encoded file<br/>func loadPrivateKeyFromPemFile(privateKeyFilename string) *rsa.PrivateKey {<br/>   // Quick load file to memory<br/>   fileData, err := ioutil.ReadFile(privateKeyFilename)<br/>   if err != nil {<br/>      log.Fatal("Error loading private key file. ", err)<br/>   }<br/><br/>   // Get the block data from the PEM encoded file<br/>   block, _ := pem.Decode(fileData)<br/>   if block == nil || block.Type != "RSA PRIVATE KEY" {<br/>      log.Fatal("Unable to load a valid private key.")<br/>   }<br/><br/>   // Parse the bytes and put it in to a proper privateKey struct<br/>   privateKey, err := x509.ParsePKCS1PrivateKey(block.Bytes)<br/>   if err != nil {<br/>      log.Fatal("Error loading private key. ", err)<br/>   }<br/><br/>   return privateKey<br/>}<br/><br/>// Save the certificate as a PEM encoded file<br/>func writeCertToPemFile(outputFilename string, derBytes []byte ) {<br/>   // Create a PEM from the certificate<br/>   certPem := &amp;pem.Block{Type: "CERTIFICATE", Bytes: derBytes}<br/><br/>   // Open file for writing<br/>   certOutfile, err := os.Create(outputFilename)<br/>   if err != nil {<br/>      log.Fatal("Unable to open certificate output file. ", err)<br/>   }<br/>   pem.Encode(certOutfile, certPem)<br/>   certOutfile.Close()<br/>}<br/><br/>// Create a self-signed TLS/SSL certificate for localhost <br/>// with an RSA private key<br/>func main() {<br/>   privPemFilename, certOutputFilename, isCA := checkArgs()<br/><br/>   // Private key of signer - self signed means signer==signee<br/>   privKey := loadPrivateKeyFromPemFile(privPemFilename)<br/><br/>   // Public key of signee. Self signing means we are the signer and    <br/>   // the signee so we can just pull our public key from our private key<br/>   pubKey := privKey.PublicKey<br/><br/>   // Set up all the certificate info<br/>   certTemplate := setupCertificateTemplate(isCA)<br/><br/>   // Create (and sign with the priv key) the certificate<br/>   certificate, err := x509.CreateCertificate(<br/>      rand.Reader,<br/>      &amp;certTemplate,<br/>      &amp;certTemplate,<br/>      &amp;pubKey,<br/>      privKey,<br/>   )<br/>   if err != nil {<br/>      log.Fatal("Failed to create certificate. ", err)<br/>   }<br/><br/>   // Format the certificate as a PEM and write to file<br/>   writeCertToPemFile(certOutputFilename, certificate)<br/>}</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Creating a certificate signing request</h1>
+                
+            
+            
+                
+<p>If you don't want to create a self-signed certificate, you have to create a certificate signing request and have it signed by a trusted certificate authority. You create a certificate request by calling <kbd>x509.CreateCertificateRequest()</kbd> and passing it an <kbd>x509.CertificateRequest</kbd> object with the private key.</p>
+<p>The equivalent operation using OpenSSL is as follows:</p>
+<pre><strong># Create CSR 
+openssl req -new -key priv.pem -out csr.pem 
+# View details to verify request was created properly 
+openssl req -verify -in csr.pem -text -noout </strong></pre>
+<p class="mce-root">This example demonstrates how to create a certificate signing request:</p>
+<pre>package main<br/><br/>import (<br/>   "crypto/rand"<br/>   "crypto/rsa"<br/>   "crypto/x509"<br/>   "crypto/x509/pkix"<br/>   "encoding/pem"<br/>   "fmt"<br/>   "io/ioutil"<br/>   "log"<br/>   "net"<br/>   "os"<br/>)<br/><br/>func printUsage() {<br/>   fmt.Println(os.Args[0] + ` - Create a certificate signing request  <br/>   with a private key.<br/><br/>Private key is expected in PEM format. Certificate valid for localhost only.<br/>Certificate signing request is created using the SHA-256 hash.<br/><br/>Usage:<br/>  ` + os.Args[0] + ` &lt;privateKeyFilename&gt; &lt;csrOutputFilename&gt;<br/><br/>Example:<br/>  ` + os.Args[0] + ` priv.pem csr.pem<br/>`)<br/>}<br/><br/>func checkArgs() (string, string) {<br/>   if len(os.Args) != 3 {<br/>      printUsage()<br/>      os.Exit(1)<br/>   }<br/><br/>   // Private key filename, cert signing request output filename<br/>   return os.Args[1], os.Args[2]<br/>}<br/><br/>// Load the RSA private key from a PEM encoded file<br/>func loadPrivateKeyFromPemFile(privateKeyFilename string) *rsa.PrivateKey {<br/>   // Quick load file to memory<br/>   fileData, err := ioutil.ReadFile(privateKeyFilename)<br/>   if err != nil {<br/>      log.Fatal("Error loading private key file. ", err)<br/>   }<br/><br/>   // Get the block data from the PEM encoded file<br/>   block, _ := pem.Decode(fileData)<br/>   if block == nil || block.Type != "RSA PRIVATE KEY" {<br/>      log.Fatal("Unable to load a valid private key.")<br/>   }<br/><br/>   // Parse the bytes and put it in to a proper privateKey struct<br/>   privateKey, err := x509.ParsePKCS1PrivateKey(block.Bytes)<br/>   if err != nil {<br/>      log.Fatal("Error loading private key.", err)<br/>   }<br/><br/>   return privateKey<br/>}<br/><br/>// Create a CSR PEM and save to file<br/>func saveCSRToPemFile(csr []byte, filename string) {<br/>   csrPem := &amp;pem.Block{<br/>      Type:  "CERTIFICATE REQUEST",<br/>      Bytes: csr,<br/>   }<br/>   csrOutfile, err := os.Create(filename)<br/>   if err != nil {<br/>      log.Fatal("Error opening "+filename+" for saving. ", err)<br/>   }<br/>   pem.Encode(csrOutfile, csrPem)<br/>}<br/><br/>// Create a certificate signing request with a private key <br/>// valid for localhost<br/>func main() {<br/>   // Load parameters<br/>   privKeyFilename, csrOutFilename := checkArgs()<br/>   privKey := loadPrivateKeyFromPemFile(privKeyFilename)<br/><br/>   // Prepare information about organization the cert will belong to<br/>   nameInfo := pkix.Name{<br/>      Organization:       []string{"My Organization Name"},<br/>      CommonName:         "localhost",<br/>      OrganizationalUnit: []string{"Business Unit Name"},<br/>      Country:            []string{"US"}, // 2-character ISO code<br/>      Province:           []string{"Texas"},<br/>      Locality:           []string{"Houston"}, // City<br/>   }<br/><br/>   // Prepare CSR template<br/>   csrTemplate := x509.CertificateRequest{<br/>      Version:            2, // Version 3, zero-indexed values<br/>      SignatureAlgorithm: x509.SHA256WithRSA,<br/>      PublicKeyAlgorithm: x509.RSA,<br/>      PublicKey:          privKey.PublicKey,<br/>      Subject:            nameInfo,<br/><br/>      // Subject Alternate Name values.<br/>      DNSNames:       []string{"Business Unit Name"},<br/>      EmailAddresses: []string{"test@localhost"},<br/>      IPAddresses:    []net.IP{},<br/>   }<br/><br/>   // Create the CSR based off the template<br/>   csr, err := x509.CreateCertificateRequest(rand.Reader,  <br/>      &amp;csrTemplate, privKey)<br/>   if err != nil {<br/>      log.Fatal("Error creating certificate signing request. ", err)<br/>   }<br/>   saveCSRToPemFile(csr, csrOutFilename)<br/>}</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Signing a certificate request</h1>
+                
+            
+            
+                
+<p>In the previous example, when generating a self-signed certificate, we already demonstrated the process for creating a signed certificate. In the self-signed example, we just used the same certificate template as the signee and the signer. For this reason, there is not a separate code example. The only difference is that the parent certificate doing the signing or the template to be signed should be swapped out to a different certificate.</p>
+<p>This is the function definition for <kbd>x509.CreateCertificate()</kbd>:</p>
+<pre>func CreateCertificate(rand io.Reader, template, parent *Certificate, pub, <br/>   priv interface{}) (cert []byte, err error)</pre>
+<p>In the self-signed example, the template and parent certificates were the same object. To sign a certificate request, create a new certificate object and populate the fields with the information from the signing request. Pass the new certificate as the template, and use the signer's certificate as the parent. The <kbd>pub</kbd> parameter is the signee's public key and the <kbd>priv</kbd> parameter is the signer's private key. The signer is the certificate authority and the signee is the requester. You can read more about this function at <a href="https://golang.org/pkg/crypto/x509/#CreateCertificate">https://golang.org/pkg/crypto/x509/#CreateCertificate</a>.</p>
+<p>The  <kbd>X509.CreateCertificate()</kbd> parameters are as follows:</p>
+<ul>
+<li><kbd>rand</kbd>: This is the cryptographically secure pseudorandom number generator</li>
+<li><kbd>template</kbd>: This is the certificate template populated with info from CSR</li>
+<li><kbd>parent</kbd>: This is the certificate of the signer</li>
+<li><kbd>pub</kbd>: This is the public key of the signee</li>
+<li><kbd>priv</kbd>: This is the private key of the signer</li>
+</ul>
+<p>The equivalent operation using OpenSSL is as follows:</p>
+<pre><strong># Create signed certificate using</strong><br/><strong># the CSR, CA certificate, and private key </strong><br/><strong>openssl x509 -req -in csr.pem -CA cacert.pem \</strong><br/><strong>-CAkey capriv.pem -CAcreateserial \</strong><br/><strong>-out cert.pem -sha256
+# Print info about cert </strong><br/><strong>openssl x509 -in cert.pem -text -noout </strong> </pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">TLS server</h1>
+                
+            
+            
+                
+<p>You can set up a listener just like a normal socket connection, but with encryption. Just call the TLS <kbd>Listen()</kbd> function, and provide it your certificate and private key. The certificate and key generated using the previous examples will work.</p>
+<p>The following program will create a TLS server and echo back any data received, then close the connection. The server will not require or verify client certificates, but the code to do so is left commented out for reference in case you want to authenticate clients with certificates:</p>
+<pre>package main<br/><br/>import (<br/>   "bufio"<br/>   "crypto/tls"<br/>   "fmt"<br/>   "log"<br/>   "net"<br/>   "os"<br/>)<br/><br/>func printUsage() {<br/>   fmt.Println(os.Args[0] + ` - Start a TLS echo server<br/><br/>Server will echo one message received back to client.<br/>Provide a certificate and private key file in PEM format.<br/>Host string in the format: hostname:port<br/><br/>Usage:<br/>  ` + os.Args[0] + ` &lt;certFilename&gt; &lt;privateKeyFilename&gt; &lt;hostString&gt;<br/><br/>Example:<br/>  ` + os.Args[0] + ` cert.pem priv.pem localhost:9999<br/>`)<br/>}<br/><br/>func checkArgs() (string, string, string) {<br/>  if len(os.Args) != 4 {<br/>     printUsage()<br/>     os.Exit(1)<br/>  }<br/><br/>  return os.Args[1], os.Args[2], os.Args[3]<br/>}<br/><br/>// Create a TLS listener and echo back data received by clients.<br/>func main() {<br/>   certFilename, privKeyFilename, hostString := checkArgs()<br/><br/>   // Load the certificate and private key<br/>   serverCert, err := tls.LoadX509KeyPair(certFilename, privKeyFilename)<br/>   if err != nil {<br/>      log.Fatal("Error loading certificate and private key. ", err)<br/>   }<br/><br/>   // Set up certificates, host/ip, and port<br/>   config := &amp;tls.Config{<br/>      // Specify server certificate<br/>      Certificates: []tls.Certificate{serverCert},<br/><br/>      // By default no client certificate is required.<br/>      // To require and validate client certificates, specify the<br/>      // ClientAuthType to be one of:<br/>      //    NoClientCert, RequestClientCert, RequireAnyClientCert,<br/>      //    VerifyClientCertIfGiven, RequireAndVerifyClientCert)<br/><br/>      // ClientAuth: tls.RequireAndVerifyClientCert<br/><br/>      // Define the list of certificates you will accept as<br/>      // trusted certificate authorities with ClientCAs.<br/><br/>      // ClientCAs: *x509.CertPool<br/>   }<br/><br/>   // Create the TLS socket listener<br/>   listener, err := tls.Listen("tcp", hostString, config)<br/>   if err != nil {<br/>      log.Fatal("Error starting TLS listener. ", err)<br/>   }<br/>   defer listener.Close()<br/><br/>   // Listen forever for connections<br/>   for {<br/>      clientConnection, err := listener.Accept()<br/>      if err != nil {<br/>         log.Println("Error accepting client connection. ", err)<br/>         continue<br/>      }<br/>      // Launch a goroutine(thread)go-1.6 to handle each connection<br/>      go handleConnection(clientConnection)<br/>   }<br/>}<br/><br/>// Function that gets launched in a goroutine to handle client connection<br/>func handleConnection(clientConnection net.Conn) {<br/>   defer clientConnection.Close()<br/>   socketReader := bufio.NewReader(clientConnection)<br/>   for {<br/>      // Read a message from the client<br/>      message, err := socketReader.ReadString('\n')<br/>      if err != nil {<br/>         log.Println("Error reading from client socket. ", err)<br/>         return<br/>      }<br/>      fmt.Println(message)<br/><br/>      // Echo back the data to the client.<br/>      numBytesWritten, err := clientConnection.Write([]byte(message))<br/>      if err != nil {<br/>         log.Println("Error writing data to client socket. ", err)<br/>         return<br/>      }<br/>      fmt.Printf("Wrote %d bytes back to client.\n", numBytesWritten)<br/>   }<br/>}</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">TLS client</h1>
+                
+            
+            
+                
+<p>TCP sockets are a simple and common way of communicating over a network. Adding the TLS layer on top of a standard TCP socket is simple with Go's standard library.</p>
+<p>A client dials a TLS server just like a standard socket. Clients typically aren't required to have any sort of key or certificate, but a server could implement client-side authentication and only allow certain users to connect.</p>
+<p>This program will connect to a TLS server and send the contents of STDIN to the remote server and read the response. We can use this program to test our basic TLS echo server created in the previous section.</p>
+<p>Before running this program, make sure that the TLS server from the previous section is running so that you can connect.</p>
+<p>Note that this is a raw socket-level server. It is not an HTTP server. In <a href="f15910a1-239e-49a5-b4d9-3881a524bfa9.xhtml">Chapter 9</a>, <em>Web Applications</em> there are examples of running an HTTPS TLS web server.</p>
+<p>By default, the client verifies that the server's certificate is signed by a trusted authority. We have to override this default and tell the client not to verify the certificate because we signed it ourselves. The list of trusted certificate authorities is loaded from the system, but can be overridden by populating the RootCAs variable in <kbd>tls.Config</kbd>. This example will not verify the server certificate, but the code to provide a list of trusted RootCAs is provided, but commented out for reference.</p>
+<p>You can see how Go is loading the certificate pool for each system by looking through the <kbd>root_*.go</kbd> files in <a href="https://golang.org/src/crypto/x509/">https://golang.org/src/crypto/x509/</a>. For example, <kbd>root_windows.go</kbd> and <kbd>root_linux.go</kbd> load the system's default certificates.</p>
+<p>If you wanted to connect to a server and inspect or store its certificate, you would connect and then inspect client's <kbd>net.Conn.ConnectionState().PeerCertificates</kbd>. It comes in a standard <kbd>x509.Certificate</kbd> struct. To do so, refer to the following block of code:</p>
+<pre>package main<br/><br/>import (<br/>   "crypto/tls"<br/>   "fmt"<br/>   "log"<br/>   "os"<br/>)<br/><br/>func printUsage() {<br/>   fmt.Println(os.Args[0] + ` - Send and receive a message to a TLS server<br/><br/>Usage:<br/>  ` + os.Args[0] + ` &lt;hostString&gt;<br/><br/>Example:<br/>  ` + os.Args[0] + ` localhost:9999<br/>`)<br/>}<br/><br/>func checkArgs() string {<br/>   if len(os.Args) != 2 {<br/>      printUsage()<br/>      os.Exit(1)<br/>   }<br/><br/>   // Host string e.g. localhost:9999<br/>   return os.Args[1]<br/>}<br/><br/>// Simple TLS client that sends a message and receives a message<br/>func main() {<br/>   hostString := checkArgs()<br/>   messageToSend := "Hello?\n"<br/><br/>   // Configure TLS settings<br/>   tlsConfig := &amp;tls.Config{<br/>      // Required to accept self-signed certs<br/>      InsecureSkipVerify: true, <br/>      // Provide your client certificate if necessary<br/>      // Certificates: []Certificate<br/><br/>      // ServerName is used to verify the hostname (unless you are     <br/>      // skipping verification)<br/>      // It is also included in the handshake in case the server uses   <br/>      // virtual hosts Can also just be an IP address <br/>      // instead of a hostname.<br/>      // ServerName: string,<br/><br/>      // RootCAs that you are willing to accept<br/>      // If RootCAs is nil, the host's default root CAs are used<br/>      // RootCAs: *x509.CertPool<br/>   }<br/><br/>   // Set up dialer and call the server<br/>   connection, err := tls.Dial("tcp", hostString, tlsConfig)<br/>   if err != nil {<br/>      log.Fatal("Error dialing server. ", err)<br/>   }<br/>   defer connection.Close()<br/><br/>   // Write data to socket<br/>   numBytesWritten, err := connection.Write([]byte(messageToSend))<br/>   if err != nil {<br/>      log.Println("Error writing to socket. ", err)<br/>      os.Exit(1)<br/>   }<br/>   fmt.Printf("Wrote %d bytes to the socket.\n", numBytesWritten)<br/><br/>   // Read data from socket and print to STDOUT<br/>   buffer := make([]byte, 100)<br/>   numBytesRead, err := connection.Read(buffer)<br/>   if err != nil {<br/>      log.Println("Error reading from socket. ", err)<br/>      os.Exit(1)<br/>   }<br/>   fmt.Printf("Read %d bytes to the socket.\n", numBytesRead)<br/>   fmt.Printf("Message received:\n%s\n", buffer)<br/>}</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Other encryption packages</h1>
+                
+            
+            
+                
+<p>There are no source code examples for the following sections, but they are worth mentioning. These packages provided by Go are built on top of the principles demonstrated in the previous examples.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">OpenPGP</h1>
+                
+            
+            
+                
+<p>PGP stands for <strong>Pretty Good Privacy</strong>, and OpenPGP is standard RFC 4880. PGP is a convenient suite for encrypting text, files, directories, and disks. All the principles are the same as discussed in the previous section with SSL and TLS key/certificates. The encrypting, signing, and verification are all the same. Go provides an OpenPGP package. Read more about it at <a href="https://godoc.org/golang.org/x/crypto/openpgp">https://godoc.org/golang.org/x/crypto/openpgp</a>.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Off The Record (OTR) messaging</h1>
+                
+            
+            
+                
+<p><strong>Off The Record</strong> or <strong>OTR</strong> messaging is a form of end-to-end encryption for users to encrypt their communication over whatever message medium is being used. It is convenient because you can implement an encrypted layer over any protocol even if the protocol itself is unencrypted. For example, OTR messaging works over XMPP, IRC, and many other chat protocols. Many chat clients such as Pidgin, Adium, and Xabber have support for OTR either natively or via plugin. Go provides a package for implementing OTR messaging. Read more about Go's OTR support at <a href="https://godoc.org/golang.org/x/crypto/otr/">https://godoc.org/golang.org/x/crypto/otr/</a>.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Summary</h1>
+                
+            
+            
+                
+<p>After reading this chapter, you should have a good understanding of what the Go cryptography packages are capable of. Using the examples given in this chapter as a reference, you should feel comfortable performing basic hash operations, encrypting, decrypting, generating keys, and using keys.</p>
+<p>Additionally, you should understand the difference between symmetric and asymmetric encryption, and how it is different from hashing. You should feel comfortable with the basics of running a TLS server and connecting with a TLS client.</p>
+<p>Remember, the goal is not to memorize every detail, but to remember what options are available so that you can choose the best tool for the job.</p>
+<p>In the next chapter, we will look at using secure shell, also known as SSH. Authenticating with public and private key pairs and passwords is covered first, along with how to verify the remote host's key. We will also look at how to execute commands on a remote server and how to create an interactive shell. Secure shell makes use of the encryption techniques discussed in this chapter. It is one of the most common and practical applications of encryption. Continue reading to learn more about using SSH in Go.</p>
+
+
+            
+
+            
+        
+    </body></html>

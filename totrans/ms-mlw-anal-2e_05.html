@@ -1,0 +1,322 @@
+<html><head></head><body>
+		<div><h1 id="_idParaDest-162" class="chapter-number"><a id="_idTextAnchor446"/>5</h1>
+			<h1 id="_idParaDest-163"><a id="_idTextAnchor447"/>Inspecting Process Injection and API Hooking</h1>
+			<p>In this chapter, we are going to explore more advanced techniques that are used by malware authors for various reasons, including bypassing firewalls, tricking reverse engineers, and monitoring and collecting user information in order to steal credit card data and for other purposes.</p>
+			<p>We will be diving into various process injection techniques, including DLL injection and process hollowing (an advanced technique that was introduced by Stuxnet), and explain how to deal with them. Later, we will look at API hooking, IAT hooking, and other hooking techniques that are used by malware authors and how to handle them.</p>
+			<p>By the end of this chapter, you will have extended your knowledge of the Windows platform and be able to analyze more complex malware. You will learn how to analyze injected code inside other processes, detect it through memory forensics, detect different types of API hooking techniques, and analyze them to detect <strong class="bold">Man-in-the-Browser </strong>(<strong class="bold">MiTB</strong>) attacks.</p>
+			<p>To make the learning process seamless, this chapter is divided into the following main sections:</p>
+			<ul>
+				<li>Understanding process injection</li>
+				<li>DLL injection</li>
+				<li>Diving deeper into process injection </li>
+				<li>A dynamic analysis of code injection</li>
+				<li>Memory forensics techniques for process injection </li>
+				<li>Understanding API hooking</li>
+				<li>Exploring IAT hooking</li>
+			</ul>
+			<h1 id="_idParaDest-164"><a id="_idTextAnchor448"/><a id="_idTextAnchor449"/><a id="_idTextAnchor450"/>Understanding process injection</h1>
+			<p>Process injection is<a id="_idIndexMarker735"/> one of the most well-known techniques malware authors use to bypass firewalls, perform memory forensics techniques, and slow down inexperienced reverse engineers by adding malicious functionality into legitimate processes and hiding it this way. In this section, we will cover the theory behind process injection and why it is commonly<a id="_idTextAnchor451"/> used in<a id="_idIndexMarker736"/> various <strong class="bold">Advanced Persistent Threat</strong> (<strong class="bold">APT</strong>) attacks nowadays<a id="_idTextAnchor452"/>.</p>
+			<h2 id="_idParaDest-165"><a id="_idTextAnchor453"/>What’s process injection?</h2>
+			<p>In the Windows OS, processes are allowed to allocate memory, read and write in another process’s virtual address space, as well as create new threads, suspend threads, and change these threads’ registers, including<a id="_idIndexMarker737"/> the <code>explorer.exe</code> or into other users’ processes. However, it’s still OK to inject code into the current user’s browsers and other processes.</p>
+			<p>This technique is <a id="_idIndexMarker739"/>legitimately used by multiple endpoint security products to monitor applications and for sandboxing purposes (as we will see in the <em class="italic">Understanding API hooking</em> section), but it’s also comm<a id="_idTextAnchor454"/>only misused by malware auth<a id="_idTextAnchor455"/>ors.</p>
+			<h2 id="_idParaDest-166"><a id="_idTextAnchor456"/>Why process injection?</h2>
+			<p>For malware<a id="_idIndexMarker740"/> authors, process injection helps them to do the following:</p>
+			<ul>
+				<li>Bypass trivial firewalls that block internet connections from all applications except browsers or other allowed apps. By injecting code into one of these applications, malware can communicate with the <strong class="bold">Command and Control</strong> (<strong class="bold">C&amp;C</strong>) server<a id="_idIndexMarker741"/> without any warning or being blocked by the firewall.</li>
+				<li>Evade debuggers and other dynamic analysis or monitoring tools by running the malicious code inside another unmonitored and not debugged pr<a id="_idTextAnchor457"/>ocess.</li>
+				<li>Hook APIs in the legitimate process that the malware injected its code into, which can give unique control over the victim process’s behavior.</li>
+				<li>Maintain persistence for fileless malware. By injecting its code into a background process, malware can maintain persistence on a server that rarely gets rebooted without leaving its executable on a hard disk.</li>
+			</ul>
+			<p>Now, we will dive<a id="_idIndexMarker742"/> deeper into various process injection techniques, how they work, and how to deal with them. We will start with the most simple, straightforward techniq<a id="_idTextAnchor458"/>ue: DLL inj<a id="_idTextAnchor459"/>ection.</p>
+			<h1 id="_idParaDest-167"><a id="_idTextAnchor460"/>DLL injection</h1>
+			<p>The Windows<a id="_idIndexMarker743"/> OS allows processes to load DLLs into other processes for security reasons, sandboxing, or even graphics. In this section, we will explore the legitimate, straightforward ways to inject a DLL into a process, as well as t<a id="_idTextAnchor461"/>he other techniques that allow attackers to inject code into a process using Windo<a id="_idTextAnchor462"/>ws APIs.</p>
+			<h2 id="_idParaDest-168"><a id="_idTextAnchor463"/>Windows-supported DLL injection</h2>
+			<p>Windows has<a id="_idIndexMarker744"/> provided special registry entries for DLLs to be loaded within every process that meets certain criteria. Many of them allow the malware DLL to be injected into multiple processes at the same time, including browsers and other legitimate processes. There are many of these registry entries available, but we will explore the most common ones here:</p>
+			<pre>HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Windows\AppInit_DLLs</pre>
+			<p>This registry entry was among the most misused registry entries by malware to inject DLL code into other processes and maintain persistence. The libraries specified here are loaded together with every process that loads <code>user32.dll</code> (the system library used mainly for<a id="_idTextAnchor464"/> the UI).</p>
+			<p>In Windows 7, DLLs are required to be signed, and this logic is disabled by default for Windows 8 and beyond. However, it still can be misused by setting the <code>RequireSignedAppInit_DLLs</code> value to <code>False</code> and the <code>LoadAppInit_DLLs</code> value to <code>True</code> (see the following screenshot). Attackers require administrative privileges to be able to set these entries, which can be resolved, for example, with the help of social <a id="_idIndexMarker745"/>engineering:</p>
+			<div><div><img src="img/Figure_5.1_B18500.jpg" alt="Figure 5.1 – Using the AppInit_DLLs registry entry to inject the malware library into diﬀerent browsers&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 5.1 – Using the AppInit_DLLs registry entry to inject the malware library into diﬀerent browsers</p>
+			<p>Now, let’s move to the next commonly misused registry key: </p>
+			<pre>HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Session Manager\AppCertDlls</pre>
+			<p>The libraries listed in this registry entry are loaded into each process that uses at least one of the following functions:</p>
+			<ul>
+				<li><code>CreateProcess</code></li>
+				<li><code>CreateProcessAsUser</code></li>
+				<li><code>CreateProcessWithLogonW</code></li>
+				<li><code>CreateProcessWithToken<a id="_idTextAnchor465"/>W</code></li>
+				<li><code>WinExec</code></li>
+			</ul>
+			<p>This allows the malware to be injected into most browsers (as many of them create child processes to manage different tabs) and other applications as well. It still requires administrative privileges since <code>HKEY_LOCAL_MACHINE</code> is not writable for normal users on a Windows machine (Vista and above):</p>
+			<pre>HKEY_CURRENT_USER\Software\Classes\&lt;AppName&gt;\shellex\ContextMenuHandlers</pre>
+			<p>This path loads a shell extension (a DLL file) in order to add additional features to the main Windows shell (<code>explorer.exe</code>). Basically, it can be misused to load the malware library as an extension to <code>explorer.exe</code>. This path can be easily created and modified without any administrative privileges.</p>
+			<p>There are other registry entries available that can inject the malware library into other processes, as well as multiple software solutions, such<a id="_idIndexMarker746"/> as <strong class="bold">Autoruns</strong> by Sysinternals, which allow you<a id="_idIndexMarker747"/> to see whether any of these registry entries have been exploited for malicious use on the current system:</p>
+			<div><div><img src="img/Figure_5.2_B18500.jpg" alt="Figure 5.2 – The Autoruns application in the Sysinternals Suite&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 5.2 – The Autoruns application in the Sysinter<a id="_idTextAnchor466"/>nals Suite</p>
+			<p>These are some of the most common legitimate ways that malware can inject its DLLs into different processes.</p>
+			<p class="callout-heading">Important note</p>
+			<p class="callout">It is worth mentioning that many resources call this technique DLL hijacking and track it separately from classic process injection, as in this case attackers rely on the OS to perform the actual injection, rather than doing it themselves.</p>
+			<p>Now, we will <a id="_idIndexMarker748"/>explore the more advanced techniques that require the use of different Windows APIs to allocate, write, and execute malicious code i<a id="_idTextAnchor467"/>nside other<a id="_idTextAnchor468"/> processes.</p>
+			<h2 id="_idParaDest-169"><a id="_idTextAnchor469"/>A simple DLL injection technique</h2>
+			<p>This technique<a id="_idIndexMarker749"/> uses the <code>LoadLibraryA</code> API (or its other flavors) as a way to load a malicious library using the Windows PE loader and execute its entry point. The main goal is to inject the path of the malicious DLL into the process, then transfer control into that process with the address of the <code>LoadLibraryA</code> API as the start address. When passing the DLL path as an argument to that thread (which is passed to the <code>LoadLibraryA</code> API), the Windows PE loader will load that DLL into the process and execute its code flawlessly. Here is how the result memory will look:</p>
+			<div><div><img src="img/Figure_5.3_B18500.jpg" alt="Figure 5.3 – A simple DLL injection mechanism&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 5.3 – A simple DLL injection mechanism</p>
+			<p>The exact steps the malware generally follows are as follows:</p>
+			<ol>
+				<li>Find the victim process among other processes (more details in the following section).</li>
+				<li>Get this process’s handle using the <code>OpenProcess</code> API as an identifier to pass to other APIs.</li>
+				<li>Allocate a space in that process’s virtual memory using <code>VirtualAllocEx</code>, <code>VirtualAllocExNuma</code>, <code>NtAllocateVirtualMemory</code>, or similar APIs. This space will be used to write the full path of the malicious DLL file. Another option would be to use <code>CreateFileMapping</code> -&gt; <code>MapViewOfFile</code> or <code>CreateSectionEx</code> -&gt; <code>NtCreateSection</code> APIs to prepare<a id="_idTextAnchor470"/> the space.</li>
+				<li>Write a path of the malware DLL to the process using APIs such as <code>WriteProcessMemory</code>,  <code>NtWriteVirtualMemory</code>,  <code>NtWow64WriteVirtualMemory64</code>, or with the help of <code>NtMapViewOfSection</code>. </li>
+				<li>Load and execute this DLL using APIs such as <code>CreateRemoteThread</code> / <code>NtCreateThreadEx</code>, <code>SuspendThread</code> -&gt; <code>SetThreadContext</code> -&gt; <code>ResumeThread</code>, <code>QueueUserAPC</code> / <code>NtQueueApcThread</code>, or even <code>SetWindowHookEx</code>, providing the <code>LoadLibraryA</code> address as the start address, and the address of the DLL path as an argument.</li>
+			</ol>
+			<p>Alternative<a id="_idIndexMarker750"/> APIs with similar functionality can also be used, for example, the undocumented <code>RtlCreateUserThread</code> API instead of <code>CreateRemoteThread</code>.</p>
+			<p>This technique is simple compared to the techniques that we will cover in the following sections. However, this technique leaves traces of the malicious DLL in the process information. Any simple tool such<a id="_idIndexMarker751"/> as <code>LoadLibraryA</code>.</p>
+			<p>In the next section, we will dig deeper and cover more advanced techniques. They still rely o<a id="_idTextAnchor471"/>n the APIs <a id="_idIndexMarker752"/>we described earlier, but they include more steps to make process injecti<a id="_idTextAnchor472"/>on successful.</p>
+			<h1 id="_idParaDest-170"><a id="_idTextAnchor473"/>Diving deeper into process injection</h1>
+			<p>In this section, we will <a id="_idIndexMarker753"/>cover the intermediate to advanced techniques of process injection. These techniques leave no trace on a disk and can enable fileless malware to maintain persistence. Before we cover these techniques, let’s talk about how the malware finds the process that it wants to inject into – in particular, how it gets the list<a id="_idTextAnchor474"/> of the running processes with their names <a id="_idIndexMarker754"/>and <strong class="bold">Process IDs</strong> (<strong class="bold">PIDs</strong>).</p>
+			<h2 id="_idParaDest-171"><a id="_idTextAnchor475"/>Finding the victim process</h2>
+			<p>For malware to get <a id="_idIndexMarker755"/>a list of the running processes, the following steps are generally followed:</p>
+			<ol>
+				<li value="1">Create a snapshot of all the processes running at that moment. This snapshot contains information about all running processes, their names, PIDs, and other important information. It can be acquired using the <code>CreateToolhelp32Snapshot</code> API. Usually, it is executed when <code>TH32CS_SNAPPROCESS</code> is given as an argument (to take a snapshot of the running processes, not threads or l<a id="_idTextAnchor476"/>oaded libraries).</li>
+				<li>Get the first process in this list using the <code>Process32First</code> API. This API gets the first process in the snapshot and starts the iteration over the list of processes.</li>
+				<li>Loop on the <code>Process32Next</code> API to get each process in the list, one by one, with its name and PID, as shown in the following screenshot:</li>
+			</ol>
+			<div><div><img src="img/Figure_5.4_B18500.jpg" alt="Figure 5.4 – Process searching using CreateToolhelp32Snapshot&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 5.4 – Process searching using CreateTo<a id="_idTextAnchor477"/>olhelp32Snapshot</p>
+			<p>Once the desired <a id="_idIndexMarker756"/>process has been found, the malware then goes to the next phase by executing the <code>OpenProcess</code> API with the process’s PID, as we learne<a id="_idTextAnchor478"/>d in the <a id="_idTextAnchor479"/>previous section.</p>
+			<h2 id="_idParaDest-172"><a id="_idTextAnchor480"/>Code block injection</h2>
+			<p>This technique<a id="_idIndexMarker757"/> is quite similar to DLL injection. The <a id="_idIndexMarker758"/>difference here is actually in the executed code inside the target process. In this technique, the malware injects a piece of assembly code (as an array of bytes) and transfers control to it directly. This piece of code is position-independent. It has the ability to load its own import table, access its own data, and execute all of the malicious activities inside the targeted process.</p>
+			<p>The steps that the malware follows for these code injection techniques are pretty much the same as the previous ones:</p>
+			<ol>
+				<li value="1">Search for the targeted process (in <em class="italic">Figure 5.4</em>, malware skips other processes by their PIDs).</li>
+				<li>Get this process’s handle or some other identifier.</li>
+				<li>Prepare the memory inside this process for the size of the whole piece of the malicious code to be injected (see the <code>VirtualAllocEx</code> call in <em class="italic">Figure 5.5</em>).</li>
+				<li>Copy that code into the targeted process (see the <code>WriteIntoProcessMemory</code> function in <em class="italic">Figure 5.5</em>).</li>
+				<li>Transfer control to this code in the victim process’s address space (see the <code>CreateRemoteThreadFunc</code> routine in <em class="italic">Figure 5.5</em>).</li>
+			</ol>
+			<p>Some malware <a id="_idIndexMarker759"/>gives the name or the PID of the malware <a id="_idIndexMarker760"/>process to this injected code so that it can terminate the malware (and possibly delete its file and all of its traces) to ensure there’s no clear evidence of the<a id="_idTextAnchor481"/> malware’s existence.</p>
+			<p>In the following screenshot, we can see an example of a typical code injection:</p>
+			<div><div><img src="img/Figure_5.5_B18500.jpg" alt="Figure 5.5 – A code injection example&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 5.5 – A code injection example</p>
+			<p>It’s very similar to the DLL injection with regards to the steps that were used for process injection, but most of the hard work is in this piece of the assembly code. We will dive deeper into<a id="_idIndexMarker761"/> this<a id="_idIndexMarker762"/> type of position-independent, PE-independent code (that is, shellcode) in <a href="B18500_08.xhtml#_idTextAnchor811"><em class="italic">Chapter 8</em></a>, <em class="italic">Handling Exploits and Shellcode</em>. We will explain how it finds its own place in memory, how it accesses the APIs, and how it per<a id="_idTextAnchor482"/><a id="_idTextAnchor483"/><a id="_idTextAnchor484"/>forms malicious tasks.</p>
+			<h2 id="_idParaDest-173"><a id="_idTextAnchor485"/>Reflective DLL injection</h2>
+			<p>In this case, instead <a id="_idIndexMarker763"/>of injecting a code block, malware<a id="_idIndexMarker764"/> injects the whole DLL into the targeted process’s memory, but this time, reading it directly from its memory rather than from a disk. In this case, the loader will be responsible for loading this payload, manually doing the job of the Windows loader.</p>
+			<p>First, malware prepares memory with the size of <code>ImageBase</code> and follows the PE loading steps, including importing table loading and fixing the relocation entries (in the relocation table, as we learned about in <a href="B18500_03.xhtml#_idTextAnchor084"><em class="italic">Chapter 3</em></a>, <em class="italic">Basic Static and Dynamic Analysis for x86/x64</em>), as shown in the following screenshot:</p>
+			<div><div><img src="img/Figure_5.6_B18500.jpg" alt="Figure 5.6 – The PE loading process in shellcode&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 5.6 – The PE loading process in shellcode</p>
+			<p>As we can see <a id="_idIndexMarker765"/>here, each section is copied individually<a id="_idIndexMarker766"/> in the <code>LoopOnSections</code> loop with the hel<a id="_idTextAnchor486"/>p of the <code>memcpy</code> function. This technique looks similar in terms of results to DLL injection, but it doesn’t require the malicious DLL to be stored on the hard disk and it doesn’t leave the usual traces of this DLL inside the <strong class="bold">Process Environment Block </strong>(<strong class="bold">PEB</strong>). So, memory <a id="_idIndexMarker767"/>forens<a id="_idTextAnchor487"/>ics applications that only rely on PEB to detect DLLs wouldn’t be able to detect this loaded DLL in the memory. More details can be found in the <em class="italic">Memory forensics techniques for proces<a id="_idTextAnchor488"/>s injection</em> section later.</p>
+			<h2 id="_idParaDest-174"><a id="_idTextAnchor489"/>Stuxnet secret technique – process hollowing</h2>
+			<p><strong class="bold">Hollow process injection </strong>(<strong class="bold">process hollowing</strong>) is an<a id="_idIndexMarker768"/> advanced technique that was introduced <a id="_idIndexMarker769"/>in Stuxnet<a id="_idIndexMarker770"/> malware before it became popular in the APT attacks domain. Process hollowing is simply a matter of removing the targeted process’s PE memory image from its virtual memory and replacing it with the malware executable file.</p>
+			<p>For example, the malware creates a new process of, let’s say, <code>svchost.exe</code>. After the process is created and the PE file of <code>svchost</code> is loaded, the malware removes the loaded <code>svchost</code> PE file from its memory and then loads the malware-executable PE file in the same place and continues execution. See the following code examples for more information.</p>
+			<p>This mechanism completely disguises the malware executable in a legitimate coat as the PEB and the equivalent <code>EPROCESS</code> object still holds information about the legitimate process. This helps malware to bypass firewalls and memory forensics tools.</p>
+			<p>The process of this form of code injection is quite different from the previous ones. Here are the steps that the malware has to take in order to do this:</p>
+			<ol>
+				<li value="1">Create a legitimate process in the suspended mode, which creates the process and its first thread, but doesn’t start it:</li>
+			</ol>
+			<div><div><img src="img/Figure_5.7_B18500.jpg" alt="Figure 5.7 – Creating a process in suspended mode&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 5.7 – Creating a process in suspended mode</p>
+			<p>Unload <a id="_idIndexMarker771"/>the<a id="_idIndexMarker772"/> legitimate application’s memory image using <code>VirtualFreeEx</code> (hollowing out the process).</p>
+			<ol>
+				<li value="2">Allocate the same space in memory (the same as the unloaded PE image) for the malware PE image (APIs such as <code>VirtualAllocEx</code> allow the malware to choose the preferred address to be allocated if it’s free).</li>
+				<li>Inject the malware executable into that space by loading the PE file and fixing its import table (resolving its relocation table if needed).</li>
+				<li>Change the thread’s starting point to the malware’s entry point using the <code>SetThreadContext</code> API. The <code>GetThreadContext</code> API allows the malware to get all the registers’ values, thread state, and all of the necessary information for the thread to be resumed after this, whereas the <code>SetThreadContext</code> API allows the malware to change these values, including the EIP/RIP register (instruction pointer), so that it can <a id="_idTextAnchor490"/>set it to the new entry point. The last step is to resume this <a id="_idIndexMarker773"/>suspended thread to execute <a id="_idIndexMarker774"/>the malware from that point:</li>
+			</ol>
+			<div><div><img src="img/Figure_5.8_B18500.jpg" alt="Figure 5.8 – SetThreadContext and ResumeThread&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 5.8 – SetThreadContext and ResumeThread</p>
+			<p>This is the most well-known technique of process hollowing. There are also similar techniques that don’t unload the actual process and include both the malware and the legitimate application executables together.</p>
+			<p>Now, we will have a look at how we can extract the inje<a id="_idTextAnchor491"/>cted code and analyze it in our dynamic analysis<a id="_idIndexMarker775"/> process or <a id="_idTextAnchor492"/>in our memory<a id="_idIndexMarker776"/> forensics process.</p>
+			<h1 id="_idParaDest-175"><a id="_idTextAnchor493"/>A dynamic analysis of code injection</h1>
+			<p>The dynamic analysis<a id="_idIndexMarker777"/> of process injection is quite tricky. The malware escapes the debugged process into another one in order to run the shellcode or load the DLL. Here are some tricks that may he<a id="_idTextAnchor494"/><a id="_idTextAnchor495"/><a id="_idTextAnchor496"/>lp you to debug the injected code.</p>
+			<h2 id="_idParaDest-176"><a id="_idTextAnchor497"/>Technique 1 – Debug it where it is</h2>
+			<p>The first technique, which<a id="_idIndexMarker778"/> is preferred by many engineers, is not to allow the malware to inject the shellcode but rather to debug the shellcode in the malware’s memory as if it were already injected. Generally, the malware injects its shellcode inside another process and executes it from a specific point in that shellcode. We can locate that shellcode inside the malware’s binary (or memory if it gets decrypted) and just set the EIP/RIP register (<strong class="bold">New origin here</strong> in <strong class="bold">OllyDbg</strong>) to<a id="_idIndexMarker779"/> this shellcode’s entry point and continue the execution from there. This allows us to execute the shellcode inside a debugged process and even bypass some checks for the name of the process that this shellcode is supposed to run in.</p>
+			<p>The steps to perform this technique are as follows:</p>
+			<ol>
+				<li value="1">Once the malware calls APIs such as  <code>VirtualAllocEx</code> to prepare space for the shellcode in the targeted process memory, save the returned address of that allocated space (let’s say the returned address was <code>0x300000</code>).</li>
+				<li>Set a breakpoint on memory writing APIs such as <code>WriteProcessMemory</code> and, once it triggers, save the source and the destination addresses. The source address is the address of that shellcode inside the malware process’s memory (let’s say <code>0x450000</code>) and the destination will probably be the returned address from <code>VirtualAllocEx</code>.</li>
+				<li>Now, set a breakpoint on the control transfer APIs such as <code>CreateRemoteThread</code> and get the entry point (and the arguments, if there are any) of that shellcode in the targeted process (let’s say it will be <code>0x30012F</code>).</li>
+				<li>Now, calculate the entry point’s address inside the malware process’s memory, which will be <code>0x30012F</code> - <code>0x300000</code> + <code>0x450000</code> = <code>0x45012F</code> in this case.</li>
+				<li>If a virtual machine is used for debugging (which is definitely recommended), save a snapshot and then set the EIP value to the shellcode’s entry point (<code>0x45012F</code>), set any necessary arguments, and continue debugging from there.</li>
+			</ol>
+			<p>This technique is very simple and easy to debug and handle. However, it only works with simple shellcodes and doesn’t work properly with multiple injections (multiple calls of <code>WriteProcessMemory</code>), process hollowing, or with complicated arguments. It needs cautious debugging<a id="_idIndexMarker780"/> afterward in order to not receive bugs or errors from having this shellcode running in a process that’s different from wh<a id="_idTextAnchor498"/><a id="_idTextAnchor499"/><a id="_idTextAnchor500"/>at it was intended to be executed in.</p>
+			<h2 id="_idParaDest-177"><a id="_idTextAnchor501"/>Technique 2 – Attach to the targeted process</h2>
+			<p>Another simple<a id="_idIndexMarker781"/> solution is to attach to the targeted process before the malware executes <code>CreateRemoteThread</code> or to modify the <code>CreateRemoteThread</code> creation flags to <code>CREATE_SUSPENDED</code>, as follows:</p>
+			<pre>CreateRemoteThread(Process, NULL, NULL, (LPTHREAD_START_ROUTINE)LoadLibrary, (LPVOID)Memory, CREATE_SUSPENDED, NULL);</pre>
+			<p>To be able to do so, we need to know the targeted process that the malware will inject into. This means that we need to set breakpoints on the <code>Process32First</code> and <code>Process32Next</code> APIs and analyze the code in between searching for the APIs, such as <code>strcmp</code> or equivalent code, to find the required process to inject into. Not all calls are just for process injection; for example, they can also be used<a id="_idTextAnchor502"/> as an anti-reverse engineering trick, as we will see in <a href="B18500_06.xhtml#_idTextAnchor554"><em class="italic">Chapter 6</em></a>, <em class="italic">Bypassin<a id="_idTextAnchor503"/>g Anti-Reverse Engineering Techniques</em>.</p>
+			<h2 id="_idParaDest-178"><a id="_idTextAnchor504"/>Technique 3 – Dealing with process hollowing</h2>
+			<p>Unfortunately, the <a id="_idIndexMarker782"/>previous two techniques don’t work with process hollowing. In process hollowing, the malware creates a new process in a suspended state, which makes it unseen by OllyDbg and similar debuggers. Therefore, it’s hard to attach to them before the malware resumes the process and the malicious code gets executed, undebugged, and unmonitored.</p>
+			<p>As we already mentioned, in process hollowing, the malware hollows out the legitimate application PE image and loads the malicious PE image inside the targeted process memory. The simplest way to deal with this is to set a breakpoint on memory writing APIs, such as <code>WriteProcessMemory</code>, and dump the PE file before it’s loaded into the targeted process memory. Once the breakpoint is triggered, follow the source argument of <code>WriteProcessMemory</code>, and scroll up until the start of the PE file is found (usually, it can be recognized by the <code>MZ</code> signature and common <code>This program cannot run in DOS mode</code> text, which is<a id="_idTextAnchor505"/> shown in the following screenshot):</p>
+			<div><div><img src="img/Figure_5.9_B18500.jpg" alt="Figure 5.9 – A PE ﬁle in a hex dump in OllyDbg&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 5.9 – A PE ﬁle in a hex dump in OllyDbg</p>
+			<p>Some malware families use <code>CreateSection</code> and <code>MapViewOfSection</code> instead of <code>WriteProcessMemory</code>. These two APIs, as we described earlier, create a memory object that we can write the malicious executable into. This memory object can also be mapped to another process as well. So, after the malware writes the malicious PE image to the memory object, it maps it into the targeted process and then uses APIs such as <code>CreateRemoteThread</code> to start the execution from its entry point. In this case, we can set a breakpoint on <code>MapViewOfSection</code> to get the returned address of the mapped memory object (before the malware writes any data to this memory object).</p>
+			<p>Now, it is possible to set a breakpoint-on-write to this returned address in order to catch any writing operation to this memory object (writing to this memory object is equivalent to <code>WriteProcessMemory</code>).</p>
+			<p>Once your breakpoint-on-write hits, we can find what data is getting written to this memory object (most probably a PE file in the case of process hollowing) and the source of the data that contains all the PE files that are unloaded, so that we can easily dump it to the disk and load it into the debugger as if it were injected into another process.</p>
+			<p>This technique, in brief, is all about finding the PE file before it gets loaded and dumping it as a normal executable file. Once we get it, we get the second stage payload. Now, all we need to do is debug it in the debugger or analyze it statically.</p>
+			<p>Now, we will take a look at how to detect and dump the injected code (or injected PE file) from a <a id="_idIndexMarker783"/>memory dump using a memory forensics tool <a id="_idIndexMarker784"/>called <strong class="bold">Volatility</strong>, which may get even more complicated than dealing with p<a id="_idTextAnchor506"/><a id="_idTextAnchor507"/><a id="_idTextAnchor508"/>rocess injection using dynamic analysis.</p>
+			<h1 id="_idParaDest-179"><a id="_idTextAnchor509"/>Memory forensics techniques for process injection</h1>
+			<p>Since one of<a id="_idIndexMarker785"/> the main reasons to use process <a id="_idIndexMarker786"/>injection is to hide malware presence from memory forensics tools, it gets quite tricky to detect it using them. In this section, we will take a look at different techniques that we can use to detect different types of process injections.</p>
+			<p>Here, we will be using a tool<a id="_idIndexMarker787"/> called <strong class="bold">Volatility</strong>. This tool is a free, open source program for memory forensics that can analyze memory <a id="_idTextAnchor510"/>dumps fro<a id="_idTextAnchor511"/>m infected machines. So, let’s get started.</p>
+			<h2 id="_idParaDest-180"><a id="_idTextAnchor512"/>Technique 1 – Detecting code injection and reflective DLL injection</h2>
+			<p>The main <a id="_idIndexMarker788"/>red flag <a id="_idIndexMarker789"/>that helps us to detect injected code inside a process is that the allocated memory that contains the shellcode or the loaded DLL always has the <code>EXECUTE</code> permission and doesn’t represent a mapped file. When a module (an executable file) gets loaded using the Windows PE loader, it gets loaded with an <code>IMAGE</code> flag to represent that it’s a memory map of an executable file. But when this memory page is allocated normally using <code>VirtualAlloc</code>, it gets allocated with a <code>PRIVATE</code> flag to show that it is allocated for data:</p>
+			<div><div><img src="img/Figure_5.10_B18500.jpg" alt="Figure 5.10 – An OllyDbg memory map window (the loaded image memory chunk and private memory chunk)&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 5.10 – An OllyDbg memory map window (the loaded <a id="_idTextAnchor513"/>image memory chunk and private memory chunk)</p>
+			<p>It’s not<a id="_idIndexMarker790"/> common<a id="_idIndexMarker791"/> to see private allocated memory with the <code>EXECUTE</code> permission, and it’s also not common (as most shellcode injections do) to have the <code>WRITE</code> permission with the <code>EXECUTE</code> permission (<code>READ_WRITE_EXECUTE</code>).</p>
+			<p>In Volatility, there is a command called <code>malfind</code>. This command finds hidden and injected code inside a process (or an entire system). This command can be executed (given the image name and the OS version) with a PID as an argument if the scan for a specific process is required, or without a PID in order to scan an entire system, as shown in the following screenshot:</p>
+			<div><div><img src="img/Figure_5.11_B18500.jpg" alt="Figure 5.11 – The malﬁnd command in Volatility detects a PE ﬁle (by the MZ header)&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 5.11 – The malﬁnd command in Volatility detects a PE ﬁle (by the MZ header)</p>
+			<p>As we<a id="_idIndexMarker792"/> can <a id="_idIndexMarker793"/>see, the <code>malfind</code> command detected an injected PE file (by the MZ header) inside an <a id="_idTextAnchor514"/>Adobe Reader process at the address <code>0x003d0000</code>.</p>
+			<p>Now, we can dump all memory images inside this process using the <code>vaddump</code> command. This command dumps all the memory regions inside the process, following the <code>EPROCESS</code> kernel object for that process and its virtual memory map (and its equivalent physical memory pages), using what are called <code>vaddump</code> will dump all of the memory regions into a separate file, as shown in the following screenshot:</p>
+			<div><div><img src="img/Figure_5.12_B18500.jpg" alt="Figure 5.12 – Dumping the 0x003d000 address using the vaddump command in Volatility&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 5.12 – Dumping the 0x003d000 address using the vaddump command in Volatility</p>
+			<p>For injected PE files, we can dump them to the disk (and reconstruct their headers and sections back, but not import the tables) using <code>dlldump</code> instead of <code>vaddump</code>, as shown in the following screenshot:</p>
+			<div><div><img src="img/Figure_5.13_B18500.jpg" alt="Figure 5.13 – Using dlldump given the PID and ImageBase of the DLL as --base&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 5.13 – Using dlldump given the PID and ImageBase of the DLL as --base</p>
+			<p>After that, we will have a memory dump of the malware PE file (or shellcode) to scan and analyze. It’s not a perfect dump, but we can scan it with the <code>strings</code> tool or perform<a id="_idIndexMarker795"/> static<a id="_idIndexMarker796"/> analysis on it. We may need to fix the addresses of the import table manually by patching these addresses in the debugger an<a id="_idTextAnchor515"/><a id="_idTextAnchor516"/><a id="_idTextAnchor517"/>d dumping them again or directly debugging them.</p>
+			<h2 id="_idParaDest-181"><a id="_idTextAnchor518"/>Technique 2 – Detecting process hollowing</h2>
+			<p>When the <a id="_idIndexMarker797"/>malware <a id="_idIndexMarker798"/>hollows out the application PE image from its process, Windows removes any connections between this memory space and the PE file of that application. So, any allocation at that address becomes private and doesn’t represent any loaded image (or PE file).</p>
+			<p>However, this detachment only happens in the <code>EPROCESS</code> kernel object and not in the <code>PEB</code> information that is accessible inside the process memory. In Volatility, there are two commands that you can use to get a list of all of the loaded modules inside a process. One command lists the loaded modules from the <code>PEB</code> information (from user mode), which is <code>dlllist</code>, and the other one lists all loaded modules from the <code>EPROCESS</code> kernel object information (kernel mode), which is <code>ldrmodules</code>. Any mismatch in the results between both commands could represent a hollow process injection, as <a id="_idIndexMarker799"/>shown <a id="_idIndexMarker800"/>in the following screenshot:</p>
+			<div><div><img src="img/Figure_5.14_B18500.jpg" alt="Figure 5.14 – lsass.exe at the 0x01000000 address is not linked to its PE ﬁle in ldrmodules&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 5.14 – lsass.exe at the 0x0100000<a id="_idTextAnchor519"/>0 address is not linked to its PE ﬁle in ldrmodules</p>
+			<p>There are multiple types of mismatches, and they represent different types of process hollowing, such as the following:</p>
+			<ul>
+				<li>When the application module is not linked to its PE file, as in <em class="italic">Figure 5.14</em>, it represents that the process is hollowed out and that the malware has been loaded in the same place.</li>
+				<li>When the application module appears in the <code>dlllist</code> results and not at all in the <code>ldrmodules</code> results, it represents that the process is hollowed out and that the malware is possibly loaded at another address. The <code>malfind</code> command could help us to find the new address or dump all the memory regions in that process <a id="_idIndexMarker801"/>using <code>vaddump</code> and scan them for PE files (search for <strong class="bold">MZ magic</strong>).</li>
+				<li>When the application appears in the results of both commands and is linked with the PE filename of the application, but there’s a mismatch of the module address in both results, it represents that the application is not hollowed out, but that the malware has been injected and PEB information has been tampered with to link to the malware instead of the legitimate application PE image.</li>
+			</ul>
+			<p>In all of these cases, it shows that the malware has injected itself inside this process using the <a id="_idIndexMarker802"/>process <a id="_idIndexMarker803"/>hollowing te<a id="_idTextAnchor520"/>chnique, and <code>vaddump<a id="_idTextAnchor521"/></code> or <code>procdump</code> will help to dump the malware’s PE image.</p>
+			<h2 id="_idParaDest-182"><a id="_idTextAnchor522"/>Technique 3 – Detecting process hollowing using the HollowFind plugin</h2>
+			<p>There is a<a id="_idIndexMarker804"/> plugin<a id="_idIndexMarker805"/> called <code>HollowFind</code> that <a id="_idIndexMarker806"/>combines all of these commands. It finds a suspicious memory space or evidence of a hollowed-out process and return<a id="_idTextAnchor523"/>s these results, as shown in the following screenshot:</p>
+			<div><div><img src="img/Figure_5.15_B18500.jpg" alt="Figure 5.15 – The HollowFind plugin for detecting hollow process injection&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 5.15 – The HollowFind plugin for detecting hollow process injection</p>
+			<p>This plugin can also dump the memory image into a chosen directory:</p>
+			<div><div><img src="img/Figure_5.16_B18500.jpg" alt="Figure 5.16 – The HollowFind plugin for dumping the malware’s PE image&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 5.16 – The HollowFind plugin for dumping the malware’s PE image</p>
+			<p>So, that’s it for process injection and how to analyze it dynamically using OllyDbg (or any other debugger), as well as how to detect it in a memory dump using Volatility.</p>
+			<p>In the following section, we will cover another important technique that’s used by malware <a id="_idIndexMarker807"/>authors, known <a id="_idIndexMarker808"/>as <a id="_idIndexMarker809"/>API hooking. It’s usually used in combination with process injection for MITM attacks or for hi<a id="_idTextAnchor524"/><a id="_idTextAnchor525"/><a id="_idTextAnchor526"/>ding malware presence using user-mode rootkits techniques.</p>
+			<h1 id="_idParaDest-183"><a id="_idTextAnchor527"/>Understanding API hooking</h1>
+			<p>API hooking is a<a id="_idIndexMarker810"/> common technique that’s used by malware authors to intercept calls to Windows APIs in order to change the input or output of these commands. It is based on the process injection technique that we described earlier.</p>
+			<p>This technique allows malware authors to have full control over the target process and therefore the user experience from their interaction with that process, including browsers and website pages, antivirus applications and their scanned files, and so on. By controlling the Windows APIs, the malware authors can also capture sensitive information from the process memory and the API arguments.</p>
+			<p>Since API hooking is used by malware authors, it has different legitimate reasons to be used, such as malware <a id="_idTextAnchor528"/><a id="_idIndexMarker811"/>sandboxing and backward compatibility for old applications.</p>
+			<p>Therefore, Windows officially<a id="_idTextAnchor529"/> supports API hooking, as we will see later in this chapter.</p>
+			<h2 id="_idParaDest-184"><a id="_idTextAnchor530"/>Why API hooking?</h2>
+			<p>There are <a id="_idIndexMarker812"/>multiple reasons why malware would incorporate API hooking in its arsenal. Let’s go into the details of this process and cover the APIs that malware authors generally hook in order to achieve their goals:</p>
+			<ul>
+				<li><code>Process32First</code> and <code>Process32Next</code>, so that it can remove the malware process from the results</li><li>File listing APIs such as <code>FindFirstFileA</code> and <code>FindNextFileA</code></li><li>Registry enumeration APIs such as <code>RegQueryInfoKey</code> and <code>RegEnumKeyEx</code></li></ul></li>
+				<li><code>InternetConnectA</code>, <code>HttpSendRequestA</code>, <code>InternetReadFile</code>, and other <code>wininet.dll</code> APIs. <code>WSARecv</code> and <code>WSASend</code> from <code>ws2_32.dll</code> are other possibilit<a id="_idTextAnchor531"/>ies here.</li><li>Firefox APIs such as <code>PR_Read</code>, <code>PR_Write</code>, and <code>PR_Close</code>.</li></ul></li>
+				<li><code>CreateProcessA</code>, <code>CreateProcessAsUserA</code>, and similar APIs to inject into child processes or prevent some processes from starting. Hooking <code>LoadLibraryA</code> and <code>LoadLibraryExA</code> is also possible.</li>
+			</ul>
+			<p>Both the <code>A</code> and <code>W</code> versions <a id="_idTextAnchor532"/>of WinAPIs (for A<a id="_idTextAnchor533"/>NSI and Unicode, respectively) can be hooked in the<a id="_idIndexMarker813"/> same way.</p>
+			<h2 id="_idParaDest-185"><a id="_idTextAnchor534"/>Working with API hooking</h2>
+			<p>In this section, we<a id="_idIndexMarker814"/> will look at different techniques for API hooking, from the simple methods that can <a id="_idTextAnchor535"/>only alter API arguments to more complex ones <a id="_idTextAnchor536"/>that were used in different banking Trojans, including Vawtrak.</p>
+			<h3>Inline API hooking</h3>
+			<p>To hook an API, the<a id="_idIndexMarker815"/> malware generally prefers to modify the first few bytes (typically, this is 5 bytes) of the API assembly code and replace them with <code>jmp &lt;hooking_function&gt;</code> so that it can change the API arguments and maybe skip the call to this API and return a fake result (as an error or just <code>NULL</code>). The code change generally looks as follows before hooking:</p>
+			<pre>API_START:
+mov edi, edi
+push ebp
+mov ebp, esp
+...</pre>
+			<p>Then, after hooking, it looks as follows:</p>
+			<pre>API_START:
+jmp hooking_function
+...</pre>
+			<p>So, the malware replaces the first 5 bytes (which, in this case, are three instructions) with one instruction, which is <code>jmp</code> to the hooked function. Windows supports API hooking and has added an extra instruction, <code>mov edi, edi</code>, which takes 2 bytes of space, which makes the function prologue 5 byte<a id="_idTextAnchor537"/>s in size. This makes API hooking a much easier task to perform.</p>
+			<p>The <code>hooking_function</code> routine saves the replaced 5 bytes at the beginning of the API and uses them to call the API back, for example, as follows:</p>
+			<pre>hooking_function:
+...
+&lt;change API parameters&gt;
+...
+mov edi, edi
+push ebp
+mov ebp, esp
+jmp API+5 ; jump to the API after the first replaced 5 bytes</pre>
+			<p>This way, <code>hooking_function</code> can work seamlessly without affecting the program flow. It can alter<a id="_idIndexMarker816"/> the arguments of the API and therefore control the results, and it can dire<a id="_idTextAnchor538"/><a id="_idTextAnchor539"/>ctly execute <code>ret</code> to the program without actually calling the API.</p>
+			<h3>Inline API hooking with a trampoline</h3>
+			<p>In the previous <a id="_idIndexMarker817"/>simple hooking function, the malware can alter the arguments of the API. But when you’re using trampolines, the malware can also alter the return value of the API and any data associated with it. The trampoline is simply a small function that only executes <code>jmp</code> to the API and includes the first missing 5 bytes (or three instructions, in the previous case), as follows:</p>
+			<pre>trampoline:
+mov edi, edi
+push ebp
+mov ebp, esp
+jmp API+5 ; jump to the API after the first replaced 5 bytes</pre>
+			<p>Rather than jumping back to the API, which returns control to the program in the end, the hooking function calls the trampoline as a replacement of the API. This trampoline transfers control to the actual API, but when it finishes execution, the control will be transferred back to the hooking function with the return value of the API to be altered by the hooking function before returning con<a id="_idTextAnchor540"/>trol back to the program, as shown in the following screenshot:</p>
+			<div><div><img src="img/Figure_5.17_B18500.jpg" alt="Figure 5.17 – A hooking function with a trampoline&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 5.17 – A hooking function with a trampoline</p>
+			<p>The code of <a id="_idIndexMarker818"/>the hooking function looks more complex:</p>
+			<pre>hooking_function:
+...
+&lt;change API parameters&gt;
+...
+push API_argument03
+push API_argument02
+push API_argument01
+call trampoline ; trampoline routine will execute jmp to the API, and, once done, the API will  return control back here
+...
+&lt;change API return value&gt;
+...
+ret ; return control back to the main program</pre>
+			<p>This added step gives the malware more control over the API and its output, which makes it possible, for example, to inject JavaScript code into the output of <code>InternetReadFile</code>, <code>PR_Read</code>, or other APIs t<a id="_idTextAnchor541"/><a id="_idTextAnchor542"/>o steal credentials or transfer money to a different<a id="_idIndexMarker819"/> bank account.</p>
+			<h3>Inline API hooking with a length disassembler</h3>
+			<p>As we have seen <a id="_idIndexMarker820"/>in the previous techniques, API hooking is quite simple when you use the <code>mov edi, edi</code> instruction at the beginning of each API, which makes the first 5 bytes predictable for API hooking functionality. Unfortunately, this can’t be the case with all Windows APIs, so sometimes malware families have <a id="_idTextAnchor543"/>to disassemble the first few instructions to avoid breaking the API.</p>
+			<p>Some malware families such as Vawtrak use a length disassembler to replace a few instructions (with a size equal to or greater than 5 bytes) with the <code>jmp</code> instruction to the hooking function, as shown in the following screenshot. Then, they copy these instructions to the trampoline and add a <code>jmp</code> instruction to the API:</p>
+			<div><div><img src="img/Figure_5.18_B18500.jpg" alt="Figure 5.18 – The Vawtrak API hooking with a disassembler&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">F</p>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 5.18 – The Vawtrak API hooking with a disassembler</p>
+			<p>The main goal of this is to ensure that the trampoline doesn’t jump back to the API in the middle of<a id="_idIndexMarker821"/> the instruction and to make the API hooking work seamless<a id="_idTextAnchor544"/><a id="_idTextAnchor545"/><a id="_idTextAnchor546"/>ly without any unpredictable effects on the hooked process behavior.</p>
+			<h2 id="_idParaDest-186"><a id="_idTextAnchor547"/>Detecting API hooking using memory forensics</h2>
+			<p>As we already<a id="_idIndexMarker822"/> know, API hooking is generally used together <a id="_idIndexMarker823"/>with process injection, and dealing with API hooking in dynamic analysis and memory forensics is very similar to dealing with process injections. Adding to the previous techniques of detecting process injection (using <code>malfind</code> or <code>hollowfind</code>), we can use a Volatility command called <code>apihooks</code>. This command scans the process’s libraries, searching for hooked APIs (starting with <code>jmp</code> or a <code>call</code>), and shows the name of the hooked API and the address of the hooking function, as shown in the following screenshot:</p>
+			<div><div><img src="img/Figure_5.19_B18500.jpg" alt="Figure 5.19 – The Volatility command, apihooks, for detecting API hooking&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 5.19 – The Volatility command, apihooks, for detecting API hooking</p>
+			<p>We can then use <code>vaddump</code> (as we described earlier in this chapter) to dump this memory address and use IDA Pro or any other static analysis tool to disassemble the shellcode <a id="_idIndexMarker824"/>and <a id="_idIndexMarker825"/>understand the mot<a id="_idTextAnchor548"/><a id="_idTextAnchor549"/><a id="_idTextAnchor550"/>ivation behind this API hooking.</p>
+			<p>Finally, let’s talk about IAT hooking.</p>
+			<h1 id="_idParaDest-187"><a id="_idTextAnchor551"/>Exploring IAT hooking</h1>
+			<p><code>jmp</code> on the actual API address (or the call after pushing the API arguments to the stack), and then returns to the actual program, as shown in the following diagram:</p>
+			<div><div><img src="img/Figure_5.20_B18500.jpg" alt="Figure 5.20 – The IAT hooking mechanism&#13;&#10;"/>
+				</div>
+			</div>
+			<p class="IMG---Caption" lang="en-US" xml:lang="en-US">Figure 5.20 – The IAT hooking mechanism</p>
+			<p>This hooking is <a id="_idIndexMarker827"/>not effective against the dynamic loading of APIs (using <code>GetProcAddress</code> and <code>LoadLibrary</code>), but it’s still effective against many legitimate<a id="_idTextAnchor552"/> applications that have most of their required APIs in the import table.</p>
+			<h1 id="_idParaDest-188"><a id="_idTextAnchor553"/>Summary</h1>
+			<p>In this chapter, we have covered two very well-known techniques that are used by many malware families: process injection and API hooking. These techniques are used for many reasons, including disguising the malware, bypassing firewalls, maintaining persistence for fileless malware, MITB attacks, among others.</p>
+			<p>We have covered how to deal with code injection using dynamic analysis, as well as how to detect code injection and API hooking and how to analyze them using memory forensics.</p>
+			<p>After reading this chapter, you will now have a greater understanding of complex malware and how it can be injected into legitimate processes. This will help you to analyze cyberattacks incorporating various techniques and protect your organization from future threats more effectively.</p>
+			<p>In <a href="B18500_06.xhtml#_idTextAnchor554"><em class="italic">Chapter 6</em></a>, <em class="italic">Bypassing Anti-Reverse Engineering Techniques</em>, we will cover other techniques that are used by malware authors to make it harder for reverse engineers to analyze samples and understand their behavior.</p>
+		</div>
+		<div><div></div>
+		</div>
+	</body></html>

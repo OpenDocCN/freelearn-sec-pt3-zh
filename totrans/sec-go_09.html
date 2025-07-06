@@ -1,0 +1,650 @@
+<html><head></head><body>
+        
+
+                            
+                    <h1 class="header-title">Web Applications</h1>
+                
+            
+            
+                
+<p>Go has a powerful HTTP package in the standard library. The <kbd>net/http</kbd> package is documented at <a href="https://golang.org/pkg/net/http/">https://golang.org/pkg/net/http/</a> and contains the HTTP and HTTPS utilities. At first, I advise that you stay away from the community HTTP frameworks and stick to the Go standard library. The standard HTTP package includes functions for listening, routing, and templating. The built-in HTTP server is of production quality, and it binds directly to a port, eliminating the need for a separate httpd, such as Apache, IIS, or nginx. However, it is common to see nginx listening on the public port <kbd>80</kbd> and reverse proxying all requests to Go servers listening on local ports other than <kbd>80</kbd>.</p>
+<p>In this chapter, we cover the basics of running an HTTP server, using HTTPS, setting secure cookies, and escaping output. We also cover how to use the Negroni middleware package and implement custom middleware for logging, adding secure HTTP headers, and serving static files. Negroni takes an idiomatic Go approach and encourages the use of the standard library <kbd>net/http</kbd> handlers. It is very lightweight and builds on top of the existing Go structures. Additionally, other best practices related to running a web application are mentioned.</p>
+<p>HTTP client examples are also provided. Starting with making a basic HTTP request, we move on to making HTTPS requests and using client certificates for authentication and proxies for route traffic.</p>
+<p>In this chapter, we will cover the following topics:</p>
+<ul>
+<li>HTTP servers</li>
+<li>Simple HTTP servers</li>
+<li>TLS encrypted HTTP (HTTPS)</li>
+<li>Using secure cookies</li>
+<li>HTML escaping output</li>
+<li>Middleware with Negroni</li>
+<li>Logging requests</li>
+<li>Adding secure HTTP headers</li>
+<li>Serving static files</li>
+<li>Other best practices</li>
+<li>Cross-site request forgery (CSRF) tokens</li>
+<li>Preventing user enumeration and abuse</li>
+<li>Avoiding local and remote file inclusion vulnerabilities</li>
+<li>HTTP clients</li>
+<li>Making basic HTTP requests</li>
+<li>Using a client SSL certificate</li>
+<li>Using proxies</li>
+<li>Using System proxy</li>
+<li>Using an HTTP proxy</li>
+<li>Using a SOCKS5 proxy (Tor)</li>
+</ul>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">HTTP server</h1>
+                
+            
+            
+                
+<p>HTTP is an application protocol built on top of the TCP layer. The concept is relatively simple; you can craft a request using plain text. In the first line, you will provide the method, such as <kbd>GET</kbd> or <kbd>POST</kbd>, along with the path and the HTTP version you are conforming to. After that, you will provide a series of key and value pairs to describe your request. Generally, you need to provide a <kbd>Host</kbd> value so that the server knows which website you are requesting. A simple HTTP request might look like this:</p>
+<pre><strong>GET /archive HTTP/1.1
+Host: www.devdungeon.com </strong> </pre>
+<p>You don't need to worry about all of the details in the HTTP specification though. Go provides a <kbd>net/http</kbd> package that comes with several tools for easily creating production-ready web servers, including support for HTTP/2.0 with Go 1.6 and newer. This section covers topics related to running and securing HTTP servers.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Simple HTTP servers</h1>
+                
+            
+            
+                
+<p>In this example, an HTTP server demonstrates how simple it is to create a listening server with the standard library. There is no routing or multiplexing yet. In this case, a specific directory is served through the server. <kbd>http.FileServer()</kbd> has directory listing built in, so if you make an HTTP request to <kbd>/</kbd>, then it will list the files available in the directory being served:</p>
+<pre>package main<br/><br/>import (<br/>   "fmt"<br/>   "log"<br/>   "net/http"<br/>   "os"<br/>)<br/><br/>func printUsage() {<br/>   fmt.Println(os.Args[0] + ` - Serve a directory via HTTP<br/><br/>URL should include protocol IP or hostname and port separated by colon.<br/><br/>Usage:<br/>  ` + os.Args[0] + ` &lt;listenUrl&gt; &lt;directory&gt;<br/><br/>Example:<br/>  ` + os.Args[0] + ` localhost:8080 .<br/>  ` + os.Args[0] + ` 0.0.0.0:9999 /home/nanodano<br/>`)<br/>}<br/><br/>func checkArgs() (string, string) {<br/>   if len(os.Args) != 3 {<br/>      printUsage()<br/>      os.Exit(1)<br/>   }<br/>   return os.Args[1], os.Args[2]<br/>}<br/><br/>func main() {<br/>   listenUrl, directoryPath := checkArgs()<br/>   err := http.ListenAndServe(listenUrl,      <br/>     http.FileServer(http.Dir(directoryPath)))
+   if err != nil {<br/>      log.Fatal("Error running server. ", err)<br/>   }<br/>}</pre>
+<p>This next example shows how to route a path and create a function to handle incoming requests. This one won't accept any command-line arguments, because it's not quite a useful program on its own, but you can use this as a basic template:</p>
+<pre>package main<br/><br/>import (<br/>   "fmt"<br/>   "net/http"<br/>   "log"<br/>)<br/><br/>func indexHandler(writer http.ResponseWriter, request *http.Request) {<br/>   // Write the contents of the response body to the writer interface<br/>   // Request object contains information about and from the client<br/>   fmt.Fprintf(writer, "You requested: " + request.URL.Path)<br/>}<br/><br/>func main() {<br/>   http.HandleFunc("/", indexHandler)<br/>   err := http.ListenAndServe("localhost:8080", nil)<br/>   if err != nil {<br/>      log.Fatal("Error creating server. ", err)<br/>   }<br/>}</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">HTTP basic auth</h1>
+                
+            
+            
+                
+<p>HTTP basic auth works by taking the username and password, combining them with a colon separator, and encoding them using base64. The username and password can commonly be passed as part of the URL, for example: <kbd>http://&lt;username&gt;:&lt;password&gt;@www.example.com</kbd>. Under the hood, what happens though is that the username and password are combined, encoded, and passed as an HTTP header.</p>
+<p>If you use this method of authentication, keep in mind that it is not encrypted. There is no protection for the username and password in transit. You always want to use encryption on the transport layer, which means adding TLS/SSL.</p>
+<p>HTTP basic auth is not widely used these days, but it is easy to implement. A more common approach is to build or use your own authentication layer in your application, such as comparing a username and a password to a user database full of salted and hashed passwords.</p>
+<p>Refer to <a href="7b009a9c-c906-4919-ae73-07b807521f0c.xhtml" target="_blank">Chapter 8</a>, <em>Brute Force</em>, for an example of creating a client and connecting to an HTTP server that requires HTTP basic authentication. The Go standard library provides only a method for HTTP basic auth as a client. It does not provide a method for checking basic auth on the server side.</p>
+<p>I would not recommend that you implement HTTP basic auth on a server any more. If you need to authenticate a client, use TLS certificates.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Using HTTPS</h1>
+                
+            
+            
+                
+<p>In <a href="f68073f0-8cc8-40b5-af0e-795ce30e5271.xhtml" target="_blank">Chapter 6</a>, <em>Cryptography</em>, we walked you through the steps necessary to generate keys and then create your own self-signed certificate. We also gave you an example of how to run a TCP socket-level TLS server. This section will demonstrate how to create a TLS-encrypted HTTP server or an HTTPS server.</p>
+<p>TLS is the newer version of SSL, and Go has a standard package that supports it well. You need a private key and the signed certificate generated with that key. You can use a self-signed certificate or one signed by a recognized certificate authority. Historically, SSL certs signed by a trusted authority always cost money, but <a href="https://letsencrypt.org/" target="_blank">https://letsencrypt.org/</a> changed the game when they began offering free and automated certificates signed by a widely trusted authority.</p>
+<p>If you need a certificate (<kbd>cert.pem</kbd>) for this example, refer to <a href="f68073f0-8cc8-40b5-af0e-795ce30e5271.xhtml" target="_blank">Chapter 6</a>, <em>Cryptography</em>, for an example of creating your own self-signed certificate.</p>
+<p>The following code demonstrates the most basic example of how to run an HTTPS server that serves a single web page. Refer to the examples in <a href="1b5ddb7b-00f9-47df-947c-e4d0ebeb94e5.xhtml" target="_blank">Chapter 10</a>, <em>Web Scraping</em> for various HTTP honeypot examples and more HTTP server reference code. After initializing the HTTPS server in the source code, you can work with it the same way you work with the HTTP server object. Notice that the only difference between this and the HTTP server is that you call <kbd>http.ListenAndServeTLS()</kbd> instead of <kbd>http.ListenAndServe()</kbd>. Additionally, you must provide the certificate and key for the server:</p>
+<pre>package main<br/><br/>import (<br/>   "fmt"<br/>   "net/http"<br/>   "log"<br/>)<br/><br/>func indexHandler(writer http.ResponseWriter, request *http.Request) {<br/>   fmt.Fprintf(writer, "You requested: "+request.URL.Path)<br/>}<br/><br/>func main() {<br/>   http.HandleFunc("/", indexHandler)<br/>   err := http.ListenAndServeTLS( 
+      "localhost:8181", 
+      "cert.pem", 
+      "privateKey.pem", 
+      nil, 
+   )<br/>   if err != nil {<br/>      log.Fatal("Error creating server. ", err)<br/>   }<br/>}</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Creating secure cookies</h1>
+                
+            
+            
+                
+<p>Cookies themselves shouldn't ever contain sensitive information that the user should not be able to see. Attackers can target cookies to try and gather private information. The most common target is the session cookie. If the session cookie is compromised, an attacker can use the cookie to impersonate the user, and the server would allow it.</p>
+<p>The <kbd>HttpOnly</kbd> flag asks the browser to prevent JavaScript from accessing the cookie, protecting against cross-site scripting attacks. The cookie will only get sent when making HTTP requests. If you do need a cookie to be accessed via JavaScript, just create a different cookie from the session cookie.</p>
+<p>The <kbd>Secure</kbd> flag asks the browser to only transport the cookie with TLS/SSL encryption. This protects against session <strong>sidejacking</strong> attempts commonly done by sniffing a public unencrypted Wi-Fi network or a man-in-the-middle connection. Some websites will only put SSL on the login page to protect your password, but every connection after that is done in plain HTTP, and the session cookie can be stolen off the wire or, potentially, with JavaScript if the <kbd>HttpOnly</kbd> flag is missing.</p>
+<p>When creating a session token, make sure that it is generated using a cryptographically secure pseudo-random number generator. Session tokens should be at a minimum of 128 bits. Refer to <a href="f68073f0-8cc8-40b5-af0e-795ce30e5271.xhtml" target="_blank">Chapter 6</a>, <em>Cryptography</em>, for examples of generating secure random bytes.</p>
+<p>The following example creates a simple HTTP server that has only one function, the <kbd>indexHandler()</kbd>. The function creates a cookie with the recommended security settings, and then calls <kbd>http.SetCookie()</kbd> before printing the body of the response and returning:</p>
+<pre>package main<br/><br/>import (<br/>   "fmt"<br/>   "net/http"<br/>   "log"<br/>   "time"<br/>)<br/><br/>func indexHandler(writer http.ResponseWriter, request *http.Request) {<br/>   secureSessionCookie := http.Cookie {<br/>      Name: "SessionID",<br/>      Value: "&lt;secure32ByteToken&gt;",<br/>      Domain: "yourdomain.com",<br/>      Path: "/",<br/>      Expires: time.Now().Add(60 * time.Minute),<br/>      HttpOnly: true, // Prevents JavaScript from accessing<br/>      Secure: true, // Requires HTTPS<br/>   }   <br/>   // Write cookie header to response<br/>   http.SetCookie(writer, &amp;secureSessionCookie)   <br/>   fmt.Fprintln(writer, "Cookie has been set.")<br/>}<br/><br/>func main() {<br/>   http.HandleFunc("/", indexHandler)<br/>   err := http.ListenAndServe("localhost:8080", nil)<br/>   if err != nil {<br/>      log.Fatal("Error creating server. ", err)<br/>   }<br/>}</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">HTML escaping output</h1>
+                
+            
+            
+                
+<p>Go has a standard function to escape a string and prevent HTML characters from getting rendered.</p>
+<p>When outputting any data received by the user to the response output, always escape it to prevent cross-site scripting attacks. This applies equally whether the user-supplied data comes from a URL query, a POST value, the user-agent header, a form, a cookie, or the database. The following snippet gives an example of escaping a string:</p>
+<pre>package main<br/><br/>import (<br/>   "fmt"<br/>   "html"<br/>)<br/><br/>func main() {<br/>   rawString := `&lt;script&gt;alert("Test");&lt;/script&gt;`<br/>   safeString := html.EscapeString(rawString)<br/><br/>   fmt.Println("Unescaped: " + rawString)<br/>   fmt.Println("Escaped: " + safeString)<br/>}</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Middleware with Negroni</h1>
+                
+            
+            
+                
+<p>Middleware is the term for functions that can be tied to the request/response flow and take action or make modification before passing it on to the next middleware and ultimately back to the client.</p>
+<p>Middleware is a series of functions run in order on each request. You can add more functions to this chain. We will take a look at some practical examples, such as blacklisting IP addresses, adding logging, and adding authorization checks.</p>
+<p>The order of middleware is important. For example, we may want to put the logging middleware first, and then the IP blacklisting middleware. We would want the IP blacklist module to run first, or at least near the beginning, so that other middlewares don't waste resources processing a request that will just be rejected anyway. You can manipulate the request and response before passing it on to the next middleware handler.</p>
+<p>You may want to also build custom middleware for analytics, logging, blacklisting IP addresses, injecting headers, or rejecting certain user agents, such as <kbd>curl</kbd>, <kbd>python</kbd>, or <kbd>go</kbd>.</p>
+<p>These examples use the Negroni package. Before compiling and running these examples, you need to <kbd>go get</kbd> the package. The examples call <kbd>http.ListenAndServe()</kbd>, but you can just as easily modify them to use TLS with <kbd>http.ListenAndServeTLS()</kbd>:</p>
+<pre><strong>go get github.com/urfave/negroni
+</strong></pre>
+<p>The following example creates a <kbd>customMiddlewareHandler()</kbd> function, which we will tell the <kbd>negroniHandler</kbd> interface to use. The custom middleware simply logs the incoming request URL and user agent, but you can do whatever you like, including modifying the request before it goes back to the client:</p>
+<pre>package main<br/><br/>import (<br/>   "fmt"<br/>   "log"<br/>   "net/http"<br/><br/>   "github.com/urfave/negroni"<br/>)<br/><br/>// Custom middleware handler logs user agent<br/>func customMiddlewareHandler(rw http.ResponseWriter, <br/>   r *http.Request, 
+   next http.HandlerFunc, <br/>) {<br/>   log.Println("Incoming request: " + r.URL.Path)<br/>   log.Println("User agent: " + r.UserAgent())<br/><br/>   next(rw, r) // Pass on to next middleware handler<br/>}<br/><br/>// Return response to client<br/>func indexHandler(writer http.ResponseWriter, request *http.Request) {<br/>   fmt.Fprintf(writer, "You requested: " + request.URL.Path)<br/>}<br/><br/>func main() {<br/>   multiplexer := http.NewServeMux()<br/>   multiplexer.HandleFunc("/", indexHandler)<br/><br/>   negroniHandler := negroni.New()<br/>   negroniHandler.Use(negroni.HandlerFunc(customMiddlewareHandler))<br/>   negroniHandler.UseHandler(multiplexer)<br/><br/>   http.ListenAndServe("localhost:3000", negroniHandler)<br/>}</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Logging requests</h1>
+                
+            
+            
+                
+<p>Because logging is such a common task, Negroni comes with a logger middleware that you can use, as demonstrated in the following example:</p>
+<pre>package main<br/><br/>import (<br/>   "fmt"<br/>   "net/http"<br/><br/>   "github.com/urfave/negroni"<br/>)<br/><br/>// Return response to client<br/>func indexHandler(writer http.ResponseWriter, request *http.Request) {<br/>   fmt.Fprintf(writer, "You requested: " + request.URL.Path)<br/>}<br/><br/>func main() {<br/>   multiplexer := http.NewServeMux()<br/>   multiplexer.HandleFunc("/", indexHandler)<br/><br/>   negroniHandler := negroni.New()<br/>   negroniHandler.Use(negroni.NewLogger()) // Negroni's default logger<br/>   negroniHandler.UseHandler(multiplexer)<br/><br/>   http.ListenAndServe("localhost:3000", negroniHandler)<br/>}</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Adding secure HTTP headers</h1>
+                
+            
+            
+                
+<p>Taking advantage of the Negroni package, we can easily create our own middleware to inject a set of HTTP headers to help improve security. You will need to evaluate each header to see whether it makes sense for your application. In addition, not every browser supports every one of these headers. This is a good baseline to begin with and modify to suit your needs.</p>
+<p>The following headers are used in this example:</p>
+<table class="MsoTableGrid">
+<tbody>
+<tr>
+<td>
+<p><strong>Header</strong></p>
+</td>
+<td>
+<p><strong>Description</strong></p>
+</td>
+</tr>
+<tr>
+<td>
+<p><kbd>Content-Security-Policy</kbd></p>
+</td>
+<td>
+<p>This defines what scripts or remote hosts are trusted and able to provide executable JavaScript</p>
+</td>
+</tr>
+<tr>
+<td>
+<p><kbd>X-Frame-Options</kbd></p>
+</td>
+<td>
+<p>This defines whether or not frames and iframes can be used and which domains are allowed to appear in frames</p>
+</td>
+</tr>
+<tr>
+<td>
+<p><kbd>X-XSS-Protection</kbd></p>
+</td>
+<td>
+<p>This tells the browser to stop loading if a cross-site scripting attack is detected; it is largely unnecessary if a good <kbd>Content-Security-Policy</kbd> header is defined</p>
+</td>
+</tr>
+<tr>
+<td>
+<p><kbd>Strict-Transport-Security</kbd></p>
+</td>
+<td>
+<p>This tells the browser to use only HTTPS and not HTTP</p>
+</td>
+</tr>
+<tr>
+<td>
+<p><kbd>X-Content-Type-Options</kbd></p>
+</td>
+<td>
+<p>This tells the browser to use the MIME type provided by the server, and not to modify based upon guesses by MIME sniffing</p>
+</td>
+</tr>
+</tbody>
+</table>
+<p>It is ultimately up to the client's web browser whether or not these headers are used or ignored. They do not guarantee any security without a browser that knows how to apply the header values.</p>
+<p>This example creates a function named <kbd>addSecureHeaders()</kbd>, which is used as an additional middleware handler to modify the response before it goes back to the client. Tweak the headers as needed for your application:</p>
+<pre>package main<br/><br/>import (<br/>   "fmt"<br/>   "net/http"<br/><br/>   "github.com/urfave/negroni"<br/>)<br/><br/>// Custom middleware handler logs user agent<br/>func addSecureHeaders(rw http.ResponseWriter, r *http.Request, <br/>   next http.HandlerFunc) {<br/>   rw.Header().Add("Content-Security-Policy", "default-src 'self'")<br/>   rw.Header().Add("X-Frame-Options", "SAMEORIGIN")<br/>   rw.Header().Add("X-XSS-Protection", "1; mode=block")<br/>   rw.Header().Add("Strict-Transport-Security", <br/>      "max-age=10000, includeSubdomains; preload")<br/>   rw.Header().Add("X-Content-Type-Options", "nosniff")<br/><br/>   next(rw, r) // Pass on to next middleware handler<br/>}<br/><br/>// Return response to client<br/>func indexHandler(writer http.ResponseWriter, request *http.Request) {<br/>   fmt.Fprintf(writer, "You requested: " + request.URL.Path)<br/>}<br/><br/>func main() {<br/>   multiplexer := http.NewServeMux()<br/>   multiplexer.HandleFunc("/", indexHandler)<br/><br/>   negroniHandler := negroni.New()<br/><br/>   // Set up as many middleware functions as you need, in order<br/>   negroniHandler.Use(negroni.HandlerFunc(addSecureHeaders))<br/>   negroniHandler.Use(negroni.NewLogger())<br/>   negroniHandler.UseHandler(multiplexer)<br/><br/>   http.ListenAndServe("localhost:3000", negroniHandler)<br/>}</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Serving static files</h1>
+                
+            
+            
+                
+<p>Another common web server task is to serve static files. It is worth mentioning the Negroni middleware handler for serving static files. Just add an additional <kbd>Use()</kbd> call and pass <kbd>negroni.NewStatic()</kbd> to it. Make sure that your static files directory contains only files that clients should access. In most cases, the static files directory contains CSS and JavaScript files for the client. Do not put database backups, configuration files, SSH keys, Git repositories, development files, or anything a client shouldn't have access to. Add the static-file middleware like this:</p>
+<pre>negroniHandler.Use(negroni.NewStatic(http.Dir("/path/to/static/files")))  </pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Other best practices</h1>
+                
+            
+            
+                
+<p>There are a few other things worth considering when creating a web application. Although they are not Go specific, it is worth taking these best practices into account when developing.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">CSRF tokens</h1>
+                
+            
+            
+                
+<p><strong>Cross-Site Request Forgery</strong>, or <strong>CSRF</strong>, tokens are a way of trying to prevent one website from taking action on your behalf against a different website.</p>
+<p>CSRF is a common attack where a victim will visit a website with malicious code embedded that tries to make a request to a different site. For example, a malicious actor embeds JavaScript that makes a POST request to every bank website attempting to transfer $1,000 to the attacker's bank account. If the victim has an active session with one of those banks, and the bank does not implement CSRF tokens, the bank's website may accept the request and process it.</p>
+<p>It is possible to be the victim of a CSRF attack even on a trusted site, if the trusted site is vulnerable to either reflective or stored cross-site scripting. CSRF has been on the <em>OWASP Top 10</em> since 2007 and remains there in 2017.</p>
+<p>Go provides a <kbd>xsrftoken</kbd> package that you can read more about at <a href="https://godoc.org/golang.org/x/net/xsrftoken" target="_blank">https://godoc.org/golang.org/x/net/xsrftoken</a>. It provides a <kbd>Generate()</kbd> function to create tokens and a <kbd>Valid()</kbd> function to validate tokens. You can use their implementation of choose to develop your own to suit your needs.</p>
+<p>To implement CSRF tokens, create a 16-byte random token and store it on the server associated to the user's session. You can use whatever backend you like to store the token, whether that is in memory, in a database, or in a file. Embed the CSRF token in the form as a hidden field. When processing the form on the server side, verify that the CSRF token is present and matches the user. Destroy the token after it is used. Do not reuse the same token.</p>
+<p>The various requirements for implementing CSRF tokens have been covered in the previous sections:</p>
+<ul>
+<li>Generating a token: In <a href="f68073f0-8cc8-40b5-af0e-795ce30e5271.xhtml" target="_blank">Chapter 6</a>, <em>Cryptography</em>, a section titled <em>Cryptographically secure pseudo-random number generator (CSPRNG)</em> provides an example of generating random numbers, strings, and bytes.</li>
+<li>Creating, serving, and processing an HTML form: In <a href="f15910a1-239e-49a5-b4d9-3881a524bfa9.xhtml" target="_blank">Chapter 9</a>, <em>Web Applications</em>, the section titled <em>HTTP server</em> provides information on creating a secure web server, and <a href="ae593b94-6855-4154-be69-5e21d78daced.xhtml" target="_blank">Chapter 12</a>, <em>Social Engineering</em>, has a section titled <em>HTTP POST form login honeypot</em> has an example of processing a POST request.</li>
+<li>Storing a token in a file: In <a href="88c1b677-61eb-4955-9fb9-7650ab33e7c8.xhtml" target="_blank">Chapter 3</a>, <em>Working with Files</em>, the section titled <em>Write bytes to a file</em> provides an example of storing data in a file.</li>
+<li>Storing a token in a database: In <a href="7b009a9c-c906-4919-ae73-07b807521f0c.xhtml" target="_blank">Chapter 8</a>, <em>Brute Force</em>, the section titled <em>Brute force database login</em> provides a blueprint for connecting to various database types.</li>
+</ul>
+<p> </p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Preventing user enumeration and abuse</h1>
+                
+            
+            
+                
+<p>The important things to remember here are as follows:</p>
+<ul>
+<li>Don't let people figure out who has an account</li>
+<li>Don't let someone spam your users with your email server</li>
+<li>Don't allow people to figure out who is registered by brute force attempts</li>
+</ul>
+<p>Let's elaborate on the practical examples.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Registration</h1>
+                
+            
+            
+                
+<p>When someone attempts to register an email address, do not give the web client user any feedback about whether or not the account is registered. Instead, send an email to the address and simply give the web user a message saying, "An email has been sent to the address provided."</p>
+<p>If they have never registered, everything is normal. If they are already registered, the web user does not get informed that the email is already registered. Instead, an email is sent to the user's address informing them that the email is already registered. This will remind them they have an account already and they can use the password reset tool, or let them know something is suspicious and someone may be doing something malicious.</p>
+<p>Be careful that you do not allow an attacker to repeatedly attempt the login process and generate mass amounts of email to your real user.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Login</h1>
+                
+            
+            
+                
+<p>Do not give the web user feedback about whether or not an email exists. You do not want someone to be able to try logging in with an email address and learn whether or not that address has an account just by the error message returned. For example, an attack could attempt to log in using a list of email addresses, and if the web server returns, "That password does not match," for some emails and "That email is not registered," for other emails, they can determine which emails are registered with your service.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Resetting the password</h1>
+                
+            
+            
+                
+<p>Avoid allowing email spam. Rate limit the emails sent so that an attacker cannot spam your users by submitting the forgot password form multiple times.</p>
+<p>When creating a reset token, ensure that it has good entropy so that it can't be guessed. Don't just create a token based on the time and the user ID because that can be guessed and brute forced too easily, as it lacks enough entropy. You should use at least 16-32 random bytes for a token to have decent entropy. Refer to <a href="f68073f0-8cc8-40b5-af0e-795ce30e5271.xhtml" target="_blank">Chapter 6</a>, <em>Cryptography</em>, for examples of generating cryptographically secure random bytes.</p>
+<p>Also, set the token to expire after a short period. Anywhere from one hour to one day are good options depending on your application. Only allow one reset token at a time, and destroy a token after it is used so that it cannot be replayed and used again.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">User profiles</h1>
+                
+            
+            
+                
+<p>Similar to the login page, if you have user profile pages, be careful about allowing username enumeration. For example, if someone visits <kbd>/users/JohnDoe</kbd> and then <kbd>/users/JaneDoe</kbd>, and one returns a <kbd>404 Not Found</kbd> error, while the other returns an <kbd>401 Access Denied</kbd> error, the attacker can infer that one account actually exists and the other does not.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Preventing LFI and RFI abuse</h1>
+                
+            
+            
+                
+<p><strong>Local File Inclusion</strong> (<strong>LFI</strong>) and <strong>Remote File Inclusion</strong> (<strong>RFI</strong>) are other <em>OWASP Top 10</em> vulnerabilities. They refer to the danger of loading files from the local file system or a remote host that were not intended to be loaded, or loading the intended files but with contaminated data. Remote file includes are dangerous because a user may supply a remote file from a malicious server if precaution is not taken.</p>
+<p>Do not open a file from the local file system if the filename is specified by the user without any sanitization. Consider an example where a file is returned by a web server upon request. The user may be able to request a file with sensitive system information, such as <kbd>/etc/passwd</kbd>, with a URL like this:</p>
+<pre>http://localhost/displayFile?filename=/etc/passwd  </pre>
+<p>This could be big trouble if the web server handled it like this (pseudocode):</p>
+<pre>file = os.Open(request.GET['filename'])
+return file.ReadAll()</pre>
+<p>You can't simply fix it by prepending a specific directory like this:</p>
+<pre>os.Open('/path/to/mydir/' + GET['filename']).</pre>
+<p>This isn't enough because attackers can use directory traversal to get back to the root of the filesystem, as shown here:</p>
+<pre>http://localhost/displayFile?filename=../../../etc/passwd   </pre>
+<p>Be sure to check for directory traversal attacks with any file inclusion.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Contaminated files</h1>
+                
+            
+            
+                
+<p>If an attacker finds an LFI, or you provide a web interface to log files, you need to make sure that, even if the logs are contaminated, no code will execute.</p>
+<p>An attacker can potentially contaminate your logs and insert malicious code by taking some action on your service that creates a log entry. Any service that generates a log that is loaded or displayed must be considered.</p>
+<p>For example, web server logs can be contaminated by making an HTTP request to a URL that is actually code. Your logs will have a <kbd>404 Not Found</kbd> error and log the URL that was requested, which is actually code. If it were a PHP server or another scripted language, this opens up potential code execution, but, with Go, the worst case would be JavaScript injection, which could still be dangerous to the user. Imagine a scenario where a web application has an HTTP log viewer that loads a log file from disk. If an attacker makes a request to <kbd>yourwebsite.com/&lt;script&gt;alert("test");&lt;/script&gt;</kbd>, then your HTML log viewer may actually end up rendering that code, if it is not escaped or sanitized properly.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">HTTP client</h1>
+                
+            
+            
+                
+<p>Making HTTP requests is a core part of many applications these days. Go, being a web-friendly language, contains several tools for making HTTP requests in the <kbd>net/http</kbd> package.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">The basic HTTP request</h1>
+                
+            
+            
+                
+<p>This example uses the <kbd>http.Get()</kbd> function from the <kbd>net/http</kbd> standard library package. It will read the entire response body to a variable named <kbd>body</kbd> and then print it to standard output:</p>
+<pre>package main<br/><br/>import (<br/>   "fmt"<br/>   "io/ioutil"<br/>   "log"<br/>   "net/http"<br/>)<br/><br/>func main() {<br/>   // Make basic HTTP GET request<br/>   response, err := http.Get("http://www.example.com")<br/>   if err != nil {<br/>      log.Fatal("Error fetching URL. ", err)<br/>   }<br/><br/>   // Read body from response<br/>   body, err := ioutil.ReadAll(response.Body)<br/>   response.Body.Close()<br/>   if err != nil {<br/>      log.Fatal("Error reading response. ", err)<br/>   }<br/><br/>   fmt.Printf("%s\n", body)<br/>}</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Using the client SSL certificate</h1>
+                
+            
+            
+                
+<p>If a remote HTTPS server has strict authentication and requires a trusted client certificate, you can specify the certificate file by setting the <kbd>TLSClientConfig</kbd> variable in the <kbd>http.Transport</kbd> object that is used by <kbd>http.Client</kbd> to make the GET request.</p>
+<p>This example makes a HTTP GET request similar to the previous example, but it does not use the default HTTP client provided by the <kbd>net/http</kbd> package. It creates a custom <kbd>http.Client</kbd> and configures it to use TLS with the client certificate. If you need a certificate or private key, refer to <a href="f68073f0-8cc8-40b5-af0e-795ce30e5271.xhtml" target="_blank">Chapter 6</a>, <em>Cryptography</em>, for examples of generating keys and self-signed certificates:</p>
+<pre>package main<br/><br/>import (<br/>   "crypto/tls"<br/>   "log"<br/>   "net/http"<br/>)<br/><br/>func main() {<br/>   // Load cert<br/>   cert, err := tls.LoadX509KeyPair("cert.pem", "privKey.pem")<br/>   if err != nil {<br/>      log.Fatal(err)<br/>   }<br/><br/>   // Configure TLS client<br/>   tlsConfig := &amp;tls.Config{<br/>      Certificates: []tls.Certificate{cert},<br/>   }<br/>   tlsConfig.BuildNameToCertificate()<br/>   transport := &amp;http.Transport{ 
+      TLSClientConfig: tlsConfig, 
+   }<br/>   client := &amp;http.Client{Transport: transport}<br/><br/>   // Use client to make request.<br/>   // Ignoring response, just verifying connection accepted.<br/>   _, err = client.Get("https://example.com")<br/>   if err != nil {<br/>      log.Println("Error making request. ", err)<br/>   }<br/>}</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Using a proxy</h1>
+                
+            
+            
+                
+<p>A forward proxy can be useful for many things, including viewing the HTTP traffic, debugging an application, reverse engineering an API, and manipulating headers, and it can potentially be used to increase your anonymity to the target server. However, be aware that many proxy servers still forward your original IP using an <kbd>X-Forwarded-For</kbd> header.</p>
+<p>You can use your environment variables to set a proxy or explicitly set a proxy with your request. The Go HTTP client supports HTTP, HTTPS, and SOCKS5 proxies, such as Tor.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Using system proxy</h1>
+                
+            
+            
+                
+<p>Go's default HTTP client will respect the system's HTTP(S) proxy if set through environment variables. Go uses the <kbd>HTTP_PROXY</kbd>, <kbd>HTTPS_PROXY</kbd> and <kbd>NO_PROXY</kbd> environment variables. The lowercase versions are also valid. You can set the environment variable before running the process or set the environment variable in Go with this:</p>
+<pre><strong>os.Setenv("HTTP_PROXY", "proxyIp:proxyPort") </strong> </pre>
+<p>After configuring the environment variable(s), any HTTP request made using the default Go HTTP client will respect the proxy settings. Read more about the default proxy settings at <a href="https://golang.org/pkg/net/http/#ProxyFromEnvironment">https://golang.org/pkg/net/http/#ProxyFromEnvironment</a>.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Using a specific HTTP proxy</h1>
+                
+            
+            
+                
+<p>To explicitly set the proxy URL, ignoring environment variables, set the <kbd>ProxyURL</kbd> variable in a custom <kbd>http.Transport</kbd> object that is used by <kbd>http.Client</kbd>. The following example creates custom <kbd>http.Transport</kbd> and specifies <kbd>proxyUrlString</kbd>. The example only has a placeholder value for the proxy and must be replaced with a valid proxy. <kbd>http.Client</kbd> is then created and configured to use the custom transport with the proxy:</p>
+<pre>package main<br/><br/>import (<br/>   "io/ioutil"<br/>   "log"<br/>   "net/http"<br/>   "net/url"<br/>   "time"<br/>)<br/><br/>func main() {<br/>   proxyUrlString := "http://&lt;proxyIp&gt;:&lt;proxyPort&gt;"<br/>   proxyUrl, err := url.Parse(proxyUrlString)<br/>   if err != nil {<br/>      log.Fatal("Error parsing URL. ", err)<br/>   }<br/><br/>   // Set up a custom HTTP transport for client<br/>   customTransport := &amp;http.Transport{ 
+      Proxy: http.ProxyURL(proxyUrl), 
+   }<br/>   httpClient := &amp;http.Client{ 
+      Transport: customTransport, 
+      Timeout:   time.Second * 5, 
+   }<br/><br/>   // Make request<br/>   response, err := httpClient.Get("http://www.example.com")<br/>   if err != nil {<br/>      log.Fatal("Error making GET request. ", err)<br/>   }<br/>   defer response.Body.Close()<br/><br/>   // Read and print response from server<br/>   body, err := ioutil.ReadAll(response.Body)<br/>   if err != nil {<br/>      log.Fatal("Error reading body of response. ", err)<br/>   }<br/>   log.Println(string(body))<br/>}</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Using a SOCKS5 proxy (Tor)</h1>
+                
+            
+            
+                
+<p>Tor is an anonymity service that attempts to protect your privacy. Do not use Tor unless you fully understand all of the implications. Read more about Tor at <a href="https://www.torproject.org" target="_blank">https://www.torproject.org</a>. This example demonstrates how to use Tor when making a request, but this applies equally to other SOCKS5 proxies.</p>
+<p>To use a SOCKS5 proxy, the only modification needed is with the URL string of the proxy. Instead of using the HTTP protocol, use the <kbd>socks5://</kbd> protocol prefix.</p>
+<p>The default Tor port is <kbd>9050</kbd>, or <kbd>9150</kbd> when using the Tor Browser bundle. The following example will perform a GET request for <kbd>check.torproject.org</kbd>, which will let you know if you are properly routing through the Tor network:</p>
+<pre>package main<br/><br/>import (<br/>   "io/ioutil"<br/>   "log"<br/>   "net/http"<br/>   "net/url"<br/>   "time"<br/>)<br/><br/>// The Tor proxy server must already be running and listening<br/>func main() {<br/>   targetUrl := "https://check.torproject.org"<br/>   torProxy := "socks5://localhost:9050" // 9150 w/ Tor Browser<br/><br/>   // Parse Tor proxy URL string to a URL type<br/>   torProxyUrl, err := url.Parse(torProxy)<br/>   if err != nil {<br/>      log.Fatal("Error parsing Tor proxy URL:", torProxy, ". ", err)<br/>   }<br/><br/>   // Set up a custom HTTP transport for the client   <br/>   torTransport := &amp;http.Transport{Proxy: http.ProxyURL(torProxyUrl)}<br/>   client := &amp;http.Client{<br/>      Transport: torTransport,<br/>      Timeout: time.Second * 5<br/>   }<br/><br/>   // Make request<br/>   response, err := client.Get(targetUrl)<br/>   if err != nil {<br/>      log.Fatal("Error making GET request. ", err)<br/>   }<br/>   defer response.Body.Close()<br/><br/>   // Read response<br/>   body, err := ioutil.ReadAll(response.Body)<br/>   if err != nil {<br/>      log.Fatal("Error reading body of response. ", err)<br/>   }<br/>   log.Println(string(body))<br/>}</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Summary</h1>
+                
+            
+            
+                
+<p>In this chapter, we covered the basics of running a web server written in Go. You should now feel comfortable creating a basic HTTP and HTTPS server. Furthermore, you should understand the concept of middleware and know how to implement prebuilt and custom middleware using the Negroni package.</p>
+<p>We also covered some best practices when trying to secure a web server. You should understand what a CSRF attack is, and how to prevent it. You should be able to explain local and remote file inclusion and what the risks are.</p>
+<p>The web server in the standard library is of production quality, and it has everything you need to create a production-ready web application. There are a number of other frameworks for web applications, such as Gorilla, Revel, and Martini, but, ultimately, you will have to evaluate the features provided by each framework and see if they align with your project needs.</p>
+<p>We also covered the HTTP client functions provided by the standard library. You should know how to make basic HTTP requests and authenticated requests using a client certificate. You should understand how to use an HTTP proxy when making requests.</p>
+<p>In the next chapter, we will explore web scraping to extract information from HTML-formatted websites. We will start with basic techniques, such as string matching and regular expressions, and also explore the <kbd>goquery</kbd> package for working with the HTML DOM. We will also cover how to use cookies to crawl with a logged-in session. Fingerprinting web applications to identify frameworks is also discussed. We will also cover crawling the web with both the breadth-first and depth-first approaches.</p>
+
+
+            
+
+            
+        
+    </body></html>

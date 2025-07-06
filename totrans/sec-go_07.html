@@ -1,0 +1,220 @@
+<html><head></head><body>
+        
+
+                            
+                    <h1 class="header-title">Secure Shell (SSH)</h1>
+                
+            
+            
+                
+<p><strong>Secure Shell</strong> (<strong>SSH</strong>) is a cryptographic network protocol for communicating on an unsecure network. The most common use of SSH is in connecting to a remote server and interacting with a shell. File transfer is also used via SCP and SFTP over the SSH protocol. SSH was created to replace the plaintext protocol, Telnet. Over time, there have been numerous RFCs to define SSH. Here is a partial list to give you an idea of what is defined. Since it is such a common and critical protocol, it is worth taking the time to understand the details. The following are some of the RFCs:</p>
+<ul>
+<li><em>RFC 4250</em> (<a href="https://tools.ietf.org/html/rfc4250" target="_blank">https://tools.ietf.org/html/rfc4250</a>): <em>The Secure Shell (SSH) Protocol Assigned Numbers</em></li>
+<li><em>RFC 4251</em> (<a href="https://tools.ietf.org/html/rfc4251">https://tools.ietf.org/html/rfc4251</a>): <em>The Secure Shell (SSH) Protocol Architecture</em></li>
+<li><em>RFC 4252</em> (<a href="https://tools.ietf.org/html/rfc4252">https://tools.ietf.org/html/rfc4252</a>): <em>The Secure Shell (SSH) Authentication Protocol</em></li>
+<li><em>RFC 4253</em> (<a href="https://tools.ietf.org/html/rfc4253">https://tools.ietf.org/html/rfc4253</a>): <em>The Secure Shell (SSH) Transport Layer Protocol</em></li>
+<li><em>RFC 4254</em> (<a href="https://tools.ietf.org/html/rfc4254">https://tools.ietf.org/html/rfc4254</a>): <em>The Secure Shell (SSH) Connection Protocol</em></li>
+<li><em>RFC 4255</em> (<a href="https://tools.ietf.org/html/rfc4255">https://tools.ietf.org/html/rfc4255</a>): <em>Using DNS to Securely Publish Secure Shell (SSH) Key Fingerprints</em></li>
+<li><em>RFC 4256</em> (<a href="https://tools.ietf.org/html/rfc4256">https://tools.ietf.org/html/rfc4256</a>): <em>Generic Message Exchange Authentication for the Secure Shell Protocol (SSH)</em></li>
+<li><em>RFC 4335</em> (<a href="https://tools.ietf.org/html/rfc4335" target="_blank">https://tools.ietf.org/html/rfc4335</a>): <em><em>The Secure Shell (SSH) Session Channel Break Extension</em></em></li>
+<li><em>RFC 4344</em> (<a href="https://tools.ietf.org/html/rfc4344" target="_blank">https://tools.ietf.org/html/rfc4344</a>): <em>The Secure Shell (SSH) Transport Layer Encryption Modes</em></li>
+<li><em>RFC 4345</em> (<a href="https://tools.ietf.org/html/rfc4345">https://tools.ietf.org/html/rfc4345</a>): <em>Improved Arcfour Modes for the Secure Shell (SSH) Transport Layer Protocol</em></li>
+</ul>
+<p>There were also additional expansions later to the standard, which you can read about at <a href="https://en.wikipedia.org/wiki/Secure_Shell#Standards_documentation" target="_blank">https://en.wikipedia.org/wiki/Secure_Shell#Standards_documentation</a>.</p>
+<p>SSH is a common target for brute force and default credential attacks across the internet. For this reason, you might consider putting SSH on a nonstandard port, but keep it to a system port (less than 1024) so that a low-privileged user cannot potentially hijack the port if the service goes down. If you leave SSH on the default port, services such as <kbd>fail2ban</kbd> can be invaluable for rate limiting and blocking brute force attacks. Ideally, password authentication is disabled completely and key authentication is required.</p>
+<p>The SSH package does not come packaged with the standard library, although it was written by the Go team. It is officially part of the Go project, but outside of the main Go source tree, so it is not installed with Go by default. It is available from <a href="https://golang.org/" target="_blank">https://golang.org/</a> and can be installed using this command:</p>
+<pre><strong>go get golang.org/x/crypto/ssh</strong></pre>
+<p>In this chapter, we will cover how to use the SSH client to connect, execute commands, and use an interactive shell. We will also cover the different methods of authentication such as using a password or a private key. The SSH package provides functions for creating a server, but we'll cover only the client in this book.</p>
+<p>This chapter will specifically cover the following for SSH:</p>
+<ul>
+<li>Authenticating with a password</li>
+<li>Authenticating with a private key</li>
+<li>Verifying the key of a remote host</li>
+<li>Executing a command over SSH</li>
+<li>Starting an interactive shell</li>
+</ul>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Using the Go SSH client</h1>
+                
+            
+            
+                
+<p>The <kbd>golang.org/x/crypto/ssh</kbd> package provides an SSH client that is compatible with SSH version 2—the latest version. The client will work with the OpenSSH servers and any other server that follows the SSH specifications. It supports the traditional client features such as subprocesses, port forwarding, and tunneling.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Authentication methods</h1>
+                
+            
+            
+                
+<p>Authentication is not just the first step but also the most critical. Improper authentication can lead to potential loss of confidentiality, integrity, and availability. A man-in-the-middle attack can occur if the remote server is not verified, leading to spying, manipulation, or blocking of data. Weak password authentication can be exploited by brute force attacks.</p>
+<p>Three examples are provided here. The first example covers password authentication, which is common, but not recommended due to the low entropy and bit count of passwords compared with that of cryptographic keys. The second example demonstrates how to use a private key to authenticate with a remote server. Both of these examples ignore the public key provided by the remote host. This is insecure, because you may end up connecting to a remote host you do not trust, but is good enough for testing. The third example of authentication is the ideal flow. It authenticates with a key and verifies the remote server.</p>
+<p>Note that this chapter does not use PEM formatted key files as in <a href="f68073f0-8cc8-40b5-af0e-795ce30e5271.xhtml" target="_blank">Chapter 6</a>, <em>Cryptography</em>. This uses SSH formatted keys, which is naturally the most common format for working with SSH. These examples are compatible with the OpenSSH tools and keys such as <kbd>ssh</kbd>, <kbd>sshd</kbd>, <kbd>ssh-keygen</kbd>, <kbd>ssh-copy-id</kbd>, and <kbd>ssh-keyscan</kbd>.</p>
+<p>I recommend that you use <kbd>ssh-keygen</kbd> to generate a public and private key pair for authentication. This will generate the <kbd>id_rsa</kbd> and <kbd>id_rsa.pub</kbd> files in the SSH key format. The <kbd>ssh-keygen</kbd> tool is part of the OpenSSH project and is packed with Ubuntu by default:</p>
+<pre><strong>ssh-keygen</strong></pre>
+<p>Use <kbd>ssh-copy-id</kbd> to copy your public key (<kbd>id_rsa.pub</kbd>) to the remote server's <kbd>~/.ssh/authorized_keys</kbd> file so that you can authenticate using the private key:</p>
+<pre><strong>ssh-copy-id yourserver.com</strong></pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Authenticating with a password</h1>
+                
+            
+            
+                
+<p>Password authentication over SSH is the simplest method. This example demonstrates how to configure an SSH client with the <kbd>ssh.ClientConfig</kbd> struct and then connect to an SSH server using <kbd>ssh.Dial()</kbd>. The client is configured to use a password by specifying <kbd>ssh.Password()</kbd> as the authentication function:</p>
+<pre>package main<br/><br/>import (<br/>   "golang.org/x/crypto/ssh"<br/>   "log"<br/>)<br/><br/>var username = "username"<br/>var password = "password"<br/>var host = "example.com:22"<br/><br/>func main() {<br/>   config := &amp;ssh.ClientConfig{<br/>      User: username,<br/>      Auth: []ssh.AuthMethod{<br/>         ssh.Password(password),<br/>      },<br/>      HostKeyCallback: ssh.InsecureIgnoreHostKey(),<br/>   }<br/>   client, err := ssh.Dial("tcp", host, config)<br/>   if err != nil {<br/>      log.Fatal("Error dialing server. ", err)<br/>   }<br/><br/>   log.Println(string(client.ClientVersion()))<br/>} </pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Authenticating with private key</h1>
+                
+            
+            
+                
+<p>A private key has a few advantages over password. It is much longer than a password, making it exponentially more difficult to brute force. It also eliminates the need to type in a password, making it convenient to connect to remote servers. Passwordless authentication is also helpful for cron jobs and other services that need to run automatically without human intervention. Some servers disable password authentication completely and require a key.</p>
+<p>The remote server will need to have your public key as an authorized key before you can authenticate using the private key.</p>
+<p>You can use the <kbd>ssh-copy-id</kbd> tool if it is available on your system. It will copy your public key to the remote server, place it in your home folder SSH directory (<kbd>~/.ssh/authorized_keys</kbd>), and set the correct permissions:</p>
+<pre><strong>ssh-copy-id example.com</strong> </pre>
+<p>The following example is similar to the previous example, where we authenticate using a password, but <kbd>ssh.ClientConfig</kbd> is configured to use <kbd>ssh.PublicKeys()</kbd> as the authentication function, instead of <kbd>ssh.Password()</kbd>. We will also create a special function named <kbd>getKeySigner()</kbd> in order to load the private key for the client from a file:</p>
+<pre>package main<br/><br/>import (<br/>   "golang.org/x/crypto/ssh"<br/>   "io/ioutil"<br/>   "log"<br/>)<br/><br/>var username = "username"<br/>var host = "example.com:22"<br/>var privateKeyFile = "/home/user/.ssh/id_rsa"<br/><br/>func getKeySigner(privateKeyFile string) ssh.Signer {<br/>   privateKeyData, err := ioutil.ReadFile(privateKeyFile)<br/>   if err != nil {<br/>      log.Fatal("Error loading private key file. ", err)<br/>   }<br/><br/>   privateKey, err := ssh.ParsePrivateKey(privateKeyData)<br/>   if err != nil {<br/>      log.Fatal("Error parsing private key. ", err)<br/>   }<br/>   return privateKey<br/>}<br/><br/>func main() {<br/>   privateKey := getKeySigner(privateKeyFile)<br/>   config := &amp;ssh.ClientConfig{<br/>      User: username,<br/>      Auth: []ssh.AuthMethod{<br/>         ssh.PublicKeys(privateKey), // Pass 1 or more key<br/>      },<br/>      HostKeyCallback: ssh.InsecureIgnoreHostKey(),<br/>   }<br/><br/>   client, err := ssh.Dial("tcp", host, config)<br/>   if err != nil {<br/>      log.Fatal("Error dialing server. ", err)<br/>   }<br/><br/>   log.Println(string(client.ClientVersion()))<br/>} </pre>
+<p>Note that you can pass more than a single private key to the <kbd>ssh.PublicKeys()</kbd> function. It accepts an unlimited number of keys. If you provide multiple keys, and only one works for the server, it will automatically use the one key that works.</p>
+<p>This is useful if you want to use the same configuration to connect to a number of servers. You may want to connect to 1,000 different hosts using 1,000 unique private keys. Instead of having to create multiple SSH client configs, you can reuse a single config that contains all of the private keys.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Verifying remote host</h1>
+                
+            
+            
+                
+<p>To verify the remote host, in <kbd>ssh.ClientConfig</kbd>, set <kbd>HostKeyCallback</kbd> to <kbd>ssh.FixedHostKey()</kbd> and pass it the public key of the remote host. If you attempt to connect to the server and it provides a different public key, the connection will be aborted. This is important for ensuring that you are connecting to the expected server and not a malicious server. If DNS is compromised, or an attacker performs a successful ARP spoof, it's possible that your connection will be redirected or will be a victim of the man-in-the-middle attack, but an attacker will not be able to imitate the real server without the corresponding private key for the server. For testing purposes, you may choose to ignore the key provided by the remote host.</p>
+<p>This example is the most secure way to connect. It uses a key to authenticate, as opposed to a password, and it verifies the public key of the remote server.</p>
+<p>This method will use <kbd>ssh.ParseKnownHosts()</kbd>. This uses the standard <kbd>known_hosts</kbd> file. The <kbd>known_hosts</kbd> format is the standard for OpenSSH. The format is documented in the <em>sshd(8)</em> manual page.</p>
+<p>Note that Go's <kbd>ssh.ParseKnownHosts()</kbd> will only parse a single entry, so you should create a unique file with a single entry for the server or ensure that the desired entry is at the top of the file.</p>
+<p>To obtain the remote server's public key for verification, use <kbd>ssh-keyscan</kbd>. This returns the server key in the <kbd>known_hosts</kbd> format that will be used in the following example. Remember, the Go <kbd>ssh.ParseKnownHosts</kbd> command only reads the first entry from a <kbd>known_hosts</kbd> file:</p>
+<pre><strong>ssh-keyscan yourserver.com</strong></pre>
+<p>The <kbd>ssh-keyscan</kbd> program will return multiple key types unless a key type is specified with the <kbd>-t</kbd> flag. Make sure that you choose the one with the desired key algorithm and that <kbd>ssh.ClientConfig()</kbd> has <kbd>HostKeyAlgorithm</kbd> listed to match. This example includes every possible <kbd>ssh.KeyAlgo*</kbd> option. I recommend that you choose the highest-strength algorithm possible and only allow that option:</p>
+<pre>package main<br/><br/>import (<br/>   "golang.org/x/crypto/ssh"<br/>   "io/ioutil"<br/>   "log"<br/>)<br/><br/>var username = "username"<br/>var host = "example.com:22"<br/>var privateKeyFile = "/home/user/.ssh/id_rsa"<br/><br/>// Known hosts only reads FIRST entry<br/>var knownHostsFile = "/home/user/.ssh/known_hosts"<br/><br/>func getKeySigner(privateKeyFile string) ssh.Signer {<br/>   privateKeyData, err := ioutil.ReadFile(privateKeyFile)<br/>   if err != nil {<br/>      log.Fatal("Error loading private key file. ", err)<br/>   }<br/><br/>   privateKey, err := ssh.ParsePrivateKey(privateKeyData)<br/>   if err != nil {<br/>      log.Fatal("Error parsing private key. ", err)<br/>   }<br/>   return privateKey<br/>}<br/><br/>func loadServerPublicKey(knownHostsFile string) ssh.PublicKey {<br/>   publicKeyData, err := ioutil.ReadFile(knownHostsFile)<br/>   if err != nil {<br/>      log.Fatal("Error loading server public key file. ", err)<br/>   }<br/><br/>   _, _, publicKey, _, _, err := ssh.ParseKnownHosts(publicKeyData)<br/>   if err != nil {<br/>      log.Fatal("Error parsing server public key. ", err)<br/>   }<br/>   return publicKey<br/>}<br/><br/>func main() {<br/>   userPrivateKey := getKeySigner(privateKeyFile)<br/>   serverPublicKey := loadServerPublicKey(knownHostsFile)<br/><br/>   config := &amp;ssh.ClientConfig{<br/>      User: username,<br/>      Auth: []ssh.AuthMethod{<br/>         ssh.PublicKeys(userPrivateKey),<br/>      },<br/>      HostKeyCallback: ssh.FixedHostKey(serverPublicKey),<br/>      // Acceptable host key algorithms (Allow all)<br/>      HostKeyAlgorithms: []string{<br/>         ssh.KeyAlgoRSA,<br/>         ssh.KeyAlgoDSA,<br/>         ssh.KeyAlgoECDSA256,<br/>         ssh.KeyAlgoECDSA384,<br/>         ssh.KeyAlgoECDSA521,<br/>         ssh.KeyAlgoED25519,<br/>      },<br/>   }<br/><br/>   client, err := ssh.Dial("tcp", host, config)<br/>   if err != nil {<br/>      log.Fatal("Error dialing server. ", err)<br/>   }<br/><br/>   log.Println(string(client.ClientVersion()))<br/>} </pre>
+<p class="mce-root"/>
+<p>Note that, in addition to the <kbd>ssh.KeyAlgo*</kbd> constants, there are <kbd>ssh.CertAlgo*</kbd> constants if certificates are used.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Executing a command over SSH</h1>
+                
+            
+            
+                
+<p>Now that we have established multiple ways of authenticating and connecting to a remote SSH server, we need to put <kbd>ssh.Client</kbd> to work. So far we have only been printing out the client version. The first goal is to execute a single command and view the output.</p>
+<p>Once <kbd>ssh.Client</kbd> is created, you can begin creating sessions. A client supports multiple sessions at once. A session has its own standard input, output, and error. They are standard reader and writer interfaces.</p>
+<p>To execute a command there are a few options: <kbd>Run()</kbd>, <kbd>Start()</kbd>, <kbd>Output()</kbd>, and <kbd>CombinedOutput()</kbd>. They are all very similar, but behave a little differently:</p>
+<ul>
+<li><kbd>session.Output(cmd)</kbd>: The <kbd>Output()</kbd> function will execute the command, and return <kbd>session.Stdout</kbd> as a byte slice.</li>
+<li><kbd>session.CombinedOutput(cmd)</kbd>: This does the same as <kbd>Output()</kbd>, but it returns both standard output and standard error combined.</li>
+<li><kbd>session.Run(cmd)</kbd>: The <kbd>Run()</kbd> function will execute the command and wait for it to finish. It will fill the standard output and error buffers, but it won't do anything with them. You have to manually read the buffers or set the session output to go to the Terminal output before calling <kbd>Run()</kbd> (for example, <kbd>session.Stdout = os.Stdout</kbd>). It will only return without an error if the program exited with an error code of <kbd>0</kbd> and there were no issues copying the standard output buffers.</li>
+<li><kbd>session.Start(cmd)</kbd>: The <kbd>Start()</kbd> function is similar to <kbd>Run()</kbd>, except that it will not wait for the command to finish. You must explicitly call <kbd>session.Wait()</kbd> if you want to block execution until the command is complete. This is useful for starting long running commands or if you want more control over the application flow.</li>
+</ul>
+<p>A session can only perform one action. Once you call <kbd>Run()</kbd>, <kbd>Output()</kbd>, <kbd>CombinedOutput()</kbd>, <kbd>Start()</kbd>, or <kbd>Shell()</kbd>, you can't use the session for executing any other commands. If you need to run multiple commands, you can string them together separated with a semicolon. For example, you can pass multiple commands in a single command string like this:</p>
+<pre><strong>df -h; ps aux; pwd; whoami;</strong></pre>
+<p>Otherwise, you can create a new session for each command you need to run. One session equates to one command.</p>
+<p>The following example connects to a remote SSH server using key authentication, and then it creates a session using <kbd>client.NewSession()</kbd>. The standard output from the session is then connected to our local Terminal standard output before calling <kbd>session.Run()</kbd>, which will execute the command on the remote server:</p>
+<pre>package main<br/><br/>import (<br/>   "golang.org/x/crypto/ssh"<br/>   "io/ioutil"<br/>   "log"<br/>   "os"<br/>)<br/><br/>var username = "username"<br/>var host = "example.com:22"<br/>var privateKeyFile = "/home/user/.ssh/id_rsa"<br/>var commandToExecute = "hostname"<br/><br/>func getKeySigner(privateKeyFile string) ssh.Signer {<br/>   privateKeyData, err := ioutil.ReadFile(privateKeyFile)<br/>   if err != nil {<br/>      log.Fatal("Error loading private key file. ", err)<br/>   }<br/><br/>   privateKey, err := ssh.ParsePrivateKey(privateKeyData)<br/>   if err != nil {<br/>      log.Fatal("Error parsing private key. ", err)<br/>   }<br/>   return privateKey<br/>}<br/><br/>func main() {<br/>   privateKey := getKeySigner(privateKeyFile)<br/>   config := &amp;ssh.ClientConfig{<br/>      User: username,<br/>      Auth: []ssh.AuthMethod{<br/>         ssh.PublicKeys(privateKey),<br/>      },<br/>      HostKeyCallback: ssh.InsecureIgnoreHostKey(),<br/>   }<br/><br/>   client, err := ssh.Dial("tcp", host, config)<br/>   if err != nil {<br/>      log.Fatal("Error dialing server. ", err)<br/>   }<br/><br/>   // Multiple sessions per client are allowed<br/>   session, err := client.NewSession()<br/>   if err != nil {<br/>      log.Fatal("Failed to create session: ", err)<br/>   }<br/>   defer session.Close()<br/><br/>   // Pipe the session output directly to standard output<br/>   // Thanks to the convenience of writer interface<br/>   session.Stdout = os.Stdout<br/><br/>   err = session.Run(commandToExecute)<br/>   if err != nil {<br/>      log.Fatal("Error executing command. ", err)<br/>   }<br/>} </pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Starting an interactive shell</h1>
+                
+            
+            
+                
+<p>In the previous example, we demonstrated how to run command strings. There is also an option to open a shell. By calling <kbd>session.Shell()</kbd>, an interactive login shell is executed, loading whatever default shell the user has and loading the default profile (for example, <kbd>.profile</kbd>). The call to <kbd>session.RequestPty()</kbd> is optional, but the shell works much better when requesting a psuedoterminal. You can set the terminal name to <kbd>xterm</kbd>, <kbd>vt100</kbd>, <kbd>linux</kbd>, or something custom. If you have issues with jumbled output due to color values being output, try <kbd>vt100</kbd>, and if that still does not work, use a nonstandard terminal name or a terminal name you know does not support colors. Many programs will disable color output if they do not recognize the terminal name. Some programs will not work at all with an unknown terminal type, such as <kbd>tmux</kbd>.</p>
+<p>More information about Go terminal mode constants is available at <a href="https://godoc.org/golang.org/x/crypto/ssh#TerminalModes" target="_blank">https://godoc.org/golang.org/x/crypto/ssh#TerminalModes</a>. Terminal mode flags are a POSIX standard and are defined in <em>RFC 4254</em>,<em> Encoding of Terminal Modes</em> (section 8), which you can find at <a href="https://tools.ietf.org/html/rfc4254#section-8" target="_blank">https://tools.ietf.org/html/rfc4254#section-8</a>.</p>
+<p>The following example connects to an SSH server using key authentication, and then creates a new session with <kbd>client.NewSession()</kbd>. Instead of executing a command with <kbd>session.Run()</kbd> like the previous example, we will use <kbd>session.RequestPty()</kbd> to get an interactive shell. Standard input, output, and error streams from the remote session are all connected to the local Terminal, so you can interact with it in real time just like any other SSH client (for example, PuTTY):</p>
+<pre>package main<br/><br/>import (<br/>   "fmt"<br/>   "golang.org/x/crypto/ssh"<br/>   "io/ioutil"<br/>   "log"<br/>   "os"<br/>)<br/><br/>func checkArgs() (string, string, string) {<br/>   if len(os.Args) != 4 {<br/>      printUsage()<br/>      os.Exit(1)<br/>   }<br/>   return os.Args[1], os.Args[2], os.Args[3]<br/>}<br/><br/>func printUsage() {<br/>   fmt.Println(os.Args[0] + ` - Open an SSH shell<br/><br/>Usage:<br/>  ` + os.Args[0] + ` &lt;username&gt; &lt;host&gt; &lt;privateKeyFile&gt;<br/><br/>Example:<br/>  ` + os.Args[0] + ` nanodano devdungeon.com:22 ~/.ssh/id_rsa<br/>`)<br/>}<br/><br/>func getKeySigner(privateKeyFile string) ssh.Signer {<br/>   privateKeyData, err := ioutil.ReadFile(privateKeyFile)<br/>   if err != nil {<br/>      log.Fatal("Error loading private key file. ", err)<br/>   }<br/><br/>   privateKey, err := ssh.ParsePrivateKey(privateKeyData)<br/>   if err != nil {<br/>      log.Fatal("Error parsing private key. ", err)<br/>   }<br/>   return privateKey<br/>}<br/><br/>func main() {<br/>   username, host, privateKeyFile := checkArgs()<br/><br/>   privateKey := getKeySigner(privateKeyFile)<br/>   config := &amp;ssh.ClientConfig{<br/>      User: username,<br/>      Auth: []ssh.AuthMethod{<br/>         ssh.PublicKeys(privateKey),<br/>      },<br/>      HostKeyCallback: ssh.InsecureIgnoreHostKey(),<br/>   }<br/><br/>   client, err := ssh.Dial("tcp", host, config)<br/>   if err != nil {<br/>      log.Fatal("Error dialing server. ", err)<br/>   }<br/><br/>   session, err := client.NewSession()<br/>   if err != nil {<br/>      log.Fatal("Failed to create session: ", err)<br/>   }<br/>   defer session.Close()<br/><br/>   // Pipe the standard buffers together<br/>   session.Stdout = os.Stdout<br/>   session.Stdin = os.Stdin<br/>   session.Stderr = os.Stderr<br/><br/>   // Get psuedo-terminal<br/>   err = session.RequestPty(<br/>      "vt100", // or "linux", "xterm"<br/>      40,      // Height<br/>      80,      // Width<br/>      // https://godoc.org/golang.org/x/crypto/ssh#TerminalModes<br/>      // POSIX Terminal mode flags defined in RFC 4254 Section 8.<br/>      // https://tools.ietf.org/html/rfc4254#section-8<br/>      ssh.TerminalModes{<br/>         ssh.ECHO: 0,<br/>      })<br/>   if err != nil {<br/>      log.Fatal("Error requesting psuedo-terminal. ", err)<br/>   }<br/><br/>   // Run shell until it is exited<br/>   err = session.Shell()<br/>   if err != nil {<br/>      log.Fatal("Error executing command. ", err)<br/>   }<br/>   session.Wait()<br/>} </pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Summary</h1>
+                
+            
+            
+                
+<p>After reading this chapter, you should now understand how to use the Go SSH client to connect and authenticate using a password or a private key. In addition, you should now understand how to execute a command on a remote server or how to begin an interactive session.</p>
+<p>How would you apply an SSH client programmatically? Can you think of any use cases? Do you manage multiple remote servers? Could you automate any tasks?</p>
+<p>The SSH package also contains types and functions for creating an SSH server, but we have not covered them in this book. Read more about creating an SSH server at <a href="https://godoc.org/golang.org/x/crypto/ssh#NewServerConn" target="_blank">https://godoc.org/golang.org/x/crypto/ssh#NewServerConn</a> and more about the SSH package overall at <a href="https://godoc.org/golang.org/x/crypto/ssh" target="_blank">https://godoc.org/golang.org/x/crypto/ssh</a>.</p>
+<p>In the next chapter, we'll look at brute force attacks, where passwords are guessed until eventually a correct password is found. Brute forcing is something we can do with the SSH client, as well as other protocols and applications. Continue reading the next chapter to learn how to execute a brute force attack.</p>
+
+
+            
+
+            
+        
+    </body></html>

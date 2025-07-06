@@ -1,0 +1,522 @@
+<html><head></head><body>
+        
+
+                            
+                    <h1 class="header-title">Working with Serialized Data Structures</h1>
+                
+            
+            
+                
+<p>In this chapter, we'll develop greater skills while working with nested lists and dictionaries by manipulating <strong>JavaScript Object Notation</strong> (<strong>JSON</strong>) structured data. Our artifact of interest is raw Bitcoin account data that contains, among other things, a list of all sent and received transactions. We'll access this dataset using a web <strong>Application Programming Interface</strong> (<strong>API</strong>) and parse it in a manner conducive to analysis.</p>
+<p>APIs are created for software products and allow programmers to interface with the software in defined ways. Publicly accessible APIs aren't always available for the given software. When available, they expedite code development by offering methods to interact with the software, as the APIs will handle lower-level implementation details. Developers implement APIs to encourage others to build supporting programs and, additionally, control the manner in which other developers' code interacts with their software. By creating an API, developers are giving other programmers a controlled manner of interfacing with their program.</p>
+<p>In this chapter, we'll use the web API from <a href="https://www.blockchain.info">https://www.blockchain.info</a> to query and receive Bitcoin account information for a given Bitcoin address. The JSON data that this API generates can be converted into Python objects using the JSON module from the standard library. Instructions and examples of their API can be found at <a href="https://www.blockchain.info/api/blockchain_api">https://www.blockchain.info/api/blockchain_api</a>.</p>
+<p>In this chapter, we'll cover the following:</p>
+<ul>
+<li>Discussing and manipulating serialized structures including <strong>Extensible Markup Language</strong> (<strong>XML</strong>) and JSON data</li>
+<li>Creating logs with Python</li>
+<li>Reporting results in a CSV output format</li>
+</ul>
+<p>The code for this chapter was developed and tested using Python 2.7.15 and Python 3.7.1. The <kbd>bitcoin_address_lookup.v1.py</kbd> and <kbd>bitcoin_address_lookup.v2.py</kbd> scripts were developed to work with Python 3.7.1 and not Python 2.7.15.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Serialized data structures</h1>
+                
+            
+            
+                
+<p>Serialization is a process whereby data objects are preserved during storage on a computer system. Serializing data preserves the original type of the object. That's to say, we can serialize dictionaries, lists, integers, or strings into a file. Sometime later, when we deserialize this file, those objects will still maintain their original data type. Serialization is great because if, for example, we stored script objects to a text file, we wouldn't be able to feasibly reconstruct those objects into their appropriate data types as easily. As we know, reading a text file reads in data as a string.</p>
+<p>XML and JSON are the two common examples of plain text-encoded serialization formats. You may already be accustomed to analyzing these files in forensic investigations. Analysts familiar with mobile device forensics will likely recognize application-specific XML files containing account or configuration details. Let's look at how we can leverage Python to parse XML and JSON files.</p>
+<p>We can use the <kbd>xml</kbd> module to parse any markup language that includes XML and HTML data. The following <kbd>book.xml</kbd> file in the text contains the details about this book. If you've never seen XML data before, the first thing you may note is that it's similar in structure to HTML, another markup language, where contents are surrounded by opening and closing tags, as follows:</p>
+<pre>&lt;?xml version="1.0" encoding="UTF-8"?&gt;<br/>&lt;root&gt;<br/>  &lt;authors&gt;Preston Miller &amp;amp; Chapin Bryce&lt;/authors&gt;<br/>  &lt;chapters&gt;<br/>   &lt;element&gt;<br/>     &lt;chapterNumber&gt;1&lt;/chapterNumber&gt;<br/>     &lt;chapterTitle&gt;Now for Something Completely Different&lt;/chapterTitle&gt;<br/>     &lt;pageCount&gt;30&lt;/pageCount&gt;<br/>   &lt;/element&gt;<br/>   &lt;element&gt;<br/>     &lt;chapterNumber&gt;2&lt;/chapterNumber&gt;<br/>     &lt;chapterTitle&gt;Python Fundamentals&lt;/chapterTitle&gt;<br/>     &lt;pageCount&gt;25&lt;/pageCount&gt;<br/>   &lt;/element&gt;<br/>  &lt;/chapters&gt;<br/>  &lt;numberOfChapters&gt;13&lt;/numberOfChapters&gt;<br/>  &lt;pageCount&gt;500&lt;/pageCount&gt;<br/>  &lt;publisher&gt;Packt Publishing&lt;/publisher&gt;<br/>  &lt;title&gt;Learning Python for Forensics&lt;/title&gt;<br/>&lt;/root&gt; </pre>
+<p>For analysts, XML and JSON files are easy to read because they're in plain text. However, a manual review becomes impractical when working with files containing thousands of lines. Fortunately, these files are highly structured, and even better, they're meant to be used by programs.</p>
+<p>To explore XML, we need to use the <kbd>ElementTree</kbd> class from the <kbd>xml</kbd> module, which will parse the data and allow us to iterate through the children of the root node. In order to parse the data, we must specify the file being parsed. In this case, our <kbd>book.xml</kbd> file is located in the same working directory as the Python interactive prompt. If this weren't the case, we would need to specify the file path in addition to the filename. If you're using Python 2, please make sure to import <kbd>print_function</kbd> from <kbd>__future__ </kbd>. We use the <kbd>getroot()</kbd> function to access the root-level node, as follows:</p>
+<pre><strong>&gt;&gt;&gt; import xml.etree.ElementTree as ET</strong><br/><strong>&gt;&gt;&gt; tree = ET.parse('book.xml')</strong><br/><strong>&gt;&gt;&gt; root = tree.getroot()</strong> </pre>
+<p>With the root element, let's use the <kbd>find()</kbd> function to search for the first instance of the <kbd>authors</kbd> tag in the XML file. Each element has different properties, such as <kbd>tag</kbd>, <kbd>attrib</kbd>, and <kbd>text</kbd>. The <kbd>tag</kbd> element is a string that describes the data, which in this case is <kbd>authors</kbd>. An attribute(s) or <kbd>attrib</kbd> are stored in a dictionary if present. Attributes are values assigned within a tag. For example, we could have created a <kbd>chapter</kbd> tag:</p>
+<pre>&lt;chapter number=2, title="Python Fundamentals", count=20 /&gt; </pre>
+<p>The attributes for this object would be a dictionary with the keys number, title, and count and their respective values. To access the content between the tags (for example, <kbd>chapterNumber</kbd>), we would need to use the <kbd>text</kbd> attribute.</p>
+<p>We can use the <kbd>findall()</kbd> function to find all occurrences of a specified child tag. In the following example, we're looking for every instance of <kbd>chapters/element</kbd> found in the dataset. Once found, we can use list indices to access specific tags within the <kbd>element</kbd> parent tag. In this case, we only want to access the chapter number and title in the first two positions of the element. Look at the following example:</p>
+<pre><strong>&gt;&gt;&gt; print(root.find('authors').text)</strong><br/><strong>Preston Miller &amp; Chapin Bryce</strong><br/><strong>&gt;&gt;&gt; for element in root.findall('chapters/element'):</strong><br/><strong>... print('Chapter #{}'.format(element[0].text))</strong><br/><strong>... print('Chapter Title: {}'.format(element[1].text))</strong><br/><strong>...</strong><br/><strong>Chapter #1</strong><br/><strong>Chapter Title: Now for Something Completely Different</strong><br/><strong>Chapter #2</strong><br/><strong>Chapter Title: Python Fundamentals</strong> </pre>
+<p>There are a number of other methods we can use to process markup language files using the <kbd>xml</kbd> module. For the full documentation, please see <a href="https://docs.python.org/3/library/xml.etree.elementtree.html" target="_blank">https://docs.python.org/3/library/xml.etree.elementtree.html</a><a href="https://docs.python.org/3/library/xml.etree.elementtree.html" target="_blank">.</a></p>
+<p>With XML covered, let's look at that same example stored as JSON data and, more importantly, how we use Python to interpret that data. Later, we're going to create a JSON file named <kbd>book.json</kbd>; note the use of keys, such as title, authors, publisher, and their associated values are separated by a colon. This is similar to how a dictionary is structured in Python. In addition, note the use of the square brackets for the <kbd>chapters</kbd> key and then how the embedded dictionary-like structures are separated by commas. In Python, this <kbd>chapters</kbd> structure is interpreted as a list containing dictionaries once it's loaded with the <kbd>json</kbd> module:</p>
+<pre>{<br/>  "title": "Learning Python Forensics",<br/>  "authors": "Preston Miller &amp; Chapin Bryce",<br/>  "publisher": "Packt Publishing",<br/>  "pageCount": 500,<br/>  "numberOfChapters": 13,<br/>  "chapters":<br/>  [<br/>   {<br/>    "chapterNumber": 1,<br/>    "chapterTitle": "Now for Something Completely Different",<br/>    "pageCount": 30<br/>   },<br/>   {<br/>    "chapterNumber": 2,<br/>    "chapterTitle": "Python Fundamentals",<br/>    "pageCount": 25<br/>   }<br/>  ]<br/>}</pre>
+<p>To parse this data structure using the <kbd>json</kbd> module, we use the <kbd>loads()</kbd> function. Unlike our XML example, we need to first open a file object before we can use <kbd>loads()</kbd> to convert the data. In the next code block, the <kbd>book.json</kbd> file, which is located in the same working directory as the interactive prompt, is opened and its contents are read into the <kbd>loads()</kbd> method. As an aside, we can use the <kbd>dump()</kbd> function to perform the reverse operation and convert Python objects into the JSON format for storage. As with the XML code block, if you're using Python 2, please import <kbd>print_function</kbd> from <kbd>__future__</kbd>:</p>
+<pre><strong>&gt;&gt;&gt; import json</strong><br/><strong>&gt;&gt;&gt; jsonfile = open('book.json', 'r')</strong><br/><strong>&gt;&gt;&gt; decoded_data = json.loads(jsonfile.read())</strong><br/><strong>&gt;&gt;&gt; print(type(decoded_data))</strong><br/><strong>&lt;class'dict'&gt;</strong><br/><strong>&gt;&gt;&gt; print(decoded_data.keys())</strong><br/><strong>dict_keys(['title', 'authors', 'publisher', 'pageCount', 'numberOfChapters', 'chapters'])</strong></pre>
+<p>The module's <kbd>loads()</kbd> method reads the JSON file's string content and rebuilds the data into Python objects. As you can see in the preceding code, the overall structure is stored in a dictionary with key and value pairs. JSON is capable of storing the original data type of the objects. For example, <kbd>pageCount</kbd> is deserialized as an integer and <kbd>title</kbd> as a string object.</p>
+<p>Not all the data is stored in the form of dictionaries. The <kbd>chapters</kbd> key is rebuilt as a list. We can use a <kbd>for</kbd> loop to iterate through <kbd>chapters</kbd> and print out any pertinent details:</p>
+<pre><strong>&gt;&gt;&gt; for chapter in decoded_data['chapters']:</strong><br/><strong>... number = chapter['chapterNumber']</strong><br/><strong>... title = chapter['chapterTitle']</strong><br/><strong>... pages = chapter['pageCount']</strong><br/><strong>... print('Chapter {}, {}, is {} pages.'.format(number, title, pages))</strong><br/><strong>... </strong><br/><strong>Chapter 1, Now For Something Completely Different, is 30 pages.</strong><br/><strong>Chapter 2, Python Fundamentals, is 25 pages.</strong> </pre>
+<p>To be clear, the <kbd>chapters</kbd> key was stored as a list in the JSON file and contained nested dictionaries for each <kbd>chapter</kbd> element. When iterating through the list of dictionaries, we stored and then printed values associated with the dictionary keys to the user. We'll be using this exact technique on a larger scale to parse our Bitcoin JSON data. More details regarding the <kbd>json</kbd> module can be found at <a href="https://docs.python.org/3/library/json.html" target="_blank">https://docs.python.org/3/library/json.html</a>. Both the XML and JSON example files used in this section are available in the code bundle for this chapter. Other modules exist, such as <kbd>pickle</kbd> and <kbd>shelve</kbd>, which can be used for data serialization. However, they won't be covered in this book.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">A simple Bitcoin web API</h1>
+                
+            
+            
+                
+<p>Bitcoin has caught the world by storm and is making headlines; it's the most successful and famous—or infamous, depending on whom you speak to—decentralized cryptocurrency. Bitcoin is regarded as an "anonymous" online cash substitute. SilkRoad, an illegal marketplace on the Tor network, which has been shut down, accepted Bitcoin as payment for illicit goods or services. Since gaining popularity, some websites and brick and mortar stores accept Bitcoins for payment. It has also gained vast public attention for climbing to unforeseen heights as its value rose well above everyone's expectations.</p>
+<p>Bitcoin assigns individuals addresses to store their Bitcoins. These users can send or receive Bitcoins by specifying the address they would like to use. In Bitcoin, addresses are represented as 34 case-sensitive alphanumeric characters. Fortunately, all transactions are stored publicly on the blockchain. The blockchain keeps track of the time, input, output, and values for each transaction. In addition, each transaction is assigned a unique transaction hash.</p>
+<p>Blockchain explorers are programs that allow an individual to search the blockchain. For example, we can search for a particular address or transaction of interest. One such blockchain explorer is at <a href="https://www.blockchain.com/explorer" target="_blank">https://www.blockchain.com/explorer</a> and is what we'll use to generate our dataset. Let's take a look at some of the data we'll need to parse.</p>
+<p>Our script will ingest the JSON-structured transaction data, process it, and output this information to examiners in an analysis-ready state. After the user inputs the address of interest, we'll use the <kbd>blockchain.info</kbd> API to query the blockchain and pull down the relevant account data, including all associated transactions, as follows:</p>
+<pre>https://blockchain.info/address/%btc_address%?format=json </pre>
+<p>We'll query the preceding URL by replacing <kbd>%btc_address%</kbd> with the actual address of interest. For this exercise, we'll be investigating the <kbd>125riCXE2MtxHbNZkRtExPGAfbv7LsY3Wa</kbd> address. If you open a web browser and replace <kbd>%btc_address%</kbd> with the address of interest, we can see the raw JSON data that our script will be responsible for parsing:</p>
+<pre>{<br/> "hash160":"0be34924c8147535c5d5a077d6f398e2d3f20e2c",<br/> "address":"125riCXE2MtxHbNZkRtExPGAfbv7LsY3Wa",<br/> "n_tx":25,<br/> "total_received":80000000,<br/> "total_sent":80000000,<br/> "final_balance":0,<br/> "txs":<br/>  [<br/>   ...<br/>  ]<br/>} </pre>
+<p>This is a more complicated version of our previous JSON example; however, the same rules apply. Starting with <kbd>hash160</kbd>, there's general account information, such as the address, number of transactions, balance, and total sent and received. Following that is the transaction array, denoted by the square brackets, that contains each transaction the address was involved in.</p>
+<p>Looking at an individual transaction, a few keys stand out, such as the <kbd>addr</kbd> value from the input and output lists, time, and hash. When we iterate through the <kbd>txs</kbd> list, these keys will be used to reconstruct each transaction and display that information to the examiner. We have the following transaction:</p>
+<pre>"txs":[{<br/>  "lock_time":0,<br/>  "result":0,<br/>  "ver":1,<br/>  "size":225,<br/>  "inputs":[<br/>   {<br/>     "sequence":4294967295,<br/>     "prev_out":{<br/>      "spent":true,<br/>      "tx_index":103263818,<br/>      "type":0,<br/>      "addr":"125riCXE2MtxHbNZkRtExPGAfbv7LsY3Wa",<br/>      "value":51498513,<br/>      "n":1,<br/>        "script":"76a9140be34924c8147535c5d5a077d6f398e2d3f20e2c88ac"<br/>    },<br/>  "script":"4730440220673b8c6485b263fa15c75adc5de55c902cf80451c3c54f8e49df4357ecd1a3ae022047aff8f9fb960f0f5b0313869b8042c7a81356e4cd23c9934ed1490110911ce9012103e92a19202a543d7da710af28c956807c13f31832a18c1893954f905b339034fb"<br/>  }],<br/>  "time":1442766495,<br/>  "tx_index":103276852,<br/>  "vin_sz":1,<br/>    "hash":"f00febdc80e67c72d9c4d50ae2aa43eec2684725b566ec2a9fa9e8dbfc449827",<br/>  "vout_sz":2,<br/>  "relayed_by":"127.0.0.1",<br/>  "out":[<br/>   {<br/>     "spent":false,<br/>     "tx_index":103276852,<br/>     "type":0,<br/>     "addr":"12ytXWtNpxaEYW6ZvM564hVnsiFn4QnhAT",<br/>     "value":100000,<br/>     "n":0,<br/>     "script":"76a91415ba6e75f51b0071e33152e5d34c2f6bca7998e888ac"<br/>   }</pre>
+<p>As with the previous chapter, we'll approach this task in a modular way by iteratively building our script. Besides working with serialized data structures, we're also going to introduce the concepts of creating logs and writing data to CSV files. Like <kbd>argparse</kbd>, the <kbd>logging</kbd> and <kbd>csv</kbd> modules will feature regularly in our forensic scripts.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Our first iteration – bitcoin_address_lookup.v1.py</h1>
+                
+            
+            
+                
+<p>The first iteration of our script will focus primarily on ingesting and processing the data appropriately. In this script, we'll print out transaction summaries for the account to the console. In later iterations, we'll add logging and outputting data to a CSV file. This script has been written and tested specifically for Python 3.7.1. The usage of the <kbd>urllib</kbd> library, a library we use to make HTTP requests, is structured differently in Python 2 and 3. In the final iteration of this script, we'll demonstrate the necessary code to make this script Python 2 and 3 compatible.</p>
+<p>We'll use five modules in the initial version of the script. The <kbd>argparse</kbd>, <kbd>json</kbd>, <kbd>urllib</kbd>, and <kbd>sys</kbd> modules are all part of the standard library. The <kbd>unix_converter</kbd> module is the mostly unmodified script that we wrote in <a href="b09a5e87-9ada-41cb-ba04-bd61c744bf99.xhtml" target="_blank">Chapter 2</a>, <em>Python Fundamentals</em>, and is used here to convert Unix timestamps into the Bitcoin transaction data. The specific version of this module is available in the provided code for this chapter. Both <kbd>argparse</kbd> and <kbd>urllib</kbd> have been used previously for user input and web requests, respectively. The <kbd>json</kbd> module is responsible for loading our transaction data into Python objects that we can manipulate:</p>
+<pre>001 """First iteration of the Bitcoin JSON transaction parser."""<br/>002 import argparse<br/>003 import json<br/>004 import urllib.request<br/>005 import unix_converter as unix<br/>006 import sys<br/>...<br/>036 __authors__ = ["Chapin Bryce", "Preston Miller"]<br/>037 __date__ = 20181027<br/>038 __description__ = """This scripts downloads address transactions<br/>039     using blockchain.info public APIs"""</pre>
+<p>Our script's logic is handled by five functions. The <kbd>main()</kbd> function, defined on line 42, serves as the coordinator between the other four functions. First, we pass the address supplied by the user to the <kbd>get_address()</kbd> function. This function is responsible for calling the <kbd>blockchain.info</kbd> API using <kbd>urllib</kbd> and returning the JSON data containing the transactions for that address.</p>
+<p>Afterward, <kbd>print_transactions()</kbd> is called to traverse the nested dictionaries and lists and print out transaction details. In <kbd>print_transactions()</kbd>, function calls are made to <kbd>print_header()</kbd> and <kbd>get_inputs()</kbd>. The <kbd>print_header()</kbd> function is responsible for printing out non-transaction data, such as the number of transactions, current balance, and total sent and received values:</p>
+<pre>042 def main():<br/>...<br/>053 def get_address():<br/>...<br/>070 def print_transactions():<br/>...<br/>098 def print_header():<br/>...<br/>116 def get_inputs():</pre>
+<p>As seen before, we use <kbd>argparse</kbd> to create an <kbd>ArgumentParser</kbd> object and add the appropriate argument. Our only argument, <kbd>ADDR</kbd>, is a positional argument representing the Bitcoin address of interest. We call the <kbd>main()</kbd> function on line 145 and pass the <kbd>ADDR</kbd> argument:</p>
+<pre>128 if __name__ == '__main__':<br/>129     # Run this code if the script is run from the command line.<br/>130     parser = argparse.ArgumentParser(<br/>131         description=__description__,<br/>132         epilog='Built by {}. Version {}'.format(<br/>133             ", ".join(__authors__), __date__),<br/>134         formatter_class=argparse.ArgumentDefaultsHelpFormatter<br/>135     )<br/>136     parser.add_argument('ADDR', help='Bitcoin Address')<br/>137     args = parser.parse_args()<br/>138 <br/>139     # Print Script Information<br/>140     print('{:=^22}'.format(''))<br/>141     print('{}'.format('Bitcoin Address Lookup'))<br/>142     print('{:=^22} \n'.format(''))<br/>143 <br/>144     # Run main program<br/>145     main(args.ADDR)</pre>
+<p>A flow diagram of our script can be seen as follows:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="img/fe65d8a5-f688-45fc-964f-29f78b22e0d4.png"/></p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Exploring the main() function</h1>
+                
+            
+            
+                
+<p>The <kbd>main()</kbd> function is relatively simple. First, on line 48 we call the <kbd>get_address()</kbd> function and store the result in a variable named <kbd>raw_account</kbd>. This variable contains our JSON-formatted transaction data. In order to manipulate this data, we use the <kbd>json.loads()</kbd> function to deserialize the JSON data and store it in the account variable. At this point, our account variable is a series of dictionaries and lists that we can begin to traverse, which is exactly what we do in the <kbd>print_transactions()</kbd> function called on line 50:</p>
+<pre>042 def main(address):<br/>043     """<br/>044     The main function handles coordinating logic<br/>045     :param address: The Bitcoin Address to lookup<br/>046     :return: Nothing<br/>047     """<br/>048     raw_account = get_address(address)<br/>049     account = json.loads(raw_account.read())<br/>050     print_transactions(account)</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Understanding the get_address() function</h1>
+                
+            
+            
+                
+<p>This is an integral, though a potentially error-prone, component of our script because it relies on the user correctly supplying data. The code itself is just a simple data request. However, when working with user supplied arguments, it isn't safe to assume that the user gave the script the correct data. Considering the length and somewhat random-looking sequence of a Bitcoin address, it's entirely possible that the user might supply an incorrect address. We'll catch any instance of <kbd>URLError</kbd> from the <kbd>urllib.error</kbd> module to handle a malformed input. <kbd>URLError</kbd> isn't part of the built-in exceptions we've talked about before and is a custom exception defined by the <kbd>urrlib</kbd> module:</p>
+<pre>053 def get_address(address):<br/>054     """<br/>055     The get_address function uses the blockchain.info Data API<br/>056     to pull pull down account information and transactions for<br/>057     address of interest<br/>058     :param address: The Bitcoin Address to lookup<br/>059     :return: The response of the url request<br/>060     """</pre>
+<p>On line 62, we insert the user-supplied address into the <kbd>blockchain.info</kbd> API call using the string <kbd>format()</kbd> method. Then, we try to return the data requested using the <kbd>urllib.request.urlopen()</kbd> function. If the user supplies an invalid address or if the user doesn't have an internet connection, <kbd>URLError</kbd> will be caught. Once the error has been caught, we notify the user and exit the script, calling <kbd>sys.exit(1)</kbd> on line 67:</p>
+<pre>061     url = 'https://blockchain.info/address/{}?format=json'<br/>062     formatted_url = url.format(address)<br/>063     try:<br/>064         return urllib.request.urlopen(formatted_url)<br/>065     except urllib.error.URLError:<br/>066         print('Received URL Error for {}'.format(formatted_url))<br/>067         sys.exit(1)</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Working with the print_transactions() function</h1>
+                
+            
+            
+                
+<p>This function handles the bulk of the processing logic in our code. This function traverses the transactions, or <kbd>txs</kbd>, list of embedded dictionaries from the loaded JSON data.</p>
+<p>For each transaction, we'll print out its relative transaction number, the transaction hash, and the time of the transaction. Both the hash and time keys are easy to access as their values are stored in the outermost dictionary. The input and output details of the transaction are stored in an inner dictionary mapped to the input and output keys.</p>
+<p>As is often the case, the time value is stored in Unix time. Luckily, in <a href="b09a5e87-9ada-41cb-ba04-bd61c744bf99.xhtml" target="_blank">Chapter 2</a>, <em>Python Fundamentals</em>, we wrote a script to handle such conversions, and once more we'll reuse this script by calling the <kbd>unix_converter()</kbd> method. The only change made to this function was removing the UTC label as these time values are stored in local time.</p>
+<p>Because we imported <kbd>unix_converter</kbd> as <kbd>unix</kbd>, we must refer to the module as <kbd>unix</kbd>. </p>
+<p>Let's take a quick look at the data structure we're dealing with. Imagine if we could pause the code during execution and inspect contents of variables, such as our account variable. At this point in this book, we'll just show you the contents of the <kbd>account</kbd> variable at this stage of execution. Later on in this book, we'll more formally discuss debugging in Python using the <kbd>pdb</kbd> module.</p>
+<p>More information on the Python Debugger (<kbd>pdb</kbd>) is available in the documentation at <a href="https://docs.python.org/3/library/pdb.html">https://docs.python.org/3/library/pdb.html</a>.</p>
+<p>In the following example, we can see the keys mapped to the first transaction in the <kbd>txs</kbd> list within the <kbd>account</kbd> dictionary. The <kbd>hash</kbd> and <kbd>time</kbd> keys are mapped to string and integer objects, respectively, which we can preserve as variables in our script:</p>
+<pre><strong>&gt;&gt;&gt; print(account['txs'][0].keys())</strong><br/><strong>dict_keys(['ver', 'inputs', 'weight', 'block_height', 'relayed_by',</strong><br/><strong> 'out', 'lock_time', 'result', 'size', 'time', 'tx_index', 'vin_sz',</strong><br/><strong> 'hash', 'vout_sz'])</strong></pre>
+<p>Next, we need to access the input and output details for the transaction. Let's take a look at the <kbd>out</kbd> dictionary. By looking at the keys, we can immediately identify the address, <kbd>addr</kbd>, and <kbd>value</kbd> sent as being valuable information. With an understanding of the layout and what data we want to present to the user, let's take a look at how we process each transaction in the <kbd>txs</kbd> list:</p>
+<pre><strong>&gt;&gt;&gt; print(account['txs'][0]['out'][0].keys())</strong><br/><strong>dict_keys(['spent', 'tx_index', 'type', 'addr', 'value', 'n',</strong><br/><strong> 'script'])</strong></pre>
+<p>Before printing details of each transaction, we call and print basic account information parsed by the <kbd>print_header()</kbd> helper function to the console on line 77. On line 79, we begin to iterate through each transaction in the <kbd>txs</kbd> list. We've wrapped the list with the <kbd>enumerate()</kbd> function to update our counter, and the first variable in the <kbd>for</kbd> loop, <kbd>i</kbd>, to keep track of which transaction we're processing:</p>
+<pre>070 def print_transactions(account):<br/>071     """<br/>072     The print_transaction function is responsible for presenting<br/>073     transaction details to end user.<br/>074     :param account: The JSON decoded account and transaction data<br/>075     :return:<br/>076     """<br/>077     print_header(account)<br/>078     print('Transactions')<br/>079     for i, tx in enumerate(account['txs']):</pre>
+<p>For each transaction, we print the relative transaction number, <kbd>hash</kbd>, and <kbd>time</kbd>. As we saw earlier, we can access <kbd>hash</kbd> or <kbd>time</kbd> by supplying the appropriate key. Remember that we do need to convert the Unix timestamp stored in the <kbd>time</kbd> key. We accomplish this by passing the value to the <kbd>unix_converter()</kbd> function:</p>
+<pre>080         print('Transaction #{}'.format(i))<br/>081         print('Transaction Hash:', tx['hash'])<br/>082         print('Transaction Date: {}'.format(<br/>083             unix.unix_converter(tx['time'])))</pre>
+<p>On line 84, we begin to traverse the output list in the outside dictionary. This list is made up of multiple dictionaries with each representing an output for a given transaction. The keys we're interested in these dictionaries are the <kbd>addr</kbd> and <kbd>value</kbd> keys:</p>
+<pre>084         for outputs in tx['out']:</pre>
+<p>Be aware that the <kbd>value</kbd> value (not a typo) is stored as a whole number rather than a float and so a transaction of 0.025 BTC is stored as 2,500,000. We need to multiply this value by 10<sup>-8</sup> to accurately reflect the value of the transaction. Let's call our helper function, <kbd>get_inputs()</kbd>, on line 85. This function will parse the input for the transaction separately and return the data in a list:</p>
+<pre>085              inputs = get_inputs(tx)</pre>
+<p>On line 86, we check to see whether there's more than one input address. That conditional will dictate what our print statement looks like. Essentially, if there's more than one input address, each address will be joined with an ampersand to clearly indicate the additional addresses.</p>
+<p>The <kbd>print</kbd> statements on lines 87 and 91 use the string formatting method to appropriately display our processed data in the console. In these strings, we use the curly braces to denote three different variables. We use the <kbd>join()</kbd> function to convert a list into a string by joining on some delimiter. The second and third variables are the output <kbd>addr</kbd> and <kbd>value</kbd> keys, respectively:</p>
+<pre>086             if len(inputs) &gt; 1:<br/>087                 print('{} --&gt; {} ({:.8f} BTC)'.format(<br/>088                     ' &amp; '.join(inputs), output['addr'],<br/>089                     outputs['value'] * 10**-8))<br/>090             else:<br/>091                 print('{} --&gt; {} ({:.8f} BTC)'.format(<br/>092                     ''.join(inputs), outputs['addr'],<br/>093                     outputs['value'] * 10**-8))<br/>094 <br/>095         print('{:=^22}\n'.format(''))</pre>
+<p>Note how the designation for the value object is different from the rest. Because our value is a float, we can use string formatting to properly display the data to the correct precision. In the format descriptor, <kbd>{:.8f}</kbd>, the <kbd>8</kbd> represents the number of decimal places we want to allow. If there are more than eight decimal places, the value is rounded to the nearest number. <kbd>f</kbd> lets the <kbd>format()</kbd> method know that the input is expected to be of the float type. This function, while responsible for printing out the results to the user, uses two helper functions to perform its job.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">The print_header() helper function</h1>
+                
+            
+            
+                
+<p>The <kbd>print_header()</kbd> helper function prints the account information to the console before transactions are printed. Specifically, the address, number of transactions, current balance, and total Bitcoins sent and received are displayed to the user. Take a look at the following code:</p>
+<pre>098 def print_header(account):<br/>099     """<br/>100     The print_header function prints overall header information<br/>101     containing basic address information.<br/>102     :param account: The JSON decoded account and transaction data<br/>103     :return: Nothing<br/>104     """</pre>
+<p>On lines 105 through 113, we print our values of interest using the string formatting method. During our program design, we chose to create this as a separate function in order to improve our code readability. Functionally, this code could have easily been, and originally was, in the <kbd>print_transactions()</kbd> function. It was separated to compartmentalize the different phases of execution. The purpose of the print statement on line 113 is to create a line of 22 left-aligned equal signs to visually separate the account information from the transactions in the console:</p>
+<pre>105     print('Address:', account['address'])<br/>106     print('Current Balance: {:.8f} BTC'.format(<br/>107         account['final_balance'] * 10**-8))<br/>108     print('Total Sent: {:.8f} BTC'.format(<br/>109         account['total_sent'] * 10**-8))<br/>110     print('Total Received: {:.8f} BTC'.format(<br/>111         account['total_received'] * 10**-8))<br/>112     print('Number of Transactions:', account['n_tx'])<br/>113     print('{:=^22}\n'.format(''))</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">The get_inputs() helper function</h1>
+                
+            
+            
+                
+<p>This helper function is responsible for obtaining the addresses responsible for sending the transaction. This information is found within multiple nested dictionaries. As there could be more than one input, we must iterate through one or more elements in the input list. As we find input addresses, we add them to an input list that's instantiated on line 123, as shown in the following code:</p>
+<pre>116 def get_inputs(tx):<br/>117     """<br/>118     The get_inputs function is a small helper function that returns<br/>119     input addresses for a given transaction<br/>120     :param tx: A single instance of a Bitcoin transaction<br/>121     :return: inputs, a list of inputs<br/>122     """<br/>123     inputs = []</pre>
+<p>For each input, there's a dictionary key, <kbd>prev_out</kbd>, the value of which is another dictionary. The information we're looking for is mapped to the <kbd>addr</kbd> key within this inner dictionary. We append these addresses to our input list, which we return on line 126 after the <kbd>for</kbd> loop execution ends:</p>
+<pre>124     for input_addr in tx['inputs']:<br/>125         inputs.append(input_addr['prev_out']['addr'])<br/>126     return inputs</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Running the script</h1>
+                
+            
+            
+                
+<p>Now, let's run our script and see the fruits of our labor. In the output mentioned later in the text, we can see that first the header information is printed to the user, followed by a number of transactions. The value objects are properly represented with the appropriate precision. For this particular example, there are four input values. Using the <kbd>' &amp; '.join(inputs)</kbd> statement allows us to more clearly separate the different input values from each other:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="img/46aaf00a-753d-4210-a081-15ba98cecdc6.png"/></p>
+<p>With our proof-of-concept complete, we can now iterate through and resolve some inherent issues in our current build. One problem is that we're not recording any data about the execution of our script. For example, an examiner's notes should contain the time, any errors or issues, and results of forensic processes. In the second iteration, we'll tackle this issue with the logging module. This module will store a log of our program's execution so the analyst has notes of when the program started, stopped, and any other relevant data regarding the process.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Our second iteration – bitcoin_address_lookup.v2.py</h1>
+                
+            
+            
+                
+<p class="mce-root">This iteration fixes one issue of our script by recording the details of execution. Really, we're using a log to create a chain of custody for the script. Our chain of custody will inform another party what our script did at various points in time and any errors encountered. Did we mention the traditional purpose of logging is for debugging? Nevertheless, our forensically commandeered log will be suitable in either scenario. This will serve as a brief tutorial on the basics of the logging module by using it in a real example. For more examples and references, please refer to the documentation at <a href="https://docs.python.org/3/library/logging.html" target="_blank">https://docs.python.org/3/library/logging.html</a>.</p>
+<p>We've added two modules to our imports: <kbd>os</kbd> and <kbd>logging</kbd>. If the user supplies the log file directory, we'll use the <kbd>os</kbd> module to append that directory and update the path of our log. In order to write a log, we'll use the <kbd>logging</kbd> module. Both of these modules are part of the standard library. See the following code:</p>
+<pre>001 """Second iteration of the Bitcoin JSON transaction parser."""<br/>002 import argparse<br/>003 import json<br/>004 import logging<br/>005 import sys<br/>006 import os<br/>007 import urllib.request<br/>008 import unix_converter as unix<br/>...<br/>038 __authors__ = ["Chapin Bryce", "Preston Miller"]<br/>039 __date__ = 20181027<br/>040 __description__ = """This scripts downloads address transactions<br/>041     using blockchain.info public APIs"""</pre>
+<p>Due to the additional code, our functions are defined later on in the script. However, their flow and purpose remain the same as before:</p>
+<pre>044 def main():<br/>...<br/>059 def get_address():<br/>...<br/>081 def print_transactions():<br/>...<br/>116 def print_header():<br/>...<br/>134 def get_inputs():</pre>
+<p>We've added a new optional argument, <kbd>-l</kbd>, on line 155. This optional argument can be used to specify the desired directory to write the log to. If it isn't supplied, the log is created in the current working directory:</p>
+<pre>146 if __name__ == '__main__':<br/>147     # Run this code if the script is run from the command line.<br/>148     parser = argparse.ArgumentParser(<br/>149     description=__description__,<br/>150     epilog='Built by {}. Version {}'.format(<br/>151         ", ".join(__authors__), __date__),<br/>152     formatter_class=argparse.ArgumentDefaultsHelpFormatter<br/>153     )<br/>154     parser.add_argument('ADDR', help='Bitcoin Address')<br/>155     parser.add_argument('-l', help="""Specify log directory.<br/>156         Defaults to current working directory.""")<br/>157     args = parser.parse_args()</pre>
+<p>On line 159, we check whether the optional argument, <kbd>-l</kbd>, was supplied by the user. If it is, we use the <kbd>os.path.join()</kbd> function to append our desired log filename to the supplied directory and store it in a variable named <kbd>log_path</kbd>. If the optional argument isn't supplied, our <kbd>log_path</kbd> variable is just the filename of the log:</p>
+<pre>159     # Set up Log<br/>160     if args.l:<br/>161         if not os.path.exists(args.l):<br/>162             os.makedirs(args.l)<br/>163         log_path = os.path.join(args.l, 'btc_addr_lookup.log')<br/>164     else:<br/>165         log_path = 'btc_addr_lookup.log'</pre>
+<p>The logging object is created on line 165 using the <kbd>logging.basicConfig()</kbd> method. This method accepts a variety of keyword arguments. The <kbd>filename</kbd> keyword argument is the file path and the name of our log file that we stored in the <kbd>log_path</kbd> variable. The <kbd>level</kbd> keyword sets the level of the log. There are five different logging levels, in the default order of lowest to highest urgency:</p>
+<ul>
+<li><kbd>DEBUG</kbd></li>
+<li><kbd>INFO</kbd></li>
+<li><kbd>WARN</kbd> (default level)</li>
+<li><kbd>ERROR</kbd></li>
+<li><kbd>CRITICAL</kbd></li>
+</ul>
+<p>If the level isn't supplied, the log defaults to <kbd>WARN</kbd>. The level of the log ends up being very important. A log will only record an entry if the message is at the same level or higher than the log level. By setting the log to the <kbd>DEBUG</kbd> level, the lowest level, we can write messages of any level to the log:</p>
+<pre>165     logging.basicConfig(<br/>166         filename=log_path, level=logging.DEBUG,<br/>167         format='%(asctime)s | %(levelname)s | %(message)s',<br/>168         filemode='w')</pre>
+<p>Each level has a different significance and should be used appropriately. The <kbd>DEBUG</kbd> level should be used when logging technical details about program execution. The <kbd>INFO</kbd> level can be used to record the program start, stop, and success of various phases of execution. The remaining levels can be used when detecting potentially anomalous execution, when an error is generated, or at critical failures.</p>
+<p>The <kbd>format</kbd> keyword specifies how we want to structure the log itself. Our log will have the following format:</p>
+<pre><strong>time | level | message</strong> </pre>
+<p>For example, this format will create a log file with the local time when the entry is added, the appropriate level, and any message, all separated by pipes. To create an entry in the log, we can call the <kbd>debug()</kbd>, <kbd>info()</kbd>, <kbd>warn()</kbd>, <kbd>error()</kbd>, or <kbd>critical()</kbd> methods on our logging object and pass in the message as a string. For example, based on the following code, we would expect to see the following entry generated in our log:</p>
+<pre><strong>logging.error("Blah Blah function has generated an error from the following input: xyz123.") </strong> </pre>
+<p>The following is the log:</p>
+<pre><strong>2015-11-06 19:51:47,446 | ERROR | Blah Blah function has generated an error from the following input: xyz123.</strong> </pre>
+<p>Finally, the <kbd>filemode='w'</kbd> argument is used to overwrite previous entries in the log every time the script is executed. This means that only entries from the most recent execution will be stored in the log. If we wanted to append each execution cycle to the end of the log, we would omit this keyword argument. When omitted, the default file mode is a which, as you learned in <a href="8764f55f-76ef-4890-afbd-2fd1b6d39210.xhtml" target="_blank">Chapter 1</a>, <em>Now for Something Complete</em><em>l</em><em>y Different</em>, allows us to append to the bottom of a pre-existing file.</p>
+<p>We can begin writing information to the log after it has been configured. On lines 172 and 173, we record details of the user's system before program execution. We write this to the log at the <kbd>DEBUG</kbd> level due to the technically low-level nature of the content:</p>
+<pre>171     logging.info('Starting Bitcoin Lookup v. {}'.format(__date__))<br/>172     logging.debug('System ' + sys.platform)<br/>173     logging.debug('Version ' + sys.version.replace("\n", " "))<br/>174 <br/>175     # Print Script Information<br/>176     print('{:=^22}'.format(''))<br/>177     print('{}'.format('Bitcoin Address Lookup'))<br/>178     print('{:=^22} \n'.format(''))<br/>179 <br/>180     # Run main program<br/>181     main(args.ADDR)</pre>
+<p>This version of our script is largely the same and follows the same flow schematic as seen previously.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Modifying the main() function</h1>
+                
+            
+            
+                
+<p>The <kbd>main()</kbd> function, defined on line 44, is largely untouched. We've added two <kbd>INFO</kbd> level messages to the log regarding the script's execution on lines 50 and 52. The remainder of the method follows as seen in the first iteration:</p>
+<pre>044 def main(address):<br/>045     """<br/>046     The main function handles coordinating logic<br/>047     :param address: The Bitcoin Address to lookup<br/>048     :return: Nothing<br/>049     """<br/>050     logging.info('Initiated program for {} address'.format(<br/>051         address))<br/>052     logging.info(<br/>053         'Obtaining JSON structured data from blockchain.info')<br/>054     raw_account = get_address(address)<br/>055     account = json.loads(raw_account.read())<br/>056     print_transactions(account)</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Improving the get_address() function</h1>
+                
+            
+            
+                
+<p>With the <kbd>get_address()</kbd> method, we've continued adding logging messages to our script. This time, when catching <kbd>URLError</kbd>, we stored the <kbd>Exception</kbd> object as <kbd>e</kbd> to extract additional information from it for debugging:</p>
+<pre>059 def get_address(address):<br/>060     """<br/>061     The get_address function uses the blockchain.info Data API<br/>062     to pull pull down account information and transactions for<br/>063     address of interest<br/>064     :param address: The Bitcoin Address to lookup<br/>065     :return: The response of the url request<br/>066     """</pre>
+<p>For <kbd>URLError</kbd>, we'll want to log the <kbd>code</kbd>, <kbd>headers</kbd>, and <kbd>reason</kbd> attributes. These attributes contain information, such as the HTML error code—for example, <kbd>404</kbd> for a web page that isn't found—and a description of the reason for the error code. We'll store this data to preserve the context surrounding the error:</p>
+<pre>067     url = 'https://blockchain.info/address/{}?format=json'<br/>068     formatted_url = url.format(address)<br/>069     try:<br/>070         return urllib.request.urlopen(formatted_url)<br/>071     except urllib.error.URLError as e:<br/>072         logging.error('URL Error for {}'.format(formatted_url))<br/>073         if hasattr(e, 'code') and hasattr(e, 'headers'):<br/>074             logging.debug('{}: {}'.format(e.code, e.reason))<br/>075             logging.debug('{}'.format(e.headers))<br/>076         print('Received URL Error for {}'.format(formatted_url))<br/>077         logging.info('Program exiting...')<br/>078         sys.exit(1)</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Elaborating on the print_transactions() function</h1>
+                
+            
+            
+                
+<p>We define the <kbd>print_transaction()</kbd> function on line 81. We've made a few alterations to the function, starting on line 88 where we added an entry to log the current execution phase. Take a look at the following function:</p>
+<pre>081 def print_transactions(account):<br/>082     """<br/>083     The print_transaction function is responsible for presenting<br/>084     transaction details to end user.<br/>085     :param account: The JSON decoded account and transaction data<br/>086     :return: Nothing<br/>087     """<br/>088     logging.info(<br/>089         'Printing account and transaction data to console.')<br/>090     print_header(account)<br/>091     print('Transactions')<br/>092     for i, tx in enumerate(account['txs']):<br/>093         print('Transaction #{}'.format(i))<br/>094         print('Transaction Hash:', tx['hash'])<br/>095         print('Transaction Date: {}'.format(<br/>096             unix.unix_converter(tx['time'])))</pre>
+<p>For the conditional statement starting on line 99, we add different cases using <kbd>if</kbd>, <kbd>elif</kbd>, and <kbd>else</kbd> statements to handle when the number of input values is greater than, equal to, or other than one. While rare, the first ever Bitcoin transaction, for example, had no input address. When an input address is absent, it's ideal to write a warning in the log that there are no detected inputs and print this information for the user, as follows:</p>
+<pre>097         for output in tx['out']:<br/>098             inputs = get_inputs(tx)<br/>099             if len(inputs) &gt; 1:<br/>100                 print('{} --&gt; {} ({:.8f} BTC)'.format(<br/>101                     ' &amp; '.join(inputs), output['addr'],<br/>102                     output['value'] * 10**-8))<br/>103             elif len(inputs) == 1:<br/>104                 print('{} --&gt; {} ({:.8f} BTC)'.format(<br/>105                     ''.join(inputs), output['addr'],<br/>106                     output['value'] * 10**-8))<br/>107             else:<br/>108                 logging.warn(<br/>109                     'Detected 0 inputs for transaction {}').format(<br/>110                         tx['hash'])<br/>111                 print('Detected 0 inputs for transaction.')<br/>112 <br/>113         print('{:=^22}\n'.format(''))</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Running the script</h1>
+                
+            
+            
+                
+<p>The remaining functions, <kbd>print_header()</kbd> and <kbd>get_inputs()</kbd>, weren't changed from the previous iteration. The entire code won't require modifications between iterations. By building a strong output module, we were able to avoid any adjustments to the reporting.</p>
+<p>While results are still displayed in the console, we now have a written log of the program execution. Running the script with a specified <kbd>-l</kbd> switch will allow us to store the log in a specific directory. Otherwise, the current working directory is used. The following are the contents of the log after the script completed:</p>
+<div><img src="img/f33ac7b6-4ef6-44fd-a3d4-6bf235db5d4d.png"/></div>
+<p>With logging accomplished, we've identified yet another area of enhancement for our code. For this particular address, we have a manageable number of transactions that get printed to the console. Imagine a case where there are hundreds of transactions for a single address. Navigating that output and being able to identify a specific transaction of interest isn't that straightforward.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Mastering our final iteration – bitcoin_address_lookup.py</h1>
+                
+            
+            
+                
+<p>In the final iteration, we'll write the output of our script to a CSV file rather than the console. This allows examiners to quickly filter and sort data in a manner conducive to analysis.</p>
+<p>On line 4, we've imported the <kbd>csv</kbd> module that's a part of the standard library. Writing to a CSV file is fairly simple compared with other output formats, and most examiners are very comfortable with manipulating spreadsheets.</p>
+<p>As mentioned previously in this chapter, in this final iteration of our script, we've added the necessary logic to detect whether Python 2 or Python 3 is being used to call the script. Depending on the version of Python, the appropriate <kbd>urllib</kbd> or <kbd>urllib2</kbd> functions are imported into this script. Note that we directly import the function, <kbd>urlopen()</kbd>, and <kbd>URLError</kbd>, which we plan to use so that we may call them directly in the script. This allows us to avoid using additional conditional statements later on to identify whether we should call <kbd>urllib</kbd> or <kbd>urllib2</kbd>: </p>
+<pre>001 """Final iteration of the Bitcoin JSON transaction parser."""<br/>002 from __future__ import print_function<br/>003 import argparse<br/>004 import csv<br/>005 import json<br/>006 import logging<br/>007 import sys<br/>008 import os<br/>009 if sys.version_info[0] == 2:<br/>010     from urllib2 import urlopen<br/>011     from urllib2 import URLError<br/>012 elif sys.version_info[0] == 3:<br/>013     from urllib.request import urlopen<br/>014     from urllib.error import URLError<br/>015 else:<br/>016     print("Unsupported Python version. Exiting..")<br/>017     sys.exit(1)<br/>018 import unix_converter as unix<br/>...<br/>048 __authors__ = ["Chapin Bryce", "Preston Miller"]<br/>049 __date__ = 20181027<br/>050 __description__ = """This scripts downloads address transactions<br/>051     using blockchain.info public APIs"""</pre>
+<p>The main focus of this final iteration is the addition of the new function, <kbd>csv_writer()</kbd>. This function is responsible for writing the data returned by <kbd>parse_transactions()</kbd> to a CSV file. We'll need to modify the current version of <kbd>print_transactions()</kbd> to return the parsed data rather than printing it to the console. While this won't be an in-depth tutorial on the <kbd>csv</kbd> module, we'll discuss the basics of using this module in the current context. We'll use the <kbd>csv</kbd> module extensively and explore additional features throughout this book. Documentation for the <kbd>csv</kbd> module can be found at <a href="http://docs.python.org/3/library/csv.html" target="_blank">http://docs.python.org/3/library/csv.html</a>.</p>
+<p>Let's first open an interactive prompt to practice creating and writing to a CSV file. First, let's import the <kbd>csv</kbd> module that will allow us to create our CSV file. Next, we create a list named <kbd>headers</kbd>, which will store the column headers of our CSV file:</p>
+<pre><strong>&gt;&gt;&gt; import csv</strong><br/><strong>&gt;&gt;&gt; headers = ['Date', 'Name', 'Description']</strong> </pre>
+<p>Next, we'll open a file object using the built-in <kbd>open()</kbd> method with the appropriate file mode. In Python 2, a CSV file object should be opened in the <kbd>rb</kbd> or <kbd>wb</kbd> modes for reading and writing, respectively. In this case, we'll be writing to a CSV file so let's open the file in the <kbd>wb</kbd> mode. The <kbd>w</kbd> stands for write, and the <kbd>b</kbd> stands for binary mode.</p>
+<p>In Python 3, a CSV file should be opened in the <kbd>w</kbd> mode with a newline character specified, as demonstrated here: <kbd>open('test.csv', 'w', newline='')</kbd>.</p>
+<p>With our connection to the file object, <kbd>csvfile</kbd>, we now need to create a writer or reader (depending on our desired goal) and pass in the file object. There are two options—the <kbd>csv.writer()</kbd> or <kbd>csv.reader()</kbd> methods; both expect a file object as their input and accept various keyword arguments. The list object meshes well with the <kbd>csv</kbd> module, requiring little code to write the data to a CSV file. It isn't difficult to write a dictionary and other objects to a CSV file, but is out of scope here and will be covered in later chapters:</p>
+<pre><strong>&gt;&gt;&gt; with open('test.csv', 'wb') as csvfile:</strong><br/><strong>...     writer = csv.writer(csvfile)</strong> </pre>
+<p>The <kbd>writer.writerow()</kbd> method will write one row using the supplied list. Each element in the list will be placed in sequential columns on the same row. If, for example, the <kbd>writerow()</kbd> function is called again with another list input, the data will now be written one row below the previous write operation:</p>
+<pre><strong>...     writer.writerow(headers)</strong> </pre>
+<p>In practical situations, we've found that using nested lists is one of the simplest ways of iterating through and writing each row. In our final iteration, we'll store the transaction details in a list and append them within another list. We can then iterate through each transaction while writing the details to the CSV as we go along.</p>
+<p>As with any file object, be sure to flush any data that's in a buffer to the file and then close the file. Forgetting these steps aren't the end of the world as Python will mostly handle this automatically, but they're highly recommended. After executing these last lines of code, a file called <kbd>test.csv</kbd> will be created in your working directory with the <kbd>Date</kbd>, <kbd>Name</kbd>, and <kbd>Description</kbd> headers as the first row. This same code will also work with the <kbd>csv</kbd> module in Python 3, with the exception of modifying the initial <kbd>open()</kbd> function as demonstrated previously:</p>
+<pre><strong>...     csvfile.flush()</strong><br/><strong>...     csvfile.close()</strong> </pre>
+<p>We've renamed the <kbd>print_transactions()</kbd> function to <kbd>parse_transactions()</kbd> to more accurately reflect its purpose. In addition, on line 159 we've added a <kbd>csv_writer()</kbd> function to write our transaction results to a CSV file. All other functions are similar to the previous iteration:</p>
+<pre>053 def main():<br/>...<br/>070 def get_address():<br/>...<br/>091 def parse_transactions():<br/>...<br/>123 def print_header():<br/>...<br/>142 def get_inputs():<br/>...<br/>159 def csv_writer():</pre>
+<p>Finally, we've added a new positional argument named <kbd>OUTPUT</kbd>. This argument represents the name and/or path for the CSV output. On line 230, we pass this output argument to the <kbd>main()</kbd> function:</p>
+<pre>195 if __name__ == '__main__':<br/>196     # Run this code if the script is run from the command line.<br/>197     parser = argparse.ArgumentParser(<br/>198     description=__description__,<br/>199     epilog='Built by {}. Version {}'.format(<br/>200         ", ".join(__authors__), __date__),<br/>201     formatter_class=argparse.ArgumentDefaultsHelpFormatter<br/>202     )<br/>203 <br/>204     parser.add_argument('ADDR', help='Bitcoin Address')<br/>205     parser.add_argument('OUTPUT', help='Output CSV file')<br/>206     parser.add_argument('-l', help="""Specify log directory.<br/>207         Defaults to current working directory.""")<br/>208 <br/>209     args = parser.parse_args()<br/>210 <br/>211     # Set up Log<br/>212     if args.l:<br/>213         if not os.path.exists(args.l):<br/>214             os.makedirs(args.l) # create log directory path<br/>215         log_path = os.path.join(args.l, 'btc_addr_lookup.log')<br/>216     else:<br/>217         log_path = 'btc_addr_lookup.log'<br/>218     logging.basicConfig(<br/>219         filename=log_path, level=logging.DEBUG,<br/>220         format='%(asctime)s | %(levelname)s | %(message)s',<br/>221         filemode='w')<br/>222 <br/>223     logging.info('Starting Bitcoid Lookup v. {}'.format(__date__))<br/>224     logging.debug('System ' + sys.platform)<br/>225     logging.debug('Version ' + sys.version.replace("\n", " "))<br/>226 <br/>227     # Print Script Information<br/>228     print('{:=^22}'.format(''))<br/>229     print('{}'.format('Bitcoin Address Lookup'))<br/>230     print('{:=^22} \n'.format(''))<br/>231 <br/>232     # Run main program<br/>233     main(args.ADDR, args.OUTPUT)</pre>
+<p>The following flow diagram exemplifies the differences between the first two iterations and our final version:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="img/48a314b5-c2b7-42f8-bb5a-462973d76d21.png"/></p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Enhancing the parse_transactions() function</h1>
+                
+            
+            
+                
+<p>This function, which was previously named <kbd>print_transactions()</kbd>, is used to process the transaction data so it can be ingested by our <kbd>csv_writer()</kbd>. Please note that the <kbd>print_header()</kbd> function call has now been moved into the <kbd>main()</kbd> function. We're also now passing an output argument to <kbd>parse_transactions()</kbd>:</p>
+<pre>091 def parse_transactions(account, output_dir):<br/>092     """<br/>093     The parse_transactions function appends transaction data into a<br/>094     nested list structure so it can be successfully used by the<br/>095     csv_writer function.<br/>096     :param account: The JSON decoded account and transaction data<br/>097     :param output_dir: The output directory to write the CSV<br/>098     results<br/>099     :return: Nothing<br/>100     """</pre>
+<p>As we've seen previously, we must first iterate through the <kbd>transactions</kbd> list. As we traverse the data, we'll append it to a transaction list, which is created on line 104. This list represents a given transaction and its data. After we're finished appending transaction data, we append this list to the <kbd>transactions</kbd> list that serves as a container for all of the transactions:</p>
+<pre>101     msg = 'Parsing transactions...'<br/>102     logging.info(msg)<br/>103     print(msg)<br/>104     transactions = []<br/>105     for i, tx in enumerate(account['txs']):<br/>106         transaction = []</pre>
+<p>In order to match an output address with its value, we create an <kbd>outputs</kbd> dictionary on line 107. On line 114, we create a key representing the address and value sent to it. Note that we use the newline character, <kbd>\n</kbd>, on lines 115 through 117 when combining multiple output addresses and their values so they're visually separate within one cell. We've also performed the same action in the <kbd>get_inputs()</kbd> function to handle multiple input values. This was a design choice we made because we've seen that there can be multiple output addresses. Rather than placing these in their own columns, we've opted to place them all in one column:</p>
+<pre>107         outputs = {}<br/>108         inputs = get_inputs(tx)<br/>109         transaction.append(i)<br/>110         transaction.append(unix.unix_converter(tx['time']))<br/>111         transaction.append(tx['hash'])<br/>112         transaction.append(inputs)<br/>113         for output in tx['out']:<br/>114             outputs[output['addr']] = output['value'] * 10**-8<br/>115         transaction.append('\n'.join(outputs.keys()))<br/>116         transaction.append(<br/>117             '\n'.join(str(v) for v in outputs.values()))</pre>
+<p>On line 118, we created a new value using the <kbd>sum()</kbd> built-in function, to sum the output values together. The <kbd>sum()</kbd> function is quite handy and accepts a list of <kbd>int</kbd> or <kbd>float</kbd> types as input and returns the sum:</p>
+<pre>118         transaction.append('{:.8f}'.format(sum(outputs.values())))</pre>
+<p>Now, we have all of our desired transaction details in the <kbd>transaction</kbd> list. We append the transaction to the <kbd>transactions</kbd> list on line 119. Once all transactions have been added to the <kbd>transactions</kbd> list, we call the <kbd>csv_writer()</kbd> method and pass in our <kbd>transactions</kbd> list and <kbd>output</kbd> directory:</p>
+<pre>119         transactions.append(transaction)<br/>120     csv_writer(transactions, output_dir)</pre>
+<p>Once again, we've made no modifications to the <kbd>print_header()</kbd> or <kbd>get_address()</kbd> functions.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Developing the csv_writer() function</h1>
+                
+            
+            
+                
+<p>On line 159, we define our <kbd>csv_writer()</kbd> function. Before writing our transaction data to a CSV file, we log our current execution phase and create a <kbd>headers</kbd> variable. This <kbd>headers</kbd> list represents the columns in our spreadsheet and will be the first row written to the file, as follows:</p>
+<pre>159 def csv_writer(data, output_dir):<br/>160     """<br/>161     The csv_writer function writes transaction data into a CSV file<br/>162     :param data: The parsed transaction data in nested list<br/>163     :param output_dir: The output directory to write the CSV<br/>164     results<br/>165     :return: Nothing<br/>166     """<br/>167     logging.info('Writing output to {}'.format(output_dir))<br/>168     print('Writing output.')<br/>169     headers = ['Index', 'Date', 'Transaction Hash',<br/>170         'Inputs', 'Outputs', 'Values', 'Total']</pre>
+<p>As with any user-supplied data, we must account for the possibility that the supplied data could be incorrect or generate an exception. For example, the user could specify a non-existent directory in the output path argument. On lines 173 and 175, we open the <kbd>csvfile</kbd> in the appropriate manner, depending on the version of Python being used, and write our CSV data under one <kbd>try</kbd> and <kbd>except</kbd> clause. If there's an issue with the user-supplied output, we'll receive an <kbd>IOError</kbd> exception.</p>
+<p>We create our writer object on line 177 and write our <kbd>headers</kbd>, before iterating through our transactions list. Every transaction within the transactions list is written on its own row. Finally, on lines 181 and 182, we flush and close the CSV file:</p>
+<pre>171     try:<br/>172         if sys.version_info[0] == 2:<br/>173             csvfile = open(output_dir, 'wb')<br/>174         else:<br/>175             csvfile = open(output_dir, 'w', newline='')<br/>176        with csvfile:<br/>177            writer = csv.writer(csvfile)<br/>178            writer.writerow(headers)<br/>179            for transaction in data:<br/>180                writer.writerow(transaction)<br/>181            csvfile.flush()<br/>182            csvfile.close()</pre>
+<p>If <kbd>IOError</kbd> is generated, we write the error message and contextual information to the log before exiting with an error (any nonzero exit). If there are no errors generated, we log the completion of the script and exit without errors (also known as a zero exit), as seen on line 191 through 193:</p>
+<pre>183     except IOError as e:<br/>184         logging.error("""Error writing output to {}.<br/>185         \nGenerated message: {}.""".format(e.filename,<br/>186         e.strerror))<br/>187         print("""Error writing to CSV file.<br/>188         Please check output argument {}""".format(e.filename))<br/>189         logging.info('Program exiting.')<br/>190         sys.exit(1)<br/>191     logging.info('Program exiting.')<br/>192     print('Program exiting.')<br/>193     sys.exit(0)</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Running the script</h1>
+                
+            
+            
+                
+<p>This iteration finally addresses the remaining issue we identified, which is a means of processing the data into an examination-ready state. Now if an address had hundreds or thousands of transactions, the examiner can analyze that data more efficiently than if it were displayed in a console.</p>
+<p>This being said, as with most things, there's always room for improvement. For example, the way in which we've handled multiple input and output values means that it will have more than one address in a specific cell. This can be annoying when trying to filter for a specific address. The point here is that a script is never truly finished being developed and is always an ongoing process.</p>
+<p>To run the script, we now must supply two arguments: the Bitcoin address and desired output. The following is an example of usage and output printed to the console when running our script:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="img/719183b2-b791-4dcb-a05c-8d7391c5adda.png"/></p>
+<p>The <kbd>transactions.csv</kbd> file will be written to the current working directory as specified. The following screenshot captures what this spreadsheet might look like:</p>
+<div><img src="img/135e3159-d3f2-4399-9ee6-37117663dfd9.png"/></div>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Challenge</h1>
+                
+            
+            
+                
+<p>For an additional challenge, modify the script so that each output and input address has its own cell. We recommend approaching this by determining the maximum number of input values or output addresses in a list of transactions. Knowing these values, you could build a conditional statement to modify the header so that it has the appropriate number of columns. In addition, you would need to write logic to skip those columns when you don't have multiple input or output values in order to preserve the correct spacing of data.</p>
+<p>While specific to Bitcoin, examples in the wild may require similar logic when there exists a dynamic relationship between two or more data points. Tackling this challenge will help develop a logical and practical methodology that can be applied in future scenarios.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Summary</h1>
+                
+            
+            
+                
+<p>In this chapter, we gained greater familiarity with common serialized structures, Bitcoin, and CSV and with working with nested lists and dictionaries. Being able to manipulate lists and dictionaries is a vital skill, as data is often stored in mixed nested structures. Remember to always use the <kbd>type()</kbd> method to determine what type of data you're working with.</p>
+<p>For this script, we (the authors) played around with the JSON data structure in the Python interactive prompt before writing the script. This allowed us to understand how to traverse the data structure correctly and the best manner to do so before writing any logic. The Python interactive prompt is an excellent sandbox to implement new features or to test new code. The code for this project can be downloaded from GitHub or Packt, as described in the <em>Preface</em>.</p>
+<p>In the next chapter, we'll discuss a different method to store structured data. While learning how to integrate databases into our scripts, we'll create an active file listing script that stores all of its data in an SQLite3 format. Doing this will allow us to become more comfortable with storing and retrieving data from databases in Python using two different modules.</p>
+
+
+            
+
+            
+        
+    </body></html>

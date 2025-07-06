@@ -1,0 +1,210 @@
+<html><head></head><body>
+        
+
+                            
+                    <h1 class="header-title">Host Discovery and Enumeration</h1>
+                
+            
+            
+                
+<p>Host discovery is the process of looking for hosts on a network. This is useful if you gained access to a machine on a private network, and you want to see which other machines are on the network and start to gather a picture of what the network looks like. You can also treat the entire internet as the network and look for certain types of hosts or just look for any hosts at all. Ping sweeps and port scanning are common techniques of identifying hosts. A common tool used for this purpose is nmap. In this chapter, we will cover basic port scanning with a TCP connect scan and banner grabbing, which are two of the most common use cases for nmap. We will also cover raw socket connections that can be used to manually interact and explore a server's ports.</p>
+<p>Enumeration is a similar idea, but refers to actively examining a specific machine to determine as much information as you can. This includes scanning a server's ports to see which one is open, grabbing banners to inspect services, making calls to various services to get version numbers and generally search for attack vectors.</p>
+<p>Host discovery and enumeration are critical steps to an effective penetration test because you cannot exploit a machine if you don't even know it exists. For example, if an attacker only knows how to find hosts using the <kbd>ping</kbd> command, then you can easily hide all of your hosts from the attacker by simply ignoring ping requests.</p>
+<p>Host discovery and enumeration require active connections to a machine so that you will leave logs, possibly trigger alarms, and otherwise, get noticed. There are some ways to be sneaky, such as performing TCP SYN-only scans so that a complete TCP connection is never made, or using a proxy when connecting, which will not hide your presence, but will make it appear as if you are connecting from somewhere else. Using a proxy to hide your IP can be useful if the IP gets blocked, because you can simply switch to a new proxy.</p>
+<p>Fuzzing is also covered in this chapter, although it is only touched on very briefly. Fuzzing warrants its own chapter and, in fact, whole books have been written about the topic. Fuzzing is more useful when reverse engineering or searching for vulnerabilities, but can be useful for getting information about a service. For example, a service may return no response, giving you no clues about its purpose, but if you fuzz it with bad data and it returns an error, you may learn what kind of input it is expecting.</p>
+<p>In this chapter, we will specifically cover the following topics:</p>
+<ul>
+<li>TCP and UDP sockets</li>
+<li>Port scanning</li>
+<li>Banner grabbing</li>
+<li>TCP proxies</li>
+<li>Finding named hosts on a network</li>
+<li>Fuzzing network services</li>
+</ul>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">TCP and UDP sockets</h1>
+                
+            
+            
+                
+<p>Sockets are the building blocks of networking. Servers listen and clients dial using sockets to bind together and share information. The <strong>Internet Protocol</strong> (<strong>IP</strong>) layer specifies the address of a machine, but the <strong>Transmission Control Protocol</strong> (<strong>TCP</strong>) or the <strong>User Datagram Protocol</strong> (<strong>UDP</strong>) specify which port on the machine should be used.</p>
+<p>The main difference between the two is the connection state. TCP keeps the connection alive and verifies that messages are received. UDP just sends a message off without receiving an acknowledgement from the remote host.</p>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Creating a server</h1>
+                
+            
+            
+                
+<p>Here is an example server. The <kbd>tcp</kbd> argument for <kbd>net.Listen()</kbd> can be changed to <kbd>udp</kbd> if you want to change protocol:</p>
+<pre>package main<br/><br/>import (<br/>   "net"<br/>   "fmt"<br/>   "log"<br/>)<br/><br/>var protocol = "tcp" // tcp or udp<br/>var listenAddress = "localhost:3000"<br/><br/>func main() {<br/>   listener, err := net.Listen(protocol, listenAddress)<br/>   if err != nil {<br/>      log.Fatal("Error creating listener. ", err)<br/>   }<br/>   log.Printf("Now listening for connections.")<br/><br/>   for {<br/>      conn, err := listener.Accept()<br/>      if err != nil {<br/>         log.Println("Error accepting connection. ", err)<br/>      }<br/>      go handleConnection(conn)<br/>   }<br/>}<br/><br/>func handleConnection(conn net.Conn) {<br/>   incomingMessageBuffer := make([]byte, 4096)<br/><br/>   numBytesRead, err := conn.Read(incomingMessageBuffer)<br/>   if err != nil {<br/>      log.Print("Error reading from client. ", err)<br/>   }<br/><br/>   fmt.Fprintf(conn, "Thank you. I processed %d bytes.\n", <br/>      numBytesRead)<br/>} </pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Creating a client</h1>
+                
+            
+            
+                
+<p>This example creates a simple network client that will work with the server from the previous example. This example uses TCP but, like <kbd>net.Listen()</kbd>, you can simply swap <kbd>tcp</kbd> for <kbd>udp</kbd> in <kbd>net.Dial()</kbd> if you want to switch protocols:</p>
+<pre>package main<br/><br/>import (<br/>   "net"<br/>   "log"<br/>)<br/><br/>var protocol = "tcp" // tcp or udp<br/>var remoteHostAddress = "localhost:3000"<br/><br/>func main() {<br/>   conn, err := net.Dial(protocol, remoteHostAddress)<br/>   if err != nil {<br/>      log.Fatal("Error creating listener. ", err)<br/>   }<br/>   conn.Write([]byte("Hello, server. Are you there?"))<br/><br/>   serverResponseBuffer := make([]byte, 4096)<br/>   numBytesRead, err := conn.Read(serverResponseBuffer)<br/>   if err != nil {<br/>      log.Print("Error reading from server. ", err)<br/>   }<br/>   log.Println("Message recieved from server:")<br/>   log.Printf("%s\n", serverResponseBuffer[0:numBytesRead])<br/>} </pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Port scanning</h1>
+                
+            
+            
+                
+<p>After finding a host on the network, perhaps after doing a ping sweep or monitoring the network traffic, you typically want to scan the ports and see which ports are open and accepting connections. You can learn a lot about a machine just by seeing what ports are open. You might be able to determine whether it is Windows or Linux or whether it is hosting an email server, a web server, a database server, and more.</p>
+<p>There are many types of port scans, but this example demonstrates the most basic and straightforward port scan example, which is a TCP connect scan. It connects like any typical client and sees whether the server accepts the request. It does not send or receive any data and immediately disconnects, logging if it was successful.</p>
+<p>The following example scans the localhost machine only and limits the ports checked to the reserved ports 0-1024. Database servers, such as MySQL, often listen on higher number ports such as <kbd>3306</kbd>, so remove you will want to adjust the port range or use a predefined list of common ports.</p>
+<p>Each TCP connect request is done in a separate goroutine, so they all will run concurrently and it finishes very quickly. The <kbd>net.DialTimeout()</kbd> function is used so that we can set the maximum duration of time we are willing to wait:</p>
+<pre>package main<br/><br/>import (<br/>   "strconv"<br/>   "log"<br/>   "net"<br/>   "time"<br/>)<br/><br/>var ipToScan = "127.0.0.1"<br/>var minPort = 0<br/>var maxPort = 1024<br/><br/>func main() {<br/>   activeThreads := 0<br/>   doneChannel := make(chan bool)<br/><br/>   for port := minPort; port &lt;= maxPort ; port++ {<br/>      go testTcpConnection(ipToScan, port, doneChannel)<br/>      activeThreads++<br/>   }<br/><br/>   // Wait for all threads to finish<br/>   for activeThreads &gt; 0 {<br/>      &lt;- doneChannel<br/>      activeThreads--<br/>   }<br/>}<br/><br/>func testTcpConnection(ip string, port int, doneChannel chan bool) {<br/>   _, err := net.DialTimeout("tcp", ip + ":" + strconv.Itoa(port), <br/>      time.Second*10)<br/>   if err == nil {<br/>      log.Printf("Port %d: Open\n", port)<br/>   }<br/>   doneChannel &lt;- true<br/>} </pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Grabbing a banner from a service</h1>
+                
+            
+            
+                
+<p>After identifying the ports that are open, you can try to read from the connection and see whether the service provides a banner or an initial message.</p>
+<p>The following example works like the previous, but instead of just connecting and disconnecting, it will connect and try to read an initial message from the server. If the server provides any data, it is printed, but if the server does not send any data, nothing is printed:</p>
+<pre>package main<br/><br/>import (<br/>   "strconv"<br/>   "log"<br/>   "net"<br/>   "time"<br/>)<br/><br/>var ipToScan = "127.0.0.1"<br/><br/>func main() {<br/>   activeThreads := 0<br/>   doneChannel := make(chan bool)<br/><br/>   for port := 0; port &lt;= 1024 ; port++ {<br/>      go grabBanner(ipToScan, port, doneChannel)<br/>      activeThreads++<br/>   }<br/><br/>   // Wait for all threads to finish<br/>   for activeThreads &gt; 0 {<br/>      &lt;- doneChannel<br/>      activeThreads--<br/>   }<br/>}<br/><br/>func grabBanner(ip string, port int, doneChannel chan bool) {<br/>   connection, err := net.DialTimeout(<br/>      "tcp", <br/>      ip + ":"+strconv.Itoa(port),  <br/>      time.Second*10)<br/>   if err != nil {<br/>      doneChannel&lt;-true<br/>      return<br/>   }<br/><br/>   // See if server offers anything to read<br/>   buffer := make([]byte, 4096)<br/>   connection.SetReadDeadline(time.Now().Add(time.Second*5)) <br/>   // Set timeout<br/>   numBytesRead, err := connection.Read(buffer)<br/>   if err != nil {<br/>      doneChannel&lt;-true<br/>      return<br/>   }<br/>   log.Printf("Banner from port %d\n%s\n", port,<br/>      buffer[0:numBytesRead])<br/><br/>   doneChannel &lt;- true<br/>} </pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Creating a TCP proxy</h1>
+                
+            
+            
+                
+<p>Much like the HTTP proxy in <a href="f15910a1-239e-49a5-b4d9-3881a524bfa9.xhtml" target="_blank">Chapter 9</a>, <em>Web Applications</em>, a TCP level proxy can be useful for debugging, logging, analyzing traffic, and privacy. When doing port scans, host discovery, and enumeration, a proxy can be useful to hide your location and source IP address. You may want to hide where you are coming from, disguise who you are, or just use a throwaway IP in case you get blacklisted for performing the requests.</p>
+<p>The following example will listen in on a local port, forward a request to a remote host, and then send the response of the remote server back to the client. It will also log any requests.</p>
+<p>You can test out this proxy by running the server in the previous section and then setting up the proxy to forward to that server. When the echoing server and the proxy server are running, use the TCP client to connect to the proxy server:</p>
+<pre>package main<br/><br/>import (<br/>   "net"<br/>   "log"<br/>)<br/><br/>var localListenAddress = "localhost:9999"<br/>var remoteHostAddress = "localhost:3000" // Not required to be remote<br/><br/>func main() {<br/>   listener, err := net.Listen("tcp", localListenAddress)<br/>   if err != nil {<br/>      log.Fatal("Error creating listener. ", err)<br/>   }<br/><br/>   for {<br/>      conn, err := listener.Accept()<br/>      if err != nil {<br/>         log.Println("Error accepting connection. ", err)<br/>      }<br/>      go handleConnection(conn)<br/>   }<br/>}<br/><br/>// Forward the request to the remote host and pass response <br/>// back to client<br/>func handleConnection(localConn net.Conn) {<br/>   // Create remote connection that will receive forwarded data<br/>   remoteConn, err := net.Dial("tcp", remoteHostAddress)<br/>   if err != nil {<br/>      log.Fatal("Error creating listener. ", err)<br/>   }<br/>   defer remoteConn.Close()<br/><br/>   // Read from the client and forward to remote host<br/>   buf := make([]byte, 4096) // 4k buffer<br/>   numBytesRead, err := localConn.Read(buf)<br/>   if err != nil {<br/>      log.Println("Error reading from client.", err)<br/>   }<br/>   log.Printf(<br/>      "Forwarding from %s to %s:\n%s\n\n",<br/>      localConn.LocalAddr(),<br/>      remoteConn.RemoteAddr(),<br/>      buf[0:numBytesRead],<br/>   )<br/>   _, err = remoteConn.Write(buf[0:numBytesRead])<br/>   if err != nil {<br/>      log.Println("Error writing to remote host. ", err)<br/>   }<br/><br/>   // Read response from remote host and pass it back to our client<br/>   buf = make([]byte, 4096)<br/>   numBytesRead, err = remoteConn.Read(buf)<br/>   if err != nil {<br/>      log.Println("Error reading from remote host. ", err)<br/>   }<br/>   log.Printf(<br/>      "Passing response back from %s to %s:\n%s\n\n",<br/>      remoteConn.RemoteAddr(),<br/>      localConn.LocalAddr(),<br/>      buf[0:numBytesRead],<br/>   )<br/>   _, err = localConn.Write(buf[0:numBytesRead])<br/>   if err != nil {<br/>      log.Println("Error writing back to client.", err)<br/>   }<br/>}</pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Finding named hosts on a network</h1>
+                
+            
+            
+                
+<p>If you have just gained access to a network, one of the first things you can do is to get an idea of what hosts are on the network. You can scan all IP addresses on a subnet and then do a DNS lookup to see if you can find any named hosts. Hostnames can have descriptive or informative names that give clues as to what a server may be running.</p>
+<p>The pure Go resolver is default and can only block a goroutine instead of a system thread, making it a little more efficient. You can explicitly set the DNS resolver with an environment variable:</p>
+<pre><strong>export GODEBUG=netdns=go    # Use pure Go resolver (default)<br/>export GODEBUG=netdns=cgo   # Use cgo resolver</strong></pre>
+<p>This example looks for every possible host on a subnet and tries to resolve a hostname for each IP:</p>
+<pre>package main<br/><br/>import (<br/>   "strconv"<br/>   "log"<br/>   "net"<br/>   "strings"<br/>)<br/><br/>var subnetToScan = "192.168.0" // First three octets<br/><br/>func main() {<br/>   activeThreads := 0<br/>   doneChannel := make(chan bool)<br/><br/>   for ip := 0; ip &lt;= 255; ip++ {<br/>      fullIp := subnetToScan + "." + strconv.Itoa(ip)<br/>      go resolve(fullIp, doneChannel)<br/>      activeThreads++<br/>   }<br/><br/>   // Wait for all threads to finish<br/>   for activeThreads &gt; 0 {<br/>      &lt;- doneChannel<br/>      activeThreads--<br/>   }<br/>}<br/><br/>func resolve(ip string, doneChannel chan bool) {<br/>   addresses, err := net.LookupAddr(ip)<br/>   if err == nil {<br/>      log.Printf("%s - %s\n", ip, strings.Join(addresses, ", "))<br/>   }<br/>   doneChannel &lt;- true<br/>} </pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Fuzzing a network service</h1>
+                
+            
+            
+                
+<p>Fuzzing is when you send intentionally malformed, excessive, or random data to an application in an attempt to make it misbehave, crash, or reveal sensitive information. You can identify buffer overflow vulnerabilities, which can result in remote code execution. If you cause an application to crash or stop responding after you send it data of a certain size, it may be due to a buffer overflow.</p>
+<p>Sometimes, you will just cause a denial of service by causing a service to use too much memory or tie up all the processing power. Regular expressions are notoriously slow and can be abused in the URL routing mechanisms of web applications to consume all the CPU with few requests.</p>
+<p>Nonrandom, but malformed, data can be just as dangerous, if not more so. A properly malformed video file can cause VLC to crash and expose code execution. A properly malformed packet, with 1 byte altered, can lead to sensitive data being exposed, as in the Heartbleed OpenSSL vulnerability.</p>
+<p>The following example will demonstrate a very basic TCP fuzzer. It sends random bytes of increasing length to a server. It starts with 1 byte and grows exponentially by a power of 2. First, it sends 1 byte, then 2, 4, 8, 16, continuing until it returns an error or reaches the maximum configured limit.</p>
+<p>Tweak <kbd>maxFuzzBytes</kbd> to set the maximum size of data you want to send to the service. Be aware that it launches all the threads at once, so be careful about the load on the server. Look for anomalies in the responses or for a total crash from the server:</p>
+<pre>package main<br/><br/>import (<br/>   "crypto/rand"<br/>   "log"<br/>   "net"<br/>   "strconv"<br/>   "time"<br/>)<br/><br/>var ipToScan = "www.devdungeon.com"<br/>var port = 80<br/>var maxFuzzBytes = 1024<br/><br/>func main() {<br/>   activeThreads := 0<br/>   doneChannel := make(chan bool)<br/><br/>   for fuzzSize := 1; fuzzSize &lt;= maxFuzzBytes; <br/>      fuzzSize = fuzzSize * 2 {<br/>      go fuzz(ipToScan, port, fuzzSize, doneChannel)<br/>      activeThreads++<br/>   }<br/><br/>   // Wait for all threads to finish<br/>   for activeThreads &gt; 0 {<br/>      &lt;- doneChannel<br/>      activeThreads--<br/>   }<br/>}<br/><br/>func fuzz(ip string, port int, fuzzSize int, doneChannel chan bool) {<br/>   log.Printf("Fuzzing %d.\n", fuzzSize)<br/><br/>   conn, err := net.DialTimeout("tcp", ip + ":" + strconv.Itoa(port), <br/>      time.Second*10)<br/>   if err != nil {<br/>      log.Printf(<br/>         "Fuzz of %d attempted. Could not connect to server. %s\n", <br/>         fuzzSize, <br/>         err,<br/>      )<br/>      doneChannel &lt;- true<br/>      return<br/>   }<br/><br/>   // Write random bytes to server<br/>   randomBytes := make([]byte, fuzzSize)<br/>   rand.Read(randomBytes)<br/>   conn.SetWriteDeadline(time.Now().Add(time.Second * 5))<br/>   numBytesWritten, err := conn.Write(randomBytes)<br/>   if err != nil { // Error writing<br/>      log.Printf(<br/>         "Fuzz of %d attempted. Could not write to server. %s\n", <br/>         fuzzSize,<br/>         err,<br/>      )<br/>      doneChannel &lt;- true<br/>      return<br/>   }<br/>   if numBytesWritten != fuzzSize {<br/>      log.Printf("Unable to write the full %d bytes.\n", fuzzSize)<br/>   }<br/>   log.Printf("Sent %d bytes:\n%s\n\n", numBytesWritten, randomBytes)<br/><br/>   // Read up to 4k back<br/>   readBuffer := make([]byte, 4096)<br/>   conn.SetReadDeadline(time.Now().Add(time.Second *5))<br/>   numBytesRead, err := conn.Read(readBuffer)<br/>   if err != nil { // Error reading<br/>      log.Printf(<br/>         "Fuzz of %d attempted. Could not read from server. %s\n", <br/>         fuzzSize,<br/>         err,<br/>      )<br/>      doneChannel &lt;- true<br/>      return<br/>   }<br/><br/>   log.Printf(<br/>      "Sent %d bytes to server. Read %d bytes back:\n,<br/>      fuzzSize,<br/>      numBytesRead, <br/>   )<br/>   log.Printf(<br/>      "Data:\n%s\n\n",<br/>      readBuffer[0:numBytesRead],<br/>   )<br/>   doneChannel &lt;- true<br/>} </pre>
+
+
+            
+
+            
+        
+    
+
+        
+
+                            
+                    <h1 class="header-title">Summary</h1>
+                
+            
+            
+                
+<p>Having reading this chapter, you should now understand the basic concepts of host discovery and enumeration. You should be able to explain them at a high level and provide a basic example of each concept.</p>
+<p>First, we discussed raw TCP sockets with an example of a simple server and client. These examples aren't incredibly useful by themselves, but they are the template for building tools that perform custom interactions with services. This will be helpful when trying to fingerprint an unidentified service.</p>
+<p>You should now know how to run a simple port scan, and why you might want to run a port scan. You should understand how to use a TCP proxy and what benefits it offers. You should understand how banner grabbing works and why it is a useful method for gathering information.</p>
+<p>There are numerous other forms of enumeration. With web applications, you can enumerate usernames, user ids, emails, and more. For example, if a website used the URL format <a href="http://www.example.com/user_profile/1234">www.example.com/user_profile/1234</a> you can potentially start with the number 1, and increment by 1, crawling through every single user profile available on the site. Other forms include SNMP, DNS, LDAP, and SMB.</p>
+<p>What other forms of enumeration can you think of? What kind of enumeration can you think of if you were already on a server with a low privilege user? What kind of information would you want to gather about a server once you had a shell?</p>
+<p>You can gather a lot of information once you are on a server: username and groups, hostnames, network device info, mounted filesystems, what services are running, iptables settings, cron jobs, startup services, and more. Refer to <a href="470c944c-e4ca-4a39-95e4-6c78d831aa27.xhtml" target="_blank">Chapter 13</a>, <em>Post Exploitation,</em> for more information about what to do once you already have access to a machine.</p>
+<p>In the next chapter, we will look at social engineering and how to gather intel from the web via JSON REST APIs, send phishing emails, and generate QR codes. We will also look at multiple examples of honeypots including a TCP honeypot and two methods of HTTP honeypots.</p>
+
+
+            
+
+            
+        
+    </body></html>
