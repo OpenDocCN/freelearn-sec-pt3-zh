@@ -1019,6 +1019,7 @@
   id: totrans-127
   prefs: []
   type: TYPE_NORMAL
+  zh: 如前所述，这对于第二个签名是重复的，显著的例外是第二个签名正在修改`reset_point`（将其乘以2）和最大签名长度（将其除以2）。第二个重置点的添加是为了满足spamsum签名较短的需求——默认64个字符。这意味着主签名可能被截断，文件的尾部可能只代表签名的一个字符。为了应对这个问题，spamsum添加了第二个签名来生成一个代表更多（如果不是全部）文件的值。第二个签名实际上有一个`reset_point`，其值是第一个签名的两倍：
 - en: '[PRE22]'
   id: totrans-128
   prefs: []
@@ -1036,6 +1037,7 @@
   id: totrans-129
   prefs: []
   type: TYPE_NORMAL
+  zh: 这是我们`for`循环的结束；该逻辑将重复，直到我们到达文件末尾，尽管签名的长度将分别只增长到63和31个字符。在我们的`for`循环退出后，我们会评估是否应该重新开始`while`循环（从第136行开始）。如果我们的第一个签名少于32个字符，且我们的`reset_point`不是默认值3，我们希望这样做。如果签名过短，我们将`reset_point`值减半并重新运行整个计算。这意味着我们在`while`循环中需要每一分效率，因为我们可能会反复处理内容：
 - en: '[PRE23]'
   id: totrans-130
   prefs: []
@@ -1048,6 +1050,7 @@
   id: totrans-131
   prefs: []
   type: TYPE_NORMAL
+  zh: 如果我们的签名长度大于32个字符，我们退出`while`循环并生成签名的最后一个字符。如果我们的滚动哈希值的乘积不等于零，我们会将最后一个字符添加到每个签名中，如第180行和第181行所示：
 - en: '[PRE24]'
   id: totrans-132
   prefs: []
@@ -1058,26 +1061,31 @@
   id: totrans-133
   prefs: []
   type: TYPE_NORMAL
+  zh: 到此为止，我们可以关闭文件并返回完整的spamsum/ssdeep签名。这个签名有三个， hopefully 可识别的部分：
 - en: Our `reset_point` value
   id: totrans-134
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: 我们的`reset_point`值
 - en: The primary signature
   id: totrans-135
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: 主要签名
 - en: The secondary signature
   id: totrans-136
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: 次要签名
 - en: Providing the output
   id: totrans-137
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 提供输出
 - en: 'Our last function, luckily, is a whole lot simpler than the previous one. This
     function provides output of the signature and filename in one of the supported
     formats. In the past, we''ve written separate functions to handle separate formats,
@@ -1090,6 +1098,7 @@
   id: totrans-138
   prefs: []
   type: TYPE_NORMAL
+  zh: 幸运的是，我们的最后一个函数比前一个要简单得多。这个函数提供了以一种支持的格式输出签名和文件名。在过去，我们编写了单独的函数来处理不同的格式，然而在这个情况下，我们选择将它们都放在同一个函数中。这个设计决策的原因是我们希望能够接近实时地提供结果，特别是当用户正在处理多个文件时。由于我们的日志被重定向到`STDERR`，我们可以使用`print()`函数将结果提供到`STDOUT`。这样可以为用户提供灵活性，用户可以将输出通过管道传送到另一个程序（例如grep），并对结果进行额外处理：
 - en: '[PRE25]'
   id: totrans-139
   prefs: []
@@ -1100,6 +1109,7 @@
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 运行fuzzy_hasher.py
 - en: 'The following screenshot shows us how we can generate our fuzzy hashing on
     a set of files within a directory and perform post-processing on the output. In
     this case, we''re hiding the log messages by sending `STDERR` to `/dev/null`.
@@ -1108,10 +1118,12 @@
   id: totrans-141
   prefs: []
   type: TYPE_NORMAL
+  zh: 以下截图展示了我们如何在目录中的一组文件上生成模糊哈希并对输出进行后处理。在这种情况下，我们通过将`STDERR`发送到`/dev/null`来隐藏日志消息。然后，我们将输出通过管道传输到`jq`，一个格式化和查询JSON数据的工具，来以漂亮的格式呈现输出：
 - en: '![](img/4e98a7a3-2022-44aa-a1f5-95ca7c1e6af6.png)'
   id: totrans-142
   prefs: []
   type: TYPE_IMG
+  zh: '![](img/4e98a7a3-2022-44aa-a1f5-95ca7c1e6af6.png)'
 - en: There are a few things you may have identified in this output. The first we'll
     highlight is that the files aren't in alphabetical order. This is because our
     `os.walk` function doesn't preserve alphabetical order by default when it iterates
@@ -1126,21 +1138,25 @@
   id: totrans-143
   prefs: []
   type: TYPE_NORMAL
+  zh: 在这个输出中，你可能会注意到一些事情。首先，我们要强调的是文件没有按照字母顺序排列。这是因为我们的`os.walk`函数在遍历路径时默认不会保持字母顺序。第二个问题是，尽管这些文件的大小相同，但它们的块大小不同。这意味着一些文件（包含随机内容）没有足够的块，因此签名太短。这意味着我们需要将块大小减半并重新尝试，这样当我们进入比较部分时，就能比较具有足够相似块的文件。另一方面，具有3,072个块的文件（`file_2`和`file_4`）的第二个签名可以部分与其他块大小为6,144的文件的第一个签名进行比较。
 - en: We've provided these test files for your use and comparison to confirm our implementation
     matches yours and the output of the next script.
   id: totrans-144
   prefs: []
   type: TYPE_NORMAL
+  zh: 我们提供了这些测试文件供你使用和比较，以确认我们的实现与你的实现相符，并且与下一个脚本的输出一致。
 - en: Using ssdeep in Python – ssdeep_python.py
   id: totrans-145
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 在Python中使用ssdeep – ssdeep_python.py
 - en: This script was tested with both Python 2.7.15 and 3.7.1, and requires the ssdeep
     version 3.3 third-party library.
   id: totrans-146
   prefs: []
   type: TYPE_NORMAL
+  zh: 这个脚本已经在Python 2.7.15和3.7.1版本中进行了测试，并且需要ssdeep版本3.3的第三方库。
 - en: As you may have noticed, the prior implementation is almost prohibitively slow.
     In situations like this, it's best to leverage a language, such as C, that can
     perform this operation much faster. Luckily for us, spamsum was originally written
@@ -1153,6 +1169,7 @@
   id: totrans-147
   prefs: []
   type: TYPE_NORMAL
+  zh: 正如你可能已经注意到的，之前的实现几乎慢得不可忍受。在这种情况下，最好利用像C语言这样的语言，它能够更快速地执行这个操作。幸运的是，spamsum最初是用C语言编写的，后来通过ssdeep项目进一步扩展，依然是C语言实现的。ssdeep项目提供的扩展之一是Python绑定。这些绑定允许我们仍然使用熟悉的Python函数调用，同时将繁重的计算任务卸载到已编译的C代码中。我们的下一个脚本涵盖了在Python模块中实现ssdeep库，以产生相同的签名并处理比较操作。
 - en: In this second example of fuzzy hashing, we're going to implement a similar
     script using the ssdeep Python library. This allows us to leverage the ssdeep
     tool and the spamsum algorithm, which has been widely used and accepted in the
@@ -1166,6 +1183,7 @@
   id: totrans-148
   prefs: []
   type: TYPE_NORMAL
+  zh: 在这个模糊哈希的第二个示例中，我们将使用ssdeep Python库实现一个类似的脚本。这使我们能够利用ssdeep工具和spamsum算法，后者在数字取证和信息安全领域得到了广泛的应用和接受。这段代码将是大多数场景下模糊哈希的首选方法，因为它在资源使用上更高效，且能产生更准确的结果。这个工具在社区中得到了广泛的支持，许多ssdeep签名可以在线获取。例如，VirusShare和VirusTotal网站上托管了来自ssdeep的哈希值。这些公开的信息可以用来检查已知的恶意文件，它们可能与主机机器上的可执行文件匹配或相似，而无需下载恶意文件。
 - en: One weakness of ssdeep is that it doesn't provide information beyond the matching
     percentage and can't compare files with significantly different block sizes. This
     can be an issue as ssdeep automatically generates the block size based on the
@@ -1176,6 +1194,8 @@
   id: totrans-149
   prefs: []
   type: TYPE_NORMAL
+  zh: ssdeep 的一个弱点是它仅提供匹配百分比的信息，并且无法比较具有显著不同块大小的文件。这可能是一个问题，因为 ssdeep 会根据输入文件的大小自动生成块大小。这个过程使得
+    ssdeep 比我们的脚本运行更高效，并且在扩展性方面表现得更好；然而，它并没有提供手动指定块大小的解决方案。我们可以拿之前的脚本并硬编码块大小，尽管这会引入其他（之前讨论过的）问题。
 - en: 'This script starts the same as the other, with the addition of the new import
     of the ssdeep library. To install this library, run `pip install ssdeep==3.3`,
     or if that fails, you can run `BUILD_LIB=1 pip install ssdeep==3.3` as per the
@@ -1186,6 +1206,10 @@
   id: totrans-150
   prefs: []
   type: TYPE_NORMAL
+  zh: 这个脚本与另一个脚本相同，唯一的不同是新增了 ssdeep 库的导入。要安装此库，请运行 `pip install ssdeep==3.3`，如果失败，可以按照
+    [https://pypi.python.org/pypi/ssdeep](https://pypi.python.org/pypi/ssdeep) 上的文档运行
+    `BUILD_LIB=1 pip install ssdeep==3.3`。这个库并不是 ssdeep 的开发者创建的，而是社区的另一位成员创建的，提供了
+    Python 与 C 基于的库之间需要的绑定。安装完成后，可以像第 7 行所示那样导入：
 - en: '[PRE26]'
   id: totrans-151
   prefs: []
@@ -1198,6 +1222,8 @@
   id: totrans-152
   prefs: []
   type: TYPE_NORMAL
+  zh: 这个版本的结构与我们之前的版本相似，尽管我们将所有计算工作交给了 `ssdeep` 库。虽然我们可能缺少了哈希和比较函数，但我们仍然以非常相似的方式使用我们的
+    `main` 和 `output` 函数：
 - en: '[PRE27]'
   id: totrans-153
   prefs: []
@@ -1210,10 +1236,13 @@
   id: totrans-154
   prefs: []
   type: TYPE_NORMAL
+  zh: 我们的程序流程与之前的迭代相似，尽管它缺少了我们在上一次迭代中开发的内部哈希函数。如流程图所示，我们仍然在 `main()` 函数中调用 `output()`
+    函数：
 - en: '![](img/54931c15-04a4-4b6a-b142-6f5b246441e5.png)'
   id: totrans-155
   prefs: []
   type: TYPE_IMG
+  zh: '![](img/54931c15-04a4-4b6a-b142-6f5b246441e5.png)'
 - en: 'Our argument parsing and logging configurations are nearly identical to the
     prior script. The major difference is that we''ve introduced one new file path
     argument and renamed our argument that accepted files or folders. On line 134,
@@ -1223,6 +1252,8 @@
   id: totrans-156
   prefs: []
   type: TYPE_NORMAL
+  zh: 我们的参数解析和日志配置几乎与之前的脚本相同。主要的区别是我们引入了一个新的文件路径参数，并重命名了接受文件或文件夹的参数。在第 134 行，我们再次创建了
+    `argparse` 对象来处理我们的两个位置参数和两个可选的输出格式及日志标志。该代码块的其余部分与之前的脚本一致，唯一的区别是我们重命名了日志文件：
 - en: '[PRE28]'
   id: totrans-157
   prefs: []
@@ -1233,6 +1264,7 @@
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 重访 `main()` 函数
 - en: 'This `main()` function is very similar to the prior script, though it has a
     few additional lines of code as we''ve added some functionality. This script starts
     the same with checking that the output type is a valid format, as shown on lines
@@ -1241,6 +1273,8 @@
   id: totrans-159
   prefs: []
   type: TYPE_NORMAL
+  zh: 这个 `main()` 函数与之前的脚本非常相似，虽然它添加了一些额外的代码行，因为我们增加了一些功能。该脚本从检查输出类型是否为有效格式开始，如第 56
+    行到第 62 行所示。然后，我们在第 63 行添加了另一个条件，使我们能够打印 CSV 表头行，因为这个输出比上一个版本更复杂：
 - en: '[PRE29]'
   id: totrans-160
   prefs: []
@@ -1258,6 +1292,7 @@
   id: totrans-161
   prefs: []
   type: TYPE_NORMAL
+  zh: 现在我们已经处理了输出格式的验证，让我们转向文件比较部分。首先，我们会获取已知文件和比较路径的绝对路径，以便与之前的脚本保持一致。然后，在第73行，我们检查已知文件是否存在。如果存在，我们会在第78行计算ssdeep哈希值。这个计算完全由ssdeep处理；我们需要做的只是提供一个有效的文件路径给`hash_from_file()`方法。此方法返回一个包含ssdeep哈希值的字符串，结果与我们在之前脚本中的`fuzz_file()`函数相同。这里的主要区别是通过使用高效的C代码在`ssdeep`模块中运行，从而提升了速度：
 - en: '[PRE30]'
   id: totrans-162
   prefs: []
@@ -1276,6 +1311,7 @@
   id: totrans-163
   prefs: []
   type: TYPE_NORMAL
+  zh: 现在我们有了已知的哈希值，可以评估比较路径。如果该路径是一个目录，如第81行所示，我们将遍历该文件夹及其子文件夹，寻找要处理的文件。在第86行，我们生成这个比较文件的哈希值，方法与已知文件相同。下一行引入了`compare()`方法，允许我们提供两个哈希值进行评估。该比较方法返回一个介于0到100（包括0和100）之间的整数，表示这两个文件内容相似的可信度。然后，我们将所有部分（包括文件名、哈希值和结果相似度）提供给我们的输出函数，并附上我们的格式化规范。这段逻辑会一直进行，直到我们递归处理完所有文件：
 - en: '[PRE31]'
   id: totrans-164
   prefs: []
@@ -1289,6 +1325,7 @@
   id: totrans-165
   prefs: []
   type: TYPE_NORMAL
+  zh: 我们的下一个条件处理相同的操作，但只针对一个文件。如你所见，它使用与目录操作相同的`hash_from_file()`和`compare()`函数。一旦所有的值都被分配，我们会以相同的方式将它们传递给我们的`output()`函数。我们的最终条件处理输入错误的情况，通知用户并退出：
 - en: '[PRE32]'
   id: totrans-166
   prefs: []
@@ -1299,6 +1336,7 @@
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 重新设计我们的`output()`函数
 - en: 'Our last function is `output()`; this function takes our many values and presents
     them cleanly to the user. Just like our prior script, we''ll support TXT, CSV,
     and JSON output formats. To show a different design for this type of function,
@@ -1309,6 +1347,7 @@
   id: totrans-168
   prefs: []
   type: TYPE_NORMAL
+  zh: 我们的最后一个函数是`output()`；这个函数接收多个值，并将它们整齐地呈现给用户。就像我们之前的脚本一样，我们将支持TXT、CSV和JSON输出格式。为了展示这种类型的函数的不同设计，我们将使用特定格式的条件来构建一个模板。然后，使用这个模板以格式化的方式打印内容。如果将来我们打算将输出函数（在本例中是`print()`）更换为其他输出函数，这种方法就会非常有用。
 - en: '[PRE33]'
   id: totrans-169
   prefs: []
@@ -1322,6 +1361,7 @@
   id: totrans-170
   prefs: []
   type: TYPE_NORMAL
+  zh: 首先，我们需要将我们的整数值`comp_val`转换为字符串，以便与模板兼容。在第112行完成此操作后，我们将构建文本格式的模板。文本格式让我们能够自由地以适合视觉审查的方式展示数据。以下是一个选项，但你可以根据需要进行修改。
 - en: 'On lines 113 and 114, we''re able to build our template with named placeholders
     by using the curly braces surrounding our placeholder identifier. Skipping ahead
     to lines 127 to 132, you can see that when we call `msg.format()`, we provide
@@ -1333,6 +1373,9 @@
   id: totrans-171
   prefs: []
   type: TYPE_NORMAL
+  zh: 在第 113 和第 114 行，我们通过使用大括号包围占位符标识符来构建带有命名占位符的模板。跳到第 127 到第 132 行，你可以看到当我们调用 `msg.format()`
+    时，我们通过与占位符相同的名称提供我们的值作为参数。这告诉 `format()` 方法应该用哪个值填充哪个占位符。命名占位符的主要优势在于，我们在调用 `format()`
+    方法时，可以按任何顺序安排值，甚至可以让模板格式中的元素在不同位置：
 - en: '[PRE34]'
   id: totrans-172
   prefs: []
@@ -1349,6 +1392,8 @@
   id: totrans-173
   prefs: []
   type: TYPE_NORMAL
+  zh: 接下来是我们的 JSON 格式化。`json.dumps()` 方法是输出字典为 JSON 内容的首选方式，尽管在这个例子中我们将探讨如何通过其他方式实现类似的目标。通过使用相同的模板方法，我们构建了一个字典，其中键是固定的字符串，值是占位符。由于模板语法使用单个大括号来表示占位符，我们必须使用第二个大括号来转义单个大括号。这意味着我们的整个
+    JSON 对象被额外的大括号包裹——别担心，只有两个大括号中的一个会在打印时显示：
 - en: '[PRE35]'
   id: totrans-174
   prefs: []
@@ -1360,6 +1405,7 @@
   id: totrans-175
   prefs: []
   type: TYPE_NORMAL
+  zh: 最后，我们有了我们的 CSV 输出，再次使用了命名占位符模板。正如你可能注意到的，我们将每个值都用双引号包围，以确保值中的任何逗号不会导致格式问题：
 - en: '[PRE36]'
   id: totrans-176
   prefs: []
@@ -1372,6 +1418,7 @@
   id: totrans-177
   prefs: []
   type: TYPE_NORMAL
+  zh: 我们的 `msg` 变量在此处出现在多行的唯一原因是为了换行。除此之外，没有任何东西阻止你将整个格式模板放在一行。最后，我们有了 `else` 条件，它会捕捉到任何不支持的输出类型：
 - en: '[PRE37]'
   id: totrans-178
   prefs: []
@@ -1384,6 +1431,8 @@
   id: totrans-179
   prefs: []
   type: TYPE_NORMAL
+  zh: 在条件语句后，我们打印出已应用值的模板，以替代占位符。如果我们想支持一种新的或替代的格式，我们可以在上方添加新的条件，并创建所需的模板，而无需重新实现这个
+    `print()` 函数：
 - en: '[PRE38]'
   id: totrans-180
   prefs: []
@@ -1394,6 +1443,7 @@
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 运行 ssdeep_python.py
 - en: 'We can now run our script, providing, for example, `test_data/file_3` as our
     known file and the whole `test_data/` folder as our comparison set. Using the
     JSON output again, we can see the result of our templating in the two following
@@ -1401,18 +1451,23 @@
   id: totrans-182
   prefs: []
   type: TYPE_NORMAL
+  zh: 现在我们可以运行脚本，例如，提供 `test_data/file_3` 作为已知文件，并将整个 `test_data/` 文件夹作为比较集。再次使用 JSON
+    输出，我们可以在接下来的两个截图中看到我们模板化的结果：
 - en: '![](img/34112c19-7d80-433e-a0c4-c0140a7d8d8a.png)'
   id: totrans-183
   prefs: []
   type: TYPE_IMG
+  zh: '![](img/34112c19-7d80-433e-a0c4-c0140a7d8d8a.png)'
 - en: 'The following is our continued output:'
   id: totrans-184
   prefs: []
   type: TYPE_NORMAL
+  zh: 以下是我们继续的输出：
 - en: '![](img/125e09b2-8cf2-414b-bdef-fb5f225d80f0.png)'
   id: totrans-185
   prefs: []
   type: TYPE_IMG
+  zh: '![](img/125e09b2-8cf2-414b-bdef-fb5f225d80f0.png)'
 - en: 'You''ll also notice that this script, using the `ssdeep` library, produces
     the same signatures as our prior implementation! One thing to notice is the speed
     difference between these two scripts. Using the tool time, we ran our two scripts
@@ -1421,20 +1476,25 @@
   id: totrans-186
   prefs: []
   type: TYPE_NORMAL
+  zh: 你还会注意到，使用 `ssdeep` 库的这个脚本，产生了与我们之前实现相同的签名！需要注意的一点是这两个脚本之间的速度差异。通过使用工具时间，我们运行了两个脚本，对相同文件夹中的这六个文件进行了处理。正如接下来的截图所示，使用我们导入的
+    `ssdeep` 模块，性能有了显著提升：
 - en: '![](img/25a60288-e966-45e6-b4ea-4e190365c2b0.png)'
   id: totrans-187
   prefs: []
   type: TYPE_IMG
+  zh: '![](img/25a60288-e966-45e6-b4ea-4e190365c2b0.png)'
 - en: Additional challenges
   id: totrans-188
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 额外的挑战
 - en: You've created a script that implements the spamsum algorithm to generate ssdeep
     compatible hashes! With this, there are a few additional challenges to pursue.
   id: totrans-189
   prefs: []
   type: TYPE_NORMAL
+  zh: 你已经创建了一个实现spamsum算法的脚本，用来生成与ssdeep兼容的哈希值！接下来，还有一些额外的挑战等着你。
 - en: 'First, we''re providing six sample files, found in the previously mentioned
     `test_data/` directory. These files are available to confirm you''re getting the
     same hashes as those printed and to allow you to perform some additional testing.
@@ -1445,32 +1505,38 @@
   id: totrans-190
   prefs: []
   type: TYPE_NORMAL
+  zh: 首先，我们提供了六个示例文件，这些文件位于前面提到的`test_data/`目录中。这些文件可用于确认你是否获得了与打印的哈希值相同的值，并且可以让你进行一些额外的测试。`file_1`、`file_2`和`file_3`文件是我们的原始文件，而附加了`a`的文件是原始文件的修改版本。随附的`README.md`文件包含了我们所做的修改说明，简而言之，我们进行了以下操作：
 - en: '`file_1` with a relocation of some file content to a later portion of the file'
   id: totrans-191
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: '`file_1` 将部分文件内容移至文件的后半部分'
 - en: '`file_2` with an insertion in the early portion of the file'
   id: totrans-192
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: '`file_2` 在文件的前半部分插入内容'
 - en: '`file_3` with a removal of the start of the file'
   id: totrans-193
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: '`file_3` 移除文件的开头部分'
 - en: We encourage you to perform additional testing to learn about how ssdeep responds
     to different types of alterations. Feel free to further alter the original files
     and share your findings with the community!
   id: totrans-194
   prefs: []
   type: TYPE_NORMAL
+  zh: 我们鼓励你进行额外的测试，了解ssdeep如何应对不同类型的修改。随意修改原始文件并与社区分享你的发现！
 - en: Another challenge is to study the ssdeep or spamsum code and learn how it handles
     the comparison component with the goal of adding it into the first script.
   id: totrans-195
   prefs: []
   type: TYPE_NORMAL
+  zh: 另一个挑战是研究ssdeep或spamsum代码，了解它如何处理比较组件，目标是将其加入到第一个脚本中。
 - en: We can also explore developing code to expose the content of, for example, word
     documents and generate ssdeep hashes of the document's content instead of the
     binary file. This can be applied to other file types and doesn't have to be limited
@@ -1479,6 +1545,7 @@
   id: totrans-196
   prefs: []
   type: TYPE_NORMAL
+  zh: 我们还可以开发代码来展示，例如，Word文档的内容，并生成该文档内容的ssdeep哈希，而不是二进制文件的哈希。这可以应用于其他类型的文件，不仅限于文本内容。例如，如果我们发现某个可执行文件被打包了，我们可能还想生成解包后字节内容的模糊哈希。
 - en: Lastly, there are other similarity analysis utilities out there. To name one,
     the `sdhash` utility takes a different approach to identifying similarities between
     two files. We recommend you spend some time with this utility, running it against
@@ -1488,11 +1555,13 @@
   id: totrans-197
   prefs: []
   type: TYPE_NORMAL
+  zh: 最后，市面上还有其他相似度分析工具。举例来说，`sdhash`工具采用了一种不同的方法来识别两个文件之间的相似性。我们建议你花些时间使用这个工具，将其应用于你和我们提供的测试数据，看看它如何应对不同类型的修改和变化。有关`sdhash`的更多信息，请访问网站：[http://roussev.net/sdhash/sdhash.html](http://roussev.net/sdhash/sdhash.html)。
 - en: References
   id: totrans-198
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 参考文献
 - en: Kornblum, J. (2006). *Identifying Almost Identical Files Using Context Triggered
     Piecewise Hashing*, Digital Investigation, 91-97\. Retrieved October 31, 2015,
     from [http://dfrws.org/2006/proceedings/12-Kornblum.pdf](http://dfrws.org/2006/proceedings/12-Kornblum.pdf)
@@ -1500,17 +1569,20 @@
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: Kornblum, J. (2006). *使用上下文触发分段哈希识别几乎相同的文件*，数字调查，91-97\. 2015年10月31日检索自[http://dfrws.org/2006/proceedings/12-Kornblum.pdf](http://dfrws.org/2006/proceedings/12-Kornblum.pdf)
 - en: 'Stevens, M. Karpmanm P. Peyrin, T. (2015), *RESEARCHERS URGE: INDUSTRY STANDARD
     SHA-1 SHOULD BE RETRACTED SOONER*, retrieved October 31, 2015, from [https://ee788fc4-a-62cb3a1a-s-sites.googlegroups.com/site/itstheshappening/shappening_PR.pdf](https://ee788fc4-a-62cb3a1a-s-sites.googlegroups.com/site/itstheshappening/shappening_PR.pdf)'
   id: totrans-200
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: Stevens, M. Karpmanm P. Peyrin, T. (2015)，*研究人员呼吁：行业标准SHA-1应尽快撤回*，2015年10月31日检索自[https://ee788fc4-a-62cb3a1a-s-sites.googlegroups.com/site/itstheshappening/shappening_PR.pdf](https://ee788fc4-a-62cb3a1a-s-sites.googlegroups.com/site/itstheshappening/shappening_PR.pdf)
 - en: Summary
   id: totrans-201
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 概述
 - en: Hashing is a critical component of the DFIR workflow. While most use cases of
     hashing are focused on integrity checking, the use of similarity analysis allows
     us to learn more about near matches and file relations. This process can provide
@@ -1523,6 +1595,7 @@
   id: totrans-202
   prefs: []
   type: TYPE_NORMAL
+  zh: 哈希是DFIR工作流程中的一个关键组成部分。虽然大多数哈希的应用场景集中在完整性检查上，但相似性分析的使用使我们能够了解更多关于近似匹配和文件关系的信息。这个过程可以为恶意软件检测、识别未授权位置的受限文档以及仅基于内容发现紧密相关的项目提供深入的见解。通过使用第三方库，我们能够利用C语言背后的强大功能，同时享受Python解释器的灵活性，构建出既适合用户又适合开发者的强大工具。这个项目的代码可以从GitHub或Packt下载，具体信息见*前言*。
 - en: A fuzzy hash is a form of metadata, or data about data. Metadata also includes
     embedded attributes such as document editing time, image geolocation information,
     and source application. In the next chapter, you'll learn how to extract embedded
@@ -1530,3 +1603,4 @@
   id: totrans-203
   prefs: []
   type: TYPE_NORMAL
+  zh: 模糊哈希是一种元数据的形式，或者说是关于数据的数据。元数据还包括嵌入的属性，如文档编辑时间、图像地理位置信息和源应用程序。在下一章中，您将学习如何从各种文件中提取嵌入的元数据，包括图像、音频文件和办公文档。
