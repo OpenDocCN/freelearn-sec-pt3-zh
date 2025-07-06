@@ -1573,47 +1573,58 @@
   id: totrans-227
   prefs: []
   type: TYPE_NORMAL
+  zh: 在调用 `SleepEx`、`SignalObjectAndWait`、`MsgWaitForMultipleObjectsEx`、`WaitForMultipleObjectsEx`
+    或 `WaitForSingleObjectEx` 等 API 后，线程被恢复之前，所有排队的用户模式和内核模式 APC 函数都将在该线程的上下文中执行，从而使恶意软件能够在该进程内执行用户模式代码，然后再将控制权交还给它。
 - en: 'For a malware sample to queue an APC function, it needs to perform the following
     steps:'
   id: totrans-228
   prefs: []
   type: TYPE_NORMAL
+  zh: 对于一个恶意软件样本排队 APC 函数，它需要执行以下步骤：
 - en: Get the `ETHREAD` object of the thread it wants to queue an APC function by
     providing its `PsLookupThreadByThreadId` API.
   id: totrans-229
   prefs:
   - PREF_OL
   type: TYPE_NORMAL
+  zh: 通过提供 `PsLookupThreadByThreadId` API，获取要排队 APC 函数的线程的 `ETHREAD` 对象。
 - en: Attach the user-mode function to this thread using the `KeInitializeApc` API.
   id: totrans-230
   prefs: []
   type: TYPE_NORMAL
+  zh: 使用 `KeInitializeApc` API 将用户模式函数附加到该线程。
 - en: 'Add this function to the queue of the APC functions to be executed in this
     thread using the `KeInsertQueueApc` API, as shown in the following screenshot:'
   id: totrans-231
   prefs:
   - PREF_OL
   type: TYPE_NORMAL
+  zh: 使用 `KeInsertQueueApc` API 将此函数添加到该线程中待执行的 APC 函数队列，如下图所示：
 - en: '![Figure 7.21 – APC queuing to execute a user-mode function (from the winSRDF
     project)'
   id: totrans-232
   prefs: []
   type: TYPE_NORMAL
+  zh: '![图 7.21 – APC 排队执行用户模式函数（来自 winSRDF 项目）'
 - en: '](img/Figure_7.21_B18500.jpg)'
   id: totrans-233
   prefs: []
   type: TYPE_NORMAL
+  zh: '](img/Figure_7.21_B18500.jpg)'
 - en: Figure 7.21 – APC queuing to execute a user-mode function (from the winSRDF
     project)
   id: totrans-234
   prefs: []
   type: TYPE_NORMAL
+  zh: 图 7.21 – APC 排队执行用户模式函数（来自 winSRDF 项目）
 - en: In this example, the `KeInitializeApc` API will execute a kernel-mode function
     called `ApcKernelRoutine` and a user-mode function called `Entrypoint` once the
     thread returns from its alertable state.
   id: totrans-235
   prefs: []
   type: TYPE_NORMAL
+  zh: 在这个示例中，`KeInitializeApc` API 将在线程从其可警报状态返回后执行一个内核模式函数 `ApcKernelRoutine` 和一个用户模式函数
+    `Entrypoint`。
 - en: If the thread didn't execute any of the previously mentioned APIs and never
     enters an alertable state until it is terminated, none of the queued APC functions
     will be executed. Therefore, some malware families tend to attach their APC thread
@@ -1621,6 +1632,8 @@
   id: totrans-236
   prefs: []
   type: TYPE_NORMAL
+  zh: 如果线程没有执行之前提到的任何 API，并且在终止之前从未进入可警报状态，那么队列中的 APC 函数将不会被执行。因此，一些恶意软件家族倾向于将它们的
+    APC 线程附加到应用程序中的多个运行线程上。
 - en: Other rootkits, such as MRxCls (from Stuxnet), modify the entry point of the
     application before it gets executed. This allows the malicious code to be executed
     in the context of the main thread before the application runs and without using
@@ -1628,16 +1641,20 @@
   id: totrans-237
   prefs: []
   type: TYPE_NORMAL
+  zh: 其他 rootkit，例如 MRxCls（来自 Stuxnet），在应用程序执行之前修改其入口点。这允许恶意代码在应用程序运行之前在主线程的上下文中执行，并且不使用任何
+    APC 排队功能。
 - en: At this stage, we have learned enough about how rootkits generally work, so
     let's talk about what protection mechanisms have been developed to fight them.
   id: totrans-238
   prefs: []
   type: TYPE_NORMAL
+  zh: 到这一阶段，我们已经了解了 rootkit 的一般工作原理，接下来让我们谈谈为了对抗 rootkit 所开发的保护机制。
 - en: KPP in x64 systems (PatchGuard)
   id: totrans-239
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: x64 系统中的 KPP（PatchGuard）
 - en: In x64 systems, Microsoft has introduced new protection against kernel-mode
     hooking and patching called **KPP**, or **PatchGuard**. This protection disables
     any patching of the SSDT and the core kernel code. It doesn't allow the usage
@@ -1645,12 +1662,15 @@
   id: totrans-240
   prefs: []
   type: TYPE_NORMAL
+  zh: 在 x64 系统中，微软引入了一种新的保护机制，防止内核模式钩取和打补丁，称为 **KPP**，也叫 **PatchGuard**。此保护机制禁用了对
+    SSDT 和核心内核代码的任何打补丁，并且不允许使用内核分配以外的内核栈。
 - en: Additionally, Microsoft allows only signed drivers to be loaded in the x64 systems,
     except for situations when the system is running in test mode or driver signature
     enforcement is disabled.
   id: totrans-241
   prefs: []
   type: TYPE_NORMAL
+  zh: 此外，微软只允许在 x64 系统中加载签名的驱动程序，除非系统处于测试模式或禁用了驱动程序签名强制。
 - en: KPP received lots of criticism from antivirus and firewall vendors when it was
     first introduced because SSDT hooking and other hooking types were heavily used
     in multiple security products. Microsoft has created a new API to help antivirus
@@ -1658,6 +1678,8 @@
   id: totrans-242
   prefs: []
   type: TYPE_NORMAL
+  zh: 当 KPP 最初推出时，受到防病毒和防火墙厂商的强烈批评，因为 SSDT hooking 和其他钩取方法在多个安全产品中被广泛使用。微软为帮助防病毒产品替换其钩取方法，创建了一个新的
+    API。
 - en: Although several ways of bypassing PatchGuard have been documented, for the
     last several years, Microsoft has released only a few major updates to deal with
     these techniques. In addition, the PatchGuard code is changing its position in
@@ -1667,22 +1689,27 @@
   id: totrans-243
   prefs: []
   type: TYPE_NORMAL
+  zh: 尽管已有多种绕过 PatchGuard 的方法被文档化，但在过去的几年里，微软仅发布了少数几个主要更新来应对这些技术。此外，PatchGuard 代码在内核模式中的位置会随着每次更新发生变化，使其成为一个移动目标，并且打破了所有先前能够绕过
+    PatchGuard 的恶意软件家族。
 - en: Now, let's take a look at different bypassing techniques that were introduced
     in some of the previous malware families.
   id: totrans-244
   prefs: []
   type: TYPE_NORMAL
+  zh: 现在，让我们看看一些之前的恶意软件家族介绍的不同绕过技术。
 - en: Bypassing driver signature enforcement
   id: totrans-245
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: 绕过驱动程序签名强制检查
 - en: 'Apart from the ability to use stolen certificates to sign the malicious driver
     (an example of this could be Stuxnet drivers), it''s also possible to disable
     the driver signature enforcement option using the Command Prompt, as follows:'
   id: totrans-246
   prefs: []
   type: TYPE_NORMAL
+  zh: 除了能够使用被窃取的证书签名恶意驱动程序（例如 Stuxnet 驱动程序），还可以通过命令提示符禁用驱动程序签名强制选项，如下所示：
 - en: '[PRE7]'
   id: totrans-247
   prefs: []
@@ -1696,6 +1723,7 @@
   id: totrans-248
   prefs: []
   type: TYPE_NORMAL
+  zh: 在这种情况下，系统将开始允许使用未由微软颁发的证书签名的驱动程序。此命令需要管理员权限，并且之后需要重启机器。然而，通过社会工程学的帮助，可以欺骗用户执行此操作。以前可用的另一个选项是以下命令：
 - en: '[PRE8]'
   id: totrans-249
   prefs: []
@@ -1706,6 +1734,7 @@
   id: totrans-250
   prefs: []
   type: TYPE_NORMAL
+  zh: 然而，在撰写时，这个选项在现代版本的 Windows 上被忽视。
 - en: Additionally, some malware families abuse vulnerable signed drivers of legitimate
     products, which either have code execution vulnerabilities or vulnerabilities
     that allow the arbitrary memory inside the kernel to be modified. An example of
@@ -1716,11 +1745,14 @@
   id: totrans-251
   prefs: []
   type: TYPE_NORMAL
+  zh: 此外，一些恶意软件家族滥用合法产品的有漏洞签名驱动程序，这些驱动程序要么存在代码执行漏洞，要么存在允许修改内核内部任意内存的漏洞。一个例子就是 Turla
+    恶意软件（被认为是国家支持的APT恶意软件）。它加载了一个 VirtualBox 驱动程序，并利用它修改了 `g_CiEnabled` 内核变量，从而在运行时禁用驱动程序签名强制检查（无需重启系统）。
 - en: Bypassing PatchGuard – the Turla example
   id: totrans-252
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: 绕过 PatchGuard – Turla 示例
 - en: Turla was also able to bypass PatchGuard by disabling its ability to show the
     blue screen of death when the system integrity check fails. After PatchGuard detects
     the unauthorized patching of the system kernel or its important tables (such as
@@ -1729,6 +1761,8 @@
   id: totrans-253
   prefs: []
   type: TYPE_NORMAL
+  zh: Turla 还通过禁用系统完整性检查失败时显示蓝屏死机的功能绕过了 PatchGuard。PatchGuard 在检测到未经授权的系统内核修补或其重要表格（如
+    SSDT 或 IDT）被修改时，调用 `KeBugCheckEx` API 来显示蓝屏死机。Turla 恶意软件挂钩了这个 API，并正常执行。
 - en: 'A later version of PatchGuard was cloning this API on-the-fly to ensure that
     the verification was enforced and caused the system to shut down. However, Turla
     was able to hook an early subroutine in the `KeBugCheckEx` API to make sure it
@@ -1737,6 +1771,8 @@
   id: totrans-254
   prefs: []
   type: TYPE_NORMAL
+  zh: PatchGuard 的一个后续版本会动态克隆这个 API，以确保验证得到执行并导致系统关闭。然而，Turla 能够挂钩 `KeBugCheckEx`
+    API 中的一个早期子程序，确保在完整性检查失败后能够正常恢复系统执行。以下代码是 `KeBugCheckEx` API 的一个代码片段：
 - en: '[PRE9]'
   id: totrans-255
   prefs: []
@@ -1747,11 +1783,13 @@
   id: totrans-256
   prefs: []
   type: TYPE_NORMAL
+  zh: 如你所见，它执行了一个名为 `RtlCaptureContext` 的函数，这是 Turla 恶意软件选择挂钩的地方，用来绕过这个更新。
 - en: Bypassing PatchGuard – GhostHook
   id: totrans-257
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: 绕过 PatchGuard – GhostHook
 - en: This technique was introduced by the CyberArk research team in 2017\. It abuses
     a new feature that was introduced by Intel called **Intel Processor Trace** (**Intel
     PT**). This technology allows debugging software to trace single processes, user-mode
@@ -1761,6 +1799,8 @@
   id: totrans-258
   prefs: []
   type: TYPE_NORMAL
+  zh: 该技术由 CyberArk 研究团队在2017年提出。它利用了英特尔引入的一个新功能，称为 **Intel 处理器跟踪** (**Intel PT**)。该技术允许调试软件跟踪单个进程、用户模式和内核模式的执行，或进行指令指针跟踪。Intel
+    PT 技术设计用于性能监控、诊断代码覆盖、调试、模糊测试、恶意软件分析和漏洞检测。
 - en: Intel processors and their `callback` routine to handle the memory space issue.
     This `callback` function (that is, the PMI handler) is a function that is targeted
     by the malware as it gets executed in the context of the running thread that is
@@ -1768,6 +1808,7 @@
   id: totrans-259
   prefs: []
   type: TYPE_NORMAL
+  zh: Intel 处理器及其 `callback` 例程来处理内存空间问题。这个 `callback` 函数（即 PMI 处理程序）是恶意软件的目标，它在被监控的运行线程的上下文中执行。
 - en: Under specific circumstances and by using a very small buffer, malware can force
     the execution of its PMI handler after each `sysenter` call and perform another
     technique, known as `sysenter` hooking, without alerting the PatchGuard protection
@@ -1775,16 +1816,20 @@
   id: totrans-260
   prefs: []
   type: TYPE_NORMAL
+  zh: 在特定情况下，恶意软件可以通过使用非常小的缓冲区，在每次 `sysenter` 调用后强制执行其 PMI 处理程序，并执行另一种技术，称为 `sysenter`
+    钩取，而不会触发 PatchGuard 保护，也不需要进行 API 钩取。
 - en: Now, we will take a look at how to analyze rootkits and, in particular, how
     to dynamically analyze rootkits.
   id: totrans-261
   prefs: []
   type: TYPE_NORMAL
+  zh: 现在，我们将看看如何分析 rootkits，特别是如何动态分析 rootkits。
 - en: Static and dynamic analysis in kernel mode
   id: totrans-262
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 内核模式下的静态和动态分析
 - en: Once we know how rootkits work, it becomes possible to analyze them. The first
     thing worth mentioning is that not all kernel-mode malware families just hide
     the presence of actual payloads – some of them can perform malicious actions on
@@ -1794,22 +1839,27 @@
   id: totrans-263
   prefs: []
   type: TYPE_NORMAL
+  zh: 一旦我们了解了 rootkits 的工作原理，就可以开始分析它们。值得一提的是，并非所有内核模式恶意软件家族只是隐藏实际负载的存在——其中一些还可以执行恶意操作。在本节中，我们将熟悉一些工具，它们可以促进
+    rootkit 分析，帮助理解恶意软件功能，并学习一些特定使用的细微差别。
 - en: Static analysis
   id: totrans-264
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: 静态分析
 - en: It always makes sense to start from static analysis, especially if the debugging
     setup is not available straight away. In some cases, it is possible to perform
     both static and dynamic analysis using the same tools.
   id: totrans-265
   prefs: []
   type: TYPE_NORMAL
+  zh: 从静态分析开始总是明智的，尤其是在调试环境无法立即使用的情况下。在某些情况下，使用相同的工具可以同时进行静态和动态分析。
 - en: Rootkit file structure
   id: totrans-266
   prefs:
   - PREF_H3
   type: TYPE_NORMAL
+  zh: Rootkit 文件结构
 - en: Rootkit samples are usually drivers that implement the traditional MZ-PE structure
     with the `IMAGE_SUBSYSTEM_NATIVE` value specified in the subsystem field of the
     `IMAGE_OPTIONAL_HEADER32` structure. They use the usual x86 or x64 instructions
@@ -1821,11 +1871,16 @@
   id: totrans-267
   prefs: []
   type: TYPE_NORMAL
+  zh: Rootkit 样本通常是实现传统 MZ-PE 结构的驱动程序，并在 `IMAGE_OPTIONAL_HEADER32` 结构的子系统字段中指定 `IMAGE_SUBSYSTEM_NATIVE`
+    值。它们使用我们已经熟悉的传统 x86 或 x64 指令。因此，任何支持这些指令的工具（不包括用户模式调试器如 OllyDbg）应该能够处理 rootkits，而不会遇到重大问题。它们的例子包括
+    IDA、radare2 等工具。此外，IDA 插件如 **win_driver_plugin** 和 **DriverBuddy** 对于辅助操作非常有用，比如解码涉及的
+    IOCTL 代码。
 - en: Analysis workflow
   id: totrans-268
   prefs:
   - PREF_H3
   type: TYPE_NORMAL
+  zh: 分析工作流程
 - en: 'Once the sample is open, the first step is to track down `DriverObject`, which
     is provided as the first argument of the main function (through the stack for
     32-bit systems and the `rcx` register for 64-bit systems). In this way, we can
@@ -1835,6 +1890,8 @@
   id: totrans-269
   prefs: []
   type: TYPE_NORMAL
+  zh: 一旦打开样本，第一步是追踪 `DriverObject`，它作为主函数的第一个参数提供（在32位系统中通过堆栈，在64位系统中通过 `rcx` 寄存器）。通过这种方式，我们可以监视是否有任何主要功能是由恶意软件定义的。这个对象实现了
+    `_DRIVER_OBJECT` 结构，并在其末尾列出了主要功能。对应的结构成员如下：
 - en: '[PRE10]'
   id: totrans-270
   prefs: []
@@ -1845,11 +1902,13 @@
   id: totrans-271
   prefs: []
   type: TYPE_NORMAL
+  zh: 在汇编语言中，它们可能通过偏移量进行访问，可以通过应用此结构轻松映射。
 - en: Additionally, it is worth checking whether any completion routine is specified
     using the `IoSetCompletionRoutine` API.
   id: totrans-272
   prefs: []
   type: TYPE_NORMAL
+  zh: 此外，值得检查是否通过`IoSetCompletionRoutine` API指定了任何完成例程。
 - en: Then, we need to search for the presence of instructions that allow us to disable
     security measures such as the previously mentioned write protection, which involves
     using the `CR0` register. In this way, it becomes possible to easily identify
@@ -1857,6 +1916,7 @@
   id: totrans-273
   prefs: []
   type: TYPE_NORMAL
+  zh: 然后，我们需要搜索允许禁用安全措施的指令，例如前面提到的写保护，涉及使用`CR0`寄存器。通过这种方式，可以轻松识别代码中实现此功能的确切位置。
 - en: Following this, we need to keep track of the crucial import functions we've
     already discussed, which are most commonly used by rootkits, and check the corresponding
     argument strings to learn their purpose. Are there any devices malware attaches
@@ -1865,17 +1925,20 @@
   id: totrans-274
   prefs: []
   type: TYPE_NORMAL
+  zh: 接下来，我们需要跟踪已经讨论过的重要导入函数，这些函数通常被rootkit使用，并检查相应的参数字符串以了解其用途。恶意软件是否附着到任何设备上？是否提到任何进程或文件名？一旦这些问题得到解答，就可以弄清楚rootkit的目标。
 - en: Finally, if import functions are resolved dynamically, it makes sense to restore
     them before continuing the analysis. Generally, this can be done either by scripting
     or with the help of dynamic analysis.
   id: totrans-275
   prefs: []
   type: TYPE_NORMAL
+  zh: 最后，如果导入函数是动态解析的，在继续分析之前恢复它们是有意义的。通常，可以通过脚本或借助动态分析来完成此操作。
 - en: Dynamic and behavioral analysis
   id: totrans-276
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: 动态与行为分析
 - en: The dynamic analysis of kernel-mode threats is a trickier part here because
     it is performed on a low level, and any mistake may result in a system crash.
     Therefore, it is highly recommended to perform it on **virtual machines** (**VMs**)
@@ -1886,40 +1949,47 @@
   id: totrans-277
   prefs: []
   type: TYPE_NORMAL
+  zh: 内核模式威胁的动态分析是一个更为棘手的部分，因为它在低级别进行，任何错误都可能导致系统崩溃。因此，强烈建议在**虚拟机**（**VMs**）上进行操作，这样调试状态可以快速恢复到之前的状态。另一种选择是使用通过串口连接的独立机器。然而，在这种情况下，恢复之前的调试状态通常需要更多的努力。
 - en: Debuggers
   id: totrans-278
   prefs:
   - PREF_H3
   type: TYPE_NORMAL
+  zh: 调试器
 - en: 'When we talk about dynamic analysis, the main group of tools we are referring
     to is debuggers. The most popular debuggers are as follows:'
   id: totrans-279
   prefs: []
   type: TYPE_NORMAL
+  zh: 当我们谈论动态分析时，我们所指的主要工具是调试器。最流行的调试器如下：
 - en: '`.`"), and extension commands (the ones that start with "`!`"). Here are some
     of the most common commands that are used when performing rootkit analysis:'
   id: totrans-280
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: '`.`")，以及扩展命令（以 "`!`" 开头的命令）。以下是进行rootkit分析时最常用的一些命令：'
 - en: '`?`: This is used to display regular commands.'
   id: totrans-281
   prefs:
   - PREF_IND
   - PREF_UL
   type: TYPE_NORMAL
+  zh: '`?`：用于显示常规命令。'
 - en: '`.help`: This is used to display meta-commands.'
   id: totrans-282
   prefs:
   - PREF_IND
   - PREF_UL
   type: TYPE_NORMAL
+  zh: '`.help`：用于显示元命令。'
 - en: '`.hh`: This is used to open the documentation for the specified command.'
   id: totrans-283
   prefs:
   - PREF_IND
   - PREF_UL
   type: TYPE_NORMAL
+  zh: '`.hh`：用于打开指定命令的文档。'
 - en: '`bp`, `bu`, and `ba`: These are used to set breakpoints, including the usual
     breakpoint, the unresolved breakpoint (this is activated once the module is loaded),
     and the breakpoint on access.'
@@ -1928,6 +1998,7 @@
   - PREF_IND
   - PREF_UL
   type: TYPE_NORMAL
+  zh: '`bp`，`bu`，和`ba`：用于设置断点，包括常规断点、未解析断点（当模块加载时激活）和访问断点。'
 - en: '`bl`, `bd`, `be`, and `bc`: These are used to list, disable, enable, and clear
     breakpoints, respectively.'
   id: totrans-285
@@ -1935,6 +2006,7 @@
   - PREF_IND
   - PREF_UL
   type: TYPE_NORMAL
+  zh: '`bl`，`bd`，`be`，和`bc`：分别用于列出、禁用、启用和清除断点。'
 - en: '`g`, `p`, and `t`: These commands refer to go (continue execution), single
     step, and single trace, respectively.'
   id: totrans-286
@@ -1942,18 +2014,21 @@
   - PREF_IND
   - PREF_UL
   type: TYPE_NORMAL
+  zh: '`g`，`p`，和`t`：这些命令分别表示继续执行（go），单步执行（single step）和单步追踪（single trace）。'
 - en: '`d` and `u`: These commands display memory and disassembled instructions, respectively.'
   id: totrans-287
   prefs:
   - PREF_IND
   - PREF_UL
   type: TYPE_NORMAL
+  zh: '`d` 和 `u`：分别用于显示内存和反汇编指令。'
 - en: '`e`: This is used to enter specified values into memory (that is, edit memory).'
   id: totrans-288
   prefs:
   - PREF_IND
   - PREF_UL
   type: TYPE_NORMAL
+  zh: '`e`：用于将指定的值输入内存（即编辑内存）。'
 - en: '`dt`: This is used to parse and describe data types. For example, `dt ntdll!_PEB`
     will display the PEB structure with offsets, field names, and data types.'
   id: totrans-289
@@ -1961,6 +2036,7 @@
   - PREF_IND
   - PREF_UL
   type: TYPE_NORMAL
+  zh: '`dt`：用于解析和描述数据类型。例如，`dt ntdll!_PEB`将显示带有偏移量、字段名和数据类型的PEB结构。'
 - en: '`r`: This allows you to display or modify registers. Here, `r eip=<val>` can
     be used to change the instruction pointer.'
   id: totrans-290
@@ -1968,6 +2044,7 @@
   - PREF_IND
   - PREF_UL
   type: TYPE_NORMAL
+  zh: '`r`：用于显示或修改寄存器。这里，`r eip=<val>`可以用来更改指令指针。'
 - en: '`x`: This is used to list symbols that match the pattern; for example, `x ntdll!*`
     will list all symbols from `ntdll`.'
   id: totrans-291
@@ -1975,6 +2052,7 @@
   - PREF_IND
   - PREF_UL
   type: TYPE_NORMAL
+  zh: '`x`: 用于列出匹配模式的符号；例如，`x ntdll!*` 将列出来自 `ntdll` 的所有符号。'
 - en: '`lm`: This is used to list modules; it works by displaying a list of loaded
     drivers and their corresponding memory ranges.'
   id: totrans-292
@@ -1982,6 +2060,7 @@
   - PREF_IND
   - PREF_UL
   type: TYPE_NORMAL
+  zh: '`lm`: 用于列出模块；它通过显示加载的驱动程序及其对应的内存范围来工作。'
 - en: '`!dh`: This is a dump header command; it can be used to parse and display the
     MZ-PE header by ImageBase.'
   id: totrans-293
@@ -1989,6 +2068,7 @@
   - PREF_IND
   - PREF_UL
   type: TYPE_NORMAL
+  zh: '`!dh`: 这是一个转储头命令；它可以用来解析和显示 MZ-PE 头信息，通过 ImageBase。'
 - en: '`!process`: This displays various pieces of information about the specified
     process, including the PEB address. For example, `!process 0 0 lsass.exe` will
     display basic information about `lsass.exe`, and the 7 flag can be used to display
@@ -1998,6 +2078,8 @@
   - PREF_IND
   - PREF_UL
   type: TYPE_NORMAL
+  zh: '`!process`: 显示指定进程的各种信息，包括 PEB 地址。例如，`!process 0 0 lsass.exe` 将显示 `lsass.exe`
+    的基本信息，使用 7 标志可以显示完整的细节，包括 TEB 结构。'
 - en: '`.process`: This command sets the process context. For example, `.process /i
     <PROCESS>` (where the `<PROCESS>` value can be taken from the output of the `!process`
     command that was previously mentioned) followed by `g` and `.reload /user` allows
@@ -2007,6 +2089,8 @@
   - PREF_IND
   - PREF_UL
   type: TYPE_NORMAL
+  zh: '`.process`: 此命令设置进程上下文。例如，`.process /i <PROCESS>`（其中 `<PROCESS>` 值可以从之前提到的
+    `!process` 命令的输出中获取），然后执行 `g` 和 `.reload /user` 可以让你切换到指定进程的调试模式。'
 - en: '`!peb`: This parses and displays the PEB structure of the specified process.
     This command can help you switch to the process context using the `.process` command
     first.'
@@ -2015,12 +2099,14 @@
   - PREF_IND
   - PREF_UL
   type: TYPE_NORMAL
+  zh: '`!peb`: 解析并显示指定进程的 PEB 结构。此命令可以帮助你通过首先使用 `.process` 命令切换到进程上下文。'
 - en: '`!teb`: This parses and displays the specified TEB structure.'
   id: totrans-297
   prefs:
   - PREF_IND
   - PREF_UL
   type: TYPE_NORMAL
+  zh: '`!teb`: 解析并显示指定的 TEB 结构。'
 - en: '`.shell`: This allows you to use Windows console commands from WinDbg. For
     example, `.shell -ci "<windbg_command>" findstr <value>` will allow you to parse
     the output of executed commands.'
@@ -2029,12 +2115,15 @@
   - PREF_IND
   - PREF_UL
   type: TYPE_NORMAL
+  zh: '`.shell`: 允许你从 WinDbg 使用 Windows 控制台命令。例如，`.shell -ci "<windbg_command>" findstr
+    <value>` 允许你解析执行命令的输出。'
 - en: '`.writemem`: This dumps memory to a file.'
   id: totrans-299
   prefs:
   - PREF_IND
   - PREF_UL
   type: TYPE_NORMAL
+  zh: '`.writemem`: 该命令将内存转储到文件中。'
 - en: '**IDA**: While unable to debug kernel-mode code on its own, this can be used
     as a UI for WinDbg. In this way, it can allow you to store all markup from the
     static analysis and debug code in the same place.'
@@ -2042,12 +2131,14 @@
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: '**IDA**: 虽然不能单独调试内核模式代码，但它可以作为 WinDbg 的 UI 使用。通过这种方式，它可以让你将静态分析的所有标记和调试代码存储在同一地方。'
 - en: '**radare2**: Same as IDA, this tool can be used on top of WinDbg with a dedicated
     plugin.'
   id: totrans-301
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: '**radare2**: 与 IDA 相同，这个工具可以在 WinDbg 上使用，且有专门的插件支持。'
 - en: '**SoftICE (obsolete)**: This was once one of the most popular tools for performing
     low-level dynamic analysis on Windows. At the time of writing, the tool is obsolete
     and doesn''t support new systems.'
@@ -2055,34 +2146,41 @@
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: '**SoftICE (已废弃)**: 这曾是最流行的 Windows 低级动态分析工具之一。本文写作时，该工具已经废弃，不支持新系统。'
 - en: Apart from this, there are several other kernel-mode debuggers, such as **Syser**,
     **Rasta Ring 0 Debugger** (**RR0D**), **HyperDbg**, and **BugChecker**, that don't
     appear to be maintained anymore.
   id: totrans-303
   prefs: []
   type: TYPE_NORMAL
+  zh: 除此之外，还有一些其他内核模式调试器，如 **Syser**、**Rasta Ring 0 Debugger** (**RR0D**)、**HyperDbg**
+    和 **BugChecker**，这些工具似乎不再维护。
 - en: Monitors
   id: totrans-304
   prefs:
   - PREF_H3
   type: TYPE_NORMAL
+  zh: 监视器
 - en: 'These tools are supposed to give us insight into various objects and events
     associated with kernel mode:'
   id: totrans-305
   prefs: []
   type: TYPE_NORMAL
+  zh: 这些工具可以帮助我们洞察与内核模式相关的各种对象和事件：
 - en: '**DriverView**: This is a tool developed by NirSoft; it allows you to quickly
     get a list of loaded drivers and their location in memory.'
   id: totrans-306
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: '**DriverView**: 这是 NirSoft 开发的一个工具；它可以让你快速获取已加载驱动程序及其在内存中的位置。'
 - en: '**DebugView**: This is a Sysinternals tool that allows you to monitor the debugging
     output from both user and kernel mode.'
   id: totrans-307
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: '**DebugView**: 这是一个 Sysinternals 工具，允许你监视来自用户模式和内核模式的调试输出。'
 - en: '**WinObj**: This is another useful tool from Sysinternals that can present
     a list of various system objects relevant to kernel-mode debugging, such as devices
     and drivers.'
@@ -2090,16 +2188,19 @@
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: '**WinObj**: 这是 Sysinternals 提供的另一个有用工具，可以列出与内核模式调试相关的各种系统对象，例如设备和驱动程序。'
 - en: Using them may give you a quick insight into the current global state of the
     system.
   id: totrans-309
   prefs: []
   type: TYPE_NORMAL
+  zh: 使用它们可能让你快速了解当前系统的全局状态。
 - en: Rootkit detectors
   id: totrans-310
   prefs:
   - PREF_H3
   type: TYPE_NORMAL
+  zh: Rootkit 检测器
 - en: 'This group of tools checks for the presence of techniques commonly used by
     rootkits in the system and provides detailed information. They are very useful
     for behavioral analysis to confirm that the sample has been loaded properly. Additionally,
@@ -2108,6 +2209,7 @@
   id: totrans-311
   prefs: []
   type: TYPE_NORMAL
+  zh: 这组工具检查系统中是否存在 rootkit 常用的技术，并提供详细信息。它们在行为分析中非常有用，可以确认样本是否已正确加载。此外，它们还可以用来相对快速地确定样本的功能。一些最受欢迎的工具如下：
 - en: '**GMER**: This powerful tool supports multiple rootkit patterns and provides
     relatively detailed technical information. It can search for various hidden artifacts,
     such as processes, services, files, registry keys, and more. Additionally, it
@@ -2116,6 +2218,8 @@
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: '**GMER**：这个强大的工具支持多种 rootkit 模式，并提供相对详细的技术信息。它可以搜索各种隐藏的伪装物，如进程、服务、文件、注册表项等。此外，它还具有
+    rootkit 清除工具。'
 - en: '**RootkitRevealer**: This is another advanced rootkit detection tool, this
     time from Sysinternals. Unlike GMER, its output is less technical, and it hasn''t
     been updated for a while.'
@@ -2123,27 +2227,32 @@
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: '**RootkitRevealer**：这是另一个先进的 rootkit 检测工具，来自 Sysinternals。与 GMER 不同，它的输出不太技术化，并且已经有一段时间没有更新了。'
 - en: Other rootkit detection tools (now discontinued) include **Rootkit Unhooker**,
     **DarkSpy**, and **IceSword**.
   id: totrans-314
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: 其他 rootkit 检测工具（现已停用）包括 **Rootkit Unhooker**、**DarkSpy** 和 **IceSword**。
 - en: Apart from these, multiple rootkit removal tools are being developed by antivirus
     vendors; however, they generally don't provide enough information to technically
     analyze the threat.
   id: totrans-315
   prefs: []
   type: TYPE_NORMAL
+  zh: 除了这些，许多杀毒厂商还在开发多种 rootkit 清除工具；然而，它们通常没有提供足够的技术信息来分析威胁。
 - en: Setting up a testing environment
   id: totrans-316
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: 设置测试环境
 - en: 'There are several options available for performing kernel-mode debugging:'
   id: totrans-317
   prefs: []
   type: TYPE_NORMAL
+  zh: 有几种可用的选项来执行内核模式调试：
 - en: '**The debugger client is running on the target machine**: An example of such
     a setup is WinDbg or the KD debugger, utilizing local kernel debugging or working
     together with the **LiveKd** tool. This approach doesn''t require an engineer
@@ -2153,6 +2262,7 @@
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: '**调试器客户端在目标机器上运行**：这种设置的一个例子是 WinDbg 或 KD 调试器，利用本地内核调试或与**LiveKd**工具协作。这种方法不需要工程师设置远程连接，但在这种情况下，并非所有命令都可用。'
 - en: '**The debugger client is running on the host machine**: Here, the virtual or
     another physical machine is used to execute a sample, and all the debugging tools
     with the result of your work in the form of markup are stored outside of it. This
@@ -2162,6 +2272,7 @@
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: '**调试器客户端在主机机器上运行**：在这种情况下，虚拟机或其他物理机用于执行样本，所有调试工具以及以标记形式保存的工作结果都存储在外部。此方法可能需要稍多的设置时间，但通常推荐使用，因为它会在后期节省大量时间和精力。'
 - en: '**The debugger client is running on the remote machine**: This setup is not
     commonly used; the idea here is that the host machine is running a debugging server
     that can interact with the target machine, and the engineer connects to this server
@@ -2170,6 +2281,7 @@
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: '**调试器客户端在远程机器上运行**：这种设置并不常见；这里的想法是，主机机器运行一个调试服务器，可以与目标机器进行交互，工程师从第三台机器远程连接到该服务器。这种技术被微软称为远程调试。'
 - en: 'The exact way to set up a connection between host and target machines may vary,
     depending on the engineer''s preferences. Generally, this is done either through
     a network or through cables. For VMs, it is commonly done by mapping a serial
@@ -2178,6 +2290,8 @@
   id: totrans-321
   prefs: []
   type: TYPE_NORMAL
+  zh: 设置主机和目标机器之间的连接的具体方法可能会有所不同，取决于工程师的偏好。通常，通过网络或电缆进行连接。对于虚拟机，通常通过将串口映射到管道来完成；例如，如果使用的是
+    **COM1** 端口，你可以按照以下步骤进行：
 - en: In VMWare, go to `\\.\pipe\<any_pipe_name>`. In the remaining options, choose
     **This end is the server** and **The other end is an application**, and then tick
     the **Yield CPU on poll** checkbox.
@@ -2185,41 +2299,50 @@
   prefs:
   - PREF_OL
   type: TYPE_NORMAL
+  zh: 在 VMWare 中，转到 `\\.\pipe\<any_pipe_name>`。在其余选项中，选择 **该端是服务器** 和 **另一端是应用程序**，然后勾选
+    **在轮询时让 CPU 休眠** 复选框。
 - en: 'In VirtualBox, open the VM''s settings and go to the `\\.\pipe\<any_pipe_name>`:'
   id: totrans-323
   prefs:
   - PREF_OL
   type: TYPE_NORMAL
+  zh: 在 VirtualBox 中，打开虚拟机的设置并转到 `\\.\pipe\<any_pipe_name>`：
 - en: '![Figure 7.22 – VirtualBox setup for kernel-mode debugging over the COM port'
   id: totrans-324
   prefs: []
   type: TYPE_NORMAL
+  zh: '![图 7.22 – 通过 COM 端口进行内核模式调试的 VirtualBox 设置'
 - en: '](img/Figure_7.22_B18500.jpg)'
   id: totrans-325
   prefs: []
   type: TYPE_NORMAL
+  zh: '](img/Figure_7.22_B18500.jpg)'
 - en: Figure 7.22 – VirtualBox setup for kernel-mode debugging over the COM port
   id: totrans-326
   prefs: []
   type: TYPE_NORMAL
+  zh: 图 7.22 – 使用VirtualBox进行内核模式调试通过COM端口
 - en: Remote debugging via a network is also possible, but in this case, the guest
     and the host machines should share a network connection, which may not always
     be desirable.
   id: totrans-327
   prefs: []
   type: TYPE_NORMAL
+  zh: 也可以通过网络进行远程调试，但在这种情况下，来宾机和主机应该共享网络连接，这可能并不总是可取的。
 - en: 'Apart from this, to be able to perform kernel-mode debugging, it should also
     be explicitly allowed by the target system. Perform the following steps to do
     so:'
   id: totrans-328
   prefs: []
   type: TYPE_NORMAL
+  zh: 除此之外，要能够进行内核模式调试，目标系统还需要显式允许。执行以下步骤以实现此功能：
 - en: 'On a modern Windows OS, run a standard `bcdedit` tool as an administrator and
     type the following command:'
   id: totrans-329
   prefs:
   - PREF_OL
   type: TYPE_NORMAL
+  zh: 在现代Windows操作系统上，以管理员身份运行标准的`bcdedit`工具并输入以下命令：
 - en: '[PRE11]'
   id: totrans-330
   prefs:
@@ -2231,6 +2354,7 @@
   prefs:
   - PREF_OL
   type: TYPE_NORMAL
+  zh: 如果使用本地内核调试，请执行以下命令：
 - en: '[PRE12]'
   id: totrans-332
   prefs:
@@ -2243,6 +2367,7 @@
   prefs:
   - PREF_OL
   type: TYPE_NORMAL
+  zh: 另外，如果使用的是串口，请执行以下命令（适用于COM1）：
 - en: '[PRE13]'
   id: totrans-334
   prefs:
@@ -2255,6 +2380,7 @@
   prefs:
   - PREF_OL
   type: TYPE_NORMAL
+  zh: 如果您还想保留原始启动设置，可以创建一个单独的条目，设置如下：
 - en: '[PRE14]'
   id: totrans-336
   prefs:
@@ -2267,6 +2393,7 @@
   prefs:
   - PREF_OL
   type: TYPE_NORMAL
+  zh: 然后，您可以获取生成的`<guid>`值，并使用它来将所需的设置应用到新条目中：
 - en: '[PRE15]'
   id: totrans-338
   prefs:
@@ -2281,6 +2408,8 @@
   id: totrans-339
   prefs: []
   type: TYPE_NORMAL
+  zh: 在较旧的操作系统（如Windows XP）上，可以通过在`boot.ini`文件中复制默认的启动条目，并使用新的显示名称，添加`/debug`参数来启用内核模式调试。也可以结合设置调试端口，添加`/debugport=com1
+    /baudrate=115200`参数。最终的条目将如下所示：
 - en: '[PRE16]'
   id: totrans-340
   prefs: []
@@ -2291,28 +2420,33 @@
   id: totrans-341
   prefs: []
   type: TYPE_NORMAL
+  zh: 确保指定的系统位置与原始条目中使用的匹配。
 - en: After this, it is necessary to restart the machine and choose the newly added
     option during the bootup process. This step can also be done later, after disabling
     the security checks.
   id: totrans-342
   prefs: []
   type: TYPE_NORMAL
+  zh: 之后，需要重启计算机，并在启动过程中选择新添加的选项。此步骤也可以在稍后进行，方法是禁用安全检查后进行。
 - en: If it is necessary to set up network debugging or use Hyper-V machines, always
     follow the most recent official Microsoft documentation.
   id: totrans-343
   prefs: []
   type: TYPE_NORMAL
+  zh: 如果需要设置网络调试或使用Hyper-V机器，请始终遵循最新的官方Microsoft文档。
 - en: Setting up the debugger
   id: totrans-344
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: 设置调试器
 - en: 'Now, we can run the debugger and check that everything works as expected. If
     local debugging is being used, it can be done by executing WinDbg as an administrator
     using the following command line:'
   id: totrans-345
   prefs: []
   type: TYPE_NORMAL
+  zh: 现在，我们可以运行调试器并检查一切是否按预期工作。如果使用的是本地调试，可以通过以管理员身份运行WinDbg并使用以下命令行来完成：
 - en: '[PRE17]'
   id: totrans-346
   prefs: []
@@ -2325,6 +2459,7 @@
   id: totrans-347
   prefs: []
   type: TYPE_NORMAL
+  zh: 对于通过串口调试，可以使用`_NT_DEBUG_PORT`和`_NT_DEBUG_BAUD_RATE`环境变量，或使用正确的命令行参数来指定端口和波特率。对于COM端口，设置如下：
 - en: '[PRE18]'
   id: totrans-348
   prefs: []
@@ -2334,24 +2469,29 @@
   id: totrans-349
   prefs: []
   type: TYPE_NORMAL
+  zh: 也可以通过图形界面进行此操作，使用**文件**| **内核调试...**：
 - en: '![Figure 7.23 – Kernel-mode debugging with VirtualBox and WinDbg over the COM
     port'
   id: totrans-350
   prefs: []
   type: TYPE_NORMAL
+  zh: '![图 7.23 – 使用VirtualBox和WinDbg通过COM端口进行内核模式调试'
 - en: '](img/Figure_7.23_B18500.jpg)'
   id: totrans-351
   prefs: []
   type: TYPE_NORMAL
+  zh: '](img/Figure_7.23_B18500.jpg)'
 - en: Figure 7.23 – Kernel-mode debugging with VirtualBox and WinDbg over the COM
     port
   id: totrans-352
   prefs: []
   type: TYPE_NORMAL
+  zh: 图 7.23 – 使用VirtualBox和WinDbg通过COM端口进行内核模式调试
 - en: Don't forget to restart the guest machine afterward.
   id: totrans-353
   prefs: []
   type: TYPE_NORMAL
+  zh: 别忘了之后重启来宾机。
 - en: Another option here is to use a separate **VirtualKD** project, which is aimed
     at improving kernel debugging performance if VMWare or VirtualBox VMs are being
     used. Follow the official installation documentation to make sure it is working
@@ -2359,35 +2499,41 @@
   id: totrans-354
   prefs: []
   type: TYPE_NORMAL
+  zh: 另一种选择是使用一个独立的**VirtualKD**项目，它旨在提高内核调试的性能，特别是在使用VMWare或VirtualBox虚拟机时。请遵循官方安装文档，确保它按预期工作。
 - en: 'If you are using a combination of IDA and WinDbg, then it can be set up in
     the following way:'
   id: totrans-355
   prefs: []
   type: TYPE_NORMAL
+  zh: 如果您使用的是IDA和WinDbg的组合，可以按以下方式进行设置：
 - en: It is better to make sure that the correct path to WinDbg is specified in the
     `PATH` environment variable or the `%IDA%\cfg\ida.cfg` file (the `DBGTOOLS` variable).
   id: totrans-356
   prefs:
   - PREF_OL
   type: TYPE_NORMAL
+  zh: 最好确保在`PATH`环境变量或`%IDA%\cfg\ida.cfg`文件中指定了正确的WinDbg路径（即`DBGTOOLS`变量）。
 - en: For kernel-mode debugging, it is often recommended to use the 32-bit version
     of WinDbg; double-check which version is being used in IDA's **Output** window.
   id: totrans-357
   prefs:
   - PREF_OL
   type: TYPE_NORMAL
+  zh: 对于内核模式调试，通常建议使用 WinDbg 的 32 位版本；请再次确认在 IDA 的 **输出** 窗口中使用的是哪个版本。
 - en: Open the IDA instance, don't open any files, but select the **Go** quick start
     option.
   id: totrans-358
   prefs:
   - PREF_OL
   type: TYPE_NORMAL
+  zh: 打开 IDA 实例，不打开任何文件，但选择 **开始** 快速启动选项。
 - en: 'Go to **Debugger** | **Attach** | **Windbg debugger** and specify the following
     connection string, with the pipe name matching the one used in the VM:'
   id: totrans-359
   prefs:
   - PREF_OL
   type: TYPE_NORMAL
+  zh: 转到 **调试器** | **附加** | **Windbg 调试器**，并指定以下连接字符串，管道名称与虚拟机中使用的名称匹配：
 - en: '[PRE19]'
   id: totrans-360
   prefs:
@@ -2402,28 +2548,34 @@
   prefs:
   - PREF_OL
   type: TYPE_NORMAL
+  zh: 然后，在同一对话框中，转到 **调试选项** | **设置特定选项**，并选择 **带有重连和初始中断的内核模式调试** 选项（重连是可选的，但应与连接字符串中指定的值匹配）。
 - en: 'Once confirmed, the following dialog window will appear:'
   id: totrans-362
   prefs: []
   type: TYPE_NORMAL
+  zh: 一旦确认，以下对话框将会出现：
 - en: '![Figure 7.24 – The IDA attaching to the Windows kernel on a target machine'
   id: totrans-363
   prefs: []
   type: TYPE_NORMAL
+  zh: '![图 7.24 – IDA 附加到目标机器上的 Windows 内核'
 - en: '](img/Figure_7.24_B18500.jpg)'
   id: totrans-364
   prefs: []
   type: TYPE_NORMAL
+  zh: '](img/Figure_7.24_B18500.jpg)'
 - en: Figure 7.24 – The IDA attaching to the Windows kernel on a target machine
   id: totrans-365
   prefs: []
   type: TYPE_NORMAL
+  zh: 图 7.24 – IDA 附加到目标机器上的 Windows 内核
 - en: Press **OK**. The debugger will break in the kernel and the WINDBG command line
     will become available at the bottom of the window.
   id: totrans-366
   prefs:
   - PREF_OL
   type: TYPE_NORMAL
+  zh: 按 **确定**。调试器将中断到内核，WINDBG 命令行将在窗口底部显示。
 - en: Add the kernel mode-related type libraries (usually, they have `ddk` or `wdk`
     in their names) in **View** | **Open subviews** | **Type libraries** (you can
     also use the *Shift* + *F11* keyboard shortcut) to get access to multiple standard
@@ -2432,12 +2584,15 @@
   prefs:
   - PREF_OL
   type: TYPE_NORMAL
+  zh: 在 **查看** | **打开子视图** | **类型库** 中添加与内核模式相关的类型库（通常，它们的名称中包含 `ddk` 或 `wdk`），这样可以访问多个标准枚举和结构体（你也可以使用
+    *Shift* + *F11* 键盘快捷键）。
 - en: 'Once we''ve made sure that the debugger executes successfully, it is necessary
     to set up symbol information so that standard Windows names can be used in various
     WinDbg commands. To do this, execute the following command in the WinDbg console:'
   id: totrans-368
   prefs: []
   type: TYPE_NORMAL
+  zh: 一旦确认调试器成功执行，就需要设置符号信息，以便可以在各种 WinDbg 命令中使用标准的 Windows 名称。为此，请在 WinDbg 控制台中执行以下命令：
 - en: '[PRE20]'
   id: totrans-369
   prefs: []
@@ -2448,17 +2603,20 @@
   id: totrans-370
   prefs: []
   type: TYPE_NORMAL
+  zh: 在 WinDbg 图形用户界面中，可以通过 `-y` 命令行参数来指定此项。此外，也可以在 `_NT_SYMBOL_PATH` 环境变量中进行设置。
 - en: 'If the target and host machines don''t have internet access, then symbols can
     also be downloaded from another computer using a symbol manifest file created
     on the target machine. To do this, perform the following steps:'
   id: totrans-371
   prefs: []
   type: TYPE_NORMAL
+  zh: 如果目标机器和主机机器没有互联网访问权限，则也可以通过使用在目标机器上创建的符号清单文件，从另一台计算机下载符号。为此，请执行以下步骤：
 - en: 'On the target machine, execute the following command:'
   id: totrans-372
   prefs:
   - PREF_OL
   type: TYPE_NORMAL
+  zh: 在目标机器上执行以下命令：
 - en: '[PRE21]'
   id: totrans-373
   prefs:
@@ -2471,25 +2629,30 @@
   prefs:
   - PREF_OL
   type: TYPE_NORMAL
+  zh: '`ntkrnlpa.exe` 可以替代 `ntoskrnl.exe`。最后一个参数 `/s` 旨在避免名称解析延迟。'
 - en: Important Note
   id: totrans-375
   prefs: []
   type: TYPE_NORMAL
+  zh: 重要提示
 - en: Some WinDbg versions have a bug that results in the output file being empty.
     In this case, try a different version of it.
   id: totrans-376
   prefs: []
   type: TYPE_NORMAL
+  zh: 某些 WinDbg 版本存在一个 bug，导致输出文件为空。在这种情况下，请尝试使用不同的版本。
 - en: Move the created `manifest.txt` file to the machine that has internet access.
   id: totrans-377
   prefs:
   - PREF_OL
   type: TYPE_NORMAL
+  zh: 将创建的 `manifest.txt` 文件移动到具有互联网访问权限的机器上。
 - en: 'Run the following command:'
   id: totrans-378
   prefs:
   - PREF_OL
   type: TYPE_NORMAL
+  zh: 运行以下命令：
 - en: '[PRE22]'
   id: totrans-379
   prefs:
@@ -2502,6 +2665,7 @@
   prefs:
   - PREF_OL
   type: TYPE_NORMAL
+  zh: 完成此操作后，可以将下载的符号文件移动到主机机器并用于调试目的：
 - en: '[PRE23]'
   id: totrans-381
   prefs:
@@ -2513,11 +2677,13 @@
   id: totrans-382
   prefs: []
   type: TYPE_NORMAL
+  zh: 请记住，如果更新目标机器，符号可能会变得无效，应该重复该过程。
 - en: Stopping at the driver's entry point
   id: totrans-383
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: 停止在驱动程序入口点
 - en: 'Now, we should set up a debugger to intercept the moment the driver code gets
     executed so that we can get control over it immediately once it starts. In most
     cases, we don''t have symbol information for the analyzed sample, so we can''t
@@ -2526,12 +2692,15 @@
   id: totrans-384
   prefs: []
   type: TYPE_NORMAL
+  zh: 现在，我们应该设置一个调试器来拦截驱动程序代码执行的瞬间，以便在其开始时立即控制它。在大多数情况下，我们没有分析样本的符号信息，因此无法使用常见的 WinDbg
+    命令（如 `bp <driver_name>!DriverEntry`）来停止在驱动程序入口点。有几种其他方法可以做到这一点，如下所示：
 - en: '**By setting unresolved breakpoints**: The following command can be used to
     set a breakpoint that will trigger once the module is loaded:'
   id: totrans-385
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: '**通过设置未解析的断点**：可以使用以下命令设置一个断点，当模块加载时将触发：'
 - en: '[PRE24]'
   id: totrans-386
   prefs:
@@ -2546,12 +2715,14 @@
   id: totrans-387
   prefs: []
   type: TYPE_NORMAL
+  zh: 尽管调试器在此处不会准确地停在入口点，但在第一次停下后，可以手动到达入口点。为此，从控制台输出窗口获取驱动程序的基址，添加入口点的偏移量，然后为结果地址设置一个断点。接着，移除或禁用先前的断点并继续执行。
 - en: '**By breaking on the module load**: The following command allows you to intercept
     all new modules being loaded (a colon or space can be used):'
   id: totrans-388
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: '**通过模块加载中断**：以下命令允许你拦截所有新加载的模块（可以使用冒号或空格）：'
 - en: '[PRE25]'
   id: totrans-389
   prefs:
@@ -2562,47 +2733,57 @@
   id: totrans-390
   prefs: []
   type: TYPE_NORMAL
+  zh: 这在调试器中的显示方式如下：
 - en: '![Figure 7.25 – Breaking when a particular module is loading'
   id: totrans-391
   prefs: []
   type: TYPE_NORMAL
+  zh: '![图7.25 – 在特定模块加载时中断'
 - en: '](img/Figure_7.25_B18500.jpg)'
   id: totrans-392
   prefs: []
   type: TYPE_NORMAL
+  zh: '](img/Figure_7.25_B18500.jpg)'
 - en: Figure 7.25 – Breaking when a particular module is loading
   id: totrans-393
   prefs: []
   type: TYPE_NORMAL
+  zh: 图7.25 – 在特定模块加载时中断
 - en: 'Once the debugger breaks, it is possible to set a breakpoint on the driver''s
     entry point and continue to make the execution stop there:'
   id: totrans-394
   prefs: []
   type: TYPE_NORMAL
+  zh: 一旦调试器中断，就可以在驱动程序的入口点设置断点，并继续使执行在那里停下来：
 - en: '![Figure 7.26 – Setting a breakpoint on the driver''s entry point'
   id: totrans-395
   prefs: []
   type: TYPE_NORMAL
+  zh: '![图7.26 – 在驱动程序入口点设置断点'
 - en: '](img/Figure_7.26_B18500.jpg)'
   id: totrans-396
   prefs: []
   type: TYPE_NORMAL
+  zh: '](img/Figure_7.26_B18500.jpg)'
 - en: Figure 7.26 – Setting a breakpoint on the driver's entry point
   id: totrans-397
   prefs: []
   type: TYPE_NORMAL
+  zh: 图7.26 – 在驱动程序入口点设置断点
 - en: In IDA, when working with WinDbg, this can be achieved globally for all modules
     by going to **Debugger** | **Debugger options...** and enabling the **Suspend
     on library load/unload** option.
   id: totrans-398
   prefs: []
   type: TYPE_NORMAL
+  zh: 在IDA中，与WinDbg一起工作时，可以通过转到**调试器** | **调试器选项...**并启用**在库加载/卸载时挂起**选项来全局实现此功能。
 - en: '`IopLoadDriver` API transfers control to the driver. It will be slightly different
     for different versions of Windows, and it can be found using the following commands:'
   id: totrans-399
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: '`IopLoadDriver` API将控制权转移到驱动程序。不同版本的Windows中会有所不同，可以通过以下命令找到它：'
 - en: '[PRE26]'
   id: totrans-400
   prefs:
@@ -2616,20 +2797,24 @@
   id: totrans-401
   prefs: []
   type: TYPE_NORMAL
+  zh: 一旦找到了偏移量（它将类似于`nt!IopLoadDriver+N`），就可以在该地址设置断点，并拦截系统将控制权转移到新加载的驱动程序的所有时刻。好处是它可以多次重用，直到系统接收到更新并改变它：
 - en: '![Figure 7.27 – Intercepting the moment when the system transfers control to
     the loaded driver'
   id: totrans-402
   prefs: []
   type: TYPE_NORMAL
+  zh: '![图7.27 – 拦截系统将控制权转移到加载的驱动程序的时刻'
 - en: '](img/Figure_7.27_B18500.jpg)'
   id: totrans-403
   prefs: []
   type: TYPE_NORMAL
+  zh: '](img/Figure_7.27_B18500.jpg)'
 - en: Figure 7.27 – Intercepting the moment when the system transfers control to the
     loaded driver
   id: totrans-404
   prefs: []
   type: TYPE_NORMAL
+  zh: 图7.27 – 拦截系统将控制权转移到加载的驱动程序的时刻
 - en: '`int 3` instruction representing a software breakpoint), recalculate the checksum
     field in its header (in the **Hiew** editor, this can be done by selecting this
     field in the header, pressing *F3* once to recalculate it, and then *F9* to save
@@ -2642,16 +2827,19 @@
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: '`int 3` 指令表示软件断点），重新计算其头部中的校验和字段（在**Hiew**编辑器中，可以通过选择头部中的此字段，按一次*F3*重新计算它，然后按*F9*保存更改），并加载它。调试器会在此指令处断开，因此可以恢复修改后的值为原始值。通常，修改后的指令在修补后不会执行。这意味着需要单步执行，确保它不起作用，返回IP寄存器到已更改的指令，然后再继续像往常一样进行分析。'
 - en: This approach generally takes more time and will also break the driver's signature,
     but it can still be used if necessary.
   id: totrans-406
   prefs: []
   type: TYPE_NORMAL
+  zh: 这种方法通常需要更多时间，而且也会破坏驱动程序的签名，但在必要时仍然可以使用。
 - en: Loading the driver
   id: totrans-407
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: 加载驱动程序
 - en: You aren't allowed to load unsigned drivers on modern 64-bit Windows systems
     or 32-bit systems with Secure Boot turned on. If the sample driver is not signed,
     it generally makes sense to figure out the way it is being executed in the wild
@@ -2660,6 +2848,7 @@
   id: totrans-408
   prefs: []
   type: TYPE_NORMAL
+  zh: 现代 64 位 Windows 系统或开启了安全启动的 32 位系统不允许加载未签名的驱动程序。如果示例驱动程序未签名，通常需要弄清楚它是如何在实际环境中执行的（例如，通过滥用其他合法驱动程序），并复现它。通过这种方式，我们可以确保恶意软件的行为完全符合预期。
 - en: Alternatively, it is possible to disable system security mechanisms. The most
     reliable way to temporarily disable it is by going to the advanced options for
     the booting process and selecting the `bcdedit.exe /set testsigning on` command
@@ -2668,11 +2857,14 @@
   id: totrans-409
   prefs: []
   type: TYPE_NORMAL
+  zh: 或者，也可以禁用系统安全机制。暂时禁用它最可靠的方法是进入启动过程的高级选项，并选择 `bcdedit.exe /set testsigning on`
+    命令，但不建议用于分析，因为它仍然要求驱动程序必须由某个证书正确签名。
 - en: 'Now, it is time to load the analyzed driver. This can also be done straight
     from the Windows console using the standard `sc` functionality:'
   id: totrans-410
   prefs: []
   type: TYPE_NORMAL
+  zh: 现在，是时候加载分析过的驱动程序了。这也可以通过 Windows 控制台直接使用标准的 `sc` 功能来完成：
 - en: '[PRE27]'
   id: totrans-411
   prefs: []
@@ -2682,28 +2874,34 @@
   id: totrans-412
   prefs: []
   type: TYPE_NORMAL
+  zh: 下面是前面代码块的一个示例：
 - en: '![Figure 7.28 – Loading a custom driver using the sc tool'
   id: totrans-413
   prefs: []
   type: TYPE_NORMAL
+  zh: '![图 7.28 – 使用 sc 工具加载自定义驱动程序'
 - en: '](img/Figure_7.28_B18500.jpg)'
   id: totrans-414
   prefs: []
   type: TYPE_NORMAL
+  zh: '](img/Figure_7.28_B18500.jpg)'
 - en: Figure 7.28 – Loading a custom driver using the sc tool
   id: totrans-415
   prefs: []
   type: TYPE_NORMAL
+  zh: 图 7.28 – 使用 sc 工具加载自定义驱动程序
 - en: Notice the spaces after the `type=` and `binpath=` arguments; they are important
     to make things work as expected.
   id: totrans-416
   prefs: []
   type: TYPE_NORMAL
+  zh: 请注意 `type=` 和 `binpath=` 参数后的空格；它们对于确保操作如预期般顺利至关重要。
 - en: Restoring the debugging state
   id: totrans-417
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: 恢复调试状态
 - en: 'If IDA is being used, the problem that many engineers face when they load the
     driver again is that its base address changes in memory, so IDA can''t apply existing
     markup to it. One option here is to save the markup in IDC files and create a
@@ -2715,11 +2913,15 @@
   id: totrans-418
   prefs: []
   type: TYPE_NORMAL
+  zh: 如果使用 IDA，许多工程师在重新加载驱动程序时会遇到一个问题，即它的基地址在内存中发生了变化，导致 IDA 无法应用现有的标记。一个解决方案是将标记保存为
+    IDC 文件，并创建一个脚本，根据新的位置重新映射所有地址。然而，还有一种更好的组织方式：建议通过调试状态创建 VM 快照，并在必要时通过 IDA 重新连接到这些快照。这样，所有地址都能保持一致，因此可以无更改地应用相同的
+    IDC 文件。
 - en: Summary
   id: totrans-419
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 总结
 - en: In this chapter, we familiarized ourselves with Windows kernel mode and learned
     how requests are passed from user mode to kernel mode and back again. Then, we
     discussed rootkits, what parts of this process may be targeted by them, and for
@@ -2728,6 +2930,8 @@
   id: totrans-420
   prefs: []
   type: TYPE_NORMAL
+  zh: 在本章中，我们熟悉了 Windows 内核模式，学习了如何将请求从用户模式传递到内核模式，再从内核模式返回。然后，我们讨论了 Rootkit，它们可能针对这个过程的哪些部分，以及为什么这样做。我们还介绍了现代
+    Rootkit 中实施的各种技术，包括恶意软件如何绕过现有的安全机制。
 - en: Finally, we explored the tools that are available to perform static and dynamic
     analysis of kernel-mode threats, learned how to set up a testing environment,
     and summarized generic guidelines that can be followed when performing the analysis.
@@ -2737,17 +2941,20 @@
   id: totrans-421
   prefs: []
   type: TYPE_NORMAL
+  zh: 最后，我们探讨了用于执行内核模式威胁静态和动态分析的工具，学习了如何设置测试环境，并总结了进行分析时可以遵循的通用指南。通过完成本章，您应该对高级内核模式威胁的工作原理以及如何使用各种工具和方法进行分析有了深入的了解。
 - en: In [*Chapter 8*](B18500_08.xhtml#_idTextAnchor811), *Handling Exploits and Shellcode*,
     we will explore the various types of exploits and learn how legitimate software
     can be abused to let attackers perform malicious actions.
   id: totrans-422
   prefs: []
   type: TYPE_NORMAL
+  zh: 在 [*第 8 章*](B18500_08.xhtml#_idTextAnchor811)，《处理漏洞与 Shellcode》中，我们将探讨各种类型的漏洞，并了解合法软件如何被滥用，以便攻击者执行恶意操作。
 - en: Part 3 Examining Cross-Platform and Bytecode-Based Malware
   id: totrans-423
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 第三部分 检查跨平台和字节码恶意软件
 - en: Being able to support multiple platforms using the same source code is always
     preferred by both attackers looking to infect as many users as possible and those
     specializing in targeted attacks. Consequently, multiple cross-platform malware
@@ -2758,24 +2965,29 @@
   id: totrans-424
   prefs: []
   type: TYPE_NORMAL
+  zh: 能够使用相同的源代码支持多个平台始终是攻击者和专注于有针对性攻击的人士首选的方法。因此，在过去几年中出现了多个跨平台恶意软件家族，这导致了对能够分析它们的工程师的需求增加。通过学习本节，您将了解跨平台恶意软件的具体情况，并深入理解如何处理它们。
 - en: 'In this section are the following chapters:'
   id: totrans-425
   prefs: []
   type: TYPE_NORMAL
+  zh: 本节包括以下章节：
 - en: '[*Chapter 8*](B18500_08.xhtml#_idTextAnchor811)*, Handling Exploits and Shellcode*'
   id: totrans-426
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: '[*第8章*](B18500_08.xhtml#_idTextAnchor811)*，处理利用和Shellcode*'
 - en: '[*Chapter 9*](B18500_09.xhtml#_idTextAnchor946)*, Reversing Bytecode Languages
     – .NET, Java, and More*'
   id: totrans-427
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: '[*第9章*](B18500_09.xhtml#_idTextAnchor946)*，逆向字节码语言 – .NET、Java及其他*'
 - en: '[*Chapter 10*](B18500_10.xhtml#_idTextAnchor1106)*, Scripts and Macros – Reversing,
     Deobfuscation, and Debugging*'
   id: totrans-428
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: '[*第10章*](B18500_10.xhtml#_idTextAnchor1106)*，脚本和宏 – 逆向、反混淆和调试*'
