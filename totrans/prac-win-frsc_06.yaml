@@ -1,15 +1,19 @@
 - en: Chapter 6. Filesystem Analysis and Data Recovery
+  id: totrans-0
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 第6章 文件系统分析与数据恢复
 - en: Although there are many automated and commercial tools available nowadays, understanding
     how these tools perform can distinguish one from another, and this can provide
     great support during expert testimony in the courtroom. Filesystem analysis and
     data recovery are considered as the main categories in the digital forensics process.
     Extracting files from a storage device or recovering deleted ones with evidential
     related data can solve a case.
+  id: totrans-1
   prefs: []
   type: TYPE_NORMAL
+  zh: 尽管现在有许多自动化和商业工具可供使用，理解这些工具的工作原理可以将它们区分开来，并在法庭上的专家证词中提供很大支持。文件系统分析和数据恢复被认为是数字取证过程中的主要类别。从存储设备中提取文件或恢复已删除的文件及其相关证据数据，能够解决案件。
 - en: 'In this chapter, we will go through two different filesystems: the FAT and
     the NTFS. We will basically explain how the files are structured in each one and
     how the recovery process of deleted files actually works. We will start with the
@@ -18,54 +22,77 @@
     we will discuss Autopsy, the TSK graphical user interface. At the end of this
     chapter, we will show you Foremost of these, which is the Linux-based file carving
     tool that is used to recover files based on their signature.'
+  id: totrans-2
   prefs: []
   type: TYPE_NORMAL
+  zh: 在本章中，我们将介绍两种不同的文件系统：FAT和NTFS。我们将基本上解释每个文件系统中文件的结构，以及删除文件的恢复过程是如何工作的。我们将从著名的TSK（The
+    Sleuth Kit）开始，讲解其命令行工具如何分类，因为这些工具是基于硬盘或取证镜像中的每一层。之后，我们将讨论TSK的图形用户界面——Autopsy。最后，我们将向您展示Foremost，它是一个基于Linux的文件雕刻工具，用于根据文件签名恢复文件。
 - en: Hard drive structure
+  id: totrans-3
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 硬盘结构
 - en: 'Before we start explaining the different filesystem structures, we need to
     illustrate the different parts in a partitioned hard drive in Windows OS. The
     following figure illustrates simply the structure of a whole partitioned hard
     drive:'
+  id: totrans-4
   prefs: []
   type: TYPE_NORMAL
+  zh: 在我们开始解释不同的文件系统结构之前，我们需要说明Windows操作系统中分区硬盘的不同部分。下图简单地展示了整个分区硬盘的结构：
 - en: '![Hard drive structure](img/image_06_001.jpg)'
+  id: totrans-5
   prefs: []
   type: TYPE_IMG
+  zh: '![硬盘结构](img/image_06_001.jpg)'
 - en: Simple hard drive logical parts
+  id: totrans-6
   prefs: []
   type: TYPE_NORMAL
+  zh: 简单的硬盘逻辑分区
 - en: Master boot record
+  id: totrans-7
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: 主引导记录
 - en: The master boot record is the first sector (512 bytes) of the hard drive. It
     contains, besides the boot code, all the information about the hard drive. One
     of the important pieces of information that can be found in the MBR is the partition
     table, which contains information about the partition structure in the hard drive,
     and for each partition, it can tell where it starts, its size, and type.
+  id: totrans-8
   prefs: []
   type: TYPE_NORMAL
+  zh: 主引导记录是硬盘的第一个扇区（512字节）。它包含除了引导代码之外的所有硬盘信息。在MBR中可以找到的一项重要信息是分区表，它包含关于硬盘分区结构的信息，对于每个分区，它能告诉分区的起始位置、大小和类型。
 - en: The investigator can check the existing partition with the information in the
     MBR and the printed size of the hard drive for a match. If there is some missing
     space, the handler may assume the presence of an intended action to hide some
     space contains usually some related important information.
+  id: totrans-9
   prefs: []
   type: TYPE_NORMAL
+  zh: 调查员可以通过MBR中的信息以及硬盘的打印大小来检查现有的分区是否匹配。如果有部分空间丢失，处理程序可能会假设有意图的操作隐藏了一些包含通常相关重要信息的空间。
 - en: Partition boot sector
+  id: totrans-10
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: 分区引导扇区
 - en: The first sector (512 bytes) of each partition contains information, such as
     the type of the filesystem, the booting code location, the sector size, and the
     cluster size in reference to sector.
+  id: totrans-11
   prefs: []
   type: TYPE_NORMAL
+  zh: 每个分区的第一个扇区（512字节）包含诸如文件系统类型、引导代码位置、扇区大小和与扇区相关的簇大小等信息。
 - en: The filesystem area in partition
+  id: totrans-12
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: 分区中的文件系统区域
 - en: If the user formatted the partition, for example, in the NTFS filesystem, some
     sectors at the beginning of the partition will be reserved for the **Master File
     Table** or **MFT**. MFT is the location that contains the metadata about the files
@@ -73,14 +100,18 @@
     file's entry in the MFT is marked as unallocated. However, the file's information
     still exists until another file uses this MFT entry and overwrites the previous
     file's information.
+  id: totrans-13
   prefs: []
   type: TYPE_NORMAL
+  zh: 如果用户将分区格式化为例如NTFS文件系统，分区开始的某些扇区将被保留给**主文件表**（**MFT**）。MFT是存储系统中文件元数据的位置。每个条目的大小为1KB，当用户删除文件时，文件在MFT中的条目会被标记为未分配。然而，文件的信息仍然存在，直到另一个文件使用该MFT条目并覆盖之前文件的信息。
 - en: Normal backups usually store the allocated entries only and ignore the unallocated
     areas in the MFT. This won't be helpful in recovering deleted files during the
     analysis step.
+  id: totrans-14
   prefs: []
   type: TYPE_NORMAL
 - en: Data area
+  id: totrans-15
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
@@ -90,29 +121,35 @@
     if a user deletes a file from the hard drive, the clusters that contain data that
     is related to this file will be marked as unallocated, and the data will exist
     until new data that is related to a new file overwrites it.
+  id: totrans-16
   prefs: []
   type: TYPE_NORMAL
 - en: 'These clusters are considered either allocated or unallocated:'
+  id: totrans-17
   prefs: []
   type: TYPE_NORMAL
 - en: '**Allocated cluster**: This is a cluster that contains data that is related
     to a file that exists and has an entry in the filesystem MFT area'
+  id: totrans-18
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
 - en: '**Unallocated cluster**: This is a cluster that isn''t connected to an existing
     file and it may be any of the following:'
+  id: totrans-19
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
 - en: '**Empty**: This means that it has no data of a deleted file or its content
     has been wiped'
+  id: totrans-20
   prefs:
   - PREF_IND
   - PREF_UL
   type: TYPE_NORMAL
 - en: '**Not** **empty**: This contains data that is related to a deleted file and
     still hasn''t been overwritten with a new file''s data.'
+  id: totrans-21
   prefs:
   - PREF_IND
   - PREF_UL
@@ -123,17 +160,21 @@
     all the hard drive areas even if it was deleted by the user. That is why, when
     you backup your system using no compression, the size of the backup will be the
     size of the used space in the partition.
+  id: totrans-22
   prefs: []
   type: TYPE_NORMAL
 - en: However, when using forensic imaging techniques, the size of the resulting image
     will be equal to exactly the size of the source; it will either comprise the whole
     hard drive or a single partition.
+  id: totrans-23
   prefs: []
   type: TYPE_NORMAL
 - en: In the following section, we will quickly overview how FAT and NTFS work.
+  id: totrans-24
   prefs: []
   type: TYPE_NORMAL
 - en: The FAT filesystem
+  id: totrans-25
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
@@ -142,43 +183,52 @@
     trying to make it adapt with the rapidly improving technology. So, we can see
     FAT12, FAT16, FAT32, and exFAT. Each version overcame some of the limitations
     of the filesystem until the announcement of NTFS filesystem.
+  id: totrans-26
   prefs: []
   type: TYPE_NORMAL
 - en: FAT components
+  id: totrans-27
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
 - en: 'FAT partition contains five main areas. They comprise the following:'
+  id: totrans-28
   prefs: []
   type: TYPE_NORMAL
 - en: '**Boot sector**: This is the first sector of the partition that is loaded in
     memory. If this partition is the active partition, it contains information such
     as, but not limited to, the following:'
+  id: totrans-29
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
 - en: '**Jump code**: This is the location of the bootstrap and OS initialization
     code'
+  id: totrans-30
   prefs:
   - PREF_IND
   - PREF_UL
   type: TYPE_NORMAL
 - en: '**Sector size**: This is almost fixed (512 bytes)'
+  id: totrans-31
   prefs:
   - PREF_IND
   - PREF_UL
   type: TYPE_NORMAL
 - en: '**Cluster size**: This is in sectors (sectors/clusters)'
+  id: totrans-32
   prefs:
   - PREF_IND
   - PREF_UL
   type: TYPE_NORMAL
 - en: '**Number of sectors**: The total number of sectors in the partition'
+  id: totrans-33
   prefs:
   - PREF_IND
   - PREF_UL
   type: TYPE_NORMAL
 - en: '**Number of root entries**: This value is used with FAT12 and FAT16 only'
+  id: totrans-34
   prefs:
   - PREF_IND
   - PREF_UL
@@ -188,22 +238,26 @@
     of a file, the FAT area tracks the rest of the file in the data area. Each data
     cluster, for example, cluster X is the first cluster that contains the data of
     file Y, has an entry in the FAT area. This entry can have four values:'
+  id: totrans-35
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
 - en: '0: This indicates that cluster X is an unallocated cluster'
+  id: totrans-36
   prefs:
   - PREF_IND
   - PREF_UL
   type: TYPE_NORMAL
 - en: '**Number**: This indicates the number of the next cluster following cluster
     X, and it contains the next part of file Y'
+  id: totrans-37
   prefs:
   - PREF_IND
   - PREF_UL
   type: TYPE_NORMAL
 - en: '**EOF**: This is end of the file, and it indicates that cluster X is the last
     cluster that contains the data of file Y, End of File Y'
+  id: totrans-38
   prefs:
   - PREF_IND
   - PREF_UL
@@ -211,59 +265,70 @@
 - en: '**BAD**: This indicates that cluster X is a bad cluster, and it cannot be used
     or accessed by the operating system. This data tracking schema is called the FAT
     chain, and it must exist for each file.'
+  id: totrans-39
   prefs:
   - PREF_IND
   - PREF_UL
   type: TYPE_NORMAL
 - en: '**Another copy of the FAT table**: This is used if the first FAT got corrupted.'
+  id: totrans-40
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
 - en: '**Root directory entries**: This is when each entry describes either directory
     or file in the filesystem, and its location from the root directory. Each entry
     contains information, such as the following:'
+  id: totrans-41
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
 - en: Short File name with an 8.3 naming schema; eight characters for the name and
     three characters for the extension
+  id: totrans-42
   prefs:
   - PREF_IND
   - PREF_UL
   type: TYPE_NORMAL
 - en: Long file name if the file name exceeds the 8.3 schema, it will reserve another
     complete entry to store the file name
+  id: totrans-43
   prefs:
   - PREF_IND
   - PREF_UL
   type: TYPE_NORMAL
 - en: Entry's status such as directory, file, or deleted
+  id: totrans-44
   prefs:
   - PREF_IND
   - PREF_UL
   type: TYPE_NORMAL
 - en: Some file properties, such as read only, hidden and archive
+  id: totrans-45
   prefs:
   - PREF_IND
   - PREF_UL
   type: TYPE_NORMAL
 - en: File size, which is not important in the case of a directory
+  id: totrans-46
   prefs:
   - PREF_IND
   - PREF_UL
   type: TYPE_NORMAL
 - en: Timestamps of the file
+  id: totrans-47
   prefs:
   - PREF_IND
   - PREF_UL
   type: TYPE_NORMAL
 - en: The address of the first cluster, which contains the file's data
+  id: totrans-48
   prefs:
   - PREF_IND
   - PREF_UL
   type: TYPE_NORMAL
 - en: As we can see no modern properties can be added to the file, such as compression,
     permissions, and encryption, which was one of the FAT filesystem limitations.
+  id: totrans-49
   prefs:
   - PREF_IND
   type: TYPE_NORMAL
@@ -271,71 +336,87 @@
     of the files in the partition, and it is divided in clusters with a size mentioned
     in the boot sector. Cluster numbering starts with cluster 2, so cluster 0 and
     cluster 1 don''t exist.'
+  id: totrans-50
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
 - en: 'For an example of how this works, we have created table 1\. Each major column
     represents one of the FAT areas, excluding the boot sector. Now, let''s suppose
     that the first file, `F1.txt`, has a size of 1KB and starts at cluster 2:'
+  id: totrans-51
   prefs: []
   type: TYPE_NORMAL
 - en: Cluster 2 contains the first part of the `F1.txt` file
+  id: totrans-52
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
 - en: In the FAT entry that describes cluster 2, we will find the next cluster in
     the chain which, in our case, is cluster 3
+  id: totrans-53
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
 - en: At cluster 3, we can find the next part of the `F1.txt` file
+  id: totrans-54
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
 - en: In the FAT entry that describes cluster 3, we can find EoF because no more data
     in the `F1.txt` file needs to be stored
+  id: totrans-55
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
 - en: 'The same can be applied to the other files:'
+  id: totrans-56
   prefs: []
   type: TYPE_NORMAL
 - en: '![FAT components](img/image123.jpg)'
+  id: totrans-57
   prefs: []
   type: TYPE_IMG
 - en: The FAT filesystem
+  id: totrans-58
   prefs: []
   type: TYPE_NORMAL
 - en: FAT limitations
+  id: totrans-59
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
 - en: 'FAT had some serious limitations, which raised the need for a more advanced
     filesystem:'
+  id: totrans-60
   prefs: []
   type: TYPE_NORMAL
 - en: 'The number after each FAT, such as `FAT12`, `FAT16`, or `FAT32`, represents
     the number of bits that are assigned to address clusters in the FAT table:'
+  id: totrans-61
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
 - en: '**FAT12**: This is 2^12 = 4,096 clusters at the maximum.'
+  id: totrans-62
   prefs:
   - PREF_IND
   - PREF_UL
   type: TYPE_NORMAL
 - en: '**FAT16**: This is 2^16 = 65,536 clusters at the maximum.'
+  id: totrans-63
   prefs:
   - PREF_IND
   - PREF_UL
   type: TYPE_NORMAL
 - en: '**FAT32**: This is 2^32 = 4,294,967,296 clusters, but it has 4 reserved bits,
     so it is actually 28 bits. So, 2^28 = 268,435,456 at the maximum.'
+  id: totrans-64
   prefs:
   - PREF_IND
   - PREF_UL
   type: TYPE_NORMAL
 - en: '**exFAT**: This uses the whole 32 bits for addressing.'
+  id: totrans-65
   prefs:
   - PREF_IND
   - PREF_UL
@@ -343,6 +424,7 @@
 - en: The maximum partition size in FAT32 = the maximum number of clusters, which
     is 268,435,456, multiplied by the maximum cluster size, which is 23 KB = 8,589,934,592
     KB = 8 TB.
+  id: totrans-66
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
@@ -350,15 +432,18 @@
     the file size in bytes is 32 bit long. The maximum number this can store is 2^32=
     4,294,967,296 bytes = 4 GB. So, the maximum file size that FAT32 can handle is
     4 GB. That is why we can't store files whose size exceeds 4 GB in the FAT32 filesystem.
+  id: totrans-67
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
 - en: Properties such as access control and encryption weren't available in the FAT
     filesystem.
+  id: totrans-68
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
 - en: The NTFS filesystem
+  id: totrans-69
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
@@ -367,13 +452,16 @@
     scalable, and advanced filesystem. NTFS overcame the FAT limitations and was more
     suitable for high storage capacity. In NTFS, everything is a file including the
     filesystem area itself, as we will see in the following section.'
+  id: totrans-70
   prefs: []
   type: TYPE_NORMAL
 - en: NTFS components
+  id: totrans-71
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
 - en: 'Like FAT and any other filesystem, NTFS has its components as follows:'
+  id: totrans-72
   prefs: []
   type: TYPE_NORMAL
 - en: The boot sector is the first sector in the partition, and it contains some information
@@ -381,14 +469,17 @@
     sectors, and the number of reserved sectors. The filesystem area contains many
     files, including the MFT or Master File Table, which contains the metadata of
     the files and directories in the partition. It will be discussed later.
+  id: totrans-73
   prefs: []
   type: TYPE_NORMAL
 - en: The data area holds the actual contents of the files, and it is divided in clusters
     with a size determined during formatting and mentioned in the boot sector.
+  id: totrans-74
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
 - en: Master File Table (MFT)
+  id: totrans-75
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
@@ -397,6 +488,7 @@
     is 1,024 bytes in size. Actually, $MFT file has an entry for itself. Each entry
     has a header of 42 bytes at the beginning and has a signature of 0xEB52904E, which
     is equivalent to FILE as ASCII.
+  id: totrans-76
   prefs: []
   type: TYPE_NORMAL
 - en: The signature also can be BAD, in this case, it indicates an error that occurred
@@ -404,6 +496,7 @@
     the file metadata. If there is space left to store the file contents, typically
     in small size files, the file's data is stored in the entry itself and no space
     in the data area is used by this file.
+  id: totrans-77
   prefs: []
   type: TYPE_NORMAL
 - en: Each MFT entry has another substructure called **attributes**. MFT uses attributes
@@ -411,31 +504,43 @@
     MFT entry. Each attribute is assigned to store different information. For example,
     the Standard Information Attribute contains the timestamp and the size of the
     file, whereas the Data Attribute holds the actual contents of the file.
+  id: totrans-78
   prefs: []
   type: TYPE_NORMAL
+  zh: 每个 MFT 条目都有另一个称为**属性**的子结构。MFT 使用属性来存储文件的元数据。在单个 MFT 条目中可以使用不同类型的属性。每个属性都被指定用于存储不同的信息。例如，标准信息属性包含文件的时间戳和大小，而数据属性则包含文件的实际内容。
 - en: 'The attribute can be either of the following:'
+  id: totrans-79
   prefs: []
   type: TYPE_NORMAL
+  zh: 属性可以是以下之一：
 - en: '**Resident**: This contains all its data within the MFT entry.'
+  id: totrans-80
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: '**驻留**：此属性将其所有数据保存在 MFT 条目内。'
 - en: '**Non-resident**: Because of the limitation of the MFT size, some attributes
     may need to store their data in the data area. A clear example of this kind of
     attribute is the data attribute.'
+  id: totrans-81
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: '**非驻留**：由于 MFT 大小的限制，一些属性可能需要将其数据存储在数据区。这种属性的一个明显例子就是数据属性。'
 - en: Storing the file metadata in attributes creates flexibility for NTFS to add
     more types of attributes that are recognized by the operating system in the future.
     If one file has many attributes and needs more than one MFT entry to store its
     metadata, it can use another entry and link both entries with a sequence number.
+  id: totrans-82
   prefs: []
   type: TYPE_NORMAL
+  zh: 将文件元数据存储在属性中为 NTFS 提供了灵活性，使其能够在未来添加操作系统可以识别的更多属性类型。如果一个文件有多个属性并且需要多个 MFT 条目来存储其元数据，它可以使用另一个条目，并通过序列号将两个条目链接在一起。
 - en: The Sleuth Kit (TSK)
+  id: totrans-83
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: The Sleuth Kit (TSK)
 - en: The Sleuth Kit or TSK is a collection of open source digital forensic tools
     developed by *Brian Carrier* and *Wieste Venema*. TSK can read and parse different
     types of filesystems, such as FAT, NTFS, and EXT. Each area of the hard drive
@@ -443,217 +548,329 @@
     Sleuth Kit that parses that area and extracts forensically important information
     for the investigator. Usually, each step leads to the next while using TSK in
     analysis.
+  id: totrans-84
   prefs: []
   type: TYPE_NORMAL
+  zh: The Sleuth Kit（TSK）是由*Brian Carrier* 和 *Wieste Venema* 开发的一组开源数字取证工具。TSK 可以读取并解析不同类型的文件系统，如
+    FAT、NTFS 和 EXT。图中硬盘的每个区域在*硬盘结构*部分都有一组工具，这些工具会解析该区域并提取对调查人员重要的取证信息。通常，在分析时使用 TSK
+    的每一步都会引导到下一步。
 - en: In the upcoming sections, we will go through the different tool sets of The
     Sleuth Kit. We will use an image of the hard drive with Windows 7 installed, which
     shows the results from each part in the hard drive. The image was acquired using
     the FTK Imager lite from a Windows 7 virtual machine with a size of only 15 GB
     and a single NTFS partition.
+  id: totrans-85
   prefs: []
   type: TYPE_NORMAL
+  zh: 在接下来的章节中，我们将详细介绍 The Sleuth Kit 的不同工具集。我们将使用一张安装了 Windows 7 的硬盘映像，展示硬盘各部分的结果。该映像是通过
+    FTK Imager lite 从一台 Windows 7 虚拟机获取的，大小仅为 15 GB，并且只有一个 NTFS 分区。
 - en: As we will see, TSK tool names are easy to understand as they consist of two
     parts. The first part represents the area or the layer under investigation, such
     as `mm` for media management, `fs` for filesystem, `i` for metadata, and `f` for
     filename layer. The second part is the normal Linux command that reflects the
     effect of this tool, such as ls to list and cat to display the contents, for example,
     the `mmls` tool.
+  id: totrans-86
   prefs: []
   type: TYPE_NORMAL
+  zh: 如我们将看到的，TSK 工具的名称易于理解，因为它们由两部分组成。第一部分代表正在调查的区域或层次，例如 `mm` 表示媒体管理，`fs` 表示文件系统，`i`
+    表示元数据，`f` 表示文件名层次。第二部分是正常的 Linux 命令，反映该工具的作用，例如 `ls` 列出和 `cat` 显示内容，例如 `mmls`
+    工具。
 - en: Volume layer (media management)
+  id: totrans-87
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: 卷层（媒体管理）
 - en: In this area of the hard drive, TSK parses information about the structure of
     the whole hard drive from the **MBR** or **Master Boot Record**, which is the
     first sector of the hard drive. We can parse this area with TSK using different
     tools.
+  id: totrans-88
   prefs: []
   type: TYPE_NORMAL
+  zh: 在硬盘的这一部分，TSK 从**MBR**（主引导记录）中解析有关整个硬盘结构的信息，MBR 是硬盘的第一个扇区。我们可以使用 TSK 和不同的工具解析这一部分。
 - en: 'The information about each partition is in the hard drive, and it can be determined
     from the partition table at the end of the MBR sector. The offset of each partition
     will be used as an input to the upcoming TSK tools to specify the partition of
     interest. The `mmls` tool is used to list information, such as in the following
     screenshot:'
+  id: totrans-89
   prefs: []
   type: TYPE_NORMAL
+  zh: 每个分区的信息都位于硬盘上，并且可以从 MBR 扇区末尾的分区表中确定。每个分区的偏移量将作为输入传递给即将使用的 TSK 工具，用以指定感兴趣的分区。`mmls`
+    工具用于列出信息，如下图所示：
 - en: '![Volume layer (media management)](img/image_06_002.jpg)'
+  id: totrans-90
   prefs: []
   type: TYPE_IMG
+  zh: '![卷层（媒体管理）](img/image_06_002.jpg)'
 - en: The mmls tool
+  id: totrans-91
   prefs: []
   type: TYPE_NORMAL
+  zh: mmls 工具
 - en: 'From the result of running `mmls` against the image, we can see that there
     is only one NTFS partition that starts at sector (2,048). This is the partition
     of interest, so we will use the start sector as the offset with the rest of the
     tools when needed. This also provides the partition table type, which is normal
     DOS in our case here. To display only the allocated volumes, we can use the `-a`
     option:'
+  id: totrans-92
   prefs: []
   type: TYPE_NORMAL
+  zh: 从对图像运行 `mmls` 的结果中，我们可以看到只有一个 NTFS 分区，从扇区（2,048）开始。这个分区是我们关注的分区，因此在需要时，我们将使用起始扇区作为其他工具的偏移量。此结果还提供了分区表类型，在我们的例子中为正常的
+    DOS 类型。要仅显示已分配的卷，我们可以使用 `-a` 选项：
 - en: '![Volume layer (media management)](img/image_06_003.jpg)'
+  id: totrans-93
   prefs: []
   type: TYPE_IMG
+  zh: '![卷层（媒体管理）](img/image_06_003.jpg)'
 - en: A list allocated volumes only
+  id: totrans-94
   prefs: []
   type: TYPE_NORMAL
+  zh: 仅列出已分配的卷
 - en: 'The next command is `mmcat`, which displays the partition contents as shown
     in the following screenshot:'
+  id: totrans-95
   prefs: []
   type: TYPE_NORMAL
+  zh: 下一个命令是 `mmcat`，它显示分区内容，如下图所示：
 - en: '![Volume layer (media management)](img/image_06_004.jpg)'
+  id: totrans-96
   prefs: []
   type: TYPE_IMG
+  zh: '![卷层（媒体管理）](img/image_06_004.jpg)'
 - en: The mmcat tool
+  id: totrans-97
   prefs: []
   type: TYPE_NORMAL
+  zh: mmcat 工具
 - en: In the previous figure, we used `mmcat` with the image name `sampleimage.dd`
     and the number of the target partition as in the `mmls` output `02`. Then, we
     pipelined the output to the `hexdump` tool. You can see in the beginning of the
     partition, the volume boot record starts with the NTFS partition signature at
     offset 0x03 with a value of (NTFS) or 0x(4E54465320202020).
+  id: totrans-98
   prefs: []
   type: TYPE_NORMAL
+  zh: 在前面的图中，我们使用 `mmcat` 和图像名 `sampleimage.dd` 以及目标分区编号 `mmls` 输出中的 `02`。然后，我们将输出管道传递给
+    `hexdump` 工具。你可以看到在分区的开头，卷引导记录以 NTFS 分区签名从偏移量 0x03 开始，值为 (NTFS) 或 0x(4E54465320202020)。
 - en: Filesystem layer
+  id: totrans-99
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: 文件系统层
 - en: 'The TSK tool for this layer parses the filesystem used in the provided partition
     and displays some information about it to the investigator. With this tool, we
     must provide the offset of the target partition from the output of the mmls tool,
     which in our case is (2,048):'
+  id: totrans-100
   prefs: []
   type: TYPE_NORMAL
+  zh: 该层的 TSK 工具解析提供的分区中使用的文件系统，并向调查员显示一些相关信息。使用此工具时，我们必须提供从 mmls 工具输出中获得的目标分区的偏移量，在我们这里是（2,048）：
 - en: '![Filesystem layer](img/image_06_005.jpg)'
+  id: totrans-101
   prefs: []
   type: TYPE_IMG
+  zh: '![文件系统层](img/image_06_005.jpg)'
 - en: The fsstat tool
+  id: totrans-102
   prefs: []
   type: TYPE_NORMAL
+  zh: fsstat 工具
 - en: We can find the MFT location within the partition, cluster size, and information
     about the NTFS attributes, which may be used later in further analysis.
+  id: totrans-103
   prefs: []
   type: TYPE_NORMAL
+  zh: 我们可以在分区中找到 MFT 位置、簇大小以及有关 NTFS 属性的信息，这些信息可能在进一步分析中使用。
 - en: The metadata layer
+  id: totrans-104
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
+  zh: 元数据层
 - en: The metadata layer (or inode) parses and describes the information or the metadata
     record of the file as described in the filesystem. Also, the output of this tool
     can be used with other tools to narrow the results for a specific file in the
     image.
+  id: totrans-105
   prefs: []
   type: TYPE_NORMAL
+  zh: 元数据层（或称 inode）解析并描述文件系统中记录的文件信息或元数据。此工具的输出也可以与其他工具一起使用，以便在图像中针对特定文件缩小结果范围。
 - en: The `i` character in the commands in this layer stands for inode—the metadata
     unique number of a file in the EXT filesystem.
+  id: totrans-106
   prefs: []
   type: TYPE_NORMAL
+  zh: 此层命令中的 `i` 字符代表 inode——EXT 文件系统中文件的唯一元数据编号。
 - en: The `ils` command is used to list the inode numbers of the deleted files in
     the image until told to list all the inode information for all the files in the
     image. All the results of the `ils` are information about the file, including
     the inode of the file, the timestamps (MACB) in Unix time, and size of the file.
     We can use `ils` with the `-m` option to create a compatible output for the `mactime`
     tool in case we need to create a timeline for the file activity in the image.
+  id: totrans-107
   prefs: []
   type: TYPE_NORMAL
+  zh: '`ils` 命令用于列出图像中已删除文件的 inode 编号，直到被告知列出图像中所有文件的 inode 信息。`ils` 的所有结果都包含关于文件的信息，包括文件的
+    inode、Unix 时间格式的时间戳（MACB）以及文件大小。如果需要为文件活动创建时间线，我们可以使用带有 `-m` 选项的 `ils` 生成与 `mactime`
+    工具兼容的输出。'
 - en: 'Also, using `--m` will allow us to read the filename as well, as shown in the
     following screenshot:'
+  id: totrans-108
   prefs: []
   type: TYPE_NORMAL
+  zh: 此外，使用 `--m` 选项将允许我们读取文件名，如下图所示：
 - en: '![The metadata layer](img/image_06_006.jpg)'
+  id: totrans-109
   prefs: []
   type: TYPE_IMG
+  zh: '![元数据层](img/image_06_006.jpg)'
 - en: ils to list the deleted files
+  id: totrans-110
   prefs: []
   type: TYPE_NORMAL
+  zh: 使用 `ils` 列出已删除文件
 - en: The result only shows the deleted files as we can notice the 'dead' status of
     all the files in the results.
+  id: totrans-111
   prefs: []
   type: TYPE_NORMAL
+  zh: 结果仅显示已删除的文件，因为我们可以注意到所有文件在结果中的 'dead' 状态。
 - en: istat
+  id: totrans-112
   prefs:
   - PREF_H3
   type: TYPE_NORMAL
+  zh: istat
 - en: This is used to parse the MFT or the inode record by its unique metadata number
     and view all the information in the provided record. The resulting information
     is only metadata, so we can find the timestamps, file attributes, and so on, not
     the data itself even if the data is short enough to fit in the 1,024 KB length
     of one MFT record, which is called resident.
+  id: totrans-113
   prefs: []
   type: TYPE_NORMAL
+  zh: 该工具用于通过唯一的元数据编号解析 MFT 或 inode 记录，并查看提供的记录中的所有信息。结果信息仅包含元数据，因此我们可以找到时间戳、文件属性等，但不能看到数据本身，即使数据足够小，可以适应一个
+    MFT 记录的 1,024 KB 长度，这种情况称为“驻留”数据。
 - en: 'Displaying the data contents of the file can be determined by another tool
     in TSK, which will be discussed next. Each file in the NTFS filesystem has an
     entry of this kind, even the MFT file itself. In the following figure, we will
     list information about the first record number 0, which is the $MFT itself:'
+  id: totrans-114
   prefs: []
   type: TYPE_NORMAL
+  zh: 显示文件的数据内容可以通过 TSK 中的另一个工具来确定，接下来将讨论这个工具。NTFS 文件系统中的每个文件都有这种类型的条目，甚至包括 MFT 文件本身。在下面的图中，我们将列出关于第一个记录号
+    0 的信息，这就是 $MFT 文件本身：
 - en: '![istat](img/image_06_007.jpg)'
+  id: totrans-115
   prefs: []
   type: TYPE_IMG
+  zh: '![istat](img/image_06_007.jpg)'
 - en: The istat tool to view the metadata of a file
+  id: totrans-116
   prefs: []
   type: TYPE_NORMAL
+  zh: istat 工具用于查看文件的元数据
 - en: icat
+  id: totrans-117
   prefs:
   - PREF_H3
   type: TYPE_NORMAL
+  zh: icat
 - en: 'This is used to view the contents of a specific data unit. It uses the inode
     number as a reference to view the data blocks that are related to this file. In
     the forensic image under investigation, we will view the contents of the $MFT
     file with inode 0:'
+  id: totrans-118
   prefs: []
   type: TYPE_NORMAL
+  zh: 这个工具用于查看特定数据单元的内容。它使用 inode 号作为参考，查看与该文件相关的数据块。在正在调查的取证镜像中，我们将查看 inode 0 的 $MFT
+    文件内容：
 - en: '![icat](img/image_06_008.jpg)'
+  id: totrans-119
   prefs: []
   type: TYPE_IMG
+  zh: '![icat](img/image_06_008.jpg)'
 - en: Contents of the $MFT file
+  id: totrans-120
   prefs: []
   type: TYPE_NORMAL
+  zh: $MFT 文件的内容
 - en: 'In some cases, recovery of deleted files will be useful to the case under investigation.
     We can use the icat tool to copy the contents of any deleted file to another file
     in the investigator machine for further analysis. For the $MFT file, there are
     some other tools, which can parse the MFT file individually and list the contents
     of the filesystem in tree view:'
+  id: totrans-121
   prefs: []
   type: TYPE_NORMAL
+  zh: 在某些情况下，恢复已删除的文件对正在调查的案件会有帮助。我们可以使用 icat 工具将任何已删除文件的内容复制到调查员机器上的另一个文件中以供进一步分析。对于
+    $MFT 文件，还有一些其他工具，可以单独解析 MFT 文件并以树状视图列出文件系统的内容：
 - en: '![icat](img/image_06_009.jpg)'
+  id: totrans-122
   prefs: []
   type: TYPE_IMG
+  zh: '![icat](img/image_06_009.jpg)'
 - en: Using icat to copy contents of a deleted file
+  id: totrans-123
   prefs: []
   type: TYPE_NORMAL
+  zh: 使用 icat 复制已删除文件的内容
 - en: ifind
+  id: totrans-124
   prefs:
   - PREF_H3
   type: TYPE_NORMAL
+  zh: ifind
 - en: During the analysis, if the investigator, for instance, conducted a word search
     and got a hit in one of the data units in the partition, they would now need to
     link this data unit to an entry in the filesystem, and `ifind` is what they need.
     Unlike the previous tools, `ifind` can take a data unit number or filename as
     an input and map this input to the equivalent entry in the filesystem to collect
     other information about this file. In our case, we will try to find the `hiberfile.sys`.
+  id: totrans-125
   prefs: []
   type: TYPE_NORMAL
+  zh: 在分析过程中，如果调查员例如进行了一次文字搜索，并且在某个分区的数据单元中找到匹配项，那么他们现在需要将这个数据单元与文件系统中的一个条目关联起来，`ifind`
+    正是他们需要的工具。与之前的工具不同，`ifind` 可以接受数据单元号或文件名作为输入，并将该输入映射到文件系统中相应的条目，以收集关于该文件的其他信息。在我们的例子中，我们将尝试找到
+    `hiberfile.sys` 文件。
 - en: 'To search with the name, we need to use the `--n` option:'
+  id: totrans-126
   prefs: []
   type: TYPE_NORMAL
+  zh: 若要通过文件名进行搜索，我们需要使用 `--n` 选项：
 - en: '![ifind](img/image_06_010.jpg)'
+  id: totrans-127
   prefs: []
   type: TYPE_IMG
+  zh: '![ifind](img/image_06_010.jpg)'
 - en: ifind to search by filename
+  id: totrans-128
   prefs: []
   type: TYPE_NORMAL
+  zh: 使用 ifind 按文件名搜索
 - en: 'The result shows that the inode number related to the file named `hiberfil.sys`
     is `563`. Using `istat` again to view the information related to this file will
     reveal information about this file:'
+  id: totrans-129
   prefs: []
   type: TYPE_NORMAL
+  zh: 结果显示，与名为 `hiberfil.sys` 的文件相关的 inode 号是 `563`。再次使用 `istat` 查看与该文件相关的信息，将揭示该文件的详细信息：
 - en: '![ifind](img/image_06_011.jpg)'
+  id: totrans-130
   prefs: []
   type: TYPE_IMG
+  zh: '![ifind](img/image_06_011.jpg)'
 - en: Full information about the file with inode 563
+  id: totrans-131
   prefs: []
   type: TYPE_NORMAL
+  zh: 关于 inode 563 的文件的完整信息
 - en: The `hiberfil.sys` file is the copy of memory stored to the hard drive when
     the user elects to use the hibernate option of the machine in case of a dead system
     analysis. This file can provide a great benefit to the investigator as it provides
@@ -661,78 +878,100 @@
     be provided from the timestamp of this file. As we can see, this file is an allocated
     file, and it can be extracted from the image like we did earlier with the $MFT
     file, and then used in memory analysis.
+  id: totrans-132
   prefs: []
   type: TYPE_NORMAL
+  zh: '`hiberfil.sys` 文件是在用户选择使用休眠选项时，将内存的副本存储到硬盘中，用于死机系统分析。该文件对调查员有很大帮助，因为它提供了系统在上次休眠时内存的快照，并且可以从该文件的时间戳中获取。这文件是一个已分配文件，像之前处理
+    $MFT 文件一样，它可以从镜像中提取出来，然后用于内存分析。'
 - en: 'In case we need to use the ifind tool with the data unit number, we need to
     use the -d option. We will get another unique ID, describing the location of the
     file in the image. This unique ID will be discussed in the next part, the filename
     layer. In this example, we used the data unit ID of 3269280, which is one of the
     data units of the `hiberfil.sys` file:'
+  id: totrans-133
   prefs: []
   type: TYPE_NORMAL
 - en: '![ifind](img/image_06_012.jpg)'
+  id: totrans-134
   prefs: []
   type: TYPE_IMG
 - en: A data block address with ifind
+  id: totrans-135
   prefs: []
   type: TYPE_NORMAL
 - en: The filename layer
+  id: totrans-136
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
 - en: Tools work in this layer to list the file structure in the hard drive image.
     Each file will be assigned a unique ID, which can be used with other tools to
     especially target this file.
+  id: totrans-137
   prefs: []
   type: TYPE_NORMAL
 - en: 'To list the files under the partition, we only need to provide the partition
     offset to the tool:'
+  id: totrans-138
   prefs: []
   type: TYPE_NORMAL
 - en: '![The filename layer](img/image_06_013.jpg)'
+  id: totrans-139
   prefs: []
   type: TYPE_IMG
 - en: The fls tools to browse the partition contents
+  id: totrans-140
   prefs: []
   type: TYPE_NORMAL
 - en: In the preceding figure, we can see the deleted `hiberfil.sys` with a metadata
     address of 57745 and the allocated one with a metadata address of 563.
+  id: totrans-141
   prefs: []
   type: TYPE_NORMAL
 - en: 'In case we need to browse another directory (for example, the Users directory),
     we can provide the tool with the Users directory''s unique ID (457-144-5):'
+  id: totrans-142
   prefs: []
   type: TYPE_NORMAL
 - en: '![The filename layer](img/image_06_014.jpg)'
+  id: totrans-143
   prefs: []
   type: TYPE_IMG
 - en: Using the directory ID for content listing with the fls tool
+  id: totrans-144
   prefs: []
   type: TYPE_NORMAL
 - en: As we can see here, we are browsing through the contents of the image without
     mounting any partition or filesystem to the running OS.
+  id: totrans-145
   prefs: []
   type: TYPE_NORMAL
 - en: 'The ffind tool is only used to map the metadata address to the filename, either
     its related file was deleted or allocated:'
+  id: totrans-146
   prefs: []
   type: TYPE_NORMAL
 - en: '![The filename layer](img/image_06_015.jpg)'
+  id: totrans-147
   prefs: []
   type: TYPE_IMG
 - en: Mapping metadata address to its filename
+  id: totrans-148
   prefs: []
   type: TYPE_NORMAL
 - en: Data unit layer (Block)
+  id: totrans-149
   prefs:
   - PREF_H2
   type: TYPE_NORMAL
 - en: In this layer, the actual contents of the file are stored. The metadata of the
     file must point to the location of the file contents in this area, as we discussed
     before with the `ifind` tool.
+  id: totrans-150
   prefs: []
   type: TYPE_NORMAL
 - en: blkcat
+  id: totrans-151
   prefs:
   - PREF_H3
   type: TYPE_NORMAL
@@ -740,37 +979,47 @@
     Let''s say we need to display the first data unit of the `ntdll.dll` file in a
     Windows directory. First, we can find the metadata address for this file using
     the `ils` tool and grep with the `ntdll.dll` filename:'
+  id: totrans-152
   prefs: []
   type: TYPE_NORMAL
 - en: '![blkcat](img/image_06_016.jpg)'
+  id: totrans-153
   prefs: []
   type: TYPE_IMG
 - en: The metadata address for the ntdll.dll file
+  id: totrans-154
   prefs: []
   type: TYPE_NORMAL
 - en: 'From the results, one of the `ntdll.dll` files has the metadata address of
     `25833`. The second step is to use the `istat` tool to find the allocated data
     units to this file using its metadata address:'
+  id: totrans-155
   prefs: []
   type: TYPE_NORMAL
 - en: '![blkcat](img/image_06_017.jpg)'
+  id: totrans-156
   prefs: []
   type: TYPE_IMG
 - en: Full information about the ntdll.dll file from the istat tool
+  id: totrans-157
   prefs: []
   type: TYPE_NORMAL
 - en: 'The result shows that the first data unit of the file has the number of `1118226`.
     What we need to do now is use the `blkcat` tool to view the contents of this data
     unit. We will use the `--h` option to view the contents in hex view:'
+  id: totrans-158
   prefs: []
   type: TYPE_NORMAL
 - en: '![blkcat](img/image_06_018.jpg)'
+  id: totrans-159
   prefs: []
   type: TYPE_IMG
 - en: Using blkcat to display the contents of one data unit
+  id: totrans-160
   prefs: []
   type: TYPE_NORMAL
 - en: blkls
+  id: totrans-161
   prefs:
   - PREF_H3
   type: TYPE_NORMAL
@@ -780,19 +1029,24 @@
     is useful if we need to extract one partition from a multi-partitions larger image.
     Here, we need to only collect all the unallocated space in the image and direct
     the output to a file called `unallocated.blkls` on to the screen.
+  id: totrans-162
   prefs: []
   type: TYPE_NORMAL
 - en: 'The resulting file will be in the same size of free space in the partition.
     Then, further analysis can be done on this file:'
+  id: totrans-163
   prefs: []
   type: TYPE_NORMAL
 - en: '![blkls](img/image_06_019.jpg)'
+  id: totrans-164
   prefs: []
   type: TYPE_IMG
 - en: blkls to collect all unallocated space in a single file
+  id: totrans-165
   prefs: []
   type: TYPE_NORMAL
 - en: Blkcalc
+  id: totrans-166
   prefs:
   - PREF_H3
   type: TYPE_NORMAL
@@ -800,9 +1054,11 @@
     space has been conducted, such as a keyword search, and a match that is related
     to the case under investigation is found. To map the founded location to the full
     image, we need to use the `blkcalc` tool.
+  id: totrans-167
   prefs: []
   type: TYPE_NORMAL
 - en: Autopsy
+  id: totrans-168
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
@@ -813,32 +1069,41 @@
     the Internet, which in this case is `http://localhost:9999/autopsy`. Don''t shut
     down the process of the autopsy during the analysis; otherwise, the analysis won''t
     be active:'
+  id: totrans-169
   prefs: []
   type: TYPE_NORMAL
 - en: '![Autopsy](img/image_06_020.jpg)'
+  id: totrans-170
   prefs: []
   type: TYPE_IMG
 - en: Starting Autopsy
+  id: totrans-171
   prefs: []
   type: TYPE_NORMAL
 - en: 'Then, from the browser, open that URL to start creating the case:'
+  id: totrans-172
   prefs: []
   type: TYPE_NORMAL
 - en: '![Autopsy](img/image_06_021.jpg)'
+  id: totrans-173
   prefs: []
   type: TYPE_IMG
 - en: Autopsy interface
+  id: totrans-174
   prefs: []
   type: TYPE_NORMAL
 - en: 'We need to create a new case, and then enter some information about the case
     to make it easy for the investigator to follow up about the cases and who is working
     on each case:'
+  id: totrans-175
   prefs: []
   type: TYPE_NORMAL
 - en: '![Autopsy](img/image_06_022.jpg)'
+  id: totrans-176
   prefs: []
   type: TYPE_IMG
 - en: Creating a new case
+  id: totrans-177
   prefs: []
   type: TYPE_NORMAL
 - en: After creating the case, a directory for this case will be created by default
@@ -847,38 +1112,48 @@
     the hosts related to the case and add the image that we previously acquired from
     each host. We need to do this to follow up with the results of the analysis and
     to be able to differentiate between the sources of the results.
+  id: totrans-178
   prefs: []
   type: TYPE_NORMAL
 - en: 'If the case under investigation took place in different time zones, that is,
     it includes hard drives which were running under different time zones, it is a
     very good idea to adjust the time zone of each host to get normalized results:'
+  id: totrans-179
   prefs: []
   type: TYPE_NORMAL
 - en: '![Autopsy](img/image_06_023.jpg)'
+  id: totrans-180
   prefs: []
   type: TYPE_IMG
 - en: Adding a host to the case
+  id: totrans-181
   prefs: []
   type: TYPE_NORMAL
 - en: 'After adding a host, we need to map the host to an image:'
+  id: totrans-182
   prefs: []
   type: TYPE_NORMAL
 - en: '![Autopsy](img/image_06_024.jpg)'
+  id: totrans-183
   prefs: []
   type: TYPE_IMG
 - en: Mapping the host to a forensic image
+  id: totrans-184
   prefs: []
   type: TYPE_NORMAL
 - en: 'After this, you need to map each host to its corresponding image. You need
     to enter the path to the image and specify whether it is a disk image or partition
     image. In our case, it is a complete disk image. We have the option to work with
     the same image and use only a symbolic link to it, or just copy or move this image:'
+  id: totrans-185
   prefs: []
   type: TYPE_NORMAL
 - en: '![Autopsy](img/image_06_025.jpg)'
+  id: totrans-186
   prefs: []
   type: TYPE_IMG
 - en: Adding an image to the host
+  id: totrans-187
   prefs: []
   type: TYPE_NORMAL
 - en: 'Then, automatically, this will list all the allocated partitions in this image
@@ -886,37 +1161,47 @@
     from using the `mmls` tool in the command line where it asked us to select the
     mount point of each partition. In our case, we have only one NTFS partition, and
     we will mount this one as `C:` partition:'
+  id: totrans-188
   prefs: []
   type: TYPE_NORMAL
 - en: '![Autopsy](img/image_06_026.jpg)'
+  id: totrans-189
   prefs: []
   type: TYPE_IMG
 - en: Mounting the allocated partition to the case
+  id: totrans-190
   prefs: []
   type: TYPE_NORMAL
 - en: 'A confirmation message will summarize the configuration that you established:'
+  id: totrans-191
   prefs: []
   type: TYPE_NORMAL
 - en: '![Autopsy](img/image_06_027.jpg)'
+  id: totrans-192
   prefs: []
   type: TYPE_IMG
 - en: Confirmation message
+  id: totrans-193
   prefs: []
   type: TYPE_NORMAL
 - en: 'Then, a home page for the case will be shown from where the investigator can
     select what he needs to do with the partition or the whole disk image:'
+  id: totrans-194
   prefs: []
   type: TYPE_NORMAL
 - en: '![Autopsy](img/image_06_028.jpg)'
+  id: totrans-195
   prefs: []
   type: TYPE_IMG
 - en: Start analysis on the case
+  id: totrans-196
   prefs: []
   type: TYPE_NORMAL
 - en: Now, we will go with the `C:` partition, it is the equivalent of specifying
     the offset with `-o` option in each command that we used in the command line tools,
     where we provided the offset of the working partition. Here, the upcoming analysis
     will target the contents of the `C:` partition.
+  id: totrans-197
   prefs: []
   type: TYPE_NORMAL
 - en: 'After stating the analysis, the investigator will find some tabs targeting
@@ -925,12 +1210,15 @@
     are still better for results customization. For example, if we need to redo what
     we did with the `ntdll.dll` file using autopsy, we need to first search for the
     filename from the file analysis tab:'
+  id: totrans-198
   prefs: []
   type: TYPE_NORMAL
 - en: '![Autopsy](img/image_06_029.jpg)'
+  id: totrans-199
   prefs: []
   type: TYPE_IMG
 - en: Search for the file by name
+  id: totrans-200
   prefs: []
   type: TYPE_NORMAL
 - en: 'We now have the metadata number `25833`. You can either click on this number
@@ -938,30 +1226,38 @@
     information of this file, including all the clusters that hold the contents of
     this file. We are interested in the first cluster number 1118226 as shown in the
     following image:'
+  id: totrans-201
   prefs: []
   type: TYPE_NORMAL
 - en: '![Autopsy](img/image_06_030.jpg)'
+  id: totrans-202
   prefs: []
   type: TYPE_IMG
 - en: Listing the metadata information with the metadata ID
+  id: totrans-203
   prefs: []
   type: TYPE_NORMAL
 - en: 'Then, in the same way, either click on the cluster number or type its number
     under the DATA UNIT tab, it will display the contents the file in ASCII, Hex,
     or ASCII Strings views:'
+  id: totrans-204
   prefs: []
   type: TYPE_NORMAL
 - en: '![Autopsy](img/image_06_031.jpg)'
+  id: totrans-205
   prefs: []
   type: TYPE_IMG
 - en: Listing the contents of cluster by cluster number
+  id: totrans-206
   prefs: []
   type: TYPE_NORMAL
 - en: We can see the status of the cluster is allocated and the signature of the file
     as before in its hex view is `0x4D5A` (MZ).
+  id: totrans-207
   prefs: []
   type: TYPE_NORMAL
 - en: Foremost
+  id: totrans-208
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
@@ -973,6 +1269,7 @@
     contents of the file in the data area and no metadata about this file (which under
     this assumption will be in the unallocated area of the hard drive)? In this case,
     the file carving technique will be useful to recover such files.
+  id: totrans-209
   prefs: []
   type: TYPE_NORMAL
 - en: Each file has a different type, such as Microsoft Office, Adobe, exe, and AVI.
@@ -982,6 +1279,7 @@
     the end of the file, but this is not mandatory. File carving techniques use these
     headers and footers to carve and identify the locations of the files in the unallocated
     area of the image or hard drive to recover these files.
+  id: totrans-210
   prefs: []
   type: TYPE_NORMAL
 - en: '**Foremost** is a Linux tool that is used to recover data based on file carving
@@ -991,6 +1289,7 @@
     the image using the `blkls` tool from `tsk` named as `unallocated.blkls`. We can
     carve this produced file from the hard drive to find the deleted files, if there
     are any.'
+  id: totrans-211
   prefs: []
   type: TYPE_NORMAL
 - en: 'The output of foremost is different directories under the working directory,
@@ -998,12 +1297,15 @@
     each file will start at the beginning of a cluster, we don''t need to search the
     rest of the cluster contents. We can use the `--q` option to search the beginning
     of the clusters only for quick results:'
+  id: totrans-212
   prefs: []
   type: TYPE_NORMAL
 - en: '![Foremost](img/image_06_032.jpg)'
+  id: totrans-213
   prefs: []
   type: TYPE_IMG
 - en: Foremost to carve the unallocated area in the image
+  id: totrans-214
   prefs: []
   type: TYPE_NORMAL
 - en: 'Then, in the results of running this tool, we will find that one `audit.txt`
@@ -1011,27 +1313,34 @@
     Opening the `audit.txt` file will show us some information about the process of
     file carving, such as the time, size, and the extracted files. In our case, one
     single PDF file was extracted from the unallocated area in this image:'
+  id: totrans-215
   prefs: []
   type: TYPE_NORMAL
 - en: '![Foremost](img/image_06_033.jpg)'
+  id: totrans-216
   prefs: []
   type: TYPE_IMG
 - en: Extracted files by foremost
+  id: totrans-217
   prefs: []
   type: TYPE_NORMAL
 - en: 'Due to the absence of the metadata of this file as we discussed before, we
     won''t be able to know any information about this file except for the size and
     the contents of this file. This PDF file was created for testing purposes and
     we assumed that it contains evidential data related to the case under investigation:'
+  id: totrans-218
   prefs: []
   type: TYPE_NORMAL
 - en: '![Foremost](img/image_06_034.jpg)'
+  id: totrans-219
   prefs: []
   type: TYPE_IMG
 - en: Extracted PDF file
+  id: totrans-220
   prefs: []
   type: TYPE_NORMAL
 - en: Summary
+  id: totrans-221
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
@@ -1039,11 +1348,13 @@
     it differs from FAT to NTFS. Then, we learned about reading files from a forensic
     image using TSK and its GUI Autopsy. We also discussed file carving and how to
     recover a file, based on its signature using Foremost.
+  id: totrans-222
   prefs: []
   type: TYPE_NORMAL
 - en: In the next chapter, we will learn about Windows registry—a complex yet very
     important artifact in the Windows operating system. We will learn about registry
     structure, and its important value to the investigation and different tools to
     parse and analyze the registry.
+  id: totrans-223
   prefs: []
   type: TYPE_NORMAL
