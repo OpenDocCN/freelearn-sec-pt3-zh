@@ -1,0 +1,1990 @@
+- en: 'Chapter 5: Malware Detection and Analysis with Windows Memory Forensics'
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The forensic analysis of memory dumps is not limited to analyzing the actions
+    of the user, especially when it comes to a victim's computer. In this scenario,
+    often, specialists need to conduct analyses to find traces of malicious activity.
+    These might be rogue processes, network connections, code injections, or anything
+    else related to the actions of malware or attacker tools. Since modern malware
+    tends to leave as few traces as possible on disk and threat actors try to remain
+    stealthy using PowerShell and batch scripts, memory analysis is becoming a critical
+    element of forensic investigation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In this chapter, we will explain how to search for traces of malicious activity
+    within network connections and active processes along with the Windows Registry,
+    event logs, and filesystem artifacts in memory.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In this chapter, we will cover the following topics:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Searching for malicious processes
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Analyzing command-line arguments
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Examining network connections
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Detecting injections in process memory
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Looking for evidence of persistence
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Creating timelines
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Searching for malicious processes
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: We have already learned how to analyze the processes that are active at the
+    time of dumping to identify user activity. Similar techniques can be used when
+    searching for traces left behind by attackers; however, here, our focus will shift
+    to detect specific markers that help identify malicious activity. User programs,
+    such as browsers or MS Office components, will be less a source of information
+    about the user and their recent activities than a potential source of traces of
+    initial access, and processes related to cloud storage will be considered under
+    the lens of a possible data exfiltration technique. The main goal of our investigation
+    is to look for markers of potentially malicious activity and different kinds of
+    anomalies – processes with strange names or unusual arguments, their atypical
+    behavior, and more. However, first things first, let's start with the simplest
+    one – the names of the processes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Process names
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: In the previous chapter, we discussed how to get a list of active processes
+    and a plugin called `pslist`. So, we will not repeat this; we will just discuss
+    the main points that you need to pay attention to.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'First of all, you need to learn about system processes. Windows has a lot of
+    such processes that are responsible for running individual services and the system
+    itself. Often, such processes become a target for malware, which will try to find
+    a way to masquerade as a system process or, in the worst-case scenario, take advantage
+    of a legitimate process. But we will cover that in more detail later. Let''s take
+    a look at the following example:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 5.1 – The Volatility pslist plugin'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_5.1_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 5.1 – The Volatility pslist plugin
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*Figure 5.1* shows the list of processes collected by the `pslist` plugin.
+    We have intentionally added a regular expression that selects those process names
+    that contain host with `host`. Notice the `svchost` processes. These are the standard
+    processes for services loaded from dynamic libraries. Now, take a look at the
+    name of the process with `ID 1664`. Can you see the difference? This dump was
+    taken from a host infected with `IcedID`, which is a very common piece of commodity
+    malware, distributed via phishing emails and tied to notorious ransomware operators
+    such as REvil, Conti, and Egregor. During execution, this malware drops an executable
+    file, named `svhost.exe`, into a temporary directory and runs it as a child process.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: To find such *masqueraded* processes quickly, it is necessary to not only know
+    the names of key system processes and their specifics but also take the context
+    into account, as system processes can differ in various versions of Windows. Such
+    differences are often insignificant, but knowing them will allow you to navigate
+    through the process list and analyze them more efficiently.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'While some malicious programs hide behind the mask of legitimate processes,
+    others operate quite openly. This is the case with dual-use tools and some programs
+    used by attackers. Let''s take a look at the list of processes, as shown in *Figure
+    5.2*:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 5.2 – The list of running processes'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_5.2_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 5.2 – The list of running processes
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Here, we can see a large number of seemingly legitimate processes: `whoami.exe`,
+    `ipconfig.exe`, `netstat.exe`, and more. These utilities can be used by system
+    administrators or advanced users to check the settings and configure the network.
+    However, these same tools can also be used by attackers to gather information
+    about the system, as was done in our scenario.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Processes such as `cmd.exe`, `powershell.exe`, `wscript.exe`, `cscript.exe`,
+    and `rundll32.exe` require special attention, as they are frequently used by attackers
+    and modern malware as part of the techniques for execution, persistence, defense
+    evasion, discovery, collection, and other tactics. It is not only the appearance
+    of these processes in the list but also the related parent processes that are
+    important here. An atypical combination of parent and child processes is one of
+    the markers of potentially malicious behavior.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Detecting abnormal behavior
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Abnormal behavior can result in many things. For some processes, it will be
+    atypical to make network connections, and for others, it will be atypical to spawn
+    new processes or access certain filesystem objects.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let''s consider the following example:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 5.3 – The process tree'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_5.3_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 5.3 – The process tree
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Here, the `WINWORD.EXE` process spawns a child process, `rundll32.exe`, which
+    is completely atypical. This behavior could be the result of macros embedded inside
+    a document that has been opened by a user. Often, MS Office documents become attachments
+    in phishing emails, which, for years, has been one of the most used techniques
+    for initial access. Trickbot, Qakbot, Dridex, and IcedID are all spread in this
+    way. For example, during Trickbot, IcedID, and Qakbot phishing campaigns, users
+    receive a phishing email with a document that includes the following content as
+    an attachment:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 5.4 – A decoy document'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_5.4_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 5.4 – A decoy document
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'You might ask the following: *why do different threat actors use the same decoy?*
+    Well, the thing is that they used the services of another threat actor called
+    Shathak (also known as TA551), which focuses on malware distribution.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In our case, to test the hypothesis of a malicious document, we need to find
+    out which file was opened in MS Word and try to export it for further analysis.
+    To do this, we can use the `handles`, `filescan`, and `dumpfiles` plugins. Let''s
+    recall the sequence of actions, as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Use the `handles` plugin with the `-t` `file` and `--silent` options to get
+    information about the files used by our process and look for a document opened
+    by a user.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Use the `filescan` plugin to search for information about the physical offset
+    where the required document is located.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Use the `dumpfiles` plugin with the `-Q` option and the physical offset obtained
+    in the previous step, along with the `-D` option and the path where we want to
+    save the file.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 'In the previous chapter, we already dumped the `GOT-7_HR (00000007).docm` file
+    from the memory of `WINWORD.EXE`. Let''s discover how to analyze this document
+    for malicious content. To do this, you can use the `https://github.com/decalage2/oletools`).
+    Oletools is a package of Python tools used to analyze Microsoft OLE2 files such
+    as MS Office documents or Outlook messages. The only thing that you need to install
+    these tools is to have Python 3 installed and to run the following command in
+    the PowerShell:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The necessary dependencies will be installed automatically. As a result, you
+    will be able to use any of the `oletools` package tools via PowerShell to analyze
+    suspicious documents. Let''s check the exported document:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 5.5 – The olevba output'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_5.5_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 5.5 – The olevba output
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In the output of this tool, you can also find more detailed information about
+    the macros, arguments, imported libraries, and more:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 5.6 – A detailed macro description'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_5.6_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 5.6 – A detailed macro description
+  prefs: []
+  type: TYPE_NORMAL
+- en: As you can see in the preceding screenshot, our document has built-in macros
+    with obfuscated strings and the functionality required to inject code into processes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: So, what do we have here? Well, the user opened the document in MS Word's unprotected
+    mode, then the embedded script was executed to create the `rundll32.exe` process,
+    which spawned several child processes of the same name.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let''s take a look at another example, as shown in *Figure 5.7*:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 5.7 – The process tree'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_5.7_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 5.7 – The process tree
+  prefs: []
+  type: TYPE_NORMAL
+- en: Do you recall the `svhost.exe` process masquerading as the legitimate `svchost.exe`?
+    Let's consider its parent process – `nwe.exe` with `PID 1744`. Even if we hadn't
+    noticed the absence of *c* in svhost's name during the initial analysis, the parent
+    process would have revealed its secret to us. Because the `svchost` processes
+    are system processes, they have their own predefined parent process called `services.exe`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs: []
+  type: TYPE_NORMAL
+- en: In addition to certain parents, all system processes have a fixed number of
+    instances, predefined user, start time, and location of the executable file on
+    disk. Any deviations from the defined parameters will be suspicious and will require
+    additional checking.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Going back to our `nwe.exe` process, note that aside from the evil `svhost.exe`,
+    it also creates several `cmd.exe` processes. Embedded tools such as `cmd.exe`,
+    `powershell.exe`, and more are commonly used by attackers to conduct fileless
+    attacks. In doing so, threat actors use approved applications to execute malicious
+    commands and scripts. Unlike traditional methods, this approach does not require
+    any code to be installed on the target's system and makes detection more challenging.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Let's consider the fileless ransomware example. In the first stage, a phishing
+    email is sent to the user with a document containing a malicious macro, as previously
+    discussed. Running the macro launches a command line that executes a PowerShell
+    script. The script downloads encryption keys and extra modules – the execution
+    of which results in data encryption and a ransom note demonstration.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Such attack scenarios are already becoming a classic. That is why we need to
+    find out what arguments were used to start these processes and what was executed.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Analyzing command-line arguments
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Analyzing command-line arguments is very important because it allows you to
+    check the location from which the executable was run and the arguments passed
+    to it. These arguments can include IP addresses or hostnames of other compromised
+    hosts, stolen credentials, malicious filenames, and entire scripts, as shown in
+    the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 5.8 – The command-line arguments used by the Emotet operators'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_5.8_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 5.8 – The command-line arguments used by the Emotet operators
+  prefs: []
+  type: TYPE_NORMAL
+- en: Let's explore a few ways to get the data of interest.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Command line arguments of the processes
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'First of all, we can use the `pstree` plugin that we are already familiar with
+    and add the `-v` option to it. This will allow us to output the process tree together
+    with detailed information about the command line used to start a particular program.
+    This is how the output, as shown in *Figure 5.7*, will change with the addition
+    of the `-v` option:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 5.9 – The verbose pstree output'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_5.9_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 5.9 – The verbose pstree output
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'As you can see, we have new lines: `audit`, `cmd`, and `path`. Here, we can
+    find information about the location of the executable and the arguments used to
+    start it. You can get the same information with a separate plugin – `cmdline`.
+    Its output will look like this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 5.10 – The cmdline output'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_5.10_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 5.10 – The cmdline output
+  prefs: []
+  type: TYPE_NORMAL
+- en: For clarity, `cmdline` was run with the `-p` option and the process IDs, as
+    shown in the preceding example. From the output of both commands, we can see that
+    our `svhost.exe` file was executable from the `C:\Users\lesly\AppData\Local\Temp`
+    directory, which is also not standard for legitimate `svchost` processes. This
+    is another marker, claiming that the process is malicious.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let''s take a look at another example that demonstrates the role of arguments:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 5.11 – The cmdline output for processes chosen by a regular expression'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_5.11_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 5.11 – The cmdline output for processes chosen by a regular expression
+  prefs: []
+  type: TYPE_NORMAL
+- en: In this scenario, we can observe the arguments used to run PsExec, which is
+    a tool that is often used in attacks to remotely execute commands and run scripts
+    on hosts. So, what does this tell the investigator? First, it tells us that the
+    attackers are using `PsExec` for execution and lateral movement. Second, it reveals
+    the name of the host they are interacting with. Third, it identifies the user
+    credentials that have been compromised.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Aside from the information about the arguments used to start a program, it would
+    be nice to know the commands executed by attackers via the command line. Let's
+    discuss this next.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Command history
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Naturally, information about the commands executed through the command line
+    is also stored in memory. To get this data, you can use the Volatility `cmdscan`
+    plugin, which allows you to find command history objects in memory. The output
+    of this plugin is shown in *Figure 5.12*:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 5.12 – The cmdscan output'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_5.12_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 5.12 – The cmdscan output
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note that the capabilities of this plugin are quite limited. For example, it
+    only searches for instances of the default history size. If you wish to, you can
+    use the `-M` option and set any other value; however, if the history size has
+    been changed, finding that value will be problematic.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'An alternative to this plugin is to use `yarascan`, which we discussed in the
+    `cmd` commands, as you can write rules to look for PowerShell and other tools
+    of interest:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 5.13 – The use of YARA rules for malicious PowerShell detection'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_5.13_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 5.13 – The use of YARA rules for malicious PowerShell detection
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*Figure 5.13* shows an example of a simple `YARA rule` for searching PowerShell
+    with the typical `-nop`, `-w hidden`, and `-enc` options for malicious scripts.
+    Using the `yarascan` plugin with this rule, you can find not only the malicious
+    scripts themselves but also information about the processes in the context of
+    which they were found.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Being able to understand what was executed on the command line is good, and
+    knowing the result of the execution is even better. The `consoles` plugin allows
+    you to get data regarding the commands executed by different command-line interpreters:
+    `cmd`, `PowerShell`, the Python shell, and the Perl shell. The main advantage
+    of `consoles` is that this plugin also allows you to output information from the
+    input and output buffers, so you can look at the results of the command execution.
+    Running `consoles` is similar to running `cmdline`. Let''s take a look at an example
+    of the output obtained using this plugin:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 5.14 – The Volatility consoles plugin'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_5.14_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 5.14 – The Volatility consoles plugin
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In *Figure 5.14*, first, we view information about the `conhost.exe` process
+    and the attached processes, which is accompanied by details about the settings
+    that are being used. The most interesting part is `dump`. Here, we can observe
+    what was actually executed. Note that, at the top, we can see information about
+    the `cmd.exe` process and the `updater.bat` file, and in the dump, we have PowerShell.
+    So, what happened here? Let''s make it a little clearer and add to this the output
+    of the `cmdline` plugin for the `3008` and `3672` processes:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 5.15 – The cmdline output for the chosen processes'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_5.15_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 5.15 – The cmdline output for the chosen processes
+  prefs: []
+  type: TYPE_NORMAL
+- en: In *Figure 5.15*, we can observe that the process with an ID of `3008` was started
+    with `cmd.exe /c`. In our case, this means that the `Updater.bat` file, whose
+    path is specified after the `/c` option, must be run through `cmd`. In the dump
+    from the `consoles` plugin, we saw that PowerShell was running, so we can conclude
+    that PowerShell, with all of its options, in the content of the same `Updater.bat`
+    file, which is executed through `cmd`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Pay attention to the `-enc` option that PowerShell runs with. This option tells
+    us that it is followed by a Base64-encoded command. This is not uncommon in forensic
+    investigations. You can use the online CyberChef tool (`https://gchq.github.io/CyberChef/`)
+    to decode such code. All you need to do is copy the encoded part from PowerShell
+    and paste it into the **Input** window. Next, select the recipes that you need
+    to apply, and voila, everything is ready:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 5.16 – The Base64 code decoded with CyberChef'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_5.16_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 5.16 – The Base64 code decoded with CyberChef
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note that one of the functions of this script is to create a `WebClient` object.
+    Such objects are often used to perform network communications.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The network can be used by malware to communicate with **Command and Control**
+    (**C2**) servers and download malicious payloads. In addition to this, if the
+    attackers interactively connect to a remote host, network connections are also
+    established. Therefore, analyzing network connections and looking for anomalies
+    within them is another essential part of searching for traces of malicious activity.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Examining network connections
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The Volatility `netscan` plugin is used to analyze network connections. This
+    allows you to collect information about all active and recent connections, as
+    well as open sockets. Let''s consider an example:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 5.17 – The Volatility netscan output'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_5.17_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 5.17 – The Volatility netscan output
+  prefs: []
+  type: TYPE_NORMAL
+- en: In *Figure 5.17*, we can view the standard `netscan` output. This gives us information
+    about the OSI transport layer protocol and its version, the IP addresses and ports
+    involved, the PID, and the name of the process that initiated the network activity
+    and when it was created. For the TCP protocols, which, in contrast to UDP, create
+    a connection to transfer data, the status is also specified. For example, if a
+    process is listening on a port and waiting for an incoming connection, the state
+    will be `LISTENING`. Additionally, if the connection to the remote host is established,
+    it will be `ESTABLISHED`, and if the connection is already terminated, it will
+    be `CLOSED`. So, what do we do with this information? What do we look for?
+  prefs: []
+  type: TYPE_NORMAL
+- en: Process – initiator
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Let's start with a simple one. As in the case of processes, where we analyze
+    the parent-child relationship to find atypical combinations, we can start with
+    the data about the process that initiated the connection. Evidently, for some
+    processes, it is normal to create network connections. We can refer to such processes
+    as browsers, mail agents, or messengers. Additionally, some programs might establish
+    network connections to check for updates and downloads, which is also normal behavior.
+    Now, let's imagine a situation where a network connection is established by the
+    explorer process. This process is needed to give the user access to files and
+    directories through a graphical user interface or to display the start menu. It
+    is not 100% typical for it to create network connections. Although, of course,
+    there are situations where `explorer.exe` will create network connections; for
+    example, when transmitting Windows telemetry data, as related to changes in the
+    start menu settings. However, bear in mind that these connections will be established
+    using specific IP addresses, so foreign addresses will be a marker of malicious
+    activity. However, we will discuss this in more detail later.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Aside from atypical initiators, there are some processes that we have to keep
+    an eye on. These include `cmd.exe` and `powershell.exe`. If you have detected
+    connections established by these processes, be sure to check the IP addresses
+    specified in the `Foreign Address` field:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 5.18 – The cmd.exe process connecting to a remote IP address'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_5.18_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 5.18 – The cmd.exe process connecting to a remote IP address
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Take a look at the preceding example. Here, the `cmd.exe` process with PID
+    `2860` creates a network connection with an IP address of `216.58.207.206`. Let''s
+    check this address. To do this, you can use various online resources, for example,
+    VirusTotal ([https://www.virustotal.com/gui/home/search](https://www.virustotal.com/gui/home/search)).
+    This resource allows you to search for information on IP addresses, URLs, file
+    hashes, or the files themselves:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![ Figure 5.19 – A suspicious IP address in VirusTotal'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_5.19_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 5.19 – A suspicious IP address in VirusTotal
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In *Figure 5.19*, you can view the search results for our IP address. At first
+    glance, everything looks good – there are zero detections. However, pay attention
+    to the `10+ detected files communicating with this IP address` message. In order
+    to view more information regarding the files communicating with this IP address,
+    you can switch to the **RELATIONS** tab and find the **Communicating Files** field,
+    as shown in the following screenshot. If you have an account on VirusTotal, you
+    can also click on the graph icon on the right-hand side and view all of the communications
+    in a graphical view:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 5.20 – The VirusTotal communicating files'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_5.20_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 5.20 – The VirusTotal communicating files
+  prefs: []
+  type: TYPE_NORMAL
+- en: In *Figure 5.20*, we can see that although the IP address was not recognized
+    as malicious, it is associated with a lot of malicious files, which means that
+    it is not so good.
+  prefs: []
+  type: TYPE_NORMAL
+- en: As you can see, IP addresses themselves play a big role in forensic investigations.
+  prefs: []
+  type: TYPE_NORMAL
+- en: IP addresses and ports
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Not only can the IP addresses and ports being used tell you whether a particular
+    network connection is malicious, but sometimes, they can also tell you what tools
+    the attackers were using. Let''s take a look at the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 5.21 – Volatility netscan'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_5.21_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 5.21 – Volatility netscan
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'There is not much information displayed; however, even here, you can see that
+    RDP can be used to connect to this host. How about the following connection? Do
+    you see anything suspicious? Take a look:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 5.22 – Another suspicious connection'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_5.22_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 5.22 – Another suspicious connection
+  prefs: []
+  type: TYPE_NORMAL
+- en: Bingo! You can see the `UWkpjFjDzM.exe` process, and behind this strange name
+    is a `meterpreter`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Important Note
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`Meterpreter` is a Metasploit payload that provides an interactive shell with
+    which an attacker can perform various actions on the target machine.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'So, how did we know that from just one line of network connection information?
+    In fact, the port played an important role here. We have already mentioned the
+    transport layer protocols used to establish the connection. When two hosts establish
+    connections using these protocols, they are identified according to the port numbers.
+    Often, the ports used for specific purposes are allocated and registered by the
+    **Internet Assigned Numbers Authority** (**IANA**), although, in practice, there
+    are often cases of unofficial use. However, there is a list of standard ports
+    used by default for a specific purpose. Sometimes, the use of these *default*
+    ports can give away a particular service or tool used by attackers. The following
+    is a list of the most commonly used TCP ports and their purpose:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 5.23 – Common ports and their usage'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_5.23_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 5.23 – Common ports and their usage
+  prefs: []
+  type: TYPE_NORMAL
+- en: As you can see, some of the ports listed in the preceding table can be used
+    by attackers. For example, `80`, `443`, `445`, or `3389`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Aside from the common ports used by standard services, there are also default
+    protocols used in tools such as port scanners or post-exploitation frameworks.
+    The following table gives examples of such tools and their default ports:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 5.24 – Default ports used by specific tools'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_5.24_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 5.24 – Default ports used by specific tools
+  prefs: []
+  type: TYPE_NORMAL
+- en: So, that solves one of the mysteries of the Meterpreter payload. But it's a
+    tricky one, isn't it? Usually, Meterpreter is deployed by injection into the process'
+    memory. It is completely in memory, so nothing is written to disk. Additionally,
+    no new processes are created. This is because Meterpreter is injected into a compromised
+    process from which it can migrate to other running processes. As a result, the
+    forensic footprint of the attack is very limited. You understand what this means,
+    right? It's time to talk about injections and how to detect them.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Detecting injections in process memory
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: There are different types of injections within process memory. Some are similar
+    to each other, while others differ considerably. Depending on the technique used,
+    the methods for detecting injections might vary. We will attempt to discuss the
+    most relevant types of injections and the methods for their detection.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Dynamic-link library injections
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Adversaries can use this technique for defense evasion or privilege escalation
+    tactics. In general, the injection of **Dynamic link Libraries** (**DLLs**) is
+    one of the methods used to execute arbitrary code in the address space of a legitimate
+    process. There are two main types of DLL injections: *remote* and *reflective*.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Remote DLL injections
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'The malicious process gets `SeDebugPrivilege`, which allows it to act as a
+    debugger and gain read and write access to the address space of other processes.
+    Using these privileges, the malicious process opens a handle for the target process,
+    accesses its address space, and writes the full path to the malicious library
+    inside it. The library itself should already exist on disk. Then, the malicious
+    process uses Windows API functions to create a new thread in the context of the
+    target process. The new thread is needed to load the malicious library into the
+    target process'' address space. When this happens, the malicious process clears
+    the memory location where the path to the library is written to disk and closes
+    the descriptor for the target process. If we put all of this into a single algorithm,
+    we get the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Get privileges and open a handle to the target process.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Write the full path to the malicious DLL to the target process' address space.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Create a new thread to load the DLL from the disk using Windows API functions.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Delete the path to the malicious DLL from the target process' memory.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Close the handle to the target process.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Since remote DLL injection has a library written to disk, we can use Volatility
+    plugins such as `dlllist` and `ldrmodules` to detect this.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Interestingly, `dlllist` is a plugin that allows you to get a list of the libraries
+    loaded into the process:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 5.25 – The Volatility dlllist plugin'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_5.25_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 5.25 – The Volatility dlllist plugin
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Note that the information about the libraries used by the process is stored
+    in three different lists:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`LoadOrderList` organizes the order in which modules are loaded into a process.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`MemoryOrderList` organizes the order in which modules appear in the process''
+    virtual memory.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`InitOrderList` organizes the order in which the `DllMain` function is executed.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'The `dlllist` plugin only works with `LoadOrderList`. The problem is that sometimes,
+    malicious libraries can be unlinked from this list to hide their presence. This
+    will also affect the output of the `dlllist` plugin since information about the
+    unlinked libraries will not be displayed. In this scenario, the `ldrmodules` plugin
+    comes to the rescue, as it not only outputs information from all three lists but
+    also provides data regarding the presence of this or that library in each of the
+    lists:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 5.26 – The Volatility ldrmodules plugin'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_5.26_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 5.26 – The Volatility ldrmodules plugin
+  prefs: []
+  type: TYPE_NORMAL
+- en: In this way, you can detect the libraries that have been unlinked. These libraries
+    will show `False` in the `InLoad` column and `True` in the other columns.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Important Note
+  prefs: []
+  type: TYPE_NORMAL
+- en: The executable itself is also present in the output of both plugins. In the
+    output of `ldrmodules`, in the `InInit` column, it will always show `False`. This
+    is because it initializes differently, not like other modules.
+  prefs: []
+  type: TYPE_NORMAL
+- en: So, how can we tell whether the libraries extracted by these plugins include
+    malicious ones? You can start by analyzing the library names and locations. Pay
+    attention to atypical names and directories where the libraries are located on
+    disk. Keep a special eye on the user directories and the temporary ones. If you
+    have difficulties with the visual identification of anomalies, you can always
+    use the `dlldump` and `dumpfiles` plugins and try to extract the DLLs to disk
+    for an additional checkup. Running the `dlldump` plugin is similar to the `dumpfiles`
+    plugin. You only need to use the `-p` option to specify the ID of the process
+    you are interested in and the `-D` option for the path to the directory where
+    you want to save the result. Files with the standard `.dll` extension will appear
+    in the directory you have specified. At this point, you can count the hashes of
+    the libraries and check them on `VirusTotal`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let''s say we have run the following command for a process with ID `1072`,
+    which we think is suspicious:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'As a result, our libraries are saved inside the output directory. To quickly
+    calculate the hash of the DLLs, you can use the following PowerShell command:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 5.27 – Calculating the hash of DLLs with PowerShell'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_5.27_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 5.27 – Calculating the hash of DLLs with PowerShell
+  prefs: []
+  type: TYPE_NORMAL
+- en: This command calls the `Get-FileHash` function for every file in the directory.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let''s check our hashes with VirusTotal:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 5.28 – The malicious DLL detected with VirusTotal'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_5.28_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 5.28 – The malicious DLL detected with VirusTotal
+  prefs: []
+  type: TYPE_NORMAL
+- en: Here is our malicious DLL. Now, we can analyze how it made its way onto the
+    system and explore its functionality in more detail.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Another important point to bear in mind is that malicious DLLs can be packed
+    using packers. If during the unpacking phase the DLL code is written to a new
+    memory region, we can use `malfind` plugin to detect it, which will be discussed
+    later.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Reflective DLL injections
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Another way to inject libraries is via reflective DLL injection. This method
+    is more popular because it does not require the library to be present on disk
+    and, therefore, leaves fewer traces. Such a library can be downloaded over the
+    network and immediately injected into process memory. Another feature of this
+    method is the use of a reflective loader, which is embedded in the library itself,
+    instead of the standard Windows loader. This loader will take care of the execution
+    environment and run the `DllMain` function.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The step-by-step algorithm for reflective DLL injection is as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Get privileges and open a handle to the target process.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Allocate memory in the target process and write the malicious DLL there.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Create a new thread to invoke the reflective loader.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Close the handle to the target process.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: This technique is actively used by commodity malware. For example, `SDBbot`
+    downloads the malicious library from C2 and injects it into the newly created
+    `rundll32.exe` process. The same can be said about `Netwalker` ransomware, which
+    reflectively injects the library into the `explorer.exe` process. Among other
+    things, many post-exploitation frameworks have functionality for reflectively
+    injecting DLLs, shellcodes, or executables into processes. Metasploit, CobaltStrike,
+    and PowerShell Empire, as we all know, have this functionality.
+  prefs: []
+  type: TYPE_NORMAL
+- en: You can use the `malfind` plugin to detect reflective DLL injection. The point
+    is that when using this technique (just as with packers), a page with the `EXECUTE_READWRITE`
+    protection is created in the target process memory. This is necessary in order
+    to write malicious code there as well as execute it. The `malfind` plugin allows
+    you to find such pages in process memory and check them for executable file headers
+    or correct CPU instructions.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Important Note
+  prefs: []
+  type: TYPE_NORMAL
+- en: Some programs can inject libraries or code as a part of their legitimate activity.
+    For example, anti-virus solutions have such functionality.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The `malfind` plugin has several useful options, which you can use individually
+    or in combination depending on the required result:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`-p <PID>` allows you to search for injections in a process with a specific
+    ID.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`-n <regular expression>` allows you to search for injections in all processes
+    whose names match a regular expression.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`-D` allows you to dump the injected code sections.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Let''s take a look at the following example:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 5.29 – The Volatility malfind plugin'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_5.29_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 5.29 – The Volatility malfind plugin
+  prefs: []
+  type: TYPE_NORMAL
+- en: Here, we ran `malfind` with the process ID of `rundll32.exe` and the `-D` option
+    to save the injected code dumps to the output directory. As you can see, in this
+    scenario, our plugin found the `PAGE_EXECUTE_READWRITE` page with valid CPU instructions.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Continuing to examine the plugin''s output, you can also observe pages with
+    executable file magic numbers, as shown in the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 5.30 – The malfind output with the MZ magic number'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_5.30_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 5.30 – The malfind output with the MZ magic number
+  prefs: []
+  type: TYPE_NORMAL
+- en: You will not always be able to find such magic numbers. This is because attackers
+    often use various concealment techniques, including header removal. Therefore,
+    you should not focus on their presence; it is better to check everything that
+    seems suspicious to you.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Since we have extracted the `malfind` output to disk, we can check what they
+    are. To do that, you can use specialized utilities such as CFF Explorer (`https://ntcore.com/?page_id=388`).
+    Alternatively, you can return to the already familiar VirusTotal, which can give
+    insights not only about the maliciousness of the extracted code but also its nature.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In our case, one of the interesting results would be the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 5.31 – A malicious DLL detected by malfind'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_5.31_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 5.31 – A malicious DLL detected by malfind
+  prefs: []
+  type: TYPE_NORMAL
+- en: Here, one of the injections that we dumped was recognized as malicious. On the
+    right-hand side, note that the contents of the dump were a DLL.
+  prefs: []
+  type: TYPE_NORMAL
+- en: As mentioned previously, an executable file can be injected into a process in
+    a similar way. Let's take a look at an example next.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Portable executable injections
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: The idea behind this type of injection is extremely simple. As in the previous
+    cases, it starts with obtaining debugger privileges and opening a handle for the
+    target process. Next, a memory region is allocated in the target process' address
+    space, which is then used to write the malicious code. When the code is written,
+    a new thread is created whose purpose is to execute the injected piece of malware.
+    In this way, we get the malicious code running in the context of a legitimate
+    process.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In this scenario, the step-by-step algorithm looks like this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Get privileges and open a handle to the target process.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Allocate memory in the target process and write malicious code there.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Create a new thread to run the injected code.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Close the handle to the target process.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: As you can see, everything is as simple as possible, and most importantly, no
+    traces are left on disk. The allocated pages in the second step usually have `EXECUTE_READWRITE
+    PROTECTION`. This means that the Volatility `malfind` plugin will also help us
+    to detect this type of injection. However, please note that `malfind` only analyzes
+    private memory regions with read, write, and execute access. This means that the
+    detectability of this plugin can be bypassed. Imagine a situation where attackers
+    initially allocate a page with read and write access; then, after writing malicious
+    code, they change it to read and execute. From a malicious activity point of view,
+    everything will work as before, but `malfind` will not detect it. In this case,
+    we can use manual analysis.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'A handy tool for this kind of analysis is Redline by `Fireeye`, which can be
+    downloaded from the official site ([https://www.fireeye.com/services/freeware/redline.html](https://www.fireeye.com/services/freeware/redline.html))
+    by filling in a short form. This tool has a graphical interface and allows you
+    to view the memory sections with their contents and protection flags:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 5.32 – Memory analysis with Redline'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_5.32_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 5.32 – Memory analysis with Redline
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'As you can see in the preceding screenshot, we can examine the information
+    of interest in the table view. If we require more details about the contents of
+    a particular section, we can double-click on it to open it:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 5.33 – Redline full detailed information'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_5.33_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 5.33 – Redline full detailed information
+  prefs: []
+  type: TYPE_NORMAL
+- en: In addition to `malfind`, there are other plugins that allow you to search for
+    specific injections. For example, `cobaltstrikescan` was developed by Japanese
+    CERT specialists. It is specifically used for searching by `YARA rules` for Cobalt
+    Strike beacons injected into processes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Important Note
+  prefs: []
+  type: TYPE_NORMAL
+- en: Besides the built-in Volatility plugins, you can also use plugins developed
+    by the community. To do this, you need to create a plugins folder in the same
+    directory as your version of Volatility and put the code of the plugin that you
+    want to use inside it. To start a new plugin, just add `--plugins=<path to plugins
+    folder>` to the Volatility command line, and don't forget to specify the name
+    of the plugin.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To use this plugin, we create a plugins folder in the same directory as Volatility
+    itself and, inside it, save a file with the `.py` extension downloaded from the
+    GitHub repository ([https://github.com/JPCERTCC/aa-tools/blob/master/cobaltstrikescan.py](https://github.com/JPCERTCC/aa-tools/blob/master/cobaltstrikescan.py)).
+    When starting Volatility, we specify `--plugins=./plugins`. To check whether the
+    plugin has loaded successfully, we can use the `--` `info` command, where a new
+    name should appear in the list of plugins:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 5.34 – Checking for the added community plugin'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_5.34_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 5.34 – Checking for the added community plugin
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Now we can test it. Let''s examine how `cobaltstrikescan` handles the search
+    for an injected beacon:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 5.35 – The results of cobaltstrikescan'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_5.35_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 5.35 – The results of cobaltstrikescan
+  prefs: []
+  type: TYPE_NORMAL
+- en: As you can see in the preceding screenshot, the Cobalt Strike beacon was detected
+    in the `Outlook.exe` and `rundll32.exe` processes. This means that in the memory
+    of these processes, you can find its configurations, where useful parameters such
+    as the C2 IP addresses are located.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Techniques such as DLL injection and code/executable injection have been around
+    for quite some time, so there are already, more or less, reliable ways in which
+    to detect them. Things become more complicated when detecting newer techniques,
+    but they are used quite often by attackers. One of the most current techniques
+    is Process Hollowing.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Process Hollowing
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: The basic idea behind hollow process injection is to create a new instance of
+    a legitimate process in the `SUSPEND` state and overwrite the address space occupied
+    by its executable code with malicious code. Therefore, unlike previous techniques,
+    after process hollowing, the executable code of the legitimate process stops existing.
+    Meanwhile, the process data in the **Process Environment Block** (**PEB**) remains
+    the same. As a result, we end up with a container containing the data of the legitimate
+    process (the DLLs, heaps, stacks, and handles), inside which the malicious code
+    is executed.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Important Note
+  prefs: []
+  type: TYPE_NORMAL
+- en: PEB is a structure that stores information about the location of the DLLs, heaps,
+    and environment variables along with the process' command-line arguments, current
+    working directory, and standard handles.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'For ease of understanding, let''s take another look at the algorithm of actions:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Start a new instance of a legitimate process with the first thread suspended.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Free or unmap the memory section with the code of the legitimate process.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Allocate a new memory segment with read, write, and execute access.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Copy any malicious code obtained from the disk or over the network into the
+    newly allocated memory segment.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Set the start address of the suspended thread to the entry point of the malicious
+    code.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Resume the thread.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: As a result of these actions, the malicious code is executed in a container
+    created by a legitimate process. The use of process hollowing is not uncommon.
+    For example, Trickbot uses this technique to inject its payload inside the `wermgr.exe`
+    process.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Two methods can be used to detect process hollowing. The first one involves
+    comparing PEB and **Virtual Address Descriptor** (**VAD**) structures and searching
+    for inconsistencies.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Important Note
+  prefs: []
+  type: TYPE_NORMAL
+- en: VAD is another important structure that is used to track reserved or committed,
+    virtually contiguous sets of pages. These descriptors contain the names of the
+    memory-mapped files, the initial protection, and some other flags related to the
+    pages and their content.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'This can be done with the `psinfo` plugin, written by Monnappa K. A. This plugin
+    collects information from VAD and PEB and outputs it in an easy-to-compare format.
+    In addition, `psinfo` tries to detect suspicious memory regions with the possibility
+    of execution:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 5.36 – The psinfo output'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_5.36_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 5.36 – The psinfo output
+  prefs: []
+  type: TYPE_NORMAL
+- en: In *Figure 5.36*, you can see that the `psinfo` output shows the base address,
+    process path, and protection from VAD and PEB along with the command line and
+    other process-related details. So, what will we see with process hollowing? Well,
+    the information taken from the PEB will match the process used as a container,
+    but the VAD structure will no longer have a file mapped to this memory region.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Another way to detect a hollowed process is to use the `ldrmodules` plugin,
+    which we already know. Do you remember what an executable file looks like there?
+    That's right; in all lists except `InInit`, it is set to `True`, followed by information
+    about the full path to the file on disk. In the case of process hollowing, the
+    flags (`True False True`) will remain, but the path to the executable file will
+    be missing.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In addition to process hollowing, there is another type of injection that is
+    often used by attackers: Process Doppelgänging.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Process Doppelgänging
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: This technique was first introduced in 2017 at the BlackHat conference, and
+    it has been actively used by attackers ever since. For example, Bazar Loader uses
+    Process Doppelgänging to inject its payload.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'This technique is based on the use of NTFS transactions. Transactional NTFS
+    was introduced in Windows Vista to make changes to the filesystem safer and more
+    efficient. When using transactions, special transaction files are created, and
+    any expected changes are written into them. Once the changes have been made, the
+    transaction can be committed in order to apply all of the changes at once or rolled
+    back by deleting the transaction file along with the changes. This technology
+    is very useful when installing new programs; this is because if there is a crash
+    when the changes are being made, the transaction will be rolled back, and the
+    system will be in its original, stable state. Let''s examine how this technology
+    is used in the Process Doppelgänging algorithm:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Create a transaction and open a clean transacted file.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Overwrite the transacted file with malicious code.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Create a memory section that points to the transacted file.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Roll back the transaction (this will remove all the traces of the transacted
+    file from the filesystem but not the memory section where the malicious code was
+    mapped).
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Create objects, process and thread objects; set the start address of the thread
+    to the entry point of the malicious code.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Create process parameters and copy them to the newly created process' address
+    space.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Run the doppelgänged process.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: The use of this technique is quite difficult to detect. For systems older than
+    Windows 10, you can check the `File_Object` associated with the suspicious process.
+    If write access for this file is enabled, that could potentially be Process Doppelgänging.
+    For Windows 10 systems, it's a bit easier because of the new members of the `_EPROCESS`
+    structure. The point here is that for the doppelgänged process `_EPROCESS`. `ImageFilePointer`
+    is set to `NULL`. To check this information for a suspicious process, you can
+    use Volatility's `volshell`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'First of all, run `ps()` inside `volshell` to identify the offset of the suspicious
+    process:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 5.37 – Executing volshell ps()'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_5.37_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 5.37 – Executing volshell ps()
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Then, use `dt(''_EPROCESS'',<offset>)` to get information related to your target
+    process:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 5.38 – Obtaining process-related data'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_5.38_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 5.38 – Obtaining process-related data
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Search for `0x448` `ImageFilePointer`. If there is `NULL` instead of a normal
+    value (as shown in *Figure 5.39*), congratulations! It appears you just found
+    the doppelgänged process:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 5.39 – The normal ImageFilePointer value'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_5.39_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 5.39 – The normal ImageFilePointer value
+  prefs: []
+  type: TYPE_NORMAL
+- en: It is worth mentioning here that even if attackers use covert injection techniques,
+    such as Process Doppelgänging, it is possible that widely used tools, such as
+    `mimikatz` or payloads from post-exploitation frameworks, are executed in the
+    context of legitimate processes. This opens the possibility of searching the memory
+    of processes using keywords, regular expressions, and `YARA rules`. Let's take
+    a look at the following example. We have a process named `wscript.exe`. As mentioned
+    earlier, this is one of the processes we have to watch out for because threat
+    actors can use `wscript.exe` to execute their malicious scripts.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Important Note
+  prefs: []
+  type: TYPE_NORMAL
+- en: WScript is an MS Windows component designed to run scripts written in script
+    languages, such as Visual Basic.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In our scenario, the investigation of the command-line arguments and the handles
+    of files used by the process have given us nothing but the name of the script
+    in use. So, we dump the process memory and use the `strings` utility to get the
+    ASCII and UNICODE characters:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 5.40 – Dumping the memory of wscript and parsing it with strings64'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_5.40_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 5.40 – Dumping the memory of wscript and parsing it with strings64
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In the resulting text file, you can search for any information of interest
+    using the `powershell`, `cmd`, `vbs`, and `base64` keywords:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 5.41 – The Base64 keyword search results'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_5.41_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 5.41 – The Base64 keyword search results
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In *Figure 5.41*, you can view the Base64-encoded code found with the `base64`
+    keyword. To better understand the nature of this code, you can use `CyberChef`
+    to decode it:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 5.42 – Decoded Base64'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_5.42_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 5.42 – Decoded Base64
+  prefs: []
+  type: TYPE_NORMAL
+- en: CyberChef has automatically detected that our Base64-encoded code is a PE file.
+    At this point, we can save the resulting PE file for further analysis. By continuing
+    to analyze the lines, we discover that this file was downloaded over the network
+    and then injected into a new process.
+  prefs: []
+  type: TYPE_NORMAL
+- en: That is how we can detect malicious processes and find various injections in
+    memory dumps. However, that's not all. Often, attackers require persistence on
+    the system to maintain access to the infected hosts. This can be achieved in a
+    variety of ways. Let's discuss them next.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Looking for evidence of persistence
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: There are quite a few techniques used by malware and attackers to get a foothold
+    into a system. These include classic techniques that have been actively used for
+    many years. Additionally, there are relatively new ones that are only just gaining
+    popularity. We are not here to tell you about every technique that exists, but
+    rather to give you some tools that we believe will most likely help you to spot
+    a piece of malware persistence on the system. And, of course, there's no shortage
+    of examples.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Boot or Logon Autostart Execution
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'In this technique, the attackers change the system settings to automatically
+    execute a program during a system boot or logon. For instance, they can add a
+    path to a malicious executable as data for some value to the following keys:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`HKLM \SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`HKLM\Software\Microsoft\Windows\CurrentVersion\Run`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`HKLM\Software\Microsoft\Windows\CurrentVersion\RunOnce`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`HKCU\Software\Microsoft\Windows\CurrentVersion\Run`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`HKCU\Software\Microsoft\Windows\CurrentVersion\RunOnce`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'In the previous chapter, we looked at several approaches of how to extract
+    the registry from memory. You can use the most appropriate way for you to export
+    the `SOFTWARE` and `NTUSER.DAT` registry files corresponding to the preceding
+    keys. To work with these files, you can use `Registry Explorer` or `RegRipper`
+    just as we did earlier:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 5.43 – Run keys analysis'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_5.43_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 5.43 – Run keys analysis
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the preceding screenshot, it is easy to see the `Temp` value with the `temp.bat`.
+    You can also use the Volatility `prinkey` plugin with the `-K` option to examine
+    the contents of this key in the virtual registry.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'If you want to structure your search for the key used for persistence in a
+    more logical way, you can start by examining the output of the `handles` plugin
+    with the `-t Key` option, which shows all of the registry keys used by this process:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 5.44 – Volatility handles'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_5.44_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 5.44 – Volatility handles
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Such an approach not only speeds up the search for the key used for persistence
+    but also provides information about the registry keys that the malware was interested
+    in and how it might have used them. It is important to note that if you do not
+    see the key you are looking for in the output of the `handles` plugin, there is
+    no guarantee that it has not been used. Therefore, if the results are unsatisfactory,
+    it is recommended that you check the registry anyway. If you can still find the
+    key, you can check its content with `prinkey` `-K <key>`, as shown in *Figure
+    5.45*:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 5.45 – Checking the Load value with Volatility printkey'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_5.45_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 5.45 – Checking the Load value with Volatility printkey
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Of course, gaining persistence by abusing the *run* keys isn''t the only technique
+    leveraged by threat actors, which includes Windows registry manipulation. Here
+    are a few other examples:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Winlogon Helper DLL (T1547.004 according to MITRE ATT&CK): The threat actors
+    modify the `Software\Microsoft\Windows NT\CurrentVersion\Winlogon` registry key
+    to achieve persistence.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Image File Execution Options Injection (T1546.012 according to MITRE ATT&CK):
+    The threat actors modify the `HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image
+    File Execution Options and HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\SilentProcessExit`
+    registry keys to achieve persistence.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Logon Script (T1037.001 according to MITRE ATT&CK): The threat actors modify
+    the `HKCU\Environment\UserInitMprLogonScript` registry key to achieve persistence.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Let's move on to look at other popular persistence techniques. For example,
+    creating new accounts.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Create Account
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'This technique is often used by ransomware operators, as it is excellent for
+    maintaining access to compromised systems. The registry can be used again to find
+    traces of new accounts. Remember, in the previous chapter, we talked about the
+    SAM registry file and how it contains information about users, including their
+    creation date. For the easy analysis of user creation data, it is best to use
+    the `Registry Explorer` tool and the bookmarks tab. To do this, simply drag the
+    exported SAM file into Registry Explorer and click on **Bookmarks** and then **Users**.
+    This should bring up a table with all of the users:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 5.46 – The Users bookmark'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_5.46_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 5.46 – The Users bookmark
+  prefs: []
+  type: TYPE_NORMAL
+- en: As you can see, in the preceding screenshot, the **Created On** column shows
+    the date and time that each user was created. You can use a comparison of these
+    timestamps to identify the users created during the attack.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Of course, this method has a significant limitation – the relevant information
+    about domain users might be missing. Therefore, another method we will consider
+    is to export the event logs.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Important Note
+  prefs: []
+  type: TYPE_NORMAL
+- en: Windows event logs are `.evtx` files located in the `C:\Windows\System32\winevt\Logs`
+    directory. They contain various events related to system operations, user activities,
+    and more.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'This method is no different from the exportation of regular files. The sequence
+    of actions will be as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Run the `filescan` plugin and redirect its output to a text file.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Open the text file with the `filescan` results and find the log you are interested
+    in.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Copy the offset of the log that you need from the text file.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Run `dumpfiles` `-Q <offset>`.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Rename the resulting file, including the extension.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Events related to the creation of new users are stored in the `Security.evtx`
+    log. Note that on the computers of regular users, this log will record information
+    about the creation of local users, while for domain users, you need the log located
+    on the domain controller.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To open the exported event log on Windows, you can use the built-in `event
+    viewer`. Additional information regarding creating and enabling a user can be
+    found in the `4720` and `4722` events. You can use these event IDs to create a
+    filter. You should end up with the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 5.47 – Security.evtx opened via Event Viewer'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_5.47_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 5.47 – Security.evtx opened via Event Viewer
+  prefs: []
+  type: TYPE_NORMAL
+- en: Here, we have information about the creation of the `honka` user in the `seriouscats`
+    domain. There is also a timestamp that refers to the time when this event occurred,
+    and, hence, the time when the user was created.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Important Note
+  prefs: []
+  type: TYPE_NORMAL
+- en: Sometimes, the event logs get corrupted when they are exported from the memory
+    dumps. To try to recover events from a corrupted log, you can use the excellent
+    `CQEvtxRecovery` tool from CQURE.
+  prefs: []
+  type: TYPE_NORMAL
+- en: As a result, depending on the circumstances, you can look for traces of new
+    user creation either in the registry or the event logs.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The event logs themselves are a great source of data regarding what is going
+    on in the system: remote connections, creating users and changing their attributes,
+    launching PowerShell scripts, Windows Defender crashes, and much more. Let''s
+    explore what else we can use event logs exported from memory for.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Create or Modify System Process
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: When using this persistence technique, attackers install a new service that
+    should run an executable file on disk or execute scripts. Often, trojans such
+    as `Emotet` and `Trickbot` use the installation of new services.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Additional information about the installation of services is recorded in the
+    `System.evtx` event log, which can also be exported from a memory dump. We will
+    be interested in the event ID of `7045`: **A service was installed in the system**.
+    When analyzing such events, you should pay attention to the name and location
+    of the executable and, in the case of scripts, the arguments used:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 5.48 – System.evtx'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_5.48_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 5.48 – System.evtx
+  prefs: []
+  type: TYPE_NORMAL
+- en: In *Figure 5.48*, you can see an example of a malicious service. Note that the
+    executable file is located in the user's temporary folder.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Another way to analyze services is to use special Volatility plugins. For example,
+    you can use the `svcscan` plugin to get information about the running services,
+    service names, types, states, binary paths, and more, as shown in *Figure 5.49*:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 5.49 – The svcscan output'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_5.49_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 5.49 – The svcscan output
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'There is another plugin developed by the community called `autoruns` ([https://github.com/tomchop/volatility-autoruns/blob/master/autoruns.py](https://github.com/tomchop/volatility-autoruns/blob/master/autoruns.py)):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 5.50 – The autoruns output'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_5.50_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 5.50 – The autoruns output
+  prefs: []
+  type: TYPE_NORMAL
+- en: This plugin collects information not only about the services but also the various
+    registry keys that could potentially be used for persistence. On the one hand,
+    the plugin provides fairly easy access to various information; on the other hand,
+    the set of data collected is limited. Therefore, before using the plugin, we recommend
+    that you read the list of collected data, which can be found in the same repository
+    on GitHub.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In addition to installing new services, attackers can also create tasks through
+    the scheduler. Let's take a look at this technique and how to detect it.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Scheduled task
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'The creation of scheduled tasks is one of the most common techniques. It is
+    widely used by commodity malware to get persistence on the infected systems. Information
+    about scheduled tasks is stored in several locations:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`C:\Windows\System32\Tasks`: Here, you can find XML files with task descriptions.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`Microsoft-Windows-TaskScheduler%4Operational.evtx`: You can analyze event
+    ID 106, which is related to the creation of a new task.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`SOFTWARE`: Information about task cache is also stored in the registry.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'We will proceed with the registry analysis. So, we need to export the `SOFTWARE`
+    file just as we did before. This time, we will use `RegRipper` to parse our registry
+    file:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 5.51 – Parsing SOFTWARE with RegRipper'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_5.51_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 5.51 – Parsing SOFTWARE with RegRipper
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We can use the `taskcache` keyword to search for the necessary information.
+    There are two plugins that show task-related data: `tasks` and `taskcache`. Both
+    plugins show information about the path and the creation time of the task, but
+    the second one also displays the task ID, as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 5.52 – The taskcache and tasks plugins'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_5.52_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 5.52 – The taskcache and tasks plugins
+  prefs: []
+  type: TYPE_NORMAL
+- en: As you can see, there are various persistence techniques, and this is only a
+    small part of them. However, using the methods of analysis that we have reviewed,
+    you will be able to analyze a far greater number of techniques.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Another important step in forensic investigation is timeline creation. Its application
+    largely depends on your goals because you can look not only for information related
+    to malicious activity but also collect data about the user's files. Let's take
+    a closer look at this topic.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Creating timelines
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Timelines are extremely useful. They can play an important role in your investigation
+    because not only can you find out details about what happened to the target system
+    during a certain period of time, but you can also reconstruct the actions of the
+    attackers step by step. Here are a few approaches of how to use timelines:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**Analysis of system changes during the incident**: If you already have data
+    regarding the time of the incident, you can use the timeline to analyze the changes
+    that occurred in the target system during this period.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Analysis of the file''s timestamps**: Using the filesystem-based timeline,
+    you can search for entries that correspond to specific files and analyze timestamps
+    of their appearance or the actions performed on them.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`.pf` extension is created in the `C:\Windows\Prefetch` directory corresponding
+    to the running program. The name of this file usually includes the name of the
+    running program. Therefore, a record of the creation of the prefetch file in the
+    timeline will not only tell you that something has started but also allow you
+    to determine what exactly was started.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: As you have already noticed, there are various types of timelines. We will talk
+    about those that can be built using memory dumps.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Filesystem-based timelines
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: This timeline is based on filesystem metafiles. For NTFS, this file would be,
+    for example, the **Master File Table** (**$MFT**). This file contains information
+    about all files of the filesystem and their timestamps.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To build a timeline based on $MFT, first, we need to get its data. This can
+    be done with the Volatility `mftparser` plugin, which collects all $MFT entries
+    from memory. Running this plugin will look like this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 5.53 – Volatility mftparser'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_5.53_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 5.53 – Volatility mftparser
+  prefs: []
+  type: TYPE_NORMAL
+- en: Pay attention to the options that are being used; they are needed to save the
+    data in the format we want. The result is a text file that contains unsorted MFT
+    records. To turn them into a timeline, you can use the `mactime` utility that
+    is included in `TheSleuthKit`. To run this utility, you will need to install Perl.
+    To do this, simply download the installer from the official website and follow
+    the instructions ([https://strawberryperl.com/](https://strawberryperl.com/)).
+  prefs: []
+  type: TYPE_NORMAL
+- en: To get the `mactime` utility itself, navigate to the official website of `TheSleuthKit`
+    ([https://www.sleuthkit.org/sleuthkit/download.php](https://www.sleuthkit.org/sleuthkit/download.php))
+    and download Windows Binaries. Unzip the downloaded archive to a directory that
+    is convenient for you.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Now we are ready to turn our MFT records into a timeline. Use the following
+    command:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: With the `-b` option, we are specifying that we are passing the file in body
+    format. We redirect the output of the utility to the `timeline.txt` text file.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'You can use a text editor or MS Excel to view this file:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![ Figure 5.54 – A filesystem-based timeline'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_5.54_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 5.54 – A filesystem-based timeline
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the preceding timeline, we can see the creation of a prefetch file for `Gnh3J8f.EXE`,
+    which indicates that it was executed.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Naturally, timestamps are stored in memory, not only for files but also created
+    processes, network connections, and more. All of this information can be added
+    to the timeline, too. Let's discover how.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Memory-based timelines
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'You can use the Volatility `timeliner` plugin to build a timeline of all the
+    information stored in memory. Since the output of this plugin is quite extensive,
+    we recommend that you immediately redirect it to a text file on disk:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'This time, there will be far more information in our file:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![ Figure 5.55 – A memory-based timeline'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_5.55_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 5.55 – A memory-based timeline
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Sometimes, this amount of information is excessive, especially since it is
+    not very convenient to work with such data in the form of a text file. As an alternative,
+    you can use Redline, which also allows you to build a timeline based on data from
+    memory dumps. However, here, you will have a graphical interface and the ability
+    to easily add and remove certain data sources:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 5.56 – Redline''s timeline'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_5.56_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 5.56 – Redline's timeline
+  prefs: []
+  type: TYPE_NORMAL
+- en: It looks more convenient, doesn't it?
+  prefs: []
+  type: TYPE_NORMAL
+- en: In this simple way, we can build different timelines and add them to our investigation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Summary
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Searching for traces of malicious activity is a complicated but interesting
+    process.
+  prefs: []
+  type: TYPE_NORMAL
+- en: You can use various markers to detect rogue processes. Such markers can include
+    process names, executable file locations, startup arguments, non-standard parent-child
+    combinations, and atypical behavior. Moreover, processes related to malware or
+    attacker tools often perform network activities. The analysis of such activities
+    in memory helps you to not only detect malicious processes and get the IP addresses
+    of C2 servers but also understand the tools used by attackers.
+  prefs: []
+  type: TYPE_NORMAL
+- en: If you managed to detect a process communicating with a remote IP address but
+    did not find any other malicious markers, it's time to search for malware injections
+    inside the memory. The most commonly used types of injections include DLL injections,
+    portable executable injections, process hollowing, and Process Doppelgänging.
+    Traces of such injections can be found in memory dumps.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Once you have identified the malicious processes, it's worth looking for persistence
+    traces, which are often used in attacks to maintain access to compromised hosts.
+    To search for such traces, you can use both special Volatility plugins or registry
+    and event log analyses.
+  prefs: []
+  type: TYPE_NORMAL
+- en: A great addition to your investigation is to build a timeline, which will not
+    only help you to look for timestamps related to this or that change that occurred
+    on your system but also help you put everything into place.
+  prefs: []
+  type: TYPE_NORMAL
+- en: This is how we carry out forensic investigations of memory dumps to look for
+    traces of malicious activity. However, memory dumps are not the only source of
+    volatile data. Windows also has alternative sources, such as `pagefile`, `swapfile`,
+    `hibernation files`, and `crash dumps`. We will discuss these sources and analyze
+    them in the next chapter.
+  prefs: []
+  type: TYPE_NORMAL

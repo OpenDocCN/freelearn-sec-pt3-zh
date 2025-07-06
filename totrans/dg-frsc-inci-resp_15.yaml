@@ -1,0 +1,1092 @@
+- en: '15'
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Ransomware Investigations
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Spend even the shortest amount of time in incident response and you will most
+    likely respond to a ransomware investigation. As we saw in the previous chapter,
+    the threat from such attacks is widespread, impacting organizations of every size.
+    These include government entities, large corporations, healthcare, and critical
+    infrastructure. Given the nature of ransomware attacks, analysts and responders
+    should be familiar with how to investigate the common tactics and techniques of
+    ransomware.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In this chapter, we will look at a few of the more common tactics and associated
+    evidence. Specifically, we will examine the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Ransomware initial access and execution
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Discovering credential access and theft
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Investigating post-exploitation frameworks
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Command and Control
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Investigating lateral movement techniques
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Ransomware initial access and execution
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The first stage of ransomware attacks is initially accessing the target environment
+    and executing the first stage of malware. This provides the initial foothold that
+    threat actors need to carry out the remainder of the attack. Having an awareness
+    of how this initial foothold is achieved allows analysts to extract the IOCs related
+    to this stage of the attack with the intent of determining the scope and potential
+    source of the attack.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Initial access
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: The primary method that ransomware threat actors utilize to get the initial
+    foothold into the target environment is using a **Spear Phishing Attachment attack
+    [T1566.001]**. In many cases, this involves the use of a Microsoft Word or Excel
+    spreadsheet that has a macro that can execute a **Virtual Basic Application**
+    (**VBA**). This macro is often the first stage in a multi-stage attack where the
+    unsuspecting user executes the macro, which then reaches out to the adversary’s
+    infrastructure to pull down additional malware such as RAT or tools associated
+    with a post-exploitation framework such as Cobalt Strike.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In this case, we are going to look at a macro that executes from a Microsoft
+    Word document and calls down an instance of Emotet. A sample of the document can
+    be found at [https://app.any.run/tasks/c9ba8b96-5f45-4cb5-8b3d-8dc16910b930/#](https://app.any.run/tasks/c9ba8b96-5f45-4cb5-8b3d-8dc16910b930/#).
+    As with any potentially malicious code, the following process was executed in
+    a properly configured malware sandbox.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Before we begin this process, it is important to see what the target user or
+    users would see. In this case, if they were to click on the Word attachment in
+    an email, the following would appear:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 15.1 – Microsoft Word document – Enable Content ](img/B18571_15_001.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 15.1 – Microsoft Word document – Enable Content
+  prefs: []
+  type: TYPE_NORMAL
+- en: By clicking the `OleDump.py`. This tool, developed by Didier Stevens, can be
+    used to analyze **Object Linking and Embedding** (**OLE**) or compound documents.
+    The tool is available at [https://blog.didierstevens.com/programs/oledump-py/](https://blog.didierstevens.com/programs/oledump-py/).
+    There is also a handy cheat sheet to go along with the tool at [https://sansorg.egnyte.com/dl/3ydBhha67l](https://sansorg.egnyte.com/dl/3ydBhha67l).
+  prefs: []
+  type: TYPE_NORMAL
+- en: OLE background
+  prefs: []
+  type: TYPE_NORMAL
+- en: OLE is a feature of Microsoft documents for containing additional data types
+    or components. This provides additional features for users but also creates a
+    tool that can be leveraged by threat actors. Microsoft provides an overview of
+    OLE at [https://docs.microsoft.com/en-us/cpp/mfc/ole-background?view=msvc-170](https://docs.microsoft.com/en-us/cpp/mfc/ole-background?view=msvc-170)
+    that is worth a review.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'First, point `Oledump.py` to the suspect file, which can be downloaded with
+    the following command:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'This produces the following output:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 15.2 – Oledump.py output ](img/B18571_15_002.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 15.2 – Oledump.py output
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In the `Oledump.py` output, three lines indicate the presence of a macro. Line
+    16 has a lowercase `m`, indicating that a macro module is defined but there is
+    no code associated with that line. The two remaining lines with the uppercase
+    `M` indicate the presence of macro code. In this case, we can dump that macro
+    code to an output that can be analyzed with a tool such as `Oledump.py` commands.
+    To extract the VBA code from line 17, the following command can be used:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The `-s` argument indicates that Oledump should dump the strings from line
+    17\. The VBA code will be compressed. The `-v` argument decompresses the output.
+    This process should be repeated with the same command for line 18:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'From here, we will analyze the output from line 18 first. Line 9, in *Figure
+    17**.3*, shows what triggers the action of the macro – in this case, it is when
+    the document is opened. Line 10 shows the entry point with the `Tbcepkcgnhpwx`
+    method:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 15.3 – Oledump.py macro identification ](img/B18571_15_003.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 15.3 – Oledump.py macro identification
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Opening the output from macro17, we can see a significant amount of code. Using
+    the entry point that was found in macro18, we can use the `Tbcepkcgnhpwx()` function
+    reveals several instances of those characters on line 79, as shown here:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 15.4 – Macro obfuscation ](img/B18571_15_004.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 15.4 – Macro obfuscation
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'What follows on line 80 of macro17 appears to be obfuscated code. This is typical
+    for malicious scripts as it is a way to bypass detective controls. This obfuscated
+    code presents the next set of characters that can be leveraged. In this case,
+    the series of `//====dsfnnJJJsm388//=` characters appears to be a token used to
+    obfuscate the code. That token can be used to obfuscate some of the script. Take
+    the character set and use the **Find** tool to locate all instances. Then, replace
+    them with nothing; the following will appear on line 80:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 15.5 – Macro code plaintext ](img/B18571_15_005.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 15.5 – Macro code plaintext
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'At this point, we have an unobstructed view of the VBA script and can begin
+    the process of static analysis. The drawback is that we still do not have any
+    specific IOCs to leverage. At this stage, we need to return to the beginning and
+    identify any specific lines in the `OleDump.py` results in *Figure 17**.2*. In
+    this case, line 14 shows a lot more data. Using `Oledump.py` again, we want to
+    dump the contents of that line out with the following command:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'In the preceding command, we do not have to worry about compression but do
+    want to use the `-d` argument so that the entire contents of the line are outputted
+    to macro14\. This file can be opened either with Visual Studio Code or a simple
+    text editor such as Notepad++, as shown in the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 15.6 – Macro file text output ](img/B18571_15_006.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 15.6 – Macro file text output
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In the previous screenshot, we can see the same token, `//====dsfnnJJJsm388//=`,
+    that was previously identified, along with other code. Further down in the output,
+    we can see the same pattern:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 15.7 – Macro obfuscated code ](img/B18571_15_007.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 15.7 – Macro obfuscated code
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'From here, we can repeat a similar process and remove the token characters
+    with the **Find** tool and replace them with nothing. What we are left with is
+    data encoded with Base64, as shown here:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 15.8 – Base64-encoded command ](img/B18571_15_008.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 15.8 – Base64-encoded command
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To extract the IOCs related to the macro, we can copy the Base64 characters
+    and decode them using any tool that will decode Base64\. In this case, we will
+    use the open source tool **CyberChef**. This tool, created by the United Kingdom’s
+    GHCQ, allows analysts to carve up and manipulate data using “recipes” or a series
+    of commands. CyberChef can be accessed via the web at [https://gchq.github.io/CyberChef/](https://gchq.github.io/CyberChef/)
+    or downloaded to a local machine. This is often a good option if you are using
+    an air-gapped sandbox. The tool consists of four major sections, as shown in the
+    following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 15.9 – CyberChef interface ](img/B18571_15_009.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 15.9 – CyberChef interface
+  prefs: []
+  type: TYPE_NORMAL
+- en: The first of these sections is **Operations**. These are the specific commands
+    that can be run. The operations are dragged into the **Recipe** section and run
+    against the input. Clicking the **BAKE!** button runs the recipe. CyberChef also
+    allows the analyst to save a recipe or use community-sourced recipes such as those
+    found on GitHub at [https://github.com/mattnotmax/cyberchef-recipes](https://github.com/mattnotmax/cyberchef-recipes).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In this case, we will use two operations to decode the encoded text and extract
+    the IOCs. In this case, we will use the **From Base64** and **Decode text** operations.
+    Simply click on the specific operation and drag it into the **Recipe** section:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 15.10 – CyberChef – Recipe ](img/B18571_15_010.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 15.10 – CyberChef – Recipe
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Once the recipe has been set, hit **BAKE!**; the following results should appear:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 15.11 – CyberChef decoding ](img/B18571_15_011.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 15.11 – CyberChef decoding
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The output appears to be a combination of commands and URLs:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'From here, we extract several URLs. For example, the URL [http://pmthome.com](http://pmthome.com)
+    has been identified as hosting malware, as indicated by the following screenshot
+    from VirusTotal:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 15.12 – VirusTotal analysis ](img/B18571_15_012.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 15.12 – VirusTotal analysis
+  prefs: []
+  type: TYPE_NORMAL
+- en: A macro-enabled document is usually the first step in a chain of events where
+    the victim user executes the macro which, in turn, executes a script that reaches
+    out to one of the URLs and downloads a secondary payload for execution. This secondary
+    payload is often a repurposed banking Trojan that is used to gain some remote
+    access so that additional tools can be placed on the system.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Execution
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Following up with the previous discussion regarding the initial access, we will
+    now look at how threat actors execute the payloads that are loaded via the scripts
+    we previously examined. There are several ways that malware is executed. A cursory
+    examination of the execution tactic within the MITRE ATT&CK framework demonstrates
+    this. With that, the old saying holds; *“malware can hide but it has to run.”*
+    Considering this sentiment, we will look at leveraging Velociraptor and some of
+    the evidence sources to find the execution of malicious code.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'First, we will look at the execution technique **System Binary Proxy Execution:
+    Rundll32 [T1218.011]**. In this technique, the threat actor uses the legitimate
+    Microsoft Windows binary to execute a malicious action. Threat actors use Rundll32
+    for several reasons. This can be to bypass access controls, abuse legitimate system
+    DLL files for malicious purposes, or move legitimate DLL files as part of an overall
+    attack. In this example, we will examine how a threat actor can use Rundll32 to
+    execute its own malicious DLL file.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: From the previous section, we saw how a threat actor can use a VBA script embedded
+    in a Microsoft Word document that, when executed, reaches out to an external server
+    and downloads a file. In this case, we will start with the same process, where
+    we downloaded an Emotet binary in the form of a DLL file. (The live Emotet binary
+    can be found at [https://bazaar.abuse.ch/browse.php?search=sha256%3Acd13a9a774197bf84bd25a30f4cd51dbc4908138e2e008c
+    81fc1feef881c6da7](https://bazaar.abuse.ch/browse.php?search=sha256%3Acd13a9a774197bf84bd25a30f4cd51dbc4908138e2e008c81fc1feef881c6da7).)
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'One location where malicious DLL files can be found is in the logged-on user’s
+    AppData directory. This is often due to the file being downloaded via the macro.
+    In this case, we will execute the Emotet binary from that location on the victim’s
+    system. Threat actors can conduct this remotely by simply using the following
+    command:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: In the previous command, the `sample.dll` file is executed via Rundll32 with
+    ordinal `#1`. From here, the DLL file executes, and the malware runs.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Going back to the quote “*malware can hide but it has to run*,” there are several
+    locations where evidence of the execution can be found. In this case, we will
+    look at using Velociraptor and the **Windows.Analysis.EvidenceOfExecution** evidence
+    collection. In Velociraptor, click on the plus (**+**) icon:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 15.13 – Velociraptor evidence collection ](img/B18571_15_013.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 15.13 – Velociraptor evidence collection
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Search for `evidence execution` and select **Windows.Analysis.EvidenceOfExecution**:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 15.14 – Velociraptor – Select Artifacts to collect ](img/B18571_15_014.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 15.14 – Velociraptor – Select Artifacts to collect
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'This evidence collection leverages several different sources to show evidence
+    of execution. Review the parameters and then click **Launch**. Once the collection
+    is complete, select **Download Results** and select **Prepare Collection Report**.
+    A report will appear in the **Available** **Downloads** section:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 15.15 – Results ](img/B18571_15_015.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 15.15 – Results
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'From here, click on the report. This will download an HTML file that contains
+    the output of the evidence collection. In the Prefetch view of the report, we
+    can see that Rundll32 was executed on 20220908T15:50:14Z:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 15.16 – RunDll32 Prefetch entry ](img/B18571_15_016.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 15.16 – RunDll32 Prefetch entry
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Scrolling through the additional results, we can see that in addition to what
+    appear to be legitimate DLL files executed out of the `System32` directory, there
+    is an entry that is executed out of the `TEMP` directory:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 15.17 – RunDLL32 Prefetch entry details ](img/B18571_15_017.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 15.17 – RunDLL32 Prefetch entry details
+  prefs: []
+  type: TYPE_NORMAL
+- en: Reviewing the RunDLL32 and associated DLLs executed is an excellent way to find
+    evidence of malware execution. Given the location now, the analyst can then retrieve
+    the file and send it off for malware analysis.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The process of establishing the initial foothold can be a combination of scripted
+    file execution and human interaction. Next, we will look at credential access
+    or theft, where the threat actors attempt to gain access to legitimate credentials
+    necessary to carry out the rest of their attack.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Discovering credential access and theft
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: One key vulnerability that ransomware threat actors will often leverage is the
+    way that the Windows OS manages credentials within memory. Credentials and their
+    associated password hashes are managed by the **Local Security Authority Subsystem
+    Service** (**LSASS**). This process, which runs in memory, contains the credentials
+    of user accounts that have logged into or are currently logged into the system.
+    In addition, Kerberos authentication tickets can be on the system within this
+    process’ address space. Because of its role in managing credentials, LSASS is
+    a high-value target for ransomware threat actors.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The MITRE ATT&CK framework contains a full list of **Credential Access [TA0006]**
+    techniques. In this case, we will look at two common techniques of OS credential
+    dumping where the adversary accesses the LSASS process in running memory **[T1003.001]**,
+    along with the associated tools that are very common in ransomware attacks. In
+    both cases, the tools and techniques described involve commonly available tools
+    and can be executed with easy.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ProcDump
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'The first of the techniques involves the use of the Microsoft Windows Sysinternals
+    tool ProcDump. In this case, the threat actor either utilizes a local copy of
+    this tool or transfers it to the victim system for execution. From here, ProcDump
+    is executed against the LSASS process using the command line, like so:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: From here, the threat actor can transfer the dump file and extract the password
+    hashes for cracking.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Detecting this activity is often difficult if controls such as EDR tools or
+    SIEM are not specifically looking for this activity. From a detective control
+    standpoint, this activity is legitimate and is used by system administrators.
+    Due to the frequency of this type of activity being used by ransomware threat
+    actors, it is sound security practice to remove ProcDump or any utility that can
+    dump the LSASS process or detect and verify any use as being legitimate.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The best location to find evidence of the use of ProcDump is within the application
+    execution, which we discussed in the previous section. Prefetch files that show
+    the execution of ProcDump help us find the time and location of the execution.
+    Another option for organizations that have enhanced Sysmon logging is to look
+    for **Type 1: Process Create** entries, such as the one shown here:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 15.18 – ProcDump Sysmon entry ](img/B18571_15_018.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 15.18 – ProcDump Sysmon entry
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Within the log entry, the following is the key data point to determine if credentials
+    have been accessed:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: In the output, we can see that the threat actor executed ProcDump against the
+    LSASS process and placed the output in the `C:\Windows\Temp` directory for later
+    exfiltration. This is a good use case for the enhanced logging of systems and
+    detecting the use of ProcDump.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Mimikatz
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: In [*Chapter 14*](B18571_14.xhtml#_idTextAnchor239)*,* we examined the tool
+    Mimikatz. Mimikatz is another favorite tool of threat actors due to its ease of
+    use and that it is built into a wide variety of post-exploitation frameworks.
+    When integrated into tools such as Cobalt Strike or PowerSploit, the tool can
+    be in memory without us having to write any files to the disk. This makes looking
+    for trace evidence difficult, but not impossible.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'For example, the exploitation tool PowerSploit, available on GitHub at [https://github.com/PowerShellMafia/PowerSploit](https://github.com/PowerShellMafia/PowerSploit),
+    has a module called `Invoke-Mimikatz`. While the tool bypasses writing a binary
+    to the disk and executing it, there are traces within the PowerShell log, specifically
+    Event 403, that will show the command execution, as shown in the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 15.19 – Mimikatz PowerSploit entry ](img/B18571_15_019.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 15.19 – Mimikatz PowerSploit entry
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Within the log entry is the following key data point of interest:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: This provides the analyst with definitive proof that the credential hashes have
+    been accessed. In the case of seeing the use of Mimikatz or ProcDump, it is best
+    practice to assume that the credentials or Kerberos authentication mechanisms
+    on that system have been compromised. It is therefore advisable that a password
+    reset, as discussed in [*Chapter 16*](B18571_16.xhtml#_idTextAnchor284), be performed.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Understanding credential access and theft is important not only from an investigation
+    standpoint but also in recovering from such an attack. Uncovering the use of these
+    tools and what credentials are potentially compromised provides decision-makers
+    with the data needed to make decisions about resetting or disabling user and administrator
+    passwords.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Investigating post-exploitation frameworks
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The primary post-exploitation framework that analysts will encounter is Cobalt
+    Strike. There are other frameworks such as PowerSploit or Meterpreter that are
+    commonly available and can be used by even the most novice threat actor. One primary
+    mechanism that these exploitation frameworks utilize is encoded PowerShell scripts
+    to establish a reverse connection back to the threat actor’s command and control
+    infrastructure.
+  prefs: []
+  type: TYPE_NORMAL
+- en: There are a few benefits to this approach from an adversary’s perspective. First,
+    the scripts can be loaded in a variety of places to survive a reboot. For example,
+    MITRE ATT&CK technique `HKLM\Software\Microsoft\Windows\CurrentVersion\Run` registry
+    key.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The second benefit is that malicious PowerShell scripts can be executed remotely
+    utilizing Windows OS tools such as Windows Management Instrumentation to remotely
+    execute malicious scripts. Cobalt Strike uses this functionality as one of its
+    features.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Finally, malicious scripts can often be run directly into memory without us
+    having to put a file on the system, which would increase the chances of the script
+    being detected. Executing the script remotely and in memory can bypass some antivirus
+    controls.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In terms of locating evidence of the use of tools such as Cobalt Strike and
+    malicious scripts, the best location is in Windows PowerShell event logs. Look
+    for the execution of remote scripts with Event ID 400 and or the use of PowerShell
+    with Event ID 600\. An additional source is the Windows PowerShell Operational
+    event logs, Event ID 4104\. The following screenshot shows the content of such
+    logs:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 15.20 – Cobalt Strike PowerShell Event Log entry ](img/B18571_15_020.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 15.20 – Cobalt Strike PowerShell Event Log entry
+  prefs: []
+  type: TYPE_NORMAL
+- en: Two key items will often stand out regarding malicious scripts. The first is
+    the Base64 encoding, as seen in the preceding screenshot. In addition, commands
+    such as `Powershell -nop - w hidden -noni -e` and `powershell.exe -EncodedCommand`
+    are often red flags and can serve as keywords to search for when conducting log
+    analysis.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To extract IOCs from these scripts, we can use the CyberChef tool that we previously
+    used when decoding the Base64 data within the macro. In this case, we will decode
+    a common Cobalt Strike script that installs a beacon on a target system:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The first step is to simply copy the Base64 characters out of either the event
+    logs, scheduled task, or registry. A good technique is to copy them to a text
+    editor, just in case you make a small error; this means you can always go back
+    to a clean output:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '![Figure 15.21 – Cobalt Strike Base64-encoded script ](img/B18571_15_021.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 15.21 – Cobalt Strike Base64-encoded script
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Next, we will place the encoded data into the **Input** field in CyberChef
+    and use **From** **Base64** operations:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '![Figure 15.22 – First Base64 decode ](img/B18571_15_022.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 15.22 – First Base64 decode
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'What you will often notice is that embedded in the encoded PowerShell script
+    is another set of Base64-encoded characters. Simply repeat the process by decoding
+    the newly encoded characters:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '![Figure 15.23 – Second Base64 decode ](img/B18571_15_023.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 15.23 – Second Base64 decode
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Again, there is another set of Base64-encoded characters with the following
+    text preceding it:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: 'After the encoded characters, there is this string:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The preceding string indicates that the preceding characters are not only encoded
+    but have been put through an XOR function. In this case, copy the encoded commands
+    and place them in the input. Here, we will use the same **From Base64** operation
+    but this time, we will add another operation that addresses the XOR function,
+    as shown in the following screenshot:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '![Figure 15.24 – Base64 XOR recipe ](img/B18571_15_024.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 15.24 – Base64 XOR recipe
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'This produces the following shellcode output:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '![Figure 15.25 – Shellcode output ](img/B18571_15_025.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 15.25 – Shellcode output
+  prefs: []
+  type: TYPE_NORMAL
+- en: An analysis of the shellcode reveals several key pieces of data. The first and
+    most obvious is the IP address `47.242.164.33`. There are also additional data
+    points, such as the `User-Agent` string. Now that we have this shellcode and the
+    associated IOCs, we can stop here, but it may be important to evaluate the shellcode
+    independently using `scdbg`, an open-source shellcode analysis application available
+    at [http://sandsprite.com/blogs/index.php?uid=7&pid=152](http://sandsprite.com/blogs/index.php?uid=7&pid=152).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'First, use the save icon located in the `.dat`. Next, download `scdbg` and
+    uncompress the file to the desired location. Finally, run the following command
+    against the downloaded shellcode:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE11]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'This will produce the following output:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 15.26 – Shellcode analysis ](img/B18571_15_026.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 15.26 – Shellcode analysis
+  prefs: []
+  type: TYPE_NORMAL
+- en: The output indicates that a connection has been established with the IP address
+    `47.242.164.33` using the destination port `8083`. Taken in conjunction with the
+    user agent string that we observed previously, the Cobalt Strike beacon is attempting
+    to blend in with other internet traffic to obfuscate the C2 traffic.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Locating, extracting, and analyzing a post-exploitation script or beacon is
+    critical as it often reveals the C2 infrastructure the threat actor is using.
+    It is also critical for understanding how the threat actor is maintaining control
+    over the system and provides data for proper eradication and recovery.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Command and Control
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In this case, we will look at traffic associated with the post-exploitation
+    tool Cobalt Strike. This is a commonly used tool by ransomware threat actors.
+    In this case, we will look at examining a full packet capture to uncover previously
+    unidentified IOCs related to the adversary’s infrastructure. For this review,
+    we will look at a packet capture related to an attack using the Squirrelwaffle
+    loader with the Qakbot RAT and finally how to install Cobalt Strike, which is
+    available at [https://www.malware-traffic-analysis.net/2021/09/22/index.html](https://www.malware-traffic-analysis.net/2021/09/22/index.html).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Security Onion
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'One tool that we briefly covered previously is Security Onion. This open source
+    intrusion detection system can aid in identifying potential command and control
+    traffic. In this case, the packet capture was run against the existing rule set
+    and Security Onion indicated several hits. One that is of note is the **ET MALWARE
+    Observed Qbot Style** **SSL Certificate**:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 15.27 – Cobalt Strike Security Onion detection ](img/B18571_15_027.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 15.27 – Cobalt Strike Security Onion detection
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'This hit indicates that the SSL certificate matches those previously observed
+    in conjunction with the Qbot malware. A further examination of the IP addresses
+    associated with the malicious traffic indicated 27 connections with a non-standard
+    HTTP port:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 15.28 – Security Onion alert network connections ](img/B18571_15_028.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 15.28 – Security Onion alert network connections
+  prefs: []
+  type: TYPE_NORMAL
+- en: IDS tools such as Security Onion can focus attention very quickly on key indicators.
+    Even without that, some tools can give us data points to focus on, specifically
+    those regarding C2 traffic.
+  prefs: []
+  type: TYPE_NORMAL
+- en: RITA
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'It is in very rare circumstances that analysts will have a full packet capture
+    of the entire attack chain, but a review of the packet capture can provide us
+    with some insight into how to identify potential command and control traffic simply
+    by looking at the specific elements of network flow data. To start, let’s go ahead
+    and use the tool RITA that was introduced in [*Chapter 9*](B18571_09.xhtml#_idTextAnchor156):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'First, we need to process the packet capture with Zeek:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE12]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: 'Next, import the Zeek output to RITA:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE13]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: 'The screenshot for reference is as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 15.29 – Packet capture Zeek import ](img/B18571_15_029.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 15.29 – Packet capture Zeek import
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Process the PCAP to show beacons and output it to a CSV file for analysis:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE14]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: 'The results of the RITA analysis reveal many of the same IP addresses that
+    we saw in the Security Onion analysis:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 15.30 – RITA beacon IP addresses ](img/B18571_15_030.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 15.30 – RITA beacon IP addresses
+  prefs: []
+  type: TYPE_NORMAL
+- en: This allows the analyst to focus on specific IP addresses within the full packet
+    capture and perform a more detailed analysis using a tool such as Arkime.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Arkime
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Now that we have identified some potential Command and Control IOCs, we can
+    pivot to a tool that will give us some more insight into the traffic. While Wireshark
+    is an option, in this instance, Arkime may be a better choice as it provides that
+    flow-like view that is easier to look at. Let’s run the following query for the
+    IP address `108.62.141.222`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE15]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'This provides some key details that are of interest. First, the destination
+    port for this traffic is `8888`, which is not in and of itself malicious but is
+    not a standard port for HTTPS traffic. Second, there is a consistent byte back
+    and forth with two spikes. The first of these is at the beginning of the traffic;
+    then, there’s another later on. If we dig deeper into one of the packets, we will
+    see that the traffic is encrypted:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 15.31 – Cobalt Strike connections in Arkime ](img/B18571_15_031.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 15.31 – Cobalt Strike connections in Arkime
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'If we drill into one of the data streams, we will see that the data is encrypted.
+    One area that analysts will often have no visibility into is the actual activity
+    of the C2 channel:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 15.32 – TCP stream ](img/B18571_15_032.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 15.32 – TCP stream
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Finally, leveraging threat intelligence, analysts can input the IP address
+    into a source such as AlienVault’s OTX, which reveals that the IP address `108.62.141.222`
+    is associated with infrastructure utilizing Cobalt Strike:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 15.33 – AlienVault OTX threat intelligence ](img/B18571_15_033.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 15.33 – AlienVault OTX threat intelligence
+  prefs: []
+  type: TYPE_NORMAL
+- en: In some instances, the first indication that an organization has been attacked
+    is tools such as IDS and IPS systems that hit on a suspect connection. Other times,
+    command and control traffic remains undetected. Determining how an adversary is
+    maintaining control is critical to ensuring that that control is removed during
+    eradication and recovery.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Investigating lateral movement techniques
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: When investigating lateral movement techniques, the primary technique that is
+    used is the **Exploitation of Remote Services [T1210]**. In this technique, the
+    threat actor utilizes a combination of compromised credentials and existing remote
+    access tools such as SMB and RDP to access other systems on the same network.
+    Vulnerabilities such as EternalBlue were widely exploited by threat actors such
+    as NotPetya, as well as malware variants such as Trickbot.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The primary source of data that should be leveraged to identify lateral movement
+    is NetFlow. As we saw in [*Chapter 9*](B18571_09.xhtml#_idTextAnchor156), a review
+    of NetFlow can often reveal the use of SMB or RDP through multiple connections
+    from one or a few machines to the rest of the network over a short period. For
+    example, a systems administrator that is performing remote maintenance on a server
+    within a server LAN segment will RDP to a single box, perform some of the maintenance
+    tasks over say a 10- to 15-minute period, and then move to another system. It
+    is highly suspect to see a non-administrator system initiate an RDP connection,
+    let alone dozens in a matter of minutes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'If NetFlow is not available, Windows Event Logs can provide some critical details
+    as to how a threat actor was able to access a remote image. The first place to
+    start is the Windows Security Event Log 4624, which indicates that a user or administrator
+    has successfully logged on. In this case, we are interested in two types of logons:
+    the SMB or remote share logon and the remote desktop logon.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In the remote share or SMB logon, the threat actor will often use a post-exploitation
+    framework that can use SMB to pivot to another system. On the remote system that
+    the threat actor is connecting to, an Event ID 4624 Type 3 entry will be made
+    in the Windows Event Log, such as the one that follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 15.34 – SMB logon event log entry ](img/B18571_15_034.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 15.34 – SMB logon event log entry
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'As can be seen in the log entry, the system DEKSTOP-9SK5KPF was logged in with
+    the account Atomic Red Team. Drilling further down into the entry, we can see
+    the IP address `192.168.0.22` associated with the system LAPTOP-CHL1KGT5, indicating
+    that was the machine that initiated the connection:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 15.35 – SMB logon entry details ](img/B18571_15_035.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 15.35 – SMB logon entry details
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The other type of logon that we can see in the Windows Event Logs is RDP connections.
+    The same Event ID, 4624, is used but with RDP connections, there are two types
+    of logon types. The first is a type 10\. This indicates that a new RDP connection
+    was made to a system. A type 7 indicates that the remote machine is reconnecting
+    from a previous session or had not properly logged off the last time a session
+    was established:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 15.36 – RDP logon entry ](img/B18571_15_036.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 15.36 – RDP logon entry
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Again, digging through the entry, the logs provide the same information that
+    we saw in the type 7 event:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 15.37 – RDP logon entry details ](img/B18571_15_037.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 15.37 – RDP logon entry details
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Conducting this type of analysis does not scale with large-scale incidents,
+    so the best approach is to use a SIEM or another platform such as Skadi. In this
+    case, we can still get the same data, as shown here:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE16]'
+  prefs: []
+  type: TYPE_PRE
+- en: With that we have concluded how to investigate lateral movement techniques.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Summary
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The unfortunate reality of the situation is that ransomware is here to stay.
+    The takeaway from that is that responders and analysts need to be able to identify,
+    extract, and analyze evidence related to these types of attacks. In this chapter,
+    we learned how to examine a common initial infection vector, how to determine
+    the theft of credentials, how to detect lateral movement, and how to identify
+    the threat actor’s command and control. This is a solid starting point, and it
+    is imperative to keep up to date with how threat actors operate through the continuous
+    review and incorporation of threat intelligence.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the next chapter, we will look at how to apply the tools and techniques we
+    have examined in previous chapters to the proactive practice of threat hunting.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Questions
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Answer the following questions to test your knowledge of this chapter:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Which of these is not a post-exploitation framework?
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Cobalt Strike
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Metasploit
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: ProcDump
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: PowerSploit
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Windows OS credentials are stored in what process?
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: LSASS
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Services
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Netstat
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: credsman
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: The use of Rundll32 can be observed within the Prefetch files.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 'True'
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 'False'
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: What type of Windows Security Event Log is indicative of a Remote Desktop Connection?
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Event ID 4625 Type 3
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Event ID 4625 Type 10
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Event ID 4624 Type 3
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Event ID 4264 Type 10
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Further reading
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Refer to the following for more details about the topics covered in this chapter:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*Cobalt Strike PowerShell* *Analysis*: [https://michaelkoczwara.medium.com/cobalt-strike-powershell-payload-analysis-eecf74b3c2f7](
+    https://michaelkoczwara.medium.com/cobalt-strike-powershell-payload-analysis-eecf74b3c2f7
+    )'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Deobfuscating* *PowerShell*: [https://medium.com/mii-cybersec/malicious-powershell-deobfuscation-using-cyberchef-dfb9faff29f](https://medium.com/mii-cybersec/malicious-powershell-deobfuscation-using-cyberchef-dfb9faff29f
+    )'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*CyberChef*: [https://docs.securityonion.net/en/2.3/cyberchef.html](https://docs.securityonion.net/en/2.3/cyberchef.html)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Part 5: Threat Intelligence and Hunting'
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: To supplement the first three parts of the book, Part 5 delves into several
+    of the specialized aspects of incident response and digital forensics that have
+    a direct impact on the successful investigation of incidents. These topics include
+    the analysis of malicious code, the integration of threat intelligence, and how
+    to integrate various digital forensic techniques into the practice of threat hunting.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'This part comprises the following chapters:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[*Chapter 16*](B18571_16.xhtml#_idTextAnchor284)*, Malware Analysis for Incident
+    Response*'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[*Chapter 17*](B18571_17.xhtml#_idTextAnchor304)*, Leveraging Threat Intelligence*'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[*Chapter 18*](B18571_18.xhtml#_idTextAnchor323)*, Threat Hunting*'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL

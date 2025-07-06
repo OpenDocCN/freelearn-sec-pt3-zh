@@ -1,0 +1,543 @@
+- en: Chapter 9. Windows Files
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In the previous chapter, we discussed the Windows log files and discussed how
+    important they are for analysis. However, Windows logs aren't the only important
+    artifact in Windows. In this chapter, we will discuss more important Windows files
+    that are usually created in the normal Windows operations but may have evidential
+    importance from our prospective of the case under investigation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Windows prefetch files
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The Windows operating system uses what are called prefetch files to speed up
+    the program starting process. It will store a list of all the files and DLLs used
+    by the program when started in order to preload these files into the memory when
+    the program starts to make it faster to start. Each executable has a prefetch
+    file which contains the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The executable's name
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The path to the executable
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The number of times that the program ran within the system
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The last run time
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: A list of DLLs used by the program
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'The prefetch files are located at `%SystemRoot%\Prefetch`, and each file has
+    a "pf" extension. The naming schema of these files consists of adding the executable
+    name in capital letters, followed by -, and then an eight character hash of the
+    application''s start location, as shown in Figure1 for the `calc.exe` Windows
+    native tool:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Windows prefetch files](img/image_09_001.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Figure 1: A prefetch file example'
+  prefs: []
+  type: TYPE_NORMAL
+- en: If you find two different pf files on the same executable, this means that either
+    there are two executables with the same name, or the same executable ran from
+    two different locations. Also, the user who ran this program won't store this
+    in the prefetch information. However, this can be compensated by correlating the
+    last run time and the pf modification timestamp in the filesystem with the security
+    logging information to see which user ran this executable the last time.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The maximum number of prefetch files is 1,024 starting from Windows 8\. From
+    Windows XP to Windows 7, it was 128 files only. When the maximum number of files
+    is reached, Windows will delete the oldest file in order to create a new one.
+    This means that in case you found the maximum number of prefetch files in the
+    prefetch folder, you can assume that there might be another pf file for any existing
+    executable and it was overwritten before and recreated again, so the first run
+    and last run of the program might not be the right times.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Windows prefetch can be used in speeding up the booting process of the applications''
+    start time or both. This information will be written in the following registry
+    key: `HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Session Manager\Memory
+    Management\PrefetchParameters`.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Under a `EnablerPrefetcher` registry value, you can find one of four data values:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '0: This means that prefetching is disabled.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '1: This means enable applications prefetching only.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '2: This means enable boot prefetching only.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '3: This means enable both boot and applications prefetching:![Windows prefetch
+    files](img/image_09_002.jpg)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Figure 2: Prefetch in Registry'
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: A piece of malware is a program as well. So, if the prefetch was configured
+    to enable prefetching for applications, a prefetch file will be created for that
+    malware in the `prefetch` folder. Finding a malware's prefetch file will add great
+    evidential value as it will indicate all the files and DLLs that were used by
+    the malware, which will give indications about its operations and a start point
+    for the rest of the analysis.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Also, in some attacks, the kill chain requires running different tools on the
+    local system to remotely control it by attackers. Ordering prefetch files by time
+    and filtering the files by the incident time will give us the timely ordered tools
+    which ran within the system and caused the infection. These facts will help us
+    make better assumptions about an attack scenario and will help in the eradication
+    and recovery phases of the incident response cycle.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Another file named `layout.ini` is located in the same `prefetch` folder as
+    well. In this file, there are some paths to the files that are frequently used
+    and loaded by the prefetching process. This file is used by the Windows Defragment
+    process to move all the files that are opened frequently in a contiguous location
+    physically in the system disk in order to load it quickly and reduce the time
+    required to physically access these disk locations sequentially. This process's
+    effect can be noticed in the HDD more than SSD, where the access to any physical
+    location in the HDD requires mechanical motion.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Prefetch file analysis
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: It is worth mentioning that the structure of the prefetch file changes from
+    one Windows version to another. To analyze the prefetch file, the investigator
+    can open it manually with a hex-editor, for example, understand its structure,
+    and start parsing the contents of the file and even create an automated tool to
+    perform this function faster. Fortunately, there is a tool already created, and
+    it supports the prefetch files up to Windows 10\. The WinPrefetchView tool can
+    be downloaded from [http://nirsoft.com/](http://nirsoft.com/).
+  prefs: []
+  type: TYPE_NORMAL
+- en: WinPrefetchView automatically parses the location of the prefetch files in the
+    live system and views it for further analysis. In order to parse prefetch files
+    in a postmortem analysis on our Linux analysis machine, we can run the WinPrefetch
+    program within the Wine environment and copy the `prefetch` folder from the mounted
+    image.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The program interface consists of two small windows, one for the applications
+    that are related to each prefetch file and another one to list all the files that
+    are used by the selected program from the upper window. In Figure 3, we can see
+    the ntosboot file, which refers to the boot process of the system and lists all
+    the files that are opened during this operation. In Figure 3, the program is running
+    from the Linux machine under the Wine environment:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Prefetch file analysis](img/image_09_003.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Figure 3: WinPrefetchView'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Windows tasks
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Some programs need to perform specific events at a specific time in the Windows
+    environment. To do this, Windows allows programs to create what is called a **scheduled
+    task**. Tasks are stored in `C:\Windows\System32\Tasks`. Each task is stored in
+    the XML file format, which contains the user who created the task, the time or
+    the trigger of the task to take place, and the path to the command or the program
+    that will be executed, which is the task itself. Starting from Task Scheduler
+    2.0, which was first introduced with Windows Vista, the trigger can be calendar-based
+    or an event, such as starting the task when a specific event is logged to the
+    event log system. The actions can also be: running the program, sending an e-mail,
+    or viewing a message to the user.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In the live system, the investigator can open the tasks using the usual `Task
+    Scheduler`. From the forensic image, the investigator can extract the tasks from
+    `C:\Windows\System32\Tasks`, where each file is a single task in the XML format.
+    In Figure 4, we can see the task that is used by Google in the Windows operating
+    system to update Google products in the system:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Windows tasks](img/image_09_004.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Figure 4: Google Update Task'
+  prefs: []
+  type: TYPE_NORMAL
+- en: A piece of malware can create a task to start itself after a specific trigger,
+    such as running the malware executable each morning, or after a specific period
+    of time. This is another way used by malware authors to ensure the existence of
+    the malware on the infected machine besides adding its executable to the startup
+    registry keys or as a service in the system.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Windows Thumbs DB
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'When the user uses the **Thumbnails** or **Filmstrip** views from the `Windows`
+    folder viewing options, a small thumbnail version of the pictures will be created
+    and stored in a single file. This file is located in the same directory as the
+    pictures in Windows XP and named `Thumbs.db`. The `Thumbs.db` file has a thumbnail
+    version of the existing and also deleted pictures. `Thumbs.db` is a hidden file,
+    and usually the user ignores it:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Windows Thumbs DB](img/image_09_005.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Figure 5: Files viewing options'
+  prefs: []
+  type: TYPE_NORMAL
+- en: If the user has deleted the pictures but hasn't delete the `Thumbs.db` file,
+    it will be possible to recover the thumbnail version of the pictures deleted from
+    that directory, which provide a good clue about the pictures' contents. Besides
+    the thumbnail version of the picture, `Thumbs.db` contains the file name and the
+    date and time of the last modification.
+  prefs: []
+  type: TYPE_NORMAL
+- en: This `Thumbs.db` file is very important in cases related to pictures, such as
+    child pornography cases.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Starting from Windows 7, the process of handling thumbnails files changed. All
+    the `Thumbs.db` files are allocated in a single folder in `C:\Users\<UserName>\AppData\Local\Microsoft\Windows\Explorer`.
+    This is better from the forensics prospective, as all the files are in the same
+    place and there is no need to search for any `Thumbs.db` files in the whole partition
+    or disk, and it won't be deleted if the user deleted the whole photos' folder.
+    Also, the file name has changed to `Thumbcache.db`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In the modern Windows version, the files'' view has different sizes: small,
+    medium, large, and extra-large. Different thumbcache files need to be allocated
+    for each size of the viewing layout. Each size has a separate Thumbcache database,
+    and the name of the Thumbcache file has a number, which indicates the size of
+    the viewing layout, for example, `thumbcache_32.db` or `thumbcache_256.db`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Windows Thumbs DB](img/image_09_006.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Figure 6: Files viewing options in modern Windows Oses'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Thumbcache analysis
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Thumbcache Viewer is a free tool, and it can be downloaded from [https://thumbcacheviewer.github.io/](https://thumbcacheviewer.github.io/).
+    It extracts thumbnail images from Thumcache files, as shown in the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Thumbcache analysis](img/image_09_007.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Figure 7: Thumbcache Viewer'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note that there is another version to parse `Thumbs.db` files.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The original file path is not stored in the `Thumbcache` file. To map the file
+    to its original location, we can run the program in the target Windows system
+    itself and start mapping from the live system. Or, we can extract and use the
+    Windows search database `Windows.edb` file from the target system, the system
+    under investigation. It is an ESE database located at `C:\ProgramData\Microsoft\Search\Data\Applications\Windows\`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Thumbcache analysis](img/image_09_008.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Figure 8: Mapping Thumbcache files to location'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'This is created by the Windows indexing service that is used to speed the search
+    process in Windows OS. Thumbcache viewer uses this file to map the entries to
+    their original locations in the target system. Thumbcache viewer can run on another
+    Windows system and use only this database file from the target Windows system.
+    However, in this case, the host Windows OS must be the same version or higher
+    of the target Windows system. Not all the entries will be mapped based on the
+    data in the `Windows.edb` file, but the successfully mapped entries will be viewed
+    in green:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Thumbcache analysis](img/image_09_009.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Figure 9: Mapped entries using the Windows.edb file.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Corrupted Windows.edb files
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Extracted `Windows.edb` files will be corrupted in some cases. If the `Windows.edb`
+    file is corrupted, the tool will give you a warning about this and request a recovery
+    first on this file to use it in mapping. Fortunately, the recovery of such a file
+    can be done using the `esentutl.exe` Windows native tool with a /p switch:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Corrupted Windows.edb files](img/image_09_010.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Figure 10: Fixing corrupted Windows.edb file'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Windows RecycleBin
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: When a user deletes file with the normal deletion process, the file actually
+    doesn't leave the HDD. It will be only marked as deleted on the filesystem, and
+    all the file's metadata and contents will continue existing on the hard disk until
+    it is overwritten by another file's metadata and content. This will allow the
+    user to recover such a file if it was deleted by mistake, for example. The deleted
+    files will be located in what is called a **Recycle Bin** in the Windows OS.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Usually, the advanced forensics tools will be able to find and view the deleted
+    files if the system still has their metadata and can read them without carving.
+    However, if the investigator only has the recycle bin file and needs to understand
+    which files were deleted, this can be done by analyzing the `Recycle Bin` folder.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The name of the Recycle Bin differs from one version of Windows to another.
+    In Windows versions 95 and 98, the location is under the system partition in a
+    folder named `RECYCLED`. From Windows XP until before Vista, the location was
+    the same, but the folder name changed to `RECYCLER`. Starting from Windows Vista,
+    the name was changed to `$Recycle.Bin`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The ordinary user on a live system can browse to the Recycle Bin, but they need
+    to display hidden files and protected system files from the Explorer's view menu.
+    From the Recycle Bin, the user can recover the file to its previous location by
+    simply right-clicking on the file. As long the file exists in the Recycle Bin,
+    it is still recoverable.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In postmortem analysis, the files won't be shown as in the live system, and
+    it will need more understanding of its structure, which differs from one Windows
+    version to another.
+  prefs: []
+  type: TYPE_NORMAL
+- en: RECYCLER
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'In the `RECYCLER` folder, there are other subfolders named after the users''
+    IDs. In these folders, the deleted files don''t have their normal names, but rather
+    they have sequential names: DC1, DC2, and so on. There is another binary file
+    named INFO2, which maps the Recycle Bin files to the real filename, date and time,
+    and the recycler name of the file. In the following screenshot, we can see the
+    structure of `RECYCLER` using FTK imager while opening a live Windows XP system:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![RECYCLER](img/image_09_011.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Figure 11: Recycler in Windows XP with FTK Imager'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'As we can see, the files have no names, only sequential DC# names. The INFO2
+    file has all the names and paths of the actual file mapped to their DC names.
+    We can see that by opening the INFO2 file with any hex editor or by the FTK Imager
+    itself:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![RECYCLER](img/image_09_012.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Figure 12: INFO2 file in Hex'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The values can be parsed, as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The file sequence number in the Recycler: `Dc1`
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Deletion date: Wed, 24 December 2014 12:20:03 UTC. The deletion time can be
+    decoded using the Dcode program, as follows:![RECYCLER](img/image_09_013.jpg)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Actual file size in bytes: 929792 =908 KB'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: File location and name:`C:\Documents and Settings\Administrator\Desktop\<FileName>`
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: $Recycle.bin
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'This was used starting from Windows Vista. Instead of the DC naming schema
+    and the INFO2 file from RECYCLER, for each deleted file, there will be an INFO2-like
+    file and another file that holds the content of the file instead of DC files.
+    The content of each deleted file will be found under a file with a name that starts
+    with `$R`, and its INFO2-like file will start with $I with the same name, as shown
+    in the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![$Recycle.bin](img/image_09_014.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Figure 13: Recycle.bin in Windows 8.1'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'If we tried to parse the INFO2-like file and the $I file, we can extract the
+    following information as before but from different offsets:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![$Recycle.bin](img/image_09_015.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Figure 14: $I file opened in Hex'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '$I file header: 0x0000000000000001'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Actual file size in bytes: 14942208 = 14592 KB'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Deletion date: Mon, 16 February 2015 00:20:37 UTC'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: File location and name:`C:\Users\AymanT\Desktop\SYSTEM`
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Windows shortcut files
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The ordinary user of the Windows system can create a shortcut to any file in
+    the system. The shortcut is like a pointer to a specific file from another location
+    in the filesystem. The user creates this file to achieve easy access to some locations
+    or files in the filesystem.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The Windows operating system creates shortcut files for the recently opened
+    files by default in the following locations:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`C:\users\<username>\AppData\Roaming\Microsoft\Windows\Recent`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`C:\users\<username>\AppData\Roaming\Microsoft\Office\Recent`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Windows XP saves the shortcut files at the following location:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`C:\Documents and Settings\<username>\Recent\`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Windows stores these shortcut files if the user has opened data or media files
+    in the system. It stores the timestamps, the name and location of the original
+    file, and the volume name.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The importance of these link files is that they won't be deleted even if the
+    original file was deleted from the system specially in the automatically created
+    shortcut files in the 'Recent' folder in the Windows OS. In this case, you can
+    prove that a specific file, maybe an infected pdf file, has been opened in the
+    system under investigation even if the file has been opened from an external storage
+    that is now removed from the system. Also, in this case, you will find the path
+    to this file in the external storage saved in the link file.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Shortcut analysis
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'The filesystem timestamps of the shortcut file can reveal some information
+    about the file itself. We can consider the creation time of the shortcut file
+    as the first time the file was opened and the modification time is the last time
+    the file was opened. If both timestamps are the same, this indicates that the
+    file was opened only once from the location mentioned in the shortcut file:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Shortcut analysis](img/image_09_016.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Figure 15: Filesystem timestamps for shortcut files'
+  prefs: []
+  type: TYPE_NORMAL
+- en: To show the contents of the shortcut file in postmortem analysis, we can show
+    it in a live system. However, the content may change to match some paths in the
+    running Windows machine, or we can use a tool, such as Exiftool tool from [http://www.sno.phy.queensu.ca/~phil/exiftool/](http://www.sno.phy.queensu.ca/~phil/exiftool/).
+    Exiftool is a platform-independent Perl library that was designed to read and
+    edit Meta information for a wide variety of files, including photos with different
+    formats and the `.lnk` files. All the supported files can be found at [http://www.sno.phy.queensu.ca/~phil/exiftool/#supported](http://www.sno.phy.queensu.ca/~phil/exiftool/#supported).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We can use the command line version of this tool in opening any shortcut file,
+    and it will display different information, including the original file location
+    and the timestamps of the shortcut file:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Shortcut analysis](img/image_09_017.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Figure 16: Exiftool opening a lnk file'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Summary
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: So, in this chapter, we discussed different extra Windows artifacts that are
+    important to digital forensics analysis. We discussed the prefetch files, and
+    how they can be used to track a malicious executable that ran within the system.
+    We also showed the Windows tasks that can be used to preserve a malware existence
+    in the infected Windows system. Then, we showed you how to investigate the photos
+    existing in the system even after deletion using the Thumbcache files. By mentioning
+    deletion, we discussed the Recycle Bin and its structure in different Windows
+    OS versions. In the end, we discussed the shortcut or `.lnk` files and illustrated
+    how to read their data and their forensic importance.
+  prefs: []
+  type: TYPE_NORMAL
+- en: As opening a malicious URL or opening malicious attachments are the most common ways
+    to infect a machine, in the following chapter, we will discuss browser forensics
+    and show you how to track user activities and investigate the visited websites
+    using different tools with different browsers. Also, we will explain how to conduct
+    e-mail forensics and investigate received e-mails and their attachments or embedded
+    links.
+  prefs: []
+  type: TYPE_NORMAL

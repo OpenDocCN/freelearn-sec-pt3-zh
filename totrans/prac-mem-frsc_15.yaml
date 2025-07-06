@@ -1,0 +1,712 @@
+- en: 'Chapter 11: Malware Detection and Analysis with macOS Memory Forensics'
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Previously, attacks on macOS, as well as the development of specific malware
+    for this operating system, were single events and were often limited to trivial
+    adware. In 2020–2021, the main threat to macOS was still the adware **Shlayer**
+    ([https://redcanary.com/threat-detection-report/threats/shlayer/](https://redcanary.com/threat-detection-report/threats/shlayer/)),
+    but we are increasingly seeing targeted attacks with advanced threat actors behind
+    them. A good example is **APT32** or **OceanLotus**, a Vietnamese-linked group,
+    which targeted macOS users with backdoors, delivered via malicious Microsoft Word
+    documents.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The growing popularity of macOS in enterprise environments has triggered the
+    appearance of various macOS post-exploitation tools: **MacShellSwift**, **MacC2**,
+    **PoshC2**, and the **Empire** post-exploitation framework. Moreover, **Malware-as-a-Service**
+    for macOS ([https://www.computerworld.com/article/3626431/scary-malware-as-a-service-mac-attack-discovered.html](https://www.computerworld.com/article/3626431/scary-malware-as-a-service-mac-attack-discovered.html))
+    has already appeared on darknet forums.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Not surprisingly, new devices powered by M1 chips have not escaped the attention
+    of cyber criminals either. Thus, **Red Canary** specialists recently discovered
+    a new malware, Silver Sparrow, targeting Macs equipped with the new M1 processors
+    ([https://www.macworld.co.uk/news/new-malware-m1-mac-3801981/](https://www.macworld.co.uk/news/new-malware-m1-mac-3801981/)).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'All this news tells us one thing: we need to know the tools and understand
+    macOS analysis techniques. That is what this chapter will focus on.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Here are the topics that will be covered:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Learning the peculiarities of macOS analysis with Volatility
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Investigating network connections
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Analyzing processes and process memory
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Recovering the filesystem
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Obtaining user application data
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Searching for malicious activity
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Learning the peculiarities of macOS analysis with Volatility
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In the previous chapter, we talked about the difficulties you may encounter
+    when creating memory dumps and corresponding profiles for Volatility on macOS.
+    However, that is not all. As you remember, Volatility relies on the Kernel Debug
+    Kit to create macOS profiles in order to get all the data you need for parsing.
+    This data is critical to the tool's performance because the data structures and
+    algorithms used change from one kernel version to the next. At the same time,
+    Apple no longer includes all the type information in the KDK, which leads to errors
+    in the execution of many plugins. Another problem is that some Volatility plugins
+    for macOS use Intel-specific data. Thus, plugins that work on memory dumps pulled
+    from hosts on Intel may not work with dumps pulled from hosts on M1\. Further
+    on, we will use plugins that work for both Intel and M1 where it is possible,
+    and where it is impossible, we will try to specify all the nuances. Besides, since
+    the analysis methodology itself and searching for anomalies in macOS memory dumps
+    will not differ significantly from those in Windows and Linux, this time we will
+    focus on discussing tools and methods for obtaining certain information, rather
+    than on the investigation methodology itself.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Technical requirements
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: To analyze macOS memory dumps, we will use both Linux and Windows systems. We
+    will still work with Volatility 2.6.1 running on Ubuntu 21.04 (Hirsute) and programs
+    such as Bulk Extractor will run on Windows. For the examples, we will use memory
+    dumps from macOS Sierra 10.12.6, however, all the described manipulations can
+    be applied to newer macOS versions as well.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Investigating network connections
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Network activity analysis helps us determine which processes are establishing
+    network connections, as well as which IP addresses and ports are being used. Since
+    most malware and post-exploitation tools establish network connections, investigating
+    network activity is one of our top priorities. In the case of macOS, Volatility
+    offers a number of plugins to examine network interfaces, active network connections,
+    and the contents of routing tables.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We can use the `mac_ifconfig` plugin to get information about the configuration
+    of the network interfaces of the host under investigation:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 11.1 – Volatility mac_ifconfig output'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_11.1_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 11.1 – Volatility mac_ifconfig output
+  prefs: []
+  type: TYPE_NORMAL
+- en: As you can see in the figure, this plugin provides information about the names
+    of interfaces, their assigned IP and MAC addresses, as well as the set promiscuous
+    mode.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Important Note
+  prefs: []
+  type: TYPE_NORMAL
+- en: Promiscuous mode is a mode for a network interface controller that forces the
+    controller to pass all the incoming traffic to the CPU, rather than passing only
+    frames that the controller is programmed to receive.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In our case, we see the following interfaces:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`lo0` – Loopback Interface'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`gif0` – Software Network Interface'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`stf0` – 6to4 Tunnel Interface'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`en0` – Ethernet with IPv4 and IPv6 addresses'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`utun0` – VPN and Back to My Mac Interface'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'You can use the `mac_netstat` and `mac_network_conns` plugins to get information
+    about network connections. The first plugin will show us information about both
+    active connections and open sockets:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 11.2 – Volatility mac_netstat output'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_11.2_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 11.2 – Volatility mac_netstat output
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'At the same time, `mac_network_conns` provides information only about network
+    connections:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 11.3 – Volatility mac_network_conns output](img/Figure_11.3_B17056.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 11.3 – Volatility mac_network_conns output
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In addition to network connection analysis, Volatility provides the possibility
+    to study the routing table. The `mac_route` plugin is suitable for this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 11.4 – Volatility mac_route output'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_11.4_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 11.4 – Volatility mac_route output
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the output of this plugin, we can see source and destination IP addresses,
+    the name of the interface, and starting from OS X 10.7, we can also see sent/received
+    statistics and expiration/delta times.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Another way to inspect network activity is to use the Bulk Extractor tool and
+    the well-known net parser:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'As a result, we get the `packets.pcap` file, which contains the network capture
+    from the memory dump. To analyze this file we can, as before, use **Wireshark**:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 11.5 – Network capture analysis'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_11.5_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 11.5 – Network capture analysis
+  prefs: []
+  type: TYPE_NORMAL
+- en: In this way, we can get information about the network activity on macOS. A natural
+    complement to investigating the network is to look at active processes. This is
+    what we will talk about next.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Analyzing processes and process memory
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Processes can be analyzed both to look for anomalies and identify potentially
+    malicious processes, and to observe user activity. As before, Volatility provides
+    a number of plugins for obtaining data about processes and their memory. For example,
+    the `mac_pslist`, `mac_pstree`, and `mac_tasks` plugins can be used to get a list
+    of processes. From a practical point of view, `mac_tasks` is considered the most
+    reliable source of information on active processes. This plugin, unlike `mac_pslist`,
+    enumerates tasks and searches for the process objects instead of relying on a
+    linked list of processes, which can be corrupted during macOS memory acquisition.
+    Nevertheless, during testing on the latest versions of the operating system, the
+    `mac_pstree` plugin turns out to be the most efficient, correctly displaying results
+    for macOS on both Intel and M1 chips.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The plugins are launched in the same way as for Windows and Linux:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 11.6 – Volatility mac_pstree output'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_11.6_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 11.6 – Volatility mac_pstree output
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In addition to the list of processes themselves, we are of course also interested
+    in the arguments used to start these processes. To get this data, we can use the
+    `mac_psaux` plugin:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 11.7 – Volatility mac_psaux output'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_11.7_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 11.7 – Volatility mac_psaux output
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the output of this plugin, you can find not only arguments but also full
+    paths to executable files. However, when working with memory dumps taken from
+    macOS on an M1 chip, this plugin can work incorrectly and cause errors.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In addition to the startup arguments of the processes, we should not forget
+    about the history of the command line. In this case, we can use the `mac_bash`
+    plugin, which retrieves commands executed in the shell, and the `mac_bash_hash`
+    plugin, which displays the command alias hash table. Another way to find such
+    information is to investigate the memory of the processes related to the Terminal
+    application. We can extract executables and process memory for analysis with the
+    `mac_procdump` and `mac_memdump` plugins respectively. However, at the moment,
+    these plugins only correctly extract data for memory dumps obtained from hosts
+    with an Intel chip. Despite this, for both Intel and M1 chips, we still have an
+    opportunity to examine allocated memory blocks in each process, their permissions,
+    and the names of the mapped files. This can be done with the `mac_proc_maps` plugin:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 11.8 – Volatility mac_proc_maps output'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_11.8_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 11.8 – Volatility mac_proc_maps output
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'As you can see in *Figure 11.8*, in the output of this plugin, we can find
+    information about the files used by the process as well as their full path on
+    disk. If necessary, we can also retrieve these memory blocks with the `mac_dump_maps`
+    plugin. If we are interested in a particular block, we can specify its start address
+    with the `-s` option, as shown next:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 11.9 – Volatility mac_dump_maps results'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_11.9_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 11.9 – Volatility mac_dump_maps results
+  prefs: []
+  type: TYPE_NORMAL
+- en: As you can see, the contents of the first Siri process memory block have been
+    successfully extracted and can be analyzed separately by additional tools. This
+    way, we can try to extract executables, libraries, and other files. However, there
+    is one more way of analyzing and extracting process-related files. Let's discuss
+    it.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Recovering the filesystem
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The methods of dealing with the filesystem in macOS memory are also not unique.
+    First of all, we can examine the open file descriptors of a process using the
+    `mac_lsof` plugin. Its launch, as well as the output format, does not differ from
+    the corresponding plugin for Linux:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 11.10 – Volatility mac_lsof output'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_11.10_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 11.10 – Volatility mac_lsof output
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'As you see, here we can also use the `-p` option to identify a specific process
+    and see the files related to it. In addition, we can collect information about
+    all the files stored in the file cache. The `mac_list_files` plugin will help
+    us with this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 11.11 – Volatility mac_list_files output'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_11.11_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 11.11 – Volatility mac_list_files output
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'You can use the `mac_recover_filesystem` plugin to export files. Of course,
+    Volatility also has the `mac_dump_file` plugin, for exporting specific files,
+    but at the moment, this plugin shows poor results with the latest versions of
+    macOS. The process for starting the `mac_recover_filesystem` plugin also remains
+    the same:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The contents of the output folder in our case look like this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 11.12 – Volatility mac_recover_filesystem results'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_11.12_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 11.12 – Volatility mac_recover_filesystem results
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'This way, we can recover the main locations and various files from the cached
+    filesystem. Here, you can also find files related to a user''s bash history:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 11.13 – Recovered bash history files'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_11.13_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 11.13 – Recovered bash history files
+  prefs: []
+  type: TYPE_NORMAL
+- en: The disadvantage of the plugin is that it currently does not work correctly
+    on memory dumps collected from hosts with an M1 chip. If you work with older versions
+    of macOS, you can also use the **PhotoRec** tool, which supports the HFS+ filesystem.
+    This option is available for versions before High Sierra, since the default filesystem
+    for mac computers using macOS 10.13 or later is APFS.
+  prefs: []
+  type: TYPE_NORMAL
+- en: As you can see, exporting files from macOS memory is not an easy task, especially
+    when it comes to the latest versions of the operating system. Nevertheless, there
+    are some positive aspects. One of them is the ability to retrieve data from specific
+    user applications quite easily.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Obtaining user application data
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'By default, macOS users have access to built-in applications from Apple, such
+    as Calendar, Contacts, and Notes. Due to their quality and convenience, these
+    applications have won the love of users, as well as the interest of investigators.
+    Volatility provides a set of ready-to-use plugins allowing you to extract data
+    from the above-mentioned applications. For example, to retrieve events from `Calendar.app`,
+    you can use the `mac_calendar` plugin. To retrieve the contents of Notes messages,
+    you can use `mac_notesapp`, and for contacts from `Contacts.app`, you can use
+    `mac_contacts`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: Once you have this data, you can use regular expressions or YARA rules with
+    the `mac_yarascan` plugin to try to find more information about the contact. For
+    example, the email address associated with the contact.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Since we are talking about user activity, we should not forget the more general
+    plugins that allow us to get data on what programs the user is running or what
+    devices have been connected. In the first case, we use those same plugins to analyze
+    the running processes. At the same time, if there is a need to associate a process
+    with a specific user, we can use the `mac_list_sessions` plugin, which enumerates
+    sessions from the session hash table. The way this plugin works is as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 11.14 – Volatility mac_list_sessions output'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_11.14_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 11.14 – Volatility mac_list_sessions output
+  prefs: []
+  type: TYPE_NORMAL
+- en: In this way, we get information about the process ID, its name, and the name
+    of the associated user.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'With connected devices, we can turn to the familiar `mac_mount` and `mac_dmesg`
+    plugins:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 11.15 – Volatility mac_mount and mac_dmesg plugins'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_11.15_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 11.15 – Volatility mac_mount and mac_dmesg plugins
+  prefs: []
+  type: TYPE_NORMAL
+- en: As you can see in *Figure 11.15*, these plugins are full analogues to the Linux
+    plugins of the same name.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Another interesting plugin for retrieving user data is `mac_keychaindump`. As
+    the name implies, this plugin tries to recover possible keychain keys. Subsequently,
+    if the recovery is successful, you can try to use `Chainbreaker2` ([https://github.com/n0fate/chainbreaker](https://github.com/n0fate/chainbreaker))
+    and get the data on the name, account, password, as well as timestamps for the
+    creation and last modification of the record in the keychain. However, it is important
+    to keep in mind that at the time of writing the book, the last officially supported
+    version of macOS is Catalina.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Of course, we should not forget to analyze processes related to browsers, email
+    agents, and messengers, as they can contain a lot of useful data, including the
+    URLs visited, email addresses, and conversations. To get this data, we can analyze
+    the memory of relevant processes using the `mac_memdump` or `mac_dump_maps` plugins
+    along with keyword, regular expression, or YARA rules searches. On the other hand,
+    we can use the **Bulk** **Extractor** tool and the **email** parser to retrieve
+    URLs and email addresses:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 11.16 – Bulk Extractor email parser'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_11.16_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 11.16 – Bulk Extractor email parser
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In the output folder, we are interested in two files – `email_histogram.txt`
+    and `url_histogram.txt`, which contain all the email addresses and URLs extracted
+    from the memory dump, respectively:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 11.17 – Extracted URLs'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_11.17_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 11.17 – Extracted URLs
+  prefs: []
+  type: TYPE_NORMAL
+- en: This way, we can analyze different user data. Our last topic of discussion will
+    be the searching for and investigation of malicious activity.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Searching for malicious activity
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Searching for malicious activity in macOS basically boils down to the basic
+    elements we dealt with in the previous chapters: looking for suspicious network
+    connections, looking for anomalies in processes, looking for code injection, looking
+    for traces of hooking techniques used, and examining the commands executed in
+    the shell. For example, `-f0L` as one of the command-line arguments, and to unpack
+    a protected archive into a directory under `/tmp` using the `unzip` command. At
+    the same time, running scripts and commands in the shell can be used in more sophisticated
+    attacks when threat actors have direct access to the host.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To look for code injection, we can use the familiar `mac_malfind` plugin. However,
+    please note here that running the plugin on memory dumps taken from hosts on the
+    M1 chip may cause execution errors:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 11.18 – Volatility mac_malfind output'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_11.18_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 11.18 – Volatility mac_malfind output
+  prefs: []
+  type: TYPE_NORMAL
+- en: This method comes in handy for detecting injections made with `ptrace` or the
+    `NSCreateObjectFileImageFromMemory` API. Also, be prepared for a lot of false-positive
+    results, which will need to be double-checked.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Do not forget about the injection of malicious libraries into processes either.
+    In this case, the `mac_proc_maps` and `mac_dyld_maps` plugins can be useful. If
+    the malicious library tries to hide itself, the `mac_ldrmodules` plugin, which
+    compares the output of `mac_proc_maps` with the list of libraries obtained from
+    `libdl`, can be used:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 11.19 – Volatility mac_ldrmodules output'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_11.19_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 11.19 – Volatility mac_ldrmodules output
+  prefs: []
+  type: TYPE_NORMAL
+- en: If necessary, you can also extract libraries of interest using the `mac_librarydump`
+    plugin, which extracts any executable from process memory.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'One of the distinguishing features of malicious activity analysis in macOS
+    is the search for traces of persistence, because in this operating system the
+    techniques used for persistence will be different from those discussed earlier.
+    The most common techniques used by threat actors and malware are the following
+    MITRE ATT&CK sub-techniques:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`T1547.011`: Plist Modification'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`T1547.007`: Re-Opened Applications'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`T1547.015`: Login Items'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`T1543.001`: Launch Agent'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`T1543.004`: Launch Daemon'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`T1546.004`: Unix Shell Configuration Modification'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`T1053.003`: Cron'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The first two sub-techniques can be used for both persistence and privilege
+    escalation. To do so, attackers can modify or add paths to executables, add command-line
+    arguments, and insert key/pair values to property list files (`plist`) in auto-run
+    locations. To find traces of these sub-techniques, you can analyze `plist` files
+    in `~/LaunchAgents` and `~/Library/Application` `Support/com.apple.backgroundtaskmanagementagent/backgrounditems.btm`
+    locations. Also do not forget to check `~/Library/Preferences/com.apple.loginwindow.plist`,
+    `~/Library/Preferences/ByHost/com.apple.loginwindow.*.plist` and an application's
+    `Info.plist` files. You can try to extract these files from the cached filesystem
+    or check on the host itself.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The Login Items, Launch Agent, and Launch Daemon sub-techniques use a similar
+    approach. You should check `~/Library/Application Support/com.apple.backgroundtaskmanagementagent/backgrounditems.btm`,
+    `~/Library /Preferences/com.apple.loginitems.plist`, and the application's `/Contents
+    /Library/Loginltems/` to find their traces. You should also check for new `plist`
+    files in `/System/Library/LaunchAgents`, `/Library/LaunchAgents/`, `/Library /LaunchDaemons/`,
+    and `~/Library/LaunchAgents/`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The Unix Shell Configuration Modification sub-technique is associated with modifying
+    the files used when running the Terminal application. Terminal basically uses
+    `zsh`, which is the default shell for all macOS versions since macOS Catalina.
+    Please note that, for legacy programs, `/etc/bashrc` is executed on startup. As
+    a result, we should check `/etc/profile` and `/etc/profile.d`, along with `~/.bash_profile`,
+    to find traces of this sub-technique. You can also check the `/etc/shells` file
+    where the list of file paths for valid shells is located.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The last sub-technique is similar to the one we saw in [*Chapter 9*](B17056_09_Final_JM_ePub.xhtml#_idTextAnchor141),
+    *Malicious Activity Detection*, so we will not go into it here in detail. However,
+    it is worth mentioning that the `T1547.006`: Kernel Modules and Extensions sub-technique,
+    which involves loading a malicious `kext` using the `kextload` command, was also
+    popular for earlier versions of macOS. However, since macOS Catalina, kernel extensions
+    have been deprecated on macOS systems. Nevertheless, Volatility provides plugins
+    to explore loaded kernel modules and extensions: `mac_lsmod` and `mac_lsmod_kext_map`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 11.20 – Volatility mac_lsmod output'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_11.20_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 11.20 – Volatility mac_lsmod output
+  prefs: []
+  type: TYPE_NORMAL
+- en: You can also use the `mac_moddump` plugin to export the specified kernel extension
+    to disk. This sub-technique has often been used by rootkits to get persistence
+    and escalate privileges.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In general, as with Linux rootkits, macOS rootkits are now extremely hard to
+    come by. However, even for this rare case, we have a number of plugins that allow
+    us to detect the different hooking techniques used by this type of malware:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`mac_apihooks` – Checks for API hooks and allows you to detect inline hooking
+    along with the Hooking Relocation Tables.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`mac_check_sysctl` – Lists all `sysctl` values and handlers. Since sysctl is
+    an interface that allows userland components to communicate with the kernel, it
+    was widely used by different rootkits. `Sysctl` hooks provide an opportunity to
+    hide rootkit data and create backdoors.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`mac_check_trap_table` – Checks whether trap table entries are hooked. Trap
+    table was implemented to satisfy requests to the BSD layer of OS X and macOS.
+    Replacing trap table entries can be used for rootkit implementation, so it is
+    also of interest to threat actors and malware.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`mac_notifiers` – Detects rootkits that add hooks into I/O Kit. I/O Kit is
+    a set of different tools and APIs that provides an opportunity to interact with
+    hardware devices and can be abused by rootkits.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`mac_trustedbsd` – Lists malicious `trustedbsd` policies. The TrustedBSD subsystem
+    allows you to control access to system resources through policies that determine
+    which processes can access which resources. Often these policies are one of the
+    targets of rootkits.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: By searching for anomalies and traces of manipulation of the aforementioned
+    objects, we can thus detect rootkits on macOS.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Summary
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The process of analyzing macOS memory dumps itself is not very different from
+    that of Windows or Linux. However, there are a number of nuances to be considered.
+  prefs: []
+  type: TYPE_NORMAL
+- en: First, Volatility profiles for the latest versions of macOS are hardly available,
+    and at the moment, the only more or less adequate way to get them is to use proprietary
+    memory dumping solutions, where profiles can be created automatically along with
+    the dump.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Secondly, not all of the Volatility plugins that work fine on older versions
+    of macOS show good results on the latest versions of the operating system. In
+    addition, the performance of the plugins may depend on the architecture of the
+    chip used on the target host from which the dump was taken.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Third, the tools that we used for file recovery from Windows and Linux, such
+    as PhotoRec, will not be so helpful for macOS versions starting from macOS High
+    Sierra, as they lack APFS support.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Otherwise, the methods of analysis of memory dumps themselves remain the same.
+    When analyzing user activity, we tend to focus on running applications and the
+    dynamic data they contain, Apple applications such as Calendar or Contacts, data
+    from the Keychain, and mounted devices. To detect malicious activity, we focus
+    on examining network connections, looking for anomalies in processes, detecting
+    injected code and libraries, and detecting persistence techniques used.
+  prefs: []
+  type: TYPE_NORMAL

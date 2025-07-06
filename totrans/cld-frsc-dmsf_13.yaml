@@ -1,0 +1,1176 @@
+- en: '10'
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Cloud Evidence Acquisition
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Until now, we have looked at investigating artifacts locally within the cloud
+    using the tools provided by the **Cloud Service Provider** (**CSP**). We looked
+    at AWS GuardDuty CloudTrail from a logging and investigation point of view. We
+    also looked at GCP’s Cloud Logging capability to investigate cloud logs emitted
+    by various services, and Azure Monitor offers similar capabilities for services
+    hosted within Microsoft Azure.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'This chapter will take a step further in our cloud investigative journey and
+    look at methods and techniques for securely collecting artifacts or forensic images
+    of core services for offline analysis. Investigators will recognize that not all
+    investigations can be performed using native cloud tools. Investigators may be
+    required to use specialized tools that they have access to in a forensic environment,
+    and the challenge will be to collect images from the cloud in a forensically sound
+    and legally acceptable manner. We will explore these tools in the later sections
+    of this chapter. We will be looking at forensic collections from the three significant
+    CSPs:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Forensic acquisition of AWS instances
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Forensic acquisition of Microsoft Azure Instances
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Forensic acquisition of GCP instances
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Note that throughout this chapter, we will rely on some standard steps for collecting
+    forensic images when investigators can access a Windows or a Linux operating system;
+    these steps are standard irrespective of the underlying cloud platform.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Forensic acquisition of AWS instance
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Let us jump right into the details of collecting forensic artifacts in a secure
+    and forensically sound manner. We will assume that an organization received alerts
+    for ransomware deployment on an **Elastic Compute Cloud** (**EC2**) instance.
+    As a result, this instance was stopped. Forensic investigators would need to pull
+    forensic artifacts out of the EC2 instance safely.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Any disks associated with an EC2 instance are referred to as **volumes** by
+    AWS. To collect artifacts, investigators have to follow a specific sequence of
+    steps. Firstly, investigators must record the infected instance’s **instance ID**
+    (unique identifier).
+  prefs: []
+  type: TYPE_NORMAL
+- en: In this case, the infected instance name is `CF2` and it has the instance ID
+    `i-00229ce2dd123a2e6`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Step 1 – creating EC2 volume snapshots
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'We will refer to these EC2 instances by their instance ID for the following
+    steps:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Investigators must note storage volumes associated with `i-00229ce2dd123a2e6
+    (CF2)` and the volume IDs (a unique identifier for each volume):'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '![Figure 10.1 – Volumes (disks) associated with 00229ce2dd123a2e (CF2)](img/00021.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 10.1 – Volumes (disks) associated with 00229ce2dd123a2e (CF2)
+  prefs: []
+  type: TYPE_NORMAL
+- en: We see two volumes attached to `i-00229ce2dd123a2e (CF2)`. AWS will always assign
+    the root drive (`C:\`) to `/dev/sda1`. This is an investigator’s reference point
+    if they only want to collect forensic images of the root drive.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 'We select the root drive, `vol-061392d9abebf9433`, attached to instance `i-00229ce2dd123a2e
+    (CF2)`, which takes us to the **Volumes** page, identified in the following screenshot:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '![Figure 10.2 – Selecting the volume that requires forensic imaging](img/00039.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 10.2 – Selecting the volume that requires forensic imaging
+  prefs: []
+  type: TYPE_NORMAL
+- en: Under the **Actions** tab, select the **Create snapshot** option. Snapshot creates
+    a copy of the original volume without modifying the volume. We demonstrate this
+    in *Figure 10**.3*. Investigators must note that volumes associated with an EC2
+    instance cannot directly be downloaded or exported. It is always recommended to
+    perform forensics on a copy or a snapshot of the original volume instead of the
+    original volume to preserve artifacts.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '![Figure 10.3 – Selecting the AWS volume for the snapshot](img/00056.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 10.3 – Selecting the AWS volume for the snapshot
+  prefs: []
+  type: TYPE_NORMAL
+- en: Depending on the size of the volume, creating a snapshot may take seconds to
+    a few minutes. Investigators must wait until proceeding further, ensuring snapshots
+    are successfully created. In *Figure 10**.4*, we see the successful completion
+    of the snapshot. All the snapshots will be available under the `snap-0857fc1efa85ae0ff`.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '![Figure 10.4 – Snapshot created of AWS Volume (vol-061392d9abebf9433)](img/00074.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 10.4 – Snapshot created of AWS Volume (vol-061392d9abebf9433)
+  prefs: []
+  type: TYPE_NORMAL
+- en: Step 2 – acquiring OS memory images
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Let us now look at methods of acquiring memory images of an EC2 instance forensically.
+    Should there be a need for taking a memory image as part of the investigation,
+    DFIR teams can consider some common steps as long as the infected instance is
+    still running. Investigators have some form of interactive access to the infected
+    instance via the command line (AWS `AmazonSSMFullAccess` policy to allow complete
+    access to the EC2 instance through Amazon SSM.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Taking a memory image is more complicated than a disk image. One of the simplest
+    methods would be switching the EC2 instance into hibernation mode, which forces
+    all the memory contents to be written to the disk in the form of `hyberfil.sys`
+    before a complete disk evidence collection can be performed, allowing investigators
+    to utilize a snapshot of the memory.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Step 2a – acquiring memory images via hibernation
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'One of the options that AWS allows within its EC2 dashboard is hibernation.
+    Select the instance, choose **Instance state**, and select **Hibernation**. However,
+    for AWS to hibernate the EC2 instance (on Windows or Linux), it must meet the
+    following conditions:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: AWS supports the cloud native hibernation feature only on select instance families.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: When launching an EC2 instance, administrators should have enabled the **Hibernation**
+    feature under **Advanced settings** to enable this behavior. This cannot be changed
+    after an EC2 instance is created/launched.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The EC2 instance must have root storage space to accommodate memory contents.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Only specific `gp2` and `gp3`) or Provisioned IOPS SSD (`io1` and `io2`)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: AWS will not support cloud-native hibernation if the preceding conditions are
+    not configured.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Once hibernation is enabled, investigators can capture memory contents by hibernating
+    via the cloud console and collecting disk images for forensics.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Step 2b – common steps for acquiring memory images directly from OS
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: The process for memory acquisition is quite simple, but securely acquiring a
+    forensic image is a manual process. You will note that there are various ways
+    this can be automated; however, it depends on the level of access the investigators
+    have and their roles (external (one-time) investigators or in-house corporate
+    investigators). If it’s in-house and organizations have a bigger footprint in
+    the cloud, they can look into automating forensic collections and uploading to
+    the cloud storage in various ways. In the *Further reading* section, we have included
+    some ideas that leverage other cloud services. However, these steps provide you
+    with a guide to make forensic data acquisition easier.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The following steps will provide a high-level overview of collecting memory
+    images from relevant operating systems. Investigators must ensure that they can
+    connect to the instance, either through an interactive RDP session or through
+    a command line using cloud-native command line capabilities:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Collecting memory images from a Windows OS instance
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+- en: 'Once investigators log into the infected Windows instance, they can begin their
+    collections:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Specifically in AWS, this can be achieved by either directly logging into the
+    affected virtual machine or via Amazon SSM.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Using `powershell.exe` with Windows Administrator privileges, create a folder
+    to place all the memory dumps and artifacts in.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 'We then download the most recent version of `winpmem.exe` (we referred to this
+    tool in [*Chapter 8*](part0028_split_000.html#_idTextAnchor151)) using the following
+    command:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: 'Once it''s been downloaded, we run it within the same PowerShell window. We
+    run the tool and provide a file name as a parameter to save the memory into a
+    file. Note that we are capturing the memory in RAW format:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: 'The following screenshots demonstrate the in-progress memory collection. Depending
+    upon the size of the memory, this may take anything from a few seconds to a few
+    minutes:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '![Figure 10.5 – Memory dump using winpmem.exe](img/00094.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 10.5 – Memory dump using winpmem.exe
+  prefs: []
+  type: TYPE_NORMAL
+- en: Once memory collections are complete, investigators must export the memory dump
+    to a remote server or cloud-native storage area for offline access and processing.
+    Alternatively, depending on an investigator’s preference, you can also turn off
+    the operating system and take a complete disk snapshot, and through forensic disk
+    imaging, the memory images can later be exported as an artifact during the offline
+    processing of the disk images.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Acquiring memory images from a Linux OS
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+- en: Key differences investigators must know about are the different Linux and Windows
+    operating system tools for memory acquisition. In some cases, investigators must
+    first compile the specialized tools from the source to collect forensic images
+    of the memory. This is because these tools make use of low-level libraries that
+    are specific to the Linux kernel versions. For this purpose, we use **LiME**,
+    which allows for full volatile memory acquisition in Linux.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Here are the steps for collecting memory images:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Once relevant access is secured, investigators must ensure they can download
+    and compile tools from the source. They will also need access to the `sudo` command.
+    In this case, we will use the LiME tool for memory capture. We will download them
+    from GitHub using a command compile them. It is best if all the following commands
+    are run with `sudo` privileges (meaning as `root`):'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: 'src folder, as the compiled version is saved in this folder:*   `insmod`: This
+    command inserts a kernel module into a running Linux kernel.*   `lime-$(uname
+    -r).ko`: This command part specifies the kernel module to load. It uses command
+    substitution (`$(uname -r)`) to dynamically insert the current kernel version
+    into the filename, loading a LiME module tailored to the currently running kernel
+    version.*   `path=/home/ubuntu/ir_foreniscs/memory.dump`: This parameter specifies
+    the path to save the memory dump.*   `format=lime`: This parameter specifies the
+    format in which the memory dump should be saved, which is `lime` in this case.'
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: Once the command executes completely and a memory dump is generated, investigators
+    can export the artifacts and analyze them offline using the tool of their choice,
+    including volatility.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Step 3 – creating a forensic collector instance
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Once snapshots are successfully created, investigators must prepare a forensic
+    collector instance. Some DFIR teams may already have their instance pre-created
+    or use a templated virtual machine created for this purpose. Any of the preceding
+    methods is suitable for forensically collecting the artifacts. Investigators must,
+    however, note that when creating a forensic collector instance, the storage size
+    of the collector instance must be appropriately configured. In general, it is
+    recommended to configure a storage space for forensic data that is at least 120%
+    or more of the original volume.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We are creating an `dd` tool and Windows and Linux filesystems. No other live
+    forensic tools are installed on Ubuntu for this demonstration, and it’s purely
+    used for forensic collection. Investigators must, however, consider assigning
+    higher CPU and memory for the instance since it will be doing bulk bit-by-bit
+    copying, which requires more CPU cycles.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Some investigators may create vast storage space and save all their forensic
+    images within the same storage space, treat it like a USB Drive, or create separate
+    storage for specific volumes. Either way, as long as there’s enough space for
+    the forensic image to be saved, that is all that matters. We created a 100 GB
+    storage volume to capture our forensic image in our target forensic collector
+    instance, although we know the original infected system had only 30 GB of disk
+    size. This should be good enough for all the bit-by-bit copying into the target
+    storage.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 10.6 – Creating a new storage for forensic collections](img/00115.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 10.6 – Creating a new storage for forensic collections
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Once the instance is created (`i-00747860d682ac481 (EC2_FORENSIC_CAPTURE)`)
+    and additional storage is set up, we mount the disk, as indicated in the following
+    screenshot. See `/dev/nvme1n1p1`, which is mounted as `/forensic`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 10.7 – Additional storage for forensic collections (initialized and
+    mounted)](img/00138.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 10.7 – Additional storage for forensic collections (initialized and mounted)
+  prefs: []
+  type: TYPE_NORMAL
+- en: Refer to the *Further reading* section for information about initializing and
+    mounting disks in Ubuntu Linux.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs: []
+  type: TYPE_NORMAL
+- en: Once the target EC2 instance is created (forensic collector), investigators
+    must note the **availability zone** of this instance. We will explain the importance
+    of this in *step 4*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In our case, the forensic collector instance is hosted in `ca-central-1d`. This
+    information is only made available once the EC2 instance is created.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Step 4 – creating and attaching infected volume from snapshots
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Specifically for forensic purposes, we will create a volume from the snapshot
+    we created in *step 1* and attach it to the target volume we created in *step
+    2*:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The first step is to initiate the volume creation process from the snapshot.
+    As indicated in the following screenshot, we select the snapshot we created in
+    *step 1* and then use the **Actions** option to **Create volume** **from snapshot**:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '![Figure 10.8 – Create volume from Snapshot (created in step 1)](img/00154.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 10.8 – Create volume from Snapshot (created in step 1)
+  prefs: []
+  type: TYPE_NORMAL
+- en: As indicated in *step 2*, the forensic collector instance is created in the
+    `ca-central-1d` availability zone. Investigators will require this information
+    as volumes are assigned to an availability zone. If appropriate availability zones
+    are not selected, the created volumes will not be available to attach to the target
+    EC2 instance. We follow on-screen instructions on creating the volume; however,
+    ensure that you map the volume to an availability zone that we recorded in *step
+    2* (`ca-central-1d`). Once a volume is created, availability zones cannot be changed,
+    so it is essential to select the correct availability zone.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 'Record the volume ID upon creating the volume from the snapshot. In our case,
+    the volume ID (as reflected in the following screenshot) is `vol-09ba3e6ad9ed12e5b`:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '![Figure 10.9 – Successful volume creation from snapshot](img/00172.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 10.9 – Successful volume creation from snapshot
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Once the volume is successfully created, we attach the new volume to the forensic
+    collector EC2 instance (`i-00747860d682ac481 (EC2_FORENSIC_CAPTURE)`). We filter
+    the new volume based on its unique identifier, select the volume, and under **Actions**,
+    select **Attach volume**. No limitation exists on how many volumes can be attached
+    to an EC2 instance:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '![Figure 10.10 – Attaching a volume to the EC2 instance](img/00190.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 10.10 – Attaching a volume to the EC2 instance
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'As indicated in the next screenshot, we follow on-screen instructions. However,
+    one specific area that requires investigators to pay attention is mapping the
+    volume to the correct instance; therefore, investigators must record the unique
+    instance ID to ensure the volumes are attached correctly. In our case, we attach
+    the volume (`vol-09ba3e6ad9ed12e5b`) to the EC2 instance (`i-00747860d682ac481
+    (EC2_FORENSIC_CAPTURE)`). As you can see, key elements are highlighted in the
+    following screenshot. This is where everything comes together: the `vol-09ba3e6ad9ed12e5b`)
+    we created from the snapshot (`snap-0957fc1efa85ae0ff`) in *step 1*, the `ca-central-1d`),
+    which we recorded in *step 2* upon creating the EC2 instance and also when volume
+    was created, and the `i-00747860d682ac481 (EC2_FORENSIC_CAPTURE)`):'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '![Figure 10.11 – Attaching volumes to EC2 instance for forensics](img/00009.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 10.11 – Attaching volumes to EC2 instance for forensics
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note that AWS will reference attached volumes as mount points; in this case,
+    for AWS, the device name mount point is `/dev/sdf`, which may not be the same
+    when accessing the volume within the Ubuntu Linux operating system.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Now we switch to the Ubuntu Linux, our forensic collector system (`i-00747860d682ac481
+    (EC2_FORENSIC_CAPTURE)`).
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Step 4a – common steps for acquiring instance disk images
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'Irrespective of the cloud service provider, the following steps are common
+    steps that would be followed for collecting operating system forensic data. Before
+    we start the forensic collection, ensure that pre-requisites are completed, which
+    includes taking a snapshot, creating a forensic collector instance, and so on:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Once infected volume snapshots are created within the cloud console, investigators
+    can perform full disk forensic data collections. We will leverage the `dd` command
+    natively available on Linux Ubuntu to do this.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: We will create a forensic collector instance on the same cloud platform to attach
+    snapshots to the forensic collector instance as disk volumes.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 'We validate whether the new volume was correctly attached; see the following
+    screenshot. We do this by running the `lsblk` command along with validating the
+    filesystem information for the identified disk by running `sudo file -``s /dev/nvme2n1p1`:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '![Figure 10.12 – Validating volumes attached to the EC2 instance](img/00028.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 10.12 – Validating volumes attached to the EC2 instance
+  prefs: []
+  type: TYPE_NORMAL
+- en: For entire disk forensic imaging, mounting disks to the instance (within the
+    OS) is unnecessary; `dd` will image the whole volume directly. However, if investigations
+    prefer to pull down specific artifacts (as outlined in [*Chapter 8*](part0028_split_000.html#_idTextAnchor151)),
+    they can manually mount the disk to a mount point and extract relevant artifacts.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 'Before initiating the `dd` command, investigators must also ensure the target
+    storage where the forensic images will be saved is created and mounted with read-write
+    privileges. We run the following command to initiate forensic data collection.
+    Ensure you have access to the `sudo` command, as this will be a low-level forensic
+    collection:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: 'Here are the details of the parameters supplied for the `dd` command:'
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: '`if=/dev/nvme2n1p1`: This is the source disk that you need a copy of.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`of=/forensic/cf2.raw`: We dump the forensic image in raw format at `/forensic`
+    mount point. You can dump the forensic image in any format if the tool supports
+    it. The forensic image is saved as `cf2.raw` (similar to the hostname of the infected
+    EC2 instance) and is stored under the folder `/forensic/`.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`bs=4M`: This sets the block size to 4 MB; you can adjust the value based on
+    the needs.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'The following screenshot reflects the completion of forensic acquisition via
+    the `dd` command:'
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: '![Figure 10.13 – Outputs from the dd command](img/00046.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 10.13 – Outputs from the dd command
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Optionally, once forensic imaging is completed, investigators can validate
+    the accuracy by hashing both the source and destination points. For example, in
+    the following snippet, we validate the hashes by running the `md5sum` command
+    and confirming that the acquisition is accurate:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: Once these steps are completed, investigators must determine their export options.
+    Simply put, investigators can either upload these artifacts to the cloud-hosted
+    storage (AWS S3, Azure Blob Storage, GCP Cloud Storage) or upload them to a remote
+    server controlled by the investigator for offline analysis.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Step 5 – exporting collected images to AWS S3 for offline processing
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Now that we have completed *steps 1–4*, our forensic image can be processed
+    offline or offsite. However, before offline processing, you will have to export
+    it. One of the most common methods investigators use is exporting via an S3 bucket:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Investigators must ensure that an S3 bucket is created and their account is
+    configured with an AWS access key and secret key to access S3 buckets via the
+    command line within EC2\. Default configurations will not allow access to S3 buckets.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 'Once a bucket is created and access to AWS S3 is configured, you are all set
+    to export. You can export by running the following command:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: 'The following parameters are typically supplied with the `aws` `s3` command:'
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: '`cp`: Initiates the copy function, similar to the command available in most
+    Linux variants'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`/forensic/`: The source folder name you would like to export'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`S3://foreniscbucket1/`: The destination S3 bucket where the files must be
+    uploaded; command line parameters require using the `s3://` nomenclature'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`--recursive`: Copy everything within the source folder, including sub-folders,
+    to the destination bucket'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'The following screenshot reflects the copy process:'
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: '![Figure 10.14 – Exporting files to AWS S3 from the command-line interface
+    (CLI)](img/00062.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 10.14 – Exporting files to AWS S3 from the command-line interface (CLI)
+  prefs: []
+  type: TYPE_NORMAL
+- en: If the `aws s3` command is unavailable, run `sudo apt install aws-cli`, followed
+    by the `aws configure` command, and follow on-screen instructions to configure
+    the AWS access key and secret key.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 'Once uploads are completed, you can validate them via the S3 dashboard online.
+    Investigators can download the file directly on the forensic workstations for
+    further analysis. The next screenshot confirms successful uploads to the S3 bucket
+    from the EC2 instance:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '![Figure 10.15 – Uploading forensic images to AWS S3](img/00081.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 10.15 – Uploading forensic images to AWS S3
+  prefs: []
+  type: TYPE_NORMAL
+- en: Most forensic tools can access RAW files; investigators can add this forensic
+    image to their forensic case library and begin their offline processing.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: As we can see here, there are steps within AWS Console that you are required
+    to perform to ensure access to the operating systems and memory to capture images.
+    However, complications are added when you export the artifacts or full disk images
+    of these AWS instances, which requires specific steps to be followed.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Forensic acquisition of Microsoft Azure Instances
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Like AWS, Microsoft Azure offers a similar approach when collecting the full
+    disk image of an **Azure Virtual Machine** (**VM**) instance. You will have to
+    specifically create a snapshot and then look to export the snapshot. Let us look
+    at these specific steps in detail.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Step 1 – creating an Azure VM Snapshot
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'As indicated earlier, each cloud platform will have slight variations in terms
+    of the steps to achieve an entire disk and memory imaging; familiarity with these
+    variations will help investigators greatly to the point where they can automate
+    basic tasks if the number of VMs for forensic acquisition is significant:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The first step is ensuring investigators have information about the infected
+    Azure VM. This includes the VM name and operating system.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 'Investigators can create a full disk snapshot of this infected Azure VM. Investigators
+    may prefer to turn off the VM entirely before taking the snapshot. Snapshots are
+    accessible via the navigation page of the VM. Once on the snapshot page, we will
+    select the **Create snapshot** option, as indicated in the following screenshot:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '![Figure 10.16 – Creating an Azure VM snapshot](img/00100.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 10.16 – Creating an Azure VM snapshot
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Follow the on-screen instructions to create the snapshot of the infected Azure
+    VM. As indicated in the next screenshot, ensure that you select the right resource
+    group in which the infected VM resides and the specific **Instance details** (which
+    we collected earlier):'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '![Figure 10.17 – Creating an Azure VM snapshot (details)](img/00122.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 10.17 – Creating an Azure VM snapshot (details)
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In the same screen, select **Full** (*Figure 10**.18*). Microsoft Azure also
+    offers incremental snapshots that will only take a snapshot of the changes made
+    within the filesystem. Since we intend to capture the disk image fully, we will
+    select **Full** snapshot for a complete copy:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '![Figure 10.18 – Azure VM snapshot options](img/00143.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 10.18 – Azure VM snapshot options
+  prefs: []
+  type: TYPE_NORMAL
+- en: You will subsequently be asked to select the **Source disk** for which the snapshot
+    will be created. As indicated in the following screenshot, ensure you select the
+    correct disk. Typically, investigators will snapshot the root drive of the operating
+    system; however, in some cases, investigators may want to take a snapshot of all
+    the disks attached to the VM. Each disk attached to the infected VM will require
+    a separate snapshot operation in these cases.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '![Figure 10.19 – Azure VM snapshot disk](img/00160.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 10.19 – Azure VM snapshot disk
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Once you have filled in all the required details, you can let Azure create
+    the disk snapshot. Once completed, the snapshots will be available within the
+    Azure subscription hosting the infected VM. You will notice the snapshot details
+    within the snapshot dashboard, as indicated in the following screenshot:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '![Figure 10.20 – Successful completion of Azure VM snapshot](img/00179.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 10.20 – Successful completion of Azure VM snapshot
+  prefs: []
+  type: TYPE_NORMAL
+- en: Next, we look at exporting the newly created snapshot.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Step 2 – exporting an Azure VM snapshot directly
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Once we complete *step 1*, investigators can attach this snapshot by creating
+    a new disk, connecting to a VM to run a `dd` command, or using any of the commonly
+    available tools discussed in [*Chapter 8*](part0028_split_000.html#_idTextAnchor151).
+    However, Microsoft Azure offers an option to download the snapshot directly once
+    it''s been created:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Within the navigation menu, on the **Settings** tab, click on **Export snapshot**;
+    this section offers the ability to export any snapshot directly via the browser:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '![Figure 10.21 – Exporting Azure snapshots directly](img/00198.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 10.21 – Exporting Azure snapshots directly
+  prefs: []
+  type: TYPE_NORMAL
+- en: Depending on the size of the infected volume, investigators may have to select
+    the amount of time required for exporting snapshots, after which the secure URL
+    will expire. They will not be available to resume or download any further. The
+    maximum time that Microsoft Azure allows is 10 hours (36,000 seconds). In our
+    example, we are downloading a 30 GB file, which takes less than one hour; therefore,
+    we left it with the default value of 3,600 seconds. The Azure administrator may
+    also configure specific authentication requirements instead of allowing the secure
+    and unique URL to be publicly available online. Investigators must note URLs,
+    which are displayed only once, before navigating away from the page. Even though
+    they are publicly available, they are not widely available through search engines
+    and require the investigators to know the full URL to access these artifacts.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Microsoft Azure typically generates two URLs, one with the **virtual hard disk**
+    (**VHD**) file export and another with **VM guest state VHD** Export. These two
+    links provide different files; however, investigators should download VHD files
+    for investigative purposes.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Step 3 – connecting to an Azure VM for memory imaging
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Microsoft Azure offers a couple of options to access the VMs; one of the most
+    common is accessing the Azure VM via RDP or SSH. Alternatively, Azure offers a
+    service called **Bastion**, which provides in-browser capabilities to access the
+    Azure VM safely. See the next screenshot, which shows the options that are typically
+    available. The choice on the left offers Bastion, which proxies RDP connection
+    to the Azure VM through a browser session. The option on the right is the traditional
+    approach to connecting with the Azure VM. To collect memory images, we will access
+    the Azure VM via Bastion:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 10.22 – Connection Option to Azure VM](img/00015.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 10.22 – Connection Option to Azure VM
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'After selecting **Go To Bastion**, Azure will automatically create a proxy
+    tunnel service that allows connection to Azure VM. Investigators must supply a
+    username and password to Bastion service to connect to the Azure VM, as indicated
+    in the following screenshot. This service is similar to what Amazon calls its
+    SSM service, which offers command-line access to the virtual machine:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 10.23 – Connecting to Azure VM via the Bastion service](img/00034.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 10.23 – Connecting to Azure VM via the Bastion service
+  prefs: []
+  type: TYPE_NORMAL
+- en: Once connected to the Azure VM, investigators can follow the steps outlined
+    in *step 2b* and *step 4a* for AWS.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Once all the relevant artifacts are collected, investigators can use their choice
+    of export mechanism to export memory images or operating system artifacts using
+    a third-party file-sharing service or through Azure Blob storage.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the next section, we will review GCP’s approach to allowing investigators
+    to acquire and collect snapshots and memory images for offline forensic analysis.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Forensic acquisition of GCP instances
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Like the steps we saw for AWS and Microsoft Azure, forensic acquisition of a
+    GCP compute follows the same steps. We will first take a snapshot of the **compute
+    engine** instance and then attach the snapshot as a separate drive to another
+    forensic collector compute instance so we can do a bit-by-bit copy before exporting
+    the disk image via cloud storage or any other data transfer means.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Step 1 – creating a snapshot of the compute engine instance
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'So, let us look at the pre-requisite steps to acquire a forensic image of a
+    compute instance:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The first step is to create a disk snapshot of the compute engine instance;
+    this can be done by accessing the navigation menu under **Storage** and selecting
+    **Snapshots**. GCP offers two forms of snapshots. The first is regular snapshots,
+    which include a complete disk snapshot of the compute engine instance, while the
+    second is instant snapshots, which are more like an in-place backup of the disk
+    used to create new disk volumes quickly. Instant snapshots are incremental, meaning
+    after the first full snapshots, only the changes to the disk are recorded in instant
+    snapshots. This is used for a more straightforward restoration of files. We will
+    require a complete snapshot to copy everything from the operating system level
+    for forensics.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 'When creating a snapshot, we must select the correct disk associated with the
+    original infected instance, as indicated in the following screenshot. Similar
+    to AWS and Microsoft Azure, each snapshot will associate with each disk, and therefore,
+    when snapshotting a compute engine with multiple attached disks, investigators
+    must note the number of disks attached to the instance and consider snapshotting
+    them if all other disks are required. However, at minimum, the instance’s root
+    drive (`C:\`) must be selected for snapshots:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '![Figure 10.24 – Selecting a disk for a snapshot](img/00051.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 10.24 – Selecting a disk for a snapshot
+  prefs: []
+  type: TYPE_NORMAL
+- en: Step 2 – attaching a snapshot disk for forensic acquisition
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Once a snapshot is completed, investigators can create a new forensic instance
+    within the same GCP tenant and attach this snapshot as a disk source. The following
+    are some of the critical steps that investigators must take note of:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'When creating a new instance, investigators must select the additional disk
+    and choose the recently saved snapshot. As indicated in the following screenshot,
+    investigators must ensure they attach the correct snapshots if multiple disk snapshots
+    are taken:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '![Figure 10.25 – Attaching a disk and restoring from a snapshot in GCP](img/00069.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 10.25 – Attaching a disk and restoring from a snapshot in GCP
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Once a disk is attached, similar to the steps listed earlier for AWS, investigators
+    can validate whether the disk is attached correctly by running the `lsblk -a`
+    command, as illustrated in the following screenshot:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '![Figure 10.26 – Snapshot attached as a disk to the GCP compute instance](img/00088.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 10.26 – Snapshot attached as a disk to the GCP compute instance
+  prefs: []
+  type: TYPE_NORMAL
+- en: Once the disk is successfully attached, we follow the steps outlined in *step
+    4a* for AWS through the `dd` command.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Step 3 – connecting to the GCP compute engine instance for memory acquisition
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Since all the cloud service providers operate in the same way, each cloud service
+    provider offers a remote connection tool such as Cloud Shell or direct connection
+    via IP. This section will utilize GCP Cloud Shell to connect to the infected host
+    machine for memory acquisition:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Upon connecting to GCP’s cloud shell, it will request an interactive logon to
+    pass authentication tokens to the Cloud Shell session. Alternatively, administrators
+    may create appropriate service accounts for investigators to handle the authentication
+    process at the command line level without passing credentials interactively.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 'When creating a service account, investigators must ensure that appropriate
+    privileges are configured to the service account, specifically **Compute Admin**
+    and **Storage Object Admin** privileges. **Compute Admin** privileges will allow
+    investigators to access and modify the instance as required for forensic collections.
+    In contrast, **Storage Object Admin** will allow the service account with privileges
+    to upload artifacts to GCPs’ cloud storage buckets. To create a service account,
+    the following steps must be taken:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Within the GCP’s console, navigate to the **IAM &** **Admin** section.
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Click on **Service accounts** and then click on the **Create service** **account**
+    button.
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Give the service account a name description and select the role(s) that grant
+    it the necessary permissions.
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Click **Create** to create the service account.
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 'For forensic collections, we created a service account, as indicated in the
+    following screenshot, that will be used to interact with compute engine instances:'
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: '![Figure 10.27 – Creating a service account for forensic acquisition](img/00108.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 10.27 – Creating a service account for forensic acquisition
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Next, we generate keys to access the compute engine instance using the service
+    account:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Within the GCP’s console, navigate to the **IAM &** **Admin** section.
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Click on **Service accounts** and then click on the service account name that
+    requires keys to be generated.
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: On the **KEYS** tab, select **ADD KEY** and then **Create** **new key**.
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Select **JSON** as the option for the key file to be created. You will be presented
+    with details once, with the option to download and save it on your computer.
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Investigators can use this service account or their interactive accounts when
+    connecting to a compute engine instance via Cloud Shell. Essentially, a service
+    account offers a containerized set of roles that investigators can use to access
+    the compute instance securely.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Once we have access to the compute instance via Cloud Shell or directly via
+    RDP, we will follow the same steps as in *step 2b* for AWS for memory acquisition.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: To export a memory image, investigators can upload the file to a remote server
+    hosted by the DFIR team or to GCP’s cloud storage bucket. To do this, you can
+    use the service account that was created. We will take an example of exporting
+    the memory image in a Windows device using PowerShell. We will first download
+    the JSON file or copy the contents into a JSON file we generated in *step 3*.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 'Using PowerShell, we will run the following commands; you must ensure `gcloud`:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: '`gcloud` is the command we invoke to connect to the GCP console. The following
+    parameters are utilized to establish a connection to GCP successfully:'
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: '`gcloud auth activate-service-account`: This command is used to activate a
+    service account for authentication.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`forensic-collector@vaulted-timing-390314.iam.gserviceaccount.com`: This is
+    the full email address of the service account (created under Google IAM) that
+    requires activation.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`key-file=./KEY.json`: This parameter specifies the path to the JSON key file
+    associated with the service account. Ensure the JSON file path exists.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`--project=vaulted-timing-390314`: This represents the project name assigned
+    by GCP under which the service account is associated.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Once the service account is authenticated, investigators can upload memory
+    images and other artifacts to the **GCP Cloud Storage** (**GCS**) bucket using
+    the following command:'
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: 'The following are the parameters that are utilized for exporting the memory
+    image to the storage area:'
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: '`cp`: The sub-command of `gsutil` used for copying files and objects to and
+    from GCS buckets'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`<memory.img>`: The filename and full path of the memory image stored on the
+    host instance'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`gs://<bucket_name>`: The destination GCS bucket where the file will be exported'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Once the memory image or any other artifacts are exported through `gsutil`,
+    investigators can then proceed to acquire these artifacts from storage for their
+    offline analysis. They can continue to retain these images in the storage area
+    as long as it’s not publicly accessible and access controls are strictly defined.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Summary
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: To summarize, the basic principles for collecting forensic artifacts, disk images,
+    and memory dumps are similar when investigators have access to the operating system.
+    The process is very similar if they have access to a computer or a device as part
+    of the investigation. What is more important to learn are the steps to gain safe
+    access to an operating system during an incident response situation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Debunking cloud forensic acquisition is key; however, investigators must familiarize
+    themselves with getting access to the full disk without making significant modifications
+    to the instance, such as adding a new empty disk or installing tools only to create
+    a full disk image and jumping through the challenges of exporting. Most cloud
+    services have the option to snapshot your entire disk; this allows for more accessible
+    collections. As for memory dump, unfortunately, there is no better option than
+    jumping on the infected machine and running tools to dump memory. It is important
+    for investigators to minimize their forensic footprint in volatile memory.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The next chapter will go over containerized instances, such as dockers and Kubernetes.
+    In the forensic world, containerized instances offer different challenges, exacerbated
+    when hosted on the cloud, and investigators are required to analyze them. The
+    next chapter will look into demystifying container forensics on the cloud.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Further reading
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Make an Amazon EBS volume available for use on Linux: [https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ebs-using-volumes.xhtml](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ebs-using-volumes.xhtml)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'How To Use LVM To Manage Storage Devices on Ubuntu 18.04: [https://www.digitalocean.com/community/tutorials/how-to-use-lvm-to-manage-storage-devices-on-ubuntu-18-04](https://www.digitalocean.com/community/tutorials/how-to-use-lvm-to-manage-storage-devices-on-ubuntu-18-04)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Creating an IAM role with permissions for Session Manager and Amazon S3 and
+    CloudWatch Logs (console): [https://docs.aws.amazon.com/systems-manager/latest/userguide/getting-started-create-iam-instance-profile.xhtml#create-iam-instance-profile-ssn-logging](https://docs.aws.amazon.com/systems-manager/latest/userguide/getting-started-create-iam-instance-profile.xhtml#create-iam-instance-profile-ssn-logging)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Create a Partition in Linux – A Step-by-Step Guide: [https://www.digitalocean.com/community/tutorials/create-a-partition-in-linux](https://www.digitalocean.com/community/tutorials/create-a-partition-in-linux)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Download a Windows VHD from Azure: [https://learn.microsoft.com/en-us/azure/virtual-machines/windows/download-vhd?tabs=azure-portal](https://learn.microsoft.com/en-us/azure/virtual-machines/windows/download-vhd?tabs=azure-portal)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Google Cloud (GCP) Forensics Best Practices and Tools: [https://medium.com/@cloud_tips/google-cloud-gcp-forensics-best-practices-and-tools-a99ed21e5ae5](mailto:https://medium.com/@cloud_tips/google-cloud-gcp-forensics-best-practices-and-tools-a99ed21e5ae5)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'How to automate forensic disk collection in AWS: [https://aws.amazon.com/blogs/security/how-to-automate-forensic-disk-collection-in-aws/](https://aws.amazon.com/blogs/security/how-to-automate-forensic-disk-collection-in-aws/)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Computer forensics chain of custody in Azure: [https://learn.microsoft.com/en-us/azure/architecture/example-scenario/forensics/](https://learn.microsoft.com/en-us/azure/architecture/example-scenario/forensics/)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL

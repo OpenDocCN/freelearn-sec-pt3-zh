@@ -1,0 +1,943 @@
+- en: Chapter 7. Using Python for Memory Forensics
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Now that you have performed investigations in the infrastructure (refer to
+    [Chapter 4](ch04.html "Chapter 4. Using Python for Network Forensics"), *Using
+    Python for Network Forensics*), common IT equipment (refer to [Chapter 3](ch03.html
+    "Chapter 3. Using Python for Windows and Linux Forensics"), *Using Python for
+    Windows and Linux Forensics*), and even in the virtualized (refer to [Chapter
+    5](ch05.html "Chapter 5. Using Python for Virtualization Forensics"), *Using Python
+    for Virtualization Forensics*) and mobile worlds (refer to [Chapter 6](ch06.html
+    "Chapter 6. Using Python for Mobile Forensics"), *Using Python for Mobile Forensics*),
+    in this chapter, we will show you how to investigate in volatile memory with the
+    help of Volatility, a Python-based forensics framework, on the following platforms:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Android
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Linux
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: After showing you some basic Volatility plugins for Android and Linux and how
+    to get the required RAM dump for analysis, we will go hunting for malware in RAM.
+    Therefore, we will use YARA rules—based on pattern matching—and combine them with
+    the power of Volatility.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Understanding Volatility basics
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'In general, memory forensics follow the same pattern as other forensic investigations:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Selecting the target of the investigation.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Acquiring forensic data.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Forensic analysis.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: In the previous chapters, we already presented various technologies on how to
+    select the target of an investigation, for example, starting from the system with
+    unusual settings in the virtualization layer.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The acquisition of forensic data for memory analysis is highly dependent on
+    the environment and we will discuss it in the *Using Volatility on Linux* and
+    *Using Volatility on Android* sections of this chapter.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: '**Always consider the virtualization layer as data source**'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Acquisition of memory from a running operating system always requires administrative
+    access to this system and it is an intrusive process, that is, the process of
+    data acquisition changes the memory data. Moreover, advanced malware is capable
+    of manipulating the memory management of the operation system to prevent its acquisition.
+    Therefore, always check and try to acquire the memory on the hypervisor layer
+    as described in [Chapter 5](ch05.html "Chapter 5. Using Python for Virtualization
+    Forensics"), *Using Python for Virtualization Forensics*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The, by far, most prominent tool for the analysis of memory data is **Volatility**.
+    Volatility is available at the Volatility Foundation on [http://www.volatilityfoundation.org/](http://www.volatilityfoundation.org/).
+  prefs: []
+  type: TYPE_NORMAL
+- en: The tool is written in Python and can be used free of charge under the terms
+    of the GNU **General Public License** (**GPL**) version 2\. Volatility is able
+    to read memory dumps in various file formats, for example, hibernation files,
+    raw memory dumps, VMware memory snapshot files, and the **Linux Memory Extractor**
+    (**LiME**) format produced by the LiME module, which will be discussed later in
+    this chapter.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The most important terms in the Volatility world are as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**Profile**: A profile helps Volatility in interpreting the memory offsets
+    and structures of memory. The profile is dependent on the operating system, especially
+    the OS kernel, machine, and CPU architecture. Volatility contains a variety of
+    profiles for the most common use cases. In the *Using Volatility on Linux* section
+    of this chapter, we will describe how to create your profiles.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Plugin**: Plugins are used to perform actions on the memory dump. Every Volatility
+    command that you use calls a plugin to perform the corresponding action. For example,
+    to get a list of all the processes that were running during the memory dump of
+    a Linux system, the `linux_pslist` plugin is used.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Volatility provides a comprehensive documentation and we recommend that you
+    get familiar with all the module descriptions to get the most usage out of Volatility.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Using Volatility on Android
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: To analyze volatile memory from Android devices, you will first need LiME. LiME
+    is a **Loadable Kernel Module** (**LKM**) that gives access to the whole RAM of
+    the device and can dump it to a physical SD card or network. After acquiring the
+    volatile memory dump with LiME, we will show you how to install and configure
+    Volatility to parse the RAM dump. In the last section, we will demonstrate how
+    to get specific information out of the RAM dump.
+  prefs: []
+  type: TYPE_NORMAL
+- en: LiME and the recovery image
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: LiME is a Loadable Kernel Module (LKM) that allows for volatile memory acquisition
+    from Linux and Linux-based devices, such as Android. This makes LiME unique, as
+    it is the first tool that allows for full memory captures on Android devices.
+    It also minimizes its interaction between user and kernel space processes during
+    acquisition, which allows it to produce memory captures that are more forensically
+    sound than those of other tools designed for Linux memory acquisition.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In order to use LiME on Android, it has to be cross-compiled for the used kernel
+    on the device in question. In the following sections, we will see how these steps
+    are performed for a Nexus 4 with Android 4.4.4 (however, this approach can be
+    adapted to every Android-based device for which the kernel—or at least the kernel
+    configuration—is available as open source).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'First of all, we have to install some additional packages on our lab system,
+    as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'After installing all the required packages, we now need to configure the access
+    to USB devices. Under GNU/Linux systems, regular users directly can''t access
+    USB devices by default. The system needs to be configured to allow such access.
+    This is done by creating a file named `/etc/udev/rules.d/51-android.rules` (as
+    the root user) and inserting the following lines in it:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Now the most time consuming part is coming—checking the source code of the
+    Android version that is used. Depending on the speed of the hard drive and Internet
+    connection, this step can take several hours so plan it in advance. Furthermore,
+    keep it in mind that the source code is pretty big so use a second partition with
+    at least 40 GB of free space. We install the source code for Android 4.4.4 as
+    follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: After we have installed the source code for Android 4.4.4, we now need the sources
+    for the kernel running on the device in question. For the Nexus 4 that we are
+    using here, the right kernel is the **mako** kernel. A list of all available kernels
+    for Google phones can be found at [http://source.android.com/source/building-kernels.html](http://source.android.com/source/building-kernels.html).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Now that we have all the sources needed to cross-compile LiME, it is time to
+    get LiME itself:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'After cloning the `git` repository to our lab machine, now we have to set some
+    environmental variables that are needed during the build process:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Next, we need to get the current kernel configuration from the device in question
+    and copy it to the correct location in the LiME source. On our Nexus 4, this is
+    possible by entering the following command:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Before we can build the LiME kernel module, we need to write our customized
+    Makefile:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: With the help of this Makefile, we can build the kernel module that is needed
+    to get the volatile memory from an Android device. Entering `make` can start this
+    process.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the following example, we will demonstrate how to push our newly generated
+    kernel module to the device in question and dump the whole volatile memory to
+    our lab environment through TCP.
+  prefs: []
+  type: TYPE_NORMAL
+- en: If you have a device on which the kernel doesn't allow loading modules on the
+    fly, you should consider creating your own recovery image (for example, a custom
+    version of **TWRP** or **CWM**), include the LiME kernel module and flash it to
+    the device in question. If you are fast enough during the flashing operation,
+    there is nearly no data lost (for more information, refer to [https://www1.informatik.uni-erlangen.de/frost](https://www1.informatik.uni-erlangen.de/frost)).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The LiME module offers three different image formats that can be used to save
+    a captured memory image on the disk: raw, padded, and lime. The third format—lime—
+    is discussed in detail as it is our format of choice. The lime format has been
+    especially developed to be used in conjunction with Volatility. It is supposed
+    to allow easy analysis with Volatility and a special address space has been added
+    to deal with this format. Every memory dump that is based on the lime format has
+    a fixed size header, containing specific address space information for each memory
+    range. This eliminates the need to have additional paddings just to fill up unmapped
+    or memory mapped I/O regions. The LiME header specification is listed in the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'To get such a dump from the Android device in question, connect to the Android
+    device through `adb` and enter the following commands:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'On the lab machine, enter the following command to accept the data sent through
+    TCP port 4444 from the Android device to the local lab machine:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: If the preceding commands are executed successfully, you will now have a RAM
+    dump that can be further analyzed with the help of Volatility or other tools (refer
+    to the next section).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Volatility for Android
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'After acquiring a dump file that represents the physical memory of the target
+    system with the tools that we created in the previous section, we intend to extract
+    data artifacts from it. Without an in-depth analysis of Android''s memory structures,
+    we would only be able to extract known file formats such as JPEG, or just the
+    JPEG headers with the EXIF data (with tools such as **PhotoRec**) or simple ASCII
+    strings, which are stored in a contiguous fashion (with common Linux tools such
+    as **strings**) that could be used to brute force passwords on the devices in
+    question. This approach is very limited as it can be used for any disk or memory
+    dump but does not focus on OS and application-specific structures. As we intend
+    to extract whole data objects from the Android system, we will make use of the
+    popular forensic investigation framework for volatile memory: **Volatility**.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: In this section, we will use a version of Volatility with ARM support (you need
+    version 2.3 at least). Given a memory image, Volatility can extract running processes,
+    open network sockets, memory maps for each process, and kernel modules.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Before a memory image can be analyzed, a Volatility profile must be created
+    that is passed to the Volatility framework as a command line parameter. Such Volatility
+    profile is a set of **vtype** definitions and optional symbol addresses that Volatility
+    uses to locate sensitive information and parse it.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Basically, a profile is a compressed archive that contains two files, as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The `System.map` file contains symbol names and addresses of static data structures
+    in the Linux kernel. In case of Android, this file is found in the kernel source
+    tree after the kernel compilation.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The `module.dwarf` file emerges on compiling a module against the target kernel
+    and extracting the DWARF debugging information from it.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'In order to create a `module.dwarf` file, a utility called `dwarfdump` is required.
+    The Volatility source tree contains the `tools/linux` directory. If you run `make`
+    in this directory, the command compiles the module and produces the desired DWARF
+    file. Creating the actual profile is done by simply running the following command:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE11]'
+  prefs: []
+  type: TYPE_PRE
+- en: The resulting ZIP file needs to be copied to `volatility/plugins/overlays/linux`.
+    After successfully copying the file, the profile shows up in the profiles section
+    of the Volatility help output.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Although the support of Android in Volatility is quite new, there is a large
+    amount of Linux plugins that are working perfectly on Android too. For example:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`linux_pslist`: It enumerates all running processes of a system similar to
+    the Linux ps command'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`linux_ifconfig`: This plugin simulates the Linux `ifconfig` command'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`linux_route_cache`: It reads and prints the route cache that stores the recently
+    used routing entries in a hash table'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`linux_proc_maps`: This plugin acquires memory mappings of each individual
+    process'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'If you are interested in how to write custom Volatility plugins and parse unknown
+    structures in **Dalvik Virtual Machine** (**DVM**), please take a look at the
+    following paper written by me and my colleagues: *Post-Mortem Memory Analysis
+    of Cold-Booted Android Devices* (refer to [https://www1.informatik.uni-erlangen.de/filepool/publications/android.ram.analysis.pdf](https://www1.informatik.uni-erlangen.de/filepool/publications/android.ram.analysis.pdf)).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the next section, we will exemplarily show how to reconstruct the specific
+    application data with the help of LiME and Volatility.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Reconstructing data for Android
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Now, we will see how to reconstruct application data with the help of Volatility
+    and custom made plugins. Therefore, we have chosen the call history and keyboard
+    cache. If you are investigating on a common Linux or Windows system, there is
+    already a large amount of plugins that are available, as you will see in the last
+    section of this chapter. Unfortunately, on Android, you have to write your own
+    plugins.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Call history
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'One of our goals is to recover the list of recent incoming and outgoing phone
+    calls from an Android memory dump. This list is loaded when the phone app is opened.
+    The responsible process for the phone app and call history is `com.android.contacts`.
+    This process loads the `PhoneClassDetails.java` class file that models the data
+    of all telephone calls in a history structure. One instance of this class is in
+    memory per history entry. The data fields for each instance are typical meta information
+    of a call, as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Type (incoming, outgoing, or missed)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Duration
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Date and time
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Telephone number
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Contact name
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Assigned photo of the contact
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'To automatically extract and display this metadata, we provide a Volatility
+    plugin called `dalvik_app_calllog`, which is shown as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE12]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'This plugin accepts the following command line parameters:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`-o`: For an offset to the gDvm object'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`-p`: For a process ID (PID)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`-c`: For an offset to the PhoneClassDetails class'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: If some of these parameters are known and passed on to the plugin, the runtime
+    of the plugin reduces significantly. Otherwise, the plugin has to search for these
+    values in RAM itself.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Keyboard cache
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'Now, we want to have a look at the cache of the default keyboard application.
+    Assuming that no further inputs were given after unlocking the screen and the
+    smartphone is protected by a PIN, this PIN is equal to the last user input, which
+    can be found in an Android memory dump as a UTF-16 Unicode string. The Unicode
+    string of the last user input is created by the `RichInputConnection` class in
+    the `com.android.inputmethod.latin` process and is stored in a variable called
+    `mCommittedTextBeforeComposingText`. This variable is like a keyboard buffer,
+    that is, it stores the last typed and confirmed key strokes of the on-screen keyboard.
+    To recover the last user input, we provide a Volatility plugin called `dalvik_app_lastInput`,
+    as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE13]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Actually, this plugin not only recovers PINs but also arbitrary user inputs
+    that were given last; this might be an interesting artifact of digital evidence
+    in many cases. Similar to the preceding plugin, it accepts the same three command
+    line parameters: `gDvm offset`, `PID`, and `class file offset`. If none, or only
+    some, of these parameters are given, the plugin can also automatically determine
+    the missing values.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Using Volatility on Linux
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In the following section, we will describe memory acquisition techniques and
+    sample use cases to use Volatility for Linux memory forensics.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Memory acquisition
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: If the system is not virtualized and therefore, there is no way of getting the
+    memory directly from the hypervisor layer; then even for Linux, our tool of choice
+    is LiME.
+  prefs: []
+  type: TYPE_NORMAL
+- en: However, unlike in Android, the tool installation and operation is a lot easier
+    because we generate and run LiME directly on Linux system; however, many steps
+    are quite similar as you will notice in the following paragraphs.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'First, determine the exact kernel version, which is running on the system,
+    that is to be analyzed. If there is no sufficient documentation available, then
+    you may run the following command to get the kernel version:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE14]'
+  prefs: []
+  type: TYPE_PRE
+- en: Tip
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: '**Use the configuration management in enterprise environments**'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Enterprise environments often run configuration management systems that show
+    you the kernel version and Linux distribution of your target system. Asking your
+    customer to provide you with this data or even a system with an identical kernel
+    version and software environment can help you in reducing the risk of incompatibilities
+    between the LiME module and your forensic target.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In your lab environment, prepare the LiME kernel module for memory acquisition.
+    To compile the module, make sure you have the correct kernel source code version
+    available for your target and then issue the following build command in the `src`
+    directory of LiME:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE15]'
+  prefs: []
+  type: TYPE_PRE
+- en: This should create the `lime.ko` module in the current directory.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'On the target system, this kernel module can be used to dump the memory to
+    disk, as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE16]'
+  prefs: []
+  type: TYPE_PRE
+- en: Note
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: We recommend choosing a path on the network to write the image to. This way,
+    the changes made to the local system are minimal. Transferring the image over
+    network is also an option. Just follow the description in the *Using Volatility
+    on Android* section.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Volatility for Linux
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Volatility comes with a wide range of *profiles*. These profiles are used by
+    Volatility to interpret the memory dump. Unfortunately, the wide variety of Linux
+    kernels, system architectures, and kernel configurations make it impossible to
+    ship the profiles to all versions of Linux kernels.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: '**Listing all the profiles of Volatility**'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The list of all available profiles can be retrieved with the `vol.py --info`
+    command.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Consequently, it may be necessary to create your own profile as an ideal match
+    to the forensic target. The Volatility framework supports this step by providing
+    a dummy module that must be compiled against the kernel headers of the target
+    system. This module is available in the Volatility distribution in the `tools/linux`
+    subdirectory. Compile it— similar to LiME— but with debug settings enabled:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE17]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'This creates `module.ko`. There is no need to load this module; all we need
+    is its debug information. We use the `dwarfdump` tool, which is available as an
+    installation package in most Linux distributions, to extract this debug information:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE18]'
+  prefs: []
+  type: TYPE_PRE
+- en: The next step in the creation of our profile is to acquire the `System.map`
+    file of the target system or a system with identical architecture, kernel version,
+    and kernel configuration. The `System.map` file may be found in the `/boot` directory.
+    Often, the kernel version is included in the filename, therefore be sure to select
+    the `System.map` file for the running kernel of the forensic target system.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Put `module.dwarf` and `System.map` into a zip archive, which will become our
+    Volatility profile, as shown in the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE19]'
+  prefs: []
+  type: TYPE_PRE
+- en: As shown in the example, the name of the ZIP file should reflect the distribution
+    and kernel version.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Make sure that you do not add additional path information to the zip archive.
+    Otherwise, Volatility may fail to load the profile data.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Copy the new profile to the Linux profile directory of Volatility, as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE20]'
+  prefs: []
+  type: TYPE_PRE
+- en: Instead of using the system-wide profile directory, you may also choose a new
+    one and add the `--plugins=/path/to/profiles` option to your Volatility command
+    line.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Finally, you need to get the name of your new profile for further use. Therefore,
+    use the following call:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE21]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The output should contain one additional line showing the new profile, as shown
+    in the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE22]'
+  prefs: []
+  type: TYPE_PRE
+- en: To use this profile, add `--profile=LinuxUbuntu3_2_0-88x64` as the command line
+    argument for all subsequent calls to `vol.py`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Reconstructing data for Linux
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: All plugins that analyze Linux memory dumps have the `linux_` prefix. Therefore,
+    you should use the Linux version of the plugins. Otherwise, you may get an error
+    message notifying that the module is not supported in the selected profile.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Analyzing processes and modules
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: A typical first step in the analysis of a memory dump is to list all running
+    processes and loaded kernel modules.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The following is how to carve out all running processes from a memory dump
+    with Volatility:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE23]'
+  prefs: []
+  type: TYPE_PRE
+- en: As shown in the output, the `linux_pslist` plugin iterates the kernel structure
+    by describing active processes, that is, it starts from the `init_task` symbol
+    and iterates the `task_struct->tasks` linked list. The plugin gets a list of all
+    running processes, including their offset address in the memory, process name,
+    process ID (PID), numerical ID of the user and group of the process (UID, and
+    GID), and start time. The **Directory Table Base** (**DTB**) can be used in the
+    further analysis to translate physical into virtual addresses. Empty DTB entries
+    relate, most likely, to a kernel thread. For example, `kthreadd` in our example
+    output.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Analyzing networking information
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: The memory dump contains various information about the network activity of our
+    forensic target system. The following examples show how to utilize Volatility
+    to derive the information about the recent network activity.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The **Address Resolution Protocol** (**ARP**) **cache** of the Linux kernel
+    maps MAC addresses to IP addresses. Before a network communication on the *local
+    network* is established, the Linux kernel sends an ARP request to get the information
+    about the corresponding MAC address for a given destination IP address. The response
+    is cached in memory for re-use to further communicate with this IP address on
+    the local network. Consequently, ARP cache entries indicate the systems on the
+    local network that the forensic target was communicating with.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To read the ARP cache from a Linux memory dump, use the following command:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE24]'
+  prefs: []
+  type: TYPE_PRE
+- en: This extract from the output shows that the system had a cache entry for the
+    `192.168.167.20` destination address with `b8:27:eb:01:c2:8f` being the corresponding
+    MAC address. The first entry is most likely a cache entry that results from an
+    unsuccessful communication attempt, that is, the `192.168.167.22` communication
+    partner did not send a response to an ARP request that was transmitted from the
+    system and therefore, the corresponding ARP cache entry remained at its initial
+    value of `00:00:00:00:00:00`. Either the communication partner was not reachable
+    or it is simply nonexistent.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: If large parts of your local subnet show up in the ARP cache with multiple entries
+    having a MAC address of 00:00:00:00:00:00, then this is an indicator of the scanning
+    activity, that is, the system has tried to detect other systems on the local network.
+  prefs: []
+  type: TYPE_NORMAL
+- en: For further network analysis, it might be worth checking the list of MAC addresses
+    that are retrieved from the ARP cache against the systems that are supposed to
+    be on the local subnet. While this technique is not bulletproof (as MAC addresses
+    can be forged), it might help in discovering rogue network devices.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: '**Looking up the hardware vendor for a MAC address**'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The prefix of a MAC address reveals the hardware vendor of the corresponding
+    network hardware. Sites such as [http://www.macvendorlookup.com](http://www.macvendorlookup.com)
+    provide an indication of the hardware vendor of a network card.
+  prefs: []
+  type: TYPE_NORMAL
+- en: If we look up the hardware vendor for the `b8:27:eb:01:c2:8f` MAC address from
+    our example, it shows that this device was manufactured by the Raspberry Pi Foundation.
+    In a standard office or data center environment, these embedded devices are rarely
+    used and it is definitely worth checking whether this device is benign.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To get an overview of the network activity at the time the memory dump was
+    created, Volatility provides the means to emulate the `linux_netstat` command,
+    as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE25]'
+  prefs: []
+  type: TYPE_PRE
+- en: These three lines are only a small excerpt from the typical output of this command.
+    The first line shows that the `thunderbird` process with the `3746` PID has an
+    active `ESTABLISHED` network connection to the IMAP server (TCP port `143`) with
+    the `109.234.207.112` IP address. The second line merely shows a socket of UNIX
+    type that is used for **Inter-Process Communication** (**IPC**). The last entry
+    shows that `skype` with the `3833` PID is a waiting `LISTEN` for incoming connections
+    on TCP port `7802`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Volatility can also be used to narrow down the list of processes to those with
+    raw network access. Typically, this kind of access is only required for **Dynamic
+    Host Configuration Protocol** (**DHCP**) clients, network diagnostics, and, of
+    course, malware in order to construct arbitrary packets on the network interface,
+    for example, conduct a so-called ARP cache poisoning attack. The following shows
+    how to list the processes with raw network sockets:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE26]'
+  prefs: []
+  type: TYPE_PRE
+- en: Here, only the DHCP client is detected to have the raw network access.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: '**Rootkit detection modules**'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Volatility provides a variety of mechanisms in order to detect typical rootkit
+    behavior, for example, interrupt hooking, manipulations of the network stack,
+    and hidden kernel modules. We recommend getting familiar with these modules as
+    they can speed up your analysis. Furthermore, check for module updates on a regular
+    basis to leverage new malware detection mechanisms being built in to Volatility.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Some generic methods and heuristics for malware detection are combined in the
+    `linux_malfind` module. This module looks for suspicious process memory mappings
+    and produces a list of possibly malicious processes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Malware hunting with the help of YARA
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: '**YARA** itself is a tool that is able to match a given pattern in arbitrary
+    files and datasets. The corresponding rules—also known as signatures—are a great
+    way to search for known malicious files in dumps of hard drives or memory.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In this section, we want to demonstrate how to search for given malware in
+    an acquired memory dump of a Linux machine. Therefore, you can use two different
+    procedures that we will discuss in the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Searching the memory dump directly with the help of YARA
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Using `linux_yarascan` and Volatility
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The first option has one big disadvantage; as we already know, memory dumps
+    contain fragmented data that is normally contiguous. This fact makes it prone
+    to failure if you are searching this dump for known signatures as they are not
+    necessarily in the order you are searching them.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The second option—using `linux_yarascan`—is more fail-safe as it uses Volatility
+    and knows the structure of the acquired memory dump. With the help of this knowledge,
+    it is able to resolve the fragmentation and search reliable for known signatures.
+    Although, we are using `linux_yarascan` on Linux, this module is also available
+    for Windows (`yarascan`) and Mac OS X (`mac_yarascan`).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The main capabilities of this module are as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Scan given processes in the memory dump for a given YARA signature
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Scan the complete range of kernel memory
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Extract the memory areas to disk that contain positive results to the given
+    YARA rules
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The full list of possible command line options can be seen on entering `vol.py
+    linux_yarascan –h`
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Basically, you can search in many different ways. The simplest way of using
+    this module is by searching for a given URL in the memory dump. This can be done
+    by entering the following command:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE27]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'A more complex but also a more realistic way is to search for a given YARA
+    rule. The following YARA rule was made to identify whether a system has been infected
+    with the `Derusbi` malware family:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE28]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'If we save this rule as `apt_derusbi_gen.rule`, we can search for it in the
+    acquired memory dump by entering the following command:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE29]'
+  prefs: []
+  type: TYPE_PRE
+- en: The result will only show us a short preview that can be enlarged by using the
+    `--size` option.
+  prefs: []
+  type: TYPE_NORMAL
+- en: If you are investigating a predefined scenario (for example, if you already
+    know that the system has been attacked by a known group), you can copy all your
+    rules in one single rule file and search the memory dump for all the rules in
+    the file at once. Volatility and `linux_yarascan` will display every hit and its
+    corresponding rule number. This makes it much faster to scan for known malicious
+    behavior in a memory dump.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'There is a vast number of sources for YARA signatures that are available in
+    the wild and we will only mention some of the most important ones here to help
+    you, starting with the malware hunt as shown in the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The YARA signature exchange group on Google Groups: [http://www.deependresearch.org/](http://www.deependresearch.org/)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Signatures from AlienVault Labs: [https://github.com/AlienVault-Labs/AlienVaultLabs/tree/master/malware_analysis](https://github.com/AlienVault-Labs/AlienVaultLabs/tree/master/malware_analysis)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Antivirus signatures that can be built with the help of ClamAV and recipe 3-3
+    out of the Malware Analyst''s Cookbook: [https://code.google.com/p/malwarecookbook/source/browse/trunk/3/3/clamav_to_yara.py](https://code.google.com/p/malwarecookbook/source/browse/trunk/3/3/clamav_to_yara.py)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Summary
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In this chapter, we provided an overview of memory forensics using the Volatility
+    framework. In the examples, we demonstrated memory acquisition techniques for
+    Android and Linux systems and saw how to use LiME on both systems. We used Volatility
+    to get information about running processes, loaded modules, possibly malicious
+    activity, and recent network activity. The latter is useful to trace the activities
+    of an attacker through the network.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the last example in this chapter, we demonstrated how to search for a given
+    malware signature or other highly flexible pattern-based rules in such a memory
+    dump. These YARA signatures or rules help in identifying suspicious activities
+    or files really fast.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Furthermore, we demonstrated how to get the keyboard cache as well as call history
+    from an Android device.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Where to go from here
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'If you like to test the tools and knowledge gained from this book, we have
+    the following two tips for you:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Create a lab with two virtual machines—**Metasploit** and **Metasploitable**.
+    Try to hack into your **Metasploitable** system and perform a forensic analysis
+    afterwards. Are you able to reconstruct the attack and gather all the Indicators
+    of Compromise?
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Get some old hard drives, which are no longer used but have been used regularly
+    in the past. Perform a forensic analysis on these drives and try to reconstruct
+    as much data as possible. Are you able to reconstruct former operations on these
+    drives?
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'If you like to enhance your knowledge on some of the topics that were covered
+    in this book, the following books are a really good choice:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*Practical Mobile Forensics* by *Satish Bommisetty*, *Rohit Tamma*, *Heather
+    Mahalik*, *Packt Publishing*'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*The Art of Memory Forensics: Detecting Malware and Threats in Windows, Linux,
+    and Mac Memory* by *Michael Hale Ligh*, *Andrew Case*, *Jamie Levy* and *AAron
+    Walters*, *Wiley India*'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Handbook of Digital Forensics and Investigation* by *Eoghan Casey*, *Academic
+    Press*'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL

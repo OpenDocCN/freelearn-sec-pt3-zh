@@ -1,0 +1,2060 @@
+- en: '4'
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: DFIR Investigations – Logs in AWS
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Through *Chapters 1* to *3*, you may have recognized the importance of the cloud
+    in today’s technological landscape, and with any technological innovation comes
+    threats against it. As organizations use more cloud products and host and store
+    personal or sensitive information, it is prone to unauthorized disclosure, accidentally
+    or by threat actors exploiting a vulnerability in the configuration of the systems.
+    This chapter will focus on how to handle incidents that have occurred within **Amazon
+    Web Services** (**AWS**). We will discuss various log sources that are available
+    for investigators and how investigators can make use of these log sources.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Before we can begin our investigation, we will need to understand which logs
+    are available by default versus which log sources must be explicitly turned on;
+    something organizations should consider for ensuring breaches can be investigated
+    thoroughly. We will focus on configuring these logs and look at utilizing some
+    of the native features of AWS for investigation. Specifically, we will discuss
+    the following AWS data sources:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**Virtual Private Cloud** (**VPC**) flow logs'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Simple Storage Service** (**S3**) access logs'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: AWS CloudTrail
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: AWS CloudWatch
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Amazon GuardDuty
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Amazon Detective
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: VPC flow logs
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: We briefly introduced VPC in [*Chapter 3*](part0021_split_000.html#_idTextAnchor042).
+    VPC is the core of the network configuration for every instance within AWS. Each
+    AWS instance (**Elastic Compute Cloud** (**EC2**)) is assigned a VPC and uniquely
+    identified using a VPC ID. VPC allows users complete control of the network environment,
+    including defining specific IP addresses (non-public routable IPs), subnets, and
+    security groups. Users can also configure a **virtual private network** (**VPN**)
+    through their VPC connection. In default configurations, AWS will automatically
+    create a VPC for every new instance of EC2\. Users can also connect their EC2
+    instance to an existing preconfigured VPC instead.
+  prefs: []
+  type: TYPE_NORMAL
+- en: All VPCs have a **VPC identifier** (**VPC ID**). The VPC ID is the single reference
+    point for all network-related configuration items. For each instance, if you want
+    to configure any network properties within AWS, you must look into each VPC specifically.
+    In the next example, for a specific EC2 instance, certain details are captured
+    for VPC.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs: []
+  type: TYPE_NORMAL
+- en: Before we dive into details, it is essential to note that VPC flow logs are
+    similar to network flow logs. These logs only capture header information of the
+    network traffic; for example, source IP, destination IP, protocols, port, and
+    if the connection was accepted or rejected (depending upon the inbound and outbound
+    connection rules).
+  prefs: []
+  type: TYPE_NORMAL
+- en: VPC basics
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'In the following screenshot, you will notice a few configurational information
+    under the **Networking** tab, which is specifically helpful for **digital forensics
+    and incident response** (**DFIR**) teams:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 4.1 – Default VPC setup](img/00059.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4.1 – Default VPC setup
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'This includes the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**Public IPv4 address**: The publicly routable IP address scheme for this EC2
+    instance.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**VPC ID**: A unique identifier that connects all network configuration items
+    to this VPC setup.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Private IP DNS name (IPv4 only)**: Non-publicly routable IP assigned to the
+    EC2 instance on a network interface. AWS typically uses this to provide backend
+    communications or EC2 instance-to-EC2 instance communications.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Subnet ID**: The IP subnet that the VPC hosts.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Availability zone**: The AWS region where the VPC is configured initially.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: DFIR teams can use this core information set to filter events and perform their
+    analysis. In the *AWS CloudWatch* section of the chapter, we will look into how
+    to tie this all together for investigation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'As illustrated in the preceding screenshot, each VPC is provided with one or
+    more subnet(s) responsible for assigning IPs and managing the network segment.
+    You may assign multiple subnets under the same VPC to various EC2 instances:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 4.2 – A default subnet configuration and network interface](img/00077.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4.2 – A default subnet configuration and network interface
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Similar to a VPC configuration, the preceding screenshot illustrates some of
+    the default properties of a subnet assigned to a VPC. These include the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**Subnet ID**: A unique identifier to identify the subnet assigned to the VPC.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`4089`.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Network border group**: An assigned internet edge location. A network border
+    group is a collection of AWS edge locations and **points of presence** (**PoPs**)
+    that are geographically distributed and designed to provide a secure and reliable
+    connection between a VPC and the public internet.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Route table**: A unique identifier that points to a specific routing information
+    schema assigned to this subnet.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Subnet ARN**: A subnet **Amazon Resource Name** (**ARN**) is a unique identifier
+    that can reference the subnet in various AWS services and APIs, such as AWS CloudFormation
+    templates, AWS **Identity and Access Management** (**IAM**) policies, and AWS
+    Lambda functions.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**VPC**: The VPC that this subnet is assigned to. Note that this subnet is
+    assigned to the VPC referenced in *Figure 4**.1*.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Owner**: Unique identifier of the account under which the instance, VPC and
+    subnet are assigned. For privacy purposes, this is masked.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`/20` indicates that the first 20 bits of the IP address are used for the network
+    address, and the remaining 12 bits for the host address.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`ca-central`); however, if required, you may place the subnet in another availability
+    zone to provide **fault tolerance** (**FT**) and resilience.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Network ACL**: Another unique identifier to precisely identify the **access
+    control lists** (**ACLs**) configured for this subnet. ACLs will enforce what
+    is allowed versus restricted for network resources. This can also include inbound
+    and outbound network filters.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`eni-035e09cd5e22e5515`: The network interface ID.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: While the preceding screenshot specifies essential configurational elements,
+    each property can be adjusted per organizational requirements. However, DFIR teams
+    need to note that the aforementioned aspects will play a role in your investigation
+    and the nature of the threat you are observing as part of the investigation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'For DFIR teams, the following tabs offer additional detailed insights into
+    the network configuration:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**Flow logs** indicates how the network is logged. This VPC/subnet is logged
+    in CloudWatch, which allows DFIR teams to query the network logs. We will investigate
+    and query logs in a later part of the chapter:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '![Figure 4.3 – VPC flow logs](img/00097.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4.3 – VPC flow logs
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note that VPC flow logs are not enabled by default and require explicit setup.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The next screenshot offers a deeper insight into **route tables** configured
+    to connect to the internet. Note the **Target** internet gateway identifier (unique
+    identifier) this subnet connects to. The route table defines how routing will
+    perform for all instances related to this subnet. In organizations where a custom
+    VPC is set up, this route table may look different or point to another network
+    resource within AWS. It may not expose the instance directly to the internet.
+    DFIR teams need to make a note of the gateway and the route table that the resources
+    are assigned to for the investigation:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '![Figure 4.4 – Routing table](img/00118.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4.4 – Routing table
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The following screenshot shows details of inbound and outbound `*` in the **Rule
+    number** column, which means this rule will be evaluated last once any rule numbers
+    are assessed. Based on inbound and outbound ACLs, this resource is available online.
+    It can access any part of the internet, presently the least secure setup and a
+    default setup offered by AWS:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '![Figure 4.5 – NACLs configured for subnet](img/00141.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4.5 – NACLs configured for subnet
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Now that we have reviewed various configuration items under the VPC, here is
+    the summary dashboard that AWS offers for each of the VPCs, which outlines the
+    VPC configuration properties and assignments along with additional information:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 4.6 – VPC summary dashboard](img/00157.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4.6 – VPC summary dashboard
+  prefs: []
+  type: TYPE_NORMAL
+- en: The VPC summary dashboard page will also provide additional information regarding
+    the subnets associated with this VPC and the flow logs configured. VPC flow logs
+    are not enabled by default and require specific AWS resource access configured
+    within AWS’s IAM module. We will be looking into how to set up flow logs to enable
+    DFIR teams to investigate network activity on AWS and query them.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The following screenshot outlines AWS’s diagrammatic representation or resource
+    map of how the network is configured from an internal AWS perspective connecting
+    to the internet. The resource map displays the connections among the resources
+    in a VPC, outlining the traffic path from subnets to **network address translation**
+    (**NAT**) gateways, internet gateways, and gateway endpoints. Using the resource
+    map, DFIR teams can comprehend the VPC’s design, determine the number of subnets,
+    identify which subnets correspond with route tables, and discern which route tables
+    contain routes to NAT gateways, internet gateways, and gateway endpoints:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 4.7 – Resource map for vpc-0183a969 VPC](img/00175.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4.7 – Resource map for vpc-0183a969 VPC
+  prefs: []
+  type: TYPE_NORMAL
+- en: Moreover, the resource map can assist you in identifying unsuitable or inaccurate
+    setups, such as private subnets separated from NAT gateways or private subnets
+    with direct routes to the internet gateway. You can select specific resources
+    from the **Resource map** screen, such as route tables, and modify their settings.
+    This functionality is presently under development.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Sample VPC flow log
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Here is a sample VPC flow log and the properties captured by the flow log. It
+    is essential to understand the elements captured within each flow log.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Flow logs are recorded between time intervals where it aggregates network traffic
+    into a log:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Let us look into the details of each element of the flow log:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`2`: This field indicates the version of the VPC flow log’s format.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`65179142xxxx`: This is the ID of the AWS account that owns the network interface.
+    This is currently masked for privacy reasons.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`eni-035e09cd5e22e5515`: This is the ID of the network interface (**elastic
+    network interface** (**ENI)**). Notice this log matches the *Figure 4**.2* configuration,
+    which reflects the network connection of an EC2 resource.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`45.79.132.41`: This is the source IP address of the traffic.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`172.31.5.217`: This is the destination IP address of the traffic.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`41340`: This is the source port number.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`636`: This is the destination port number.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`6`: This is the protocol number. In this case, it is TCP (`6`). Port `6` is
+    currently unassigned.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`1`: This is the number of packets transferred during the flow.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`44`: This is the number of bytes transferred during the flow. Note the bytes
+    transferred during this flow session.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`1682678411`: This is the start time of the flow in epoch time (seconds since
+    January 1, 1970).'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`1682678469`: This is the end time of the flow in epoch time.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`REJECT`: Action taken on traffic by a security group or NACL. Actions include
+    `ACCEPT`/`REJECT`/`NO DATA`/`SKIPDATA`. `NO DATA` and `SKIPDATA` are edge cases
+    where `NO DATA` is recorded to indicate the flow log event is empty. In contrast,
+    `SKIPDATA` is recorded when flow capture cannot capture the log during network
+    aggregation intervals due to capacity limitations. `SKIPDATA` log entry means
+    multiple network logs could not be captured due to internal configurational errors.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`OK`: This is the status of the action.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: DFIR use cases for VPC flow logging
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'There are several reasons why DFIR teams should utilize VPC flow logs in their
+    incident investigation when investigating an AWS resource. Here are some use cases
+    where VPC flow logs can play a crucial role for DFIR teams:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**Threat detection and monitoring**: VPC flow logs can be used to detect suspicious
+    or malicious network traffic. DFIR teams can identify traffic patterns that indicate
+    known threats or potential intrusions by analyzing the flow logs. For example,
+    they can use flow logs to detect port scanning, brute-force attacks, command-and-control
+    traffic, and data exfiltration by reviewing flow logs’ activity spikes.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**IR**: DFIR teams can use VPC flow logs to reconstruct an event’s timeline
+    and identify an attack’s source in a security incident. By analyzing the flow
+    logs, they can determine the systems and applications that were affected, the
+    duration of the attack, and the IP addresses and ports used by the attacker.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Forensic analysis**: VPC flow logs can also be used in digital forensic investigations
+    to identify the source of an attack and trace the path of data access through
+    the network. DFIR teams can use the flow logs to determine the source IP address,
+    the destination IP address, and the protocols used during the network connection.
+    This information can help them identify the source of a data breach or other security
+    incident.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Compliance monitoring**: VPC flow logs can be utilized to monitor compliance
+    with security policies and regulations. DFIR teams or the **Security Operations
+    Center** (**SOC**) can use the flow logs to detect unauthorized access to sensitive
+    data and security violations. This information can be used to generate reports
+    for compliance auditors or to support legal investigations.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Anomaly detection**: Finally, VPC flow logs can be used to detect abnormal
+    network traffic. DFIR teams can use **machine learning** (**ML**) techniques to
+    identify patterns of traffic that deviate from the expected behavior of the network.
+    This can help them detect potential security incidents or system failures before
+    they become more serious.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: S3 access logs
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Amazon S3 is a very popular cloud storage service that is highly scalable and
+    dependable for data storage and retrieval. S3 provides **high availability** (**HA**),
+    storage performance, and accessibility of any amount of data from around the world.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In AWS, S3 operates on *buckets*, which contain *objects*. Objects are any files,
+    documents, images, and videos. Each object is identified using a unique identifier
+    known as the key that serves within a bucket. A bucket can be visualized as a
+    folder that contains all the objects.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Logging options
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Access logs record information about the requests made to an Amazon S3 bucket,
+    including details such as request information, specific resource requests, and
+    the time and date of the request. Amazon S3 uses a specific internal account to
+    write server access logs, which requires AWS account owners to configure explicit
+    permission within their IAM modules to allow S3 to log server access requests.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note that S3 access logs are not enabled by default and require explicit setup.
+  prefs: []
+  type: TYPE_NORMAL
+- en: DFIR use cases for S3 monitoring
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Since S3 storage is used for moving and hosting data, most DFIR use cases revolve
+    around data analysis and movement. Some specific DFIR use cases include:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**Data leakage**: Data leakage or data exposure can occur due to misconfiguration
+    of an S3 bucket. Through access logs, you can help identify unauthorized access
+    to data stored in S3 buckets. By monitoring bucket access logs and performing
+    anomaly detection, you can identify suspicious activities such as large data transfers,
+    unexpected access patterns, or unauthorized attempts to access specific objects.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Malware and ransomware detection**: S3 buckets can be targeted by attackers
+    to store and distribute malware or ransomware. DFIR teams can monitor S3 for file
+    integrity changes, unexpected file types, or suspicious behavior that can help
+    identify such malicious files. Integration with **threat intelligence** (**TI**)
+    can enhance detection capabilities.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**IR and forensic investigation**: S3 monitoring can provide insights during
+    IR and forensic investigations. Through access logs, DFIR teams can help reconstruct
+    events, identify the source of an incident, and understand the scope of the compromise.
+    Monitoring access logs, object metadata, and versioning can aid in analyzing activities
+    leading to a security incident.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Data exfiltration detection**: Attackers may attempt to exfiltrate sensitive
+    data by copying or downloading it from S3 buckets. Monitoring S3 access logs and
+    performing content analysis can help identify large or unexpected data transfers
+    that may indicate data exfiltration attempts. This can also be done through integrations
+    with CloudTrail and CloudWatch and the development of a log pattern insight that
+    allows DFIR teams to determine deviations in file access and identify exfiltration
+    activities.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: AWS CloudTrail
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: AWS CloudTrail records activities performed on the management console of AWS
+    accessing any AWS resource—for example, an EC2 instance created or terminated,
+    changes to the VPC settings, and so on. Any activity on the management console
+    of AWS is recorded as an event within CloudTrail.
+  prefs: []
+  type: TYPE_NORMAL
+- en: CloudTrail consolidates detailed action log events in a centralized location
+    and provides a comprehensive and unified view of account’s activity, making it
+    easier to search, analyze, download, and respond to account activity across your
+    AWS infrastructure. It also identifies what actions were performed by which user
+    and any other details that help DFIR teams analyze and respond to an incident
+    in AWS.
+  prefs: []
+  type: TYPE_NORMAL
+- en: CloudTrail logs can be integrated into CloudWatch to query activities and perform
+    further analysis. We will discuss CloudWatch in the next section.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The following screenshot demonstrates an example of a CloudWatch dashboard:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 4.8 – CloudWatch dashboard](img/00192.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4.8 – CloudWatch dashboard
+  prefs: []
+  type: TYPE_NORMAL
+- en: At the time of writing, we see that events are recorded under the `mgmt-event`
+    trail. It aggregates all management activities performed under each AWS account.
+    Events are recorded in CloudTrail **JavaScript Object Notation** (**JSON**) log
+    format.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'There are three types of events that CloudTrail can record: management events,
+    data events, and CloudTrail data insight events. Let’s take a closer look at these:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**Management events**: As the name suggests, these record AWS account management-level
+    activities, including operations performed on the AWS account. AWS refers to these
+    as **control-plane operations**. Examples are **application programming interface**
+    (**API**) operations, **AWS IAM**, creating new EC2 instances, editing VPC configurations,
+    configuring routing operations, creating subnets, and creating new trails under
+    CloudTrail.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Data events**: Records information regarding operations performed on the
+    resource. AWS refers to these as **data-plane operations**. Usually, data events
+    are voluminous, and you will have to configure them to ensure that AWS resources
+    can provide them.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Note
+  prefs: []
+  type: TYPE_NORMAL
+- en: Data event logging is not enabled by default and requires administrators to
+    allow it explicitly.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Here is a list of AWS resources that provide these data events:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| **Data Event** | **Resources** | **Specific Events** |'
+  prefs: []
+  type: TYPE_TB
+- en: '| --- | --- | --- |'
+  prefs: []
+  type: TYPE_TB
+- en: '| DynamoDB | `AWS::DynamoDB::Table` | API-level activities, including `PutItem`,
+    `DeleteItem`, and `UpdateItem` |'
+  prefs: []
+  type: TYPE_TB
+- en: '| DynamoDB Streams | `AWS::DynamoDB::Stream` | Dynamo API calls on streams
+    |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Lambda | `AWS::Lambda::Function` | Lambda function execution activities,
+    including `Invoke` API calls |'
+  prefs: []
+  type: TYPE_TB
+- en: '| S3 | `AWS::S3:Object` | S3 object-level activity, including `GetObject`,
+    `DeleteObject`, and `PutObject` API calls on S3 buckets |'
+  prefs: []
+  type: TYPE_TB
+- en: '| S3 Access Points | `AWS::S3::AccessPoint` | Amazon S3 API activity on **access**
+    **points** (**APs**) |'
+  prefs: []
+  type: TYPE_TB
+- en: '| S3 Object Lambda | `AWS::S3ObjectLambda::AccessPoint` | S3 Object Lambda
+    APs’ API activity, such as calls to `CompleteMultipartUpload` and `GetObject`
+    |'
+  prefs: []
+  type: TYPE_TB
+- en: '| CloudTrail | `AWS::CloudTrail::Channel` | `PutAuditEvents` on CloudTrail
+    Lake for logging events outside of AWS |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Cognito | `AWS::Cognito::IdentityPool` | Cognito API activity on identity
+    pools |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Amazon **Elastic Block Store** (**EBS**) direct APIs | `AWS::EC2::Snapshot`
+    | Direct APIs, such as `PutSnapshotBlock`, `GetSnapshotBlock`, and `ListChangedBlocks`,
+    on Amazon EBS snapshots |'
+  prefs: []
+  type: TYPE_TB
+- en: '| GuardDuty | `AWS::GuardDuty::Detector` | `GuardDuty` API activity for a detector
+    |'
+  prefs: []
+  type: TYPE_TB
+- en: Table 4.1 – AWS data event collectors
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**CloudTrail data insight events**: CloudTrail Insights provides insights into
+    abnormal activities such as large volumes or spikes of API calls or high error
+    rates within an AWS account. Insights are logged when CloudTrail notices deviations
+    within API usage and error rates within the AWS account.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Creating a trail
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: CloudTrail is not automatically enabled when an account is created within AWS.
+    Security teams must define a trail to collect all the necessary information/activities
+    within the AWS account for audit, compliance, and investigation purposes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'You will first have to define a trail and uniquely identify it for it to be
+    integrated with other AWS resources such as `mgmt-events` to signify what types
+    of events are collected within this trail. We then select the location where this
+    trail is stored. You can create a new S3 bucket; however, if your security operations
+    team owns an S3 bucket, you can also place your trail there. We have masked the
+    account number associated with this trail for security reasons:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 4.9 – Setting up CloudTrail logging](img/00011.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4.9 – Setting up CloudTrail logging
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'When configuring CloudTrail logs, you can enable it to feed into CloudWatch
+    automatically. We will discuss more about CloudWatch in a later part of the chapter.
+    Essentially, providing CloudTrail logs to CloudWatch allows DFIR teams to focus
+    their investigation and log reviews on a single console, giving them a **single-pane-of-glass**
+    (**SPOG**) view of the logs:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 4.10 – AWS CloudWatch for AWS CloudTrail](img/00030.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4.10 – AWS CloudWatch for AWS CloudTrail
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'When defining a CloudTrail log, you should also configure what types of data
+    events are collected within CloudTrail. Earlier in this section, we referred to
+    three types of data events: management events, data events, and data insight events.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The following screenshot defines the configurations enabled for the trail to
+    collect records. As you can see in the screenshot, CloudTrail will collect events
+    associated with the management of AWS resources itself, such as accessing/querying,
+    creating, modifying, or deleting resources. For example, an AWS IAM administrator
+    creating another account with privileges triggers a management event recorded
+    under this trail:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 4.11 – CloudTrail management events’ configuration](img/00048.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4.11 – CloudTrail management events’ configuration
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'On the other hand, a data event specifically collects events associated with
+    data-level activities within an AWS resource, such as tracking changes to the
+    files stored on an S3 bucket. Monitoring data events allows DFIR teams to confirm
+    if the data was accessed, modified, or deleted within these AWS services. The
+    next screenshot indicates the configuration required to enable data events. It
+    reflects the options for DFIR teams to configure and allow appropriate CloudTrail
+    logging:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 4.12 – CloudTrail data events’ configuration](img/00065.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4.12 – CloudTrail data events’ configuration
+  prefs: []
+  type: TYPE_NORMAL
+- en: Log file validations
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: When you create a trail, you also want to protect its integrity so that there
+    are no unauthorized changes. Hence, we also enable a log file validation checkmark
+    to enforce integrity checks on the trail as it is generated to ensure the course
+    is not altered and is accurate for investigation. Integrity checks results are
+    delivered to the same S3 buckets as digests. DFIR teams can utilize the log file
+    digests to validate the integrity of log files. Each log file is hashed and digitally
+    signed. CloudTrail log data digest files are signed using RSA, where a private
+    key is generated for each region, and SHA-256 data is used to sign using the private
+    key, resulting in a digital signature. The SHA-256 data is generated from the
+    **Universal Time Coordinated** (**UTC**) timestamp of the log file, S3 path, SHA-256
+    hash of the current digest file (in hex format), and signature of the previous
+    digest file (in hex format). These elements together form a hashing string, which
+    is used to generate a SHA-256 hash of the data, which is then signed.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Once a signature is generated, it is further encoded in a hex format. Hexadecimal
+    signatures are then recorded within the `x-amz-met-signature` tag of the digest
+    files stored on S3.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'DFIR teams can choose to enable log file validation later through the AWS Management
+    Console, API, or AWS command line:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 4.13 – Log file validation is enabled](img/00083.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4.13 – Log file validation is enabled
+  prefs: []
+  type: TYPE_NORMAL
+- en: Event data stores
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Since CloudTrail is an auditing tool that documents events/changes within an
+    AWS account, security teams must indicate the data lake where these events are
+    filtered and stored once a trail is created. AWS refers to this data lake of events
+    as an **event store**. You can create one or more event stores to store management
+    or data events based on filters across various regions within the AWS account.
+    Event stores offer long-term retention of up to 7 years. Organizations can send
+    these logs to a centrally managed **security information and event management**
+    (**SIEM**) solution.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Once an event store is created, it effectively allows DFIR teams to immediately
+    use it and query the store for associated activities on a specific AWS resource
+    (module/service) and details about the event.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The following screenshot demonstrates the steps required to configure an event
+    store and apply a filter. We select all management and data events in the same
+    event store in this example:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 4.14 – Configuring event stores in AWS CloudTrail](img/00102.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4.14 – Configuring event stores in AWS CloudTrail
+  prefs: []
+  type: TYPE_NORMAL
+- en: Querying CloudTrail event stores
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: CloudTrail allows DFIR teams to query event stores, where all management and
+    data events are stored as with any logging tool. In simplistic terms, CloudTrail
+    events can be queried using **SQL**.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note that within CloudTrail, given that the events are immutable, only SQL `SELECT`
+    statements are allowed. You can apply filters using `WHERE` clauses. However,
+    CloudTrail does not allow users to manipulate data within event stores.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'While event stores can be named, DFIR teams must note the unique event data
+    store ID generated by AWS to run SQL queries. The following screenshot demonstrates
+    a SQL query and associated query results. In this example, we are querying to
+    return entire values stored in the event store. However, once comfortable, DFIR
+    specialists can directly query the event store to obtain the necessary information
+    from the store:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 4.15 – Simple SQL query and results on AWS CloudTrail](img/00124.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4.15 – Simple SQL query and results on AWS CloudTrail
+  prefs: []
+  type: TYPE_NORMAL
+- en: Another example is where you query event stores to identify the top active users.
+    In DFIR cases, this can be a needle in a haystack, with multiple users and interaction
+    points. However, you are looking for one particular outlier where you can start
+    your investigation into this case.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Investigating CloudTrail events
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Any DFIR specialist would love to access an event store full of logs that provide
+    invaluable information for an investigation. This section will examine some investigative
+    strategies that DFIR specialists can adopt to investigate CloudTrail events. Note
+    that any queries performed on the CloudTrail event store are also recorded within
+    the same event store.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Investigating directly within the event store
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: DFIR teams can directly choose to investigate the logs available in the event
+    store. For example, we will investigate event stores to identify users who most
+    frequently accessed AWS resources from the console.
+  prefs: []
+  type: TYPE_NORMAL
+- en: By default, when you log in to CloudTrail, CloudTrail will automatically provide
+    a summary of events in its dashboard, which includes some recent user activities.
+    It will also record any API calls performed by other AWS resources. It consists
+    of any API calls a resource made internally to another within AWS and user interaction
+    via the AWS web browser.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'For example, the following screenshot demonstrates some recent events in this
+    demo lab. This dashboard also allows DFIR teams to click and obtain more specific
+    information about a particular event entry. Each entry in the dashboard is reflective
+    of each event:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 4.16 – Dashboard view of events ordered by time in descending order](img/00145.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4.16 – Dashboard view of events ordered by time in descending order
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'For example, in the first event, the `cf_user1` user interacted with an AWS
+    EC2 resource. We know from [*Chapter 3*](part0021_split_000.html#_idTextAnchor042)
+    of this book that each EC2 instance is uniquely identified using an instance ID
+    within AWS. It is, therefore, more accessible for DFIR teams to track back and
+    remember which instance the user interacted with and gather specific configurations.
+    Through the summary view, we can understand that the `cf_user1` user stopped an
+    EC2 instance identified by `i-09c02a7e1ff652c13` on May 10, 2023, 05:55:49 (UTC-04:00).
+    Should DFIR teams need additional information, this can be obtained by clicking
+    on the link under the **Event name** field. The following screenshot shows the
+    details of the captured event:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 4.17 – Additional information about the event recorded in CloudTrail](img/00162.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4.17 – Additional information about the event recorded in CloudTrail
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'It is important to note that additional information captures the source IP
+    address, which records the IP address of the threat actor who may have compromised
+    and accessed this AWS account to stop this instance. DFIR teams can further dig
+    into the IP address and identify what other activities were performed by this
+    user or from this source IP address, giving a timeline of events. In the additional
+    information section, DFIR teams also have the opportunity to capture a raw event
+    record in JSON format. AWS refers to this as an **event payload**. Usually, this
+    is available within the dropdown under **Event history**. An event payload allows
+    DFIR teams to review the raw log and determine more specific actions a user or
+    attacker may have performed on the affected resource. Specifically, it also identifies
+    other metadata that may be useful for further investigation. Here is a raw event
+    log or event payload for stopping an instance, as indicated in the preceding screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'In the preceding raw event payload, we have highlighted essential elements
+    or attributes of the log that DFIR teams should typically make a note of:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`{"arn": "arn:aws:iam::xxxxxxxx6548:user/cf_user1"}`): In this instance, we
+    have an IAM regular user logging in to an AWS account with a unique identifier
+    (`xxxxxxxx6548`). We have tokenized the account number for security reasons.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`{userName": "cf_user1"}`: The actual username that was used to authenticate
+    to this session.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`"attributes": {"creationDate": "2023-05-10T09:55:05Z"`, `"mfaAuthenticated":
+    "true"}`: The time of the session that was created after authenticating the user
+    to an AWS session. This entry demonstrates that the user successfully logged in
+    to the AWS console and verified its two-factor token to complete the authentication
+    process.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`{"eventTime": "2023-05-10T09:55:49Z"}`: The actual date and time of the event
+    that was recorded in UTC time.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`{"sourceIPAddress": "184[.]147[.]70[.]116"}`: Source IP address of the user
+    or threat actor who performed this event. For security reasons, IP addresses are
+    defanged.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`"instanceId": "i-09c02a7e1ff652c13"`, `"currentState": {"code": 64, "name":
+    "stopping"}`, `"previousState": {"code": 16, "name": "running"}`): Specific event
+    entries reflecting current and previous states of the instances that confirm what
+    specific actions were performed. In this example, we have a running instance that
+    the user logged in to and stopped the instance.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Putting this in the perspective of a DFIR investigation, one can deduce and
+    summarize the activities performed in this case and identify the next steps concerning
+    the investigation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Downloading and investigating event store results offline
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Since CloudTrail event logs are in JSON format and you can query, filter, and
+    extract results accordingly for investigation, we can always query the event store
+    and download the logs for offline review. This is specifically useful where DFIR
+    teams do not have access to AWS. However, investigation into CloudTrail events
+    is imperative from an investigation point of view.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Using the source IP address captured in the previous example, we will query
+    the event data store to identify activities from this IP address. For this, we
+    will perform the following query:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: Remember—event data stores are uniquely identified using an event data store
+    ID; we filter dates based on our incident investigation, and further filtering
+    is applied to the `sourceIPAddress` attribute.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'While query results are displayed in a tabulated format, you can copy entire
+    raw records using the **Copy** option. You do have to select event records or
+    everything you would like to copy:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 4.18 – Search query result](img/00181.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4.18 – Search query result
+  prefs: []
+  type: TYPE_NORMAL
+- en: Using any third-party tools such as CyberChef, you can parse this JSON log for
+    further investigation. Alternatively, you may use any log parsing tool to parse
+    and further investigate the logs.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Alternatively, you can download the whole set of logs directly from the associated
+    Amazon S3 bucket. You can find the location for this S3 bucket by simply navigating
+    to the CloudTrail dashboard and selecting the relevant trail name. See the next
+    screenshot for an example:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 4.19 – Navigating to CloudTrail S3 bucket](img/00001.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4.19 – Navigating to CloudTrail S3 bucket
+  prefs: []
+  type: TYPE_NORMAL
+- en: When you navigate to the S3 bucket, you will notice that CloudTrail details
+    are stored in two different object repositories; one contains the digest (which
+    we discussed in the earlier sections of the chapter), which includes information
+    to verify the integrity of the logs, while the other object repository is where
+    actual logs are stored.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The logs are further stored per region, based on each AWS region the resources
+    are operating from and sending logs to CloudTrail. DFIR teams need to understand
+    that AWS breaks down the storage of logs per calendar day. When downloading S3
+    logs, you will need this information before your log collection from S3\. Downloading
+    all the data hosted on S3 may be huge and not beneficial from an investigation
+    standpoint. However, it depends upon the circumstances of the investigation. The
+    next screenshot provides an overview of a sample set of logs available for May
+    1, 2023, located under the `ca-central-1` region, and how AWS stores CloudTrail
+    logs:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 4.20 – Obtaining CloudTrail logs from the CA-Canada Central region](img/00018.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4.20 – Obtaining CloudTrail logs from the CA-Canada Central region
+  prefs: []
+  type: TYPE_NORMAL
+- en: You may download multiple files simultaneously if you have API access to AWS.
+    However, AWS limits downloads to one file at a time from the web console, which
+    may make it time-consuming.
+  prefs: []
+  type: TYPE_NORMAL
+- en: While CloudTrail stores its logs in gzip format to preserve storage, AWS will
+    serve you an unzipped log format while downloading.
+  prefs: []
+  type: TYPE_NORMAL
+- en: DFIR use cases for CloudTrail logging
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Next are some use cases for enabling CloudTrail and how it can support DFIR
+    teams:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**Incident investigation**: CloudTrail can support your incident investigations.
+    Some common investigation themes can be looked into, such as AWS account takeovers,
+    where an attacker creates an unauthorized account to create/modify resources within
+    AWS. You can use CloudTrail logs to determine the username, source IP address,
+    and how they authenticated themselves into AWS. CloudTrail logs also provide vital
+    information about whether the attacker performed specific modifications and the
+    configuration previously set. Other investigation areas include the following:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Looking for malicious or rogue EC2 instances**: Through CloudTrail logs,
+    you can determine if the attacker created an EC2 **virtual machine** (**VM**)
+    to access specific production environments. CloudTrail can provide information
+    on the instance type, instance ID – which can be used for further investigative
+    hunting – and the date and time of the creation of such rogue EC2 instances. Because
+    CloudTrail logs activities across multiple regions under the organization, DFIR
+    teams can also use the CloudTrail logs to determine attacker lateral movements
+    across various AWS resources in various regions.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Unauthorized API calls**: Since CloudTrail tracks all the API calls made
+    by AWS internally from one resource to another, as well as API calls made by users,
+    CloudTrail logs can be used to determine any unauthorized use of API resources.
+    For example, a sudden surge of API calls using a specific access token can allow
+    DFIR teams to quickly determine if the associated account was compromised, allowing
+    unauthorized access to the attackers.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Security and compliance auditing**: Given a large portion of CloudTrail’s
+    purpose is to create an audit trail of all activities, CloudTrail can be used
+    for monitoring compliance with security policies and regulations. For example,
+    in healthcare, where user access must be closely monitored and provided on a least-privileged
+    basis, CloudTrail logs can be valuable for fine-tuning these privileges based
+    on the activities recorded, thus ensuring compliance.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Infrastructure monitoring and troubleshooting**: Outside of DFIR, CloudTrail
+    can benefit developers and application testers to ensure their applications operate
+    effectively. CloudTrail will allow developers to review API calls and determine
+    the cause of any unintended consequences.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: AWS CloudWatch
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: AWS **CloudWatch** monitors your AWS resources in near real time. You can collect
+    and monitor resource usage and key metrics in a SPOG view. CloudWatch presents
+    every resource metric on its dashboard for quick view. However, for DFIR teams,
+    CloudWatch can query certain logs to support an investigation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: From a security perspective, CloudWatch is a log management solution that can
+    centrally collect and monitor logs from systems, applications, and resources.
+    It offers log analytics on top to allow interactive searching and analysis capabilities.
+    Similar to CloudTrail, CloudWatch offers log exports via S3 buckets. Note that
+    logs in CloudWatch never expire and are retained indefinitely. Administrators
+    can change the retention policy and choose between a log retention of a day or
+    up to 10 years. Alternatively, organizations can send CloudWatch logs to an SIEM
+    solution via an API for centralized monitoring and management of logs.
+  prefs: []
+  type: TYPE_NORMAL
+- en: CloudWatch is a service that allows you to search and analyze log data interactively.
+    You can monitor logs from Amazon EC2 instances and CloudTrail logged events, create
+    alarms, and receive notifications for specific API activity to perform troubleshooting.
+    Additionally, you can audit and mask sensitive data, adjust log retention, and
+    archive log data. CloudWatch Logs can also log information about DNS queries that
+    Route 53 receives. It uses a purpose-built query language with sample queries,
+    command descriptions, query autocompletion, and log field discovery to help you
+    get started.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'You can access CloudWatch using any of the following methods:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**AWS CloudWatch console**: Direct access to CloudWatch dashboards and logs'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**AWS Command Line Interface (CLI)**: Using modules provided by Amazon to connect
+    to AWS via commonly available terminals or command-line consoles within popular
+    operating systems'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**CloudWatch APIs**: Using your technologies to publish or monitor AWS CloudWatch
+    logs via APIs'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**AWS SDKs**: Build applications that publish logs into CloudWatch'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Note
+  prefs: []
+  type: TYPE_NORMAL
+- en: From a DFIR perspective, it is essential to note that CloudWatch logs, when
+    enabled, only record activities performed on an AWS account and do not capture
+    what specific actions were performed within each resource. (For example, CloudWatch
+    will not capture events/records of activities performed by a user/threat actor
+    within an EC2 instance. It will, however, record if the threat actor logged in
+    to the AWS console and made changes, deleted EC2 instances, and so on.)
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The following diagram illustrates a typical configuration of logs that are
+    recoded into CloudWatch:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 4.21 – Sample CloudWatch logging architecture of an EC2 instance with
+    a VPC](img/00036.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4.21 – Sample CloudWatch logging architecture of an EC2 instance with
+    a VPC
+  prefs: []
+  type: TYPE_NORMAL
+- en: The following sections will review the difference between CloudWatch and CloudTrail
+    and how DFIR teams can set it up for incident investigation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: CloudWatch versus CloudTrail
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'So, let us look at some key differences between CloudWatch and CloudTrail.
+    DFIR teams need to realize the difference in the features and how they can complement
+    an incident investigation:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**CloudWatch is a log management tool**: CloudWatch offers monitoring and observability
+    capabilities, explicitly collecting and displaying resource usage and metrics
+    from various AWS products. It provides an *as-it-happens* view of the logs.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**CloudTrail records API interactions**: CloudTrail records API interactions
+    between users and internal AWS resources, which makes a record of all activities
+    within an AWS account. Unlike CloudWatch, CloudTrail only records API-related
+    activities and allows specific querying for application troubleshooting or security
+    investigations.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Since CloudWatch is a log management tool at its core, CloudWatch can ingest
+    CloudTrail events and, therefore, offers a single console view into various log
+    sources. DFIR teams can use the CloudWatch API to pull logs into their local SIEM
+    solution for further monitoring and investigation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Setting up CloudWatch logging
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Once the organization establishes its AWS account, you can turn on CloudWatch
+    logging. However, doing so requires a few steps, including configuring privileges
+    for other AWS resources to allow them to send logs to CloudWatch. CloudWatch is
+    regional; therefore, the best approach is to create a CloudWatch setup where most
+    AWS resources are hosted. It is important to note for DFIR teams that enabling
+    CloudWatch speeds up the incident investigation process. So, if an organization
+    does not have CloudWatch, setting up an appropriate policy can allow flow logs
+    to be immediately available, which is crucial for investigations.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Configuring VPC flow logging
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Every category of logs is recorded in CloudWatch as a log group. A log group
+    is a collection of similar types of logs. For example, all VPC flow logs will
+    be under a single log group for CloudWatch; similarly, all CloudTrail events will
+    be under a separate log group. In the next example, two log groups were created,
+    with specific logging enabled for each. Each AWS resource will publish its flow
+    logs within each log group as a log stream. For example, let us say you have five
+    EC2 instances running, and you later create another five EC2 instances. At the
+    end, when you log in to the CloudWatch console, you will see one log group that
+    has multiple log streams uniquely identifying each EC2 resource using its network
+    interface ID.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Note that a log stream is a stream of network flow logs that only captures
+    specific elements within the stream. We discussed what a flow log contains in
+    an earlier part of this chapter in the *VPC flow logs* section. Each log stream
+    contains multiple entries of flow logs associated with the network interface,
+    which can then be queried or analyzed to obtain further insights. The following
+    screenshot describes how CloudWatch groups all flow logs based on categories.
+    In the screenshot, you will see VPC flow logs are grouped under `vpcgrp1`, while
+    CloudTrail logs are grouped under `aws-cloudtrail-logs-vb77-569383a0`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 4.22 – CloudWatch log groups](img/00053.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4.22 – CloudWatch log groups
+  prefs: []
+  type: TYPE_NORMAL
+- en: VPC flow log access requirements
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Since AWS is publishing flow logs originating per EC2 instance to be published
+    or sent to another AWS resource, AWS requires the account to have appropriate
+    IAM configurations to allow services to interact. By default, AWS does not automatically
+    enable logs to be published to CloudWatch (given it is a separate subscription).
+    Rights associated with flow logs must have appropriate permissions to allow VPC
+    to post them on CloudWatch.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'At a high level, the following permissions are typically required:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`CreateLogGroup`: Remember, as indicated in *Figure 4**.22*, that logs are
+    grouped per category. This allows write permissions to create new log groups with
+    a specific name.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`CreateLogStream`: Each EC2 resource will publish its VPC logs within the log
+    group as a log stream. This allows write permission to create a new log stream
+    per resource.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`PutLogEvents`: Allows permissions to write log events in batches within each
+    stream.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`DescribeLogGroups`: Describe or list log groups associated with the AWS account.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`DescribeLogStream`: Similar to log groups, this allows listing all log streams
+    within a specific log group associated with the account.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`GetLogRecord`: Allows the ability to read all fields within a single log event.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`GetQueryResults`: Allows the ability to read/return query results from specific
+    queries.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'There are additional permissions that are assigned to the CloudWatch role:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`DescribeQueries`: Allows listing of CloudWatch Logs Insights queries that
+    were recently executed'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`StopQuery`: Allows permissions to stop a CloudWatch Logs Insights query from
+    execution'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`DeleteQueryDefinition`: Ability to delete a saved CloudWatch query'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`PutQueryDefinition`: Ability to create and update a query'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`GetLogDelivery`: Allows the ability to read log delivery information for specific
+    logs'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`ListLogDeliveries`: Similar to `GetLogDelivery`, this allows log information
+    to be listed for all log deliveries associated with an AWS account'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`CreateLogDelivery`: Allows permissions to create a new log delivery'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`UpdateLogDelivery`: Allows the ability to edit log delivery configurations'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: In addition to the IAM permissions, you must configure policies to allow flow
+    logs to assume specific roles within your AWS account. For this case, we explicitly
+    set up a policy to enable VPC flow logs to take roles within the AWS account.
+    Policies group roles and resource assignments along with specific resource access
+    conditions. Policies are how IAM manages permissions by attaching them to specific
+    IAM users or identity profiles. A policy defines its permissions when associated
+    with an identity, a user, or a resource.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Next is an example of an IAM policy specifically created using a visual tool
+    provided by AWS to allow VPC flow logs to be published and for users to access
+    and query the logs:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'At a high level, here is a breakdown of the policy. The policy has three statements
+    in the form of array entries:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**Statement 1**: A list of CloudWatch Logs actions that are allowed. These
+    actions include various management and data retrieval operations for CloudWatch
+    Logs.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`logs:*` instances (CloudWatch Logs actions) within a specific AWS account.
+    This will include all log groups associated with the AWS account.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`logs:*` instances associated with a specific AWS account and all log streams
+    specified within the AWS account.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Remember—policies allow users to access, edit, or query CloudWatch logs. You
+    will, however, need to set up trust relationships between AWS resources for it
+    to share/publish logs in the first place. This is typically done automatically
+    when you first set up and enable CloudWatch. However, you can make granular trust
+    policies for specific trust relationships between resources. Here is an example
+    of a trust relation configured within the IAM module:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: The preceding JSON represents an IAM role trust policy that allows the Amazon
+    VPC flow logs service (`vpc-flow-logs.amazonaws.com`) to assume the role. This
+    trust policy is used when establishing a trust relationship between an IAM role
+    and a trusted entity (in this case, the VPC flow logs service). The `AssumeRole`
+    security token allows the relevant AWS resource a temporary set of security credentials
+    that, in this case, the VPC service can use to communicate with other AWS services
+    (CloudWatch) to pass the flow logs. `AssumeRole` allows for cross-account access
+    and can be used for making API calls to any AWS service.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Querying CloudWatch logs on the AWS console
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: For manually querying CloudWatch within AWS, DFIR teams can utilize Logs Insights
+    to construct specific queries for investigation. Logs Insights enables interactive
+    querying capabilities to search and analyze log data. CloudWatch automatically
+    identifies relevant fields from various log sources, including any custom logs
+    sent to CloudWatch in JSON format. You can also create visual outputs, including
+    graphs, as part of Logs Insights queries.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In the next example, we are looking at VPC flow logs. However, when querying,
+    you may choose all log groups. The following screenshot demonstrates an example
+    of querying within CloudWatch Logs Insights. The query targets the `vpcgrp1` log
+    group to identify the `LogStream` (the source network identifier from where flow
+    logs are generated), and the **log** (the account and the log group where the
+    log was identified, useful when querying multiple log groups). Select the appropriate
+    time range for CloudWatch to look up the logs:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 4.23 – Sample query on CloudWatch](img/00071.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4.23 – Sample query on CloudWatch
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'When you query within Logs Insights, CloudWatch will generate results and a
+    histogram to allow investigators to drag and select timelines based on identified
+    anomalies within the histogram. The next screenshot is an example of such a query
+    result, with a histogram that outlines the events based on timestamp and number
+    of records per date and time entries:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 4.24 – Sample visualization generated by CloudWatch for VPC traffic](img/00091.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4.24 – Sample visualization generated by CloudWatch for VPC traffic
+  prefs: []
+  type: TYPE_NORMAL
+- en: By just utilizing a sample query to determine traffic patterns observed by all
+    VPC logs, you can further begin to filter down for the investigation. You filter
+    on dates (through a selection option) and specific VPC log streams if the subject
+    of investigation is nailed down to an EC2 instance connected with a particular
+    log stream. Each query will also provide you with summary details of the log (as
+    a simple string), along with a visualization, as indicated in *Figure 4**.24*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: CloudTrail also provides pre-canned queries to get DFIR teams started; they
+    can use these base queries to modify and apply necessary filters to obtain results
+    for their investigation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We used a sample query to determine all network traffic that was tagged as
+    `ACCEPT`, meaning allowed by VPC and EC2 (configured via security groups,) and
+    examine the traffic volume of each of those sessions:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: The preceding query is run against all VPC log streams; however, AWS will limit
+    the results to 1,000 records if we do not specify the *limit* result option. This
+    is to avoid resource constraints to pull the results.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The next screenshot outlines the results we obtain once we run the previous
+    query:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 4.25 – CloudWatch query results](img/00111.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4.25 – CloudWatch query results
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let us look at an example of data exfiltration over SSH. We want to determine
+    the overall network traffic on where there was outbound network traffic from the
+    AWS EC2 instance to a remote threat actor-controlled server. You can use a CloudWatch
+    query to filter to a specific IP address or just the source port (`srcPort`) to
+    identify which other EC2 instance was accessed from this IP address. In the next
+    example, we specifically look at all outbound network connections. If you are
+    interested in inbound network activity on a specific port, you can set the destination
+    port (`dstPort`) on the filter:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'We can look into network spikes through the results and associated visualizations
+    provided by CloudWatch. As indicated earlier, since CloudWatch offers interactive
+    querying capabilities, you can click and select specific traffic spikes to filter
+    down the time range associated with those network outbound spikes. In the next
+    screenshot, we drill down into the network spikes identified by CloudWatch:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 4.26 – Initial query results](img/00132.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4.26 – Initial query results
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To continue with the routine investigation, we choose a date/time by interactively
+    selecting the spikes, which provides more granular visualizations. Note that the
+    date/time in the filter is now converted to hours:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 4.27 – Granular view of outbound network traffic](img/00150.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4.27 – Granular view of outbound network traffic
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Through this deep dive, we can boil down the network traffic to three large
+    spikes attributed to outbound network activity. Note that the traffic patterns
+    still indicate multiple IP addresses; some of them can still be legitimate. To
+    nail down potential threat actor IP addresses, at the same time, on the same screen
+    with applicable time filters, we will edit the query to identify IP addresses
+    with the largest to fewest data transfers. In a data exfiltration scenario, threat
+    actors would exfiltrate large volumes of information from the servers. For this
+    example, we filter outbound network traffic to anything above 1,000,000 bytes
+    (approximately 1 MB) transferred and sort them in descending order:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'As a result, we get about 19 data transfer events across the 3 instances of
+    network spikes that can be potentially attributed to data exfiltration activity.
+    Since we filtered the results down, DFIR teams can now use the destination IP
+    address field to perform some form of **open source intelligence** (**OSINT**)
+    to determine the legitimacy of the IP addresses to nail down further or apply
+    necessary filters:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 4.28 – Query result on data exfiltration of over 1 MB](img/00169.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4.28 – Query result on data exfiltration of over 1 MB
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'As we can see in the descending order of bytes transferred results, we can
+    immediately start looking at those spikes to determine and correlate them with
+    the rest of the investigation. Here is just an example of an IP address filter
+    to identify a network activity to a specific IP address:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'We see in the next screenshot the results of the query:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 4.29 – IP address-based network activity](img/00188.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4.29 – IP address-based network activity
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'As we know, VPC flow logs are similar to NetFlow logs; we can use the results
+    we extracted and further query to determine the source of the network traffic—that
+    is, which EC2 instance the traffic originates from. You can do that by correlating
+    the source IP address field (`srcAddr`) and mapping it back to which EC2 instance
+    was assigned this IP during the incident. We edit this query to yield the following
+    fields:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`timestamp`: Date and time of the event'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`message`: A NetFlow summary in message format'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`logStream`: The VPC log stream responsible for this message'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'The next query aims to obtain the exfiltration activity’s entire message and
+    log stream information:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Based on the query indicated previously, we can see the details of each event
+    in the screenshot. This allows DFIR teams to obtain specific information about
+    the network flow log and additional metadata:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/00008.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4.30 – Screenshot of the results from the preceding query
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The preceding results provide a hyperlink to the log information for each row
+    while presenting other critical data. Through the drop-down option against each
+    row, the following additional information is presented for further investigation.
+    In the next screenshot, we expand an example log event to highlight the fields
+    captured by the VPC flow log:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 4.31 – Additional VPC flow log information](img/00023.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4.31 – Additional VPC flow log information
+  prefs: []
+  type: TYPE_NORMAL
+- en: You can use pre-canned CloudWatch queries to add extra filters to further your
+    investigation. Through the additional information reflected in the preceding screenshot,
+    we can nail down to which EC2 instance the outbound network traffic originated
+    by correlating the ENI ID to the EC2 instance. In summary, we started from 89,827
+    records to just 3 with the highest data exfiltration within the applicable time
+    filter. As DFIR teams, you must slice and dice further on other IP addresses;
+    this demonstrates how CloudWatch can contribute to an investigation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: DFIR use cases for CloudWatch
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Through this chapter’s sections, we now know why CloudWatch is vital from a
+    DFIR perspective. Next are some use cases on how CloudWatch can be used for forensic
+    investigation and anomaly detection:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**Log review**: CloudWatch, as we all know, offers a centralized repository
+    for logs, including CloudTrail logs. Therefore, it provides a SPOG where DFIR
+    teams can query all logs quickly and yield investigative results. You can leverage
+    CloudWatch to detect abnormal activity and unauthorized access and correlate events
+    across various log sources ingested into CloudWatch.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Anomaly detection**: DFIR teams can define thresholds and alarms based on
+    specific metrics (for example, CPU utilization, network traffic, or storage) to
+    identify unusual patterns or deviations from normal behavior. Anomalous metrics
+    can serve as early indicators of security breaches or compromised instances.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**IR automation**: CloudWatch natively integrates with other workflow-based
+    services, including AWS Lambda and AWS Systems Manager Automation, for automatic
+    orchestration of isolation, snapshot creation, and user account changes upon a
+    specific event alert. Workflows are based on triggers that allow automated remediation
+    and containment actions.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Compliance and auditing**: Since CloudWatch offers centralized logging and
+    monitoring capabilities, this also allows compliance monitoring and supporting
+    audits. DFIR teams can leverage CloudWatch logs and metrics to demonstrate adherence
+    to security policies, track user activity, and generate reports for compliance
+    audits.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Amazon GuardDuty
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: '**GuardDuty** is a threat detection service designed to help protect AWS resources
+    and workloads by continuously monitoring for malicious activity and unauthorized
+    behavior. Note that this is a detection service and not a response service. It
+    detects and notifies the user of a potential threat within an AWS resource. However,
+    integration with automated services such as Lambda will enhance GuardDuty’s capabilities
+    to respond to threats based on established playbooks for each threat detected.
+    GuardDuty uses ML, anomaly detection, and integrated TI to identify potential
+    security threats within your AWS environment.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Some DFIR use cases are as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**Threat detection**: GuardDuty analyzes CloudTrail logs, VPC flow logs, and
+    DNS logs to detect **indicators of compromise** (**IOCs**) and potential threats.
+    It applies ML algorithms to identify patterns and anomalies that might indicate
+    malicious activities, such as unauthorized access attempts, reconnaissance, or
+    instances exhibiting behavior associated with malware or botnets. These IOCs are
+    collected through AWS’s TI partners and third-party vendor tools offered to their
+    clients. DFIR teams do not have control or the ability to manage these IOCs.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**TI**: GuardDuty leverages TI feeds from AWS, partner organizations, and OSINT
+    to enhance its threat detection capabilities. It compares network activity within
+    your AWS environment against known malicious IPs, domains, and other indicators
+    to identify potential security risks.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Centralized security monitoring**: GuardDuty provides a centralized view
+    of security findings across your AWS accounts and regions. It aggregates and prioritizes
+    security alerts, allowing security teams to focus on the most critical threats.
+    The consolidated dashboard and event stream enable quick detection and response
+    to potential security incidents.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Automated remediation**: GuardDuty integrates with other AWS services, such
+    as AWS Lambda and AWS Systems Manager, to facilitate automated responses to security
+    events. You can orchestrate customized actions or use pre-built response playbooks
+    to automate remediation actions, such as isolating compromised instances, blocking
+    malicious IPs, or updating security groups.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Security operations and IR**: GuardDuty is crucial in security operations
+    and IR workflows. It provides real-time alerts and findings, enabling security
+    teams to investigate and respond to potential security incidents quickly. Integrating
+    with AWS services such as Amazon CloudWatch and AWS Lambda enables automated IR
+    and security teams to take immediate action.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Permissions and trust
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'To leverage the capabilities of GuardDuty, DFIR teams must ensure that, at
+    a minimum, the following permissions must be allowed:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`ec2:DescribeInstances`: Describe EC2 instances'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`ec2:DescribeImages`: Describe EC2 instances’ images'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`ec2:DescribeVpcEndpoints`: Identify the VPC endpoint name'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`ec2:DescribeSubnets`: Identify VPC subnet information'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`ec2:DescribeVpcPeeringConnections`: Identify and enumerate VPC peering information'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`ec2:DescribeTransitGatewayAttachments`: Identify VPC transit gateway, if any'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`organizations:ListAccounts`: List user accounts configured under the AWS account
+    (organization)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`organizations:DescribeAccount`: Describe the AWS account type (user/root)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`s3:GetBucketPublicAccessBlock`: Check for an S3 public access block on the
+    bucket'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`s3:GetEncryptionConfiguration`: Obtain S3 data encryption information'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`s3:GetBucketTagging`: Obtain S3 bucket tags'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`s3:GetAccountPublicAccessBlock`: Check for an S3 public access block on the
+    AWS account'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`s3:ListAllMyBuckets`: Enumerate S3 buckets owned by an AWS account'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`s3:GetBucketAcl`: Enumerate S3 bucket ACLs'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`s3:GetBucketPolicy`: Enumerate S3 bucket policy'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`s3:GetBucketPolicyStatus`: Obtain current bucket policy status'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Furthermore, the Amazon GuardDuty service requires it to assume a specific IAM
+    role. The roles can have additional policies configured, which may be attached.
+    Amazon GuardDuty typically requires the `sts:AssumeRole` role to delegate access.
+    Allowing GuardDuty to assume this role enables the service to act on behalf of
+    the role and perform authorized actions based on the permissions assigned.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Amazon GuardDuty malware scan
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Enabling malware scans on EC2 instances and other resources is a great way to
+    begin hunting for malware. GuardDuty provides a built-in service for altering
+    or modifying an existing EC2 instance to natively scan the EC2 endpoints for evidence
+    of compromise or malware. It examines data storage such as Amazon EBS volumes
+    and other storage forms attached to a particular EC2 instance. It also provides
+    the ability to obtain snapshots of relevant storage volumes should it detect evidence
+    of malware.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Depending upon the AWS account and its operating regions, Amazon GuardDuty
+    offers malware scanning capabilities through the following vendors: Bitdefender,
+    CloudHesive, CrowdStrike, Fortinet, Palo Alto Networks, Rapid7, Sophos, Sysdig,
+    Trellix. For DFIR teams, this means that they do not have to integrate or deploy
+    software on affected AWS resources (such as EC2); instead, they enable GuardDuty
+    on specific AWS accounts and activate malware scans, which offer these solutions
+    automatically and allow scanning of EBS for the presence of malware.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs: []
+  type: TYPE_NORMAL
+- en: Amazon GuardDuty is specifically beneficial in cases where the installed antivirus
+    configured within the EC2 instance may have been potentially disabled or tampered
+    with by a threat actor. GuardDuty malware scans on EC2 instances allow insights
+    into any malicious activities or malware downloaded by a threat actor for performing
+    any nefarious actions without any additional security tooling deployments. This
+    is beneficial as threat actors do not typically go after disabling GuardDuty.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'GuardDuty also integrates with CloudWatch without specific configurations so
+    that DFIR teams can query additional telemetry based on the malware scan. The
+    following screenshot demonstrates an example of GuardDuty’s integration with CloudWatch,
+    specifically malware scan events:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 4.32 – Example of CloudWatch query for Amazon GuardDuty malware scan](img/00044.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4.32 – Example of CloudWatch query for Amazon GuardDuty malware scan
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Besides malware scans, GuardDuty offers insights into threats based on TI and
+    detections of activities performed by various resources within the AWS account.
+    Here is a sample set generated by GuardDuty to illustrate different detections.
+    Note that each of the detections is rated by GuardDuty and is tagged as high,
+    medium, or low-risk:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 4.33 – Sample threat detections within Amazon GuardDuty](img/00060.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4.33 – Sample threat detections within Amazon GuardDuty
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Once a malware scan is initiated, GuardDuty generates a unique detector ID
+    to identify each scan uniquely. We started a scan on one of the EC2 instances
+    to determine if there was any evidence of malware. Next is the JSON output of
+    the malware scan on one of the EC2 instances, demonstrating an example of an ongoing
+    scan:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Once the scan is completed, GuardDuty generates a scan report accessible via
+    the **Malware scans** page, accessing the unique GuardDuty malware scanning detection
+    ID. The next screenshot demonstrates that Amazon GuardDuty identified potential
+    malware on the disk (Amazon EBS storage):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 4.34 – Amazon GuardDuty malware scan detections](img/00078.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4.34 – Amazon GuardDuty malware scan detections
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'This allows DFIR teams to confirm the presence of malware and hunt for threats
+    further. Next are examples of the results of the detections. We see the scan has
+    picked up eight threats on the disk, and here is a sample detection summary of
+    one of the threats:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 4.35 – Amazon GuardDuty malware scan detections](img/00098.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4.35 – Amazon GuardDuty malware scan detections
+  prefs: []
+  type: TYPE_NORMAL
+- en: As you can see, the malware scan identifies the name of the sample detected,
+    which is typically assigned by the vendor that scanned this binary. The SHA-256
+    hash of the file identified on the disk can be handy for DFIR teams for further
+    threat hunting and detection. The file path and name identify the file’s location
+    and allow DFIR teams to manually collect artifacts and AWS volume information
+    on where this file was identified. For AWS purposes, this is recognized as part
+    of AWS resource naming conventions that determine the account owner and information
+    on which volume this detection occurred (`arn:aws:ec2:ca-central-1:xxxxxxxx6548:volume/vol-061392d9abebf9433`).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'DFIR teams can also identify the scanning partner that scanned this instance
+    through the summary page. In our example, Bitdefender scanned this detection:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 4.36 – Amazon GuardDuty scanner](img/00119.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4.36 – Amazon GuardDuty scanner
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Once Amazon GuardDuty completes the scans, it allows DFIR teams to also pivot
+    into the Amazon Detective service:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 4.37 – Amazon Detective playbook on Amazon GuardDuty detections](img/00142.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4.37 – Amazon Detective playbook on Amazon GuardDuty detections
+  prefs: []
+  type: TYPE_NORMAL
+- en: Amazon Detective
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Amazon Detective helps DFIR teams analyze, investigate, and visualize security
+    data from various AWS services. It automatically collects and analyzes log data
+    from AWS CloudTrail, Amazon VPC flow logs, and Amazon GuardDuty to provide insights
+    into potential security vulnerabilities and suspicious activities within an AWS
+    environment. Some of the capabilities of Amazon Detective are as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**Security graph**: Amazon Detective uses a graph-based approach to visualize
+    and analyze security-related data by creating a graphical representation of AWS
+    resources, accounts, and their relationships, allowing DFIR teams to identify
+    patterns, anomalies, and potential security threats quickly.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Automated data ingestion**: Amazon Detective automatically collects and ingests
+    data from AWS CloudTrail, Amazon VPC flow logs, and Amazon GuardDuty for aggregating
+    and processing to provide insights and recommendations.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Threat hunting**: Amazon Detective enables DFIR teams with pre-built queries
+    and analytics to proactively hunt for security threats and anomalies. These queries
+    leverage ML algorithms and statistical models to identify suspicious activities
+    and potential security issues.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Security findings**: Amazon Detective presents security findings based on
+    its analysis of the collected data. These findings are prioritized and include
+    details about accounts, resources, activities, and potential threats. It also
+    includes supporting evidence and artifacts to allow further investigations.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Note
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note that to enable Amazon Detective, having Amazon GuardDuty is a pre-requisite.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Summary
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: To summarize, AWS offers integration of API logs and generic event logs and
+    provides a SPOG to determine threat actor activity or an insider threat within
+    an AWS account. With CloudWatch and CloudTrail, DFIR teams can natively investigate
+    AWS using AWS’s tools and identify activities an unauthorized user performs at
+    a granular level. Furthermore, resources such as EC2 and S3 offer additional information
+    concerning the configuration that allows DFIR teams to deduce and obtain further
+    information for investigations. Remember that some security solutions, such as
+    VPC flow logs, are not enabled by default and require the account owner or administrator
+    to allow them explicitly. Integrating CloudTrail logs with CloudWatch and enabling
+    Amazon GuardDuty offers DFIR teams a deep insight into threats within an AWS account
+    and resources without explicitly going through deployments of security tools.
+    Enabling GuardDuty and, subsequently, Amazon Detective allows telemetric information
+    and the ability of the DFIR team to pinpoint the threat and perform additional
+    threat hunting. Organizations and DFIR teams must be aware that enabling any security
+    features is separately priced by AWS and will be reflected in your next bill.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the following few chapters, we will similarly explore native capabilities
+    for investigations on Microsoft Azure and Google Cloud, and we will eventually
+    tie them together with other open source and commercial tools for extracting forensic
+    artifacts from these cloud instances for purposes of offline investigation. Overall,
+    the goal is to ensure DFIR teams have enough information at hand and from multiple
+    sources of logs that validate threat actor activities and enable the teams to
+    confirm unauthorized activities beyond a reasonable doubt using these tools.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Further reading
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: '*CIDR/VLSM* *Calculator*: [https://www.subnet-calculator.com/cidr.php](https://www.subnet-calculator.com/cidr.php)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Port number assignments: [https://www.iana.org/assignments/service-names-port-numbers/service-names-port-numbers.txt](https://www.iana.org/assignments/service-names-port-numbers/service-names-port-numbers.txt)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*CloudTrail* *concepts*: [https://docs.aws.amazon.com/awscloudtrail/latest/userguide/cloudtrail-concepts.xhtml#cloudtrail-concepts-data-events](https://docs.aws.amazon.com/awscloudtrail/latest/userguide/cloudtrail-concepts.xhtml#cloudtrail-concepts-data-events)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'The cyber Swiss Army knife – a web app for encryption, encoding, compression,
+    and data analysis: [https://gchq.github.io/CyberChef/](https://gchq.github.io/CyberChef/)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Amazon GuardDuty – malware protection for Amazon EBS volumes: [https://aws.amazon.com/blogs/aws/new-for-amazon-guardduty-malware-detection-for-amazon-ebs-volumes/](https://aws.amazon.com/blogs/aws/new-for-amazon-guardduty-malware-detection-for-amazon-ebs-volumes/)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Bitdefender and Amazon Web Services Strengthen Cloud* *Security*: [https://businessinsights.bitdefender.com/bitdefender-and-amazon-web-services-strengthen-cloud-security](https://businessinsights.bitdefender.com/bitdefender-and-amazon-web-services-strengthen-cloud-security)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Introduction to GuardDuty malware protection: [https://www.cloudhesive.com/blog-posts/new-guardduty-malware-protection/](https://www.cloudhesive.com/blog-posts/new-guardduty-malware-protection/)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Prisma Cloud Supports Amazon GuardDuty Malware* *Protection*: [https://www.paloaltonetworks.com/blog/prisma-cloud/amazon-guardduty-malware-protection/](https://www.paloaltonetworks.com/blog/prisma-cloud/amazon-guardduty-malware-protection/)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Hunting malware with Amazon GuardDuty and* *Sysdig*: [https://sysdig.com/blog/hunting-malware-with-amazon-guardduty-and-sysdig/](https://sysdig.com/blog/hunting-malware-with-amazon-guardduty-and-sysdig/)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Trellix leverages Amazon GuardDuty Malware Protection for Extended Detection
+    and Response (**XDR)*: [https://www.trellix.com/en-us/about/newsroom/stories/xdr/trellix-leverages-amazon-guardduty-malware-protection.xhtml](https://www.trellix.com/en-us/about/newsroom/stories/xdr/trellix-leverages-amazon-guardduty-malware-protection.xhtml)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Unauthorized IAM Credential Use Simulation and* *Detection*: [https://catalog.workshops.aws/aws-cirt-unauthorized-iam-credential-use/en-US](https://catalog.workshops.aws/aws-cirt-unauthorized-iam-credential-use/en-US)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Ransomware on S3 - Simulation and* *Detection*: [https://catalog.workshops.aws/aws-cirt-ransomware-simulation-and-detection/en-US](https://catalog.workshops.aws/aws-cirt-ransomware-simulation-and-detection/en-US)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Cryptominer Based Security Events - Simulation and* *Detection*: [https://catalog.workshops.aws/aws-cirt-cryptominer-simulation-and-detection/en-US](https://catalog.workshops.aws/aws-cirt-cryptominer-simulation-and-detection/en-US)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*SSRF on IMDSv1 - Simulation and* *Detection*: [https://catalog.workshops.aws/aws-cirt-ssrf-imdsv1-simulation-and-detection/en-US](https://catalog.workshops.aws/aws-cirt-ssrf-imdsv1-simulation-and-detection/en-US)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*AWS CIRT Toolkit for Incident Response* *Preparedness*: [https://catalog.workshops.aws/aws-cirt-toolkit-for-incident-response-preparedness/en-US](https://catalog.workshops.aws/aws-cirt-toolkit-for-incident-response-preparedness/en-US)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Logging IP traffic using VPC Flow* *Logs*: [https://docs.aws.amazon.com/vpc/latest/userguide/flow-logs.xhtml](https://docs.aws.amazon.com/vpc/latest/userguide/flow-logs.xhtml)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*What is VPC Flow Logs, and how can you publish flow logs to CloudWatch and*
+    *S3?*: [https://www.manageengine.com/log-management/amazon-vpc-publishing-flow-logs-to-cloudwatch-and-s3.xhtml](https://www.manageengine.com/log-management/amazon-vpc-publishing-flow-logs-to-cloudwatch-and-s3.xhtml)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Publish flow logs to CloudWatch* *Logs*: [https://docs.aws.amazon.com/vpc/latest/userguide/flow-logs-cwl.xhtml](https://docs.aws.amazon.com/vpc/latest/userguide/flow-logs-cwl.xhtml)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Least-privilege Cloudwatch Logs policy for API* *Gateway*: [https://repost.aws/questions/QUUWdk2GyPRKeTadZ9EpO3aQ/least-privilege-cloudwatch-logs-policy-for-api-gateway](https://repost.aws/questions/QUUWdk2GyPRKeTadZ9EpO3aQ/least-privilege-cloudwatch-logs-policy-for-api-gateway)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*AWS Security Incident Response* *Guide*: [https://docs.aws.amazon.com/whitepapers/latest/aws-security-incident-response-guide/aws-security-incident-response-guide.xhtml](https://docs.aws.amazon.com/whitepapers/latest/aws-security-incident-response-guide/aws-security-incident-response-guide.xhtml)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Threat Hunting AWS CloudTrail with Sentinel: Part* *1*: [https://www.binarydefense.com/resources/blog/threat-hunting-aws-cloudtrail-with-sentinel-part-1/](https://www.binarydefense.com/resources/blog/threat-hunting-aws-cloudtrail-with-sentinel-part-1/)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Threat Hunting AWS CloudTrail with Sentinel: Part* *2*: [https://www.binarydefense.com/resources/blog/threat-hunting-aws-cloudtrail-with-sentinel-part-2/](https://www.binarydefense.com/resources/blog/threat-hunting-aws-cloudtrail-with-sentinel-part-2/)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'AWS security products: [https://aws.amazon.com/products/security/](https://aws.amazon.com/products/security/)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL

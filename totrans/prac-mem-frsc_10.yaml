@@ -1,0 +1,560 @@
+- en: 'Chapter 7: Linux Memory Acquisition'
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Despite Windows being the most common desktop operating system, the role of
+    Linux-based systems cannot be overstated. Due to their flexibility, Linux-based
+    operating systems can be installed on a wide range of hardware: PCs, tablets,
+    laptops, smartphones, and servers. The latter is especially true when it comes
+    to Enterprise.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Servers running Linux-based operating systems are an integral part of the infrastructure
+    as they are often used as the basis for web, mail, application, database, and
+    file servers. That is why, every year, attackers show more and more interest in
+    these hosts. The number of attacks involving Linux-based systems steadily grows
+    every year. More and more groups, both state-sponsored and financially motivated
+    ones, have Linux-based tools and malware in their arsenals. For example, the notorious
+    Fancy Bear APT was convinced by NSA and FBI in using an advanced Linux rootkit
+    called **Drovorub**. Another good example is multiple ransomware operators – all
+    major ransomware as a service programs now provide their affiliates with Linux
+    versions.
+  prefs: []
+  type: TYPE_NORMAL
+- en: All this leads us to the necessity of mastering the tools and techniques required
+    for analyzing Linux-based systems. This will be our main topic of discussion in
+    this part of the book.
+  prefs: []
+  type: TYPE_NORMAL
+- en: As we did previously, it is paramount to collect the required data. In our case,
+    this involves creating a memory dump. This is where we will start discussing this
+    topic.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In this chapter, we will cover the following topics:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Understanding Linux memory acquisition issues
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Preparing for Linux memory acquisition
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Acquiring memory with LiME
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Acquiring memory with AVML
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Creating a Volatility profile
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Understanding Linux memory acquisition issues
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In [*Chapter 2*](B17056_02_Final_JM_ePub.xhtml#_idTextAnchor023), *Acquisition
+    Process*, we discussed general memory dumping issues, which are also relevant
+    in the case of Linux-based systems. However, the process of creating Linux memory
+    dumps also has unique problems that are specific to these systems. These are the
+    problems we will focus on.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The main difficulty that's encountered by professionals when dumping memory
+    is the number of distributions. Since the Linux kernel is open source and distributed
+    under the GNU General Public License, it quickly gained popularity among the community
+    and became the basis for many distributions, each of which has its own features.
+    Naturally, this had an impact on the memory extraction process.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Earlier versions of the kernel, before Linux 2.6, allowed access to memory via
+    `/dev/mem and /dev/kmem` devices. The `/dev/mem` interface provided programs with
+    root access to physical memory for read and write operations, while `/dev/kmem`
+    allowed access to the kernel's virtual address space. Thus, to create a raw memory
+    dump, it was sufficient to use the simple `cat` or `dd` utilities to read `/dev/mem`
+    and redirect the output to a separate file. This approach was undoubtedly handy
+    but created obvious security problems. For example, due to non-sequential memory
+    mapping from physical offset `0`, inexperienced technicians could directly access
+    sensitive memory regions, leading to system instability, memory corruption, or
+    system crashes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In newer versions of the Linux kernel, the interfaces described previously are
+    disabled. The physical memory is now accessed by loading a special kernel module.
+    The biggest challenge is that this kernel module must be built on the target system
+    or a system with a matching distribution and kernel version to work properly.
+    Naturally, it is not a good idea to build the module on the target system, as
+    it requires many dependencies, and installing them may overwrite important data.
+    Therefore, if you are using tools that require a kernel module to be loaded, it
+    is best to build them in a testing environment.
+  prefs: []
+  type: TYPE_NORMAL
+- en: There are various tools available from different developers for memory extraction.
+    In this chapter, we will concentrate on the most convenient and effective tools
+    for Linux memory dumping, but first, let's take a look at the preparation process.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Preparing for Linux memory acquisition
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Since some commonly used Linux memory extraction tools require a kernel module
+    to be loaded, you need to build this module in a similar environment to the real
+    one. To do this, you can build the module on a prepared virtual machine. You can
+    create such a machine using **VMWare**, **VirtualBox**, or other similar solutions.
+    The most important thing is to have the same operating system distribution with
+    the same kernel version as the target host installed on the virtual machine. Therefore,
+    the first step in preparing a virtual environment is to determine the distribution
+    and exact kernel version of the target host. To determine the distribution, run
+    the following command in the terminal on the target host:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'To get the exact kernel version, run the following command:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'You should get the following output:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 7.1 – Target distributive and kernel version'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_7.1_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 7.1 – Target distributive and kernel version
+  prefs: []
+  type: TYPE_NORMAL
+- en: We now know that `Ubuntu 21.04` is installed on the target host and that the
+    kernel version is `5.11.0-34-generic`. This information can be used to create
+    a virtual machine. As most distributions are freely available, you should have
+    no problem finding the right one. The same goes for the kernel version. Alternatively,
+    if you already have a virtual machine with the correct distribution and updated
+    kernel, you can do a kernel downgrade.
+  prefs: []
+  type: TYPE_NORMAL
+- en: You will also need to prepare removable media to dump the memory onto. We already
+    went through this process in [*Chapter 3*](B17056_03_Final_JM_ePub.xhtml#_idTextAnchor041),
+    *Windows Memory Acquisition*, so we will not go into it now. If you plan to capture
+    the dump over the network, you will need to prepare a network share and make sure
+    it is available for the target host. In this chapter, we will look at both methods
+    of capturing dumps. In the meantime, we will start discussing specific tools.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Acquiring memory with LiME
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The first tool we will look at is the **Linux Memory Extractor**, or **LiME**.
+    LiME is a loadable kernel module that makes it possible to dump memory from Linux
+    and Linux-based systems, including Android. The main advantage of this tool is
+    its minimal process footprint and how it can calculate the hash of dumped memory.
+    Lime can also create dumps over the network. This tool can be found in the following
+    GitHub repository: [https://github.com/504ensicsLabs/LiME](https://github.com/504ensicsLabs/LiME).
+    The following is a screenshot of LiME:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 7.2 – LiME GitHub repository'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_7.2_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 7.2 – LiME GitHub repository
+  prefs: []
+  type: TYPE_NORMAL
+- en: Let's start by looking at the process of building the kernel module. For this,
+    we will use a virtual machine with the same distribution and kernel version –
+    `Ubuntu 21.04` and `5.11.0-34-generic`, respectively.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'As we are working with Linux, we will do everything using the terminal. First
+    of all, we need to install LiME and all the required packages. To do this, use
+    the following command:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The command''s execution will look as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 7.3 – Package installation'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_7.3_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 7.3 – Package installation
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Once this process is complete, we can proceed to the next step: compilation.
+    To do this, move to the `lime` directory with `cd` and run `make`, as shown here:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 7.4 – Kernel module creation'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_7.4_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 7.4 – Kernel module creation
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`make` is a utility that''s needed to automate how files are converted from
+    one form into another. The conversion rules themselves are defined in a script
+    named `Makefile`, which is located in the root of the working directory – in our
+    case, `/usr/src/lime-forensics-1.9.1-2`.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Once `make` has finished running, we have a kernel module called `lime-5.11.0-34-generic.ko`.
+    We can copy it to removable media or a network share and use it to dump the memory
+    on the target host.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let''s look at the process of creating a dump over the network. First, we need
+    to make the kernel module file available on the target host. This can be done
+    by placing it on a network share or copying it to the target host using `scp`,
+    a utility that allows you to securely copy files and directories between two locations,
+    including remote ones. When the module is available, you can use `insmod`, a program
+    to load kernel modules. This requires specifying the location and name of the
+    output file using the path parameter, as well as the file format – `raw`, `lime`,
+    and so on– specified in the format parameter. Since we have agreed to create the
+    dump over the network, we will pass the protocol to be used and the port that
+    the output will be sent from to the `path` parameter:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: This command will load the kernel module, create a memory dump, and send it
+    to port `4444`. Note the format of the file. If you want the created memory dump
+    to be recognized by Volatility, it is best to create it in `lime` format.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'You should then run `netcat` on the investigator''s host. `Netcat` or `nc`
+    is a command-line utility that reads and writes data over network connections
+    using the TCP or UDP protocols. You also need to redirect the output to a file.
+    This can be done as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'In this case, `netcat` will receive data from the `192.168.3.132` IP address
+    and write it to the `mem.lime` file. In the end, the kernel module can be unloaded
+    using the following command:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: The resulting `mem.lime` file can be used for analysis, but more on that later.
+    For now, let's look at another tool for memory dump creation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Acquiring memory with AVML
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: '**AVML**, or **Acquire Volatile Memory for Linux**, is a userland acquisition
+    tool developed by Microsoft. The main advantage of AVML is that it does not need
+    to be built on the target host and supports multiple sources:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`/dev/crash`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`/proc/kcore`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`/dev/mem`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: If no particular source is specified when you run AVML, the tool will go through
+    all the sources, looking for a valid one and collecting memory from it.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The disadvantage, perhaps, is that this tool has been tested on a limited number
+    of distributions, so it is better to check it into a virtual environment before
+    using it.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'At the time of writing this book, the following distributions have been tested:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**Ubuntu**: 12.04, 14.04, 16.04, 18.04, 18.10, 19.04, 19.10'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Centos**: 6.5, 6.6, 6.7, 6.8, 6.9, 6.10, 7.0, 7.1, 7.2, 7.3, 7.4, 7.5, 7.6'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**RHEL**: 6.7, 6.8, 6.9, 7.0, 7.2, 7.3, 7.4, 7.5, 8'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Debian**: 8, 9'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Oracle Linux**: 6.8, 6.9, 7.3, 7.4, 7.5, 7.6'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: So, the first thing you need to do is download the tool. To do this, open the
+    repository on GitHub at [https://github.com/microsoft/avml](https://github.com/microsoft/avml)
+    and go to the **Releases** tab.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 7.5 – AVML GitHub repository'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_7.5_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 7.5 – AVML GitHub repository
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Find AVML, download it, and put it on removable media or a network share where
+    you can run it on the target host. We will use removable media this time. Before
+    running it, you need to make the file executable by using the `chmod` command,
+    which allows you to change the permissions of files and directories:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'After this, you can start creating the dump. Simply run AVML and specify the
+    location and name of the output file. This will result in the following output:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 7.6 – AVML usage'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_7.6_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 7.6 – AVML usage
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note that AVML does not require the kernel module to be built. Once this command
+    completes, you will get a memory dump in LiME format, ready for analysis. However,
+    note that Volatility does not have prebuilt profiles for Linux-based systems.
+    With this in mind, we should also discuss creating a profile for Volatility.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Creating a Volatility profile
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'To analyze Linux memory dumps, you need to create a Volatility profile that
+    corresponds to the target host configurations. Let''s consider this with an example.
+    First, you need to install the `zip` and `dwarfdump` packages, as shown in the
+    following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 7.7 – dwarfdump and zip installation'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_7.7_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 7.7 – dwarfdump and zip installation
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Next, we need to download Volatility. To do this, we will use the `git clone`
+    command, which allows us to clone repositories from GitHub. If you do not have
+    `git`, it must be installed using `apt`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'After that, you should go to the `volatility/tools/linux` directory and run
+    the `make` command:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The listed actions will look as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 7.8 – Creating the dwarf module'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_7.8_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 7.8 – Creating the dwarf module
+  prefs: []
+  type: TYPE_NORMAL
+- en: As a result, you will get a `module.dwarf` file.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Important Note
+  prefs: []
+  type: TYPE_NORMAL
+- en: Depending on the distribution you are working with, executing `make` may cause
+    a variety of errors, ranging from dependency problems to license issues. Unfortunately,
+    there is no one-size-fits-all recipe for solving all problems, but searching the
+    web for solutions to individual `make` errors may help you.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The resulting `dwarf` module must be merged into an archive with `System-map`
+    of the correct version. This can be done using the following command:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Let''s understand what is going on here:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`lsb_release -i -s` outputs the name of the current distribution.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`uname -r` will show the kernel version.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: This will name your archive `<distribution>_<kernel>.zip`, but you can name
+    it as you wish.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The output of this command may look like this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 7.9 – Creating a Volatility profile'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_7.9_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 7.9 – Creating a Volatility profile
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'As you can see, we ended up with the `Ubuntu_4.15.0-117-generic.zip` archive,
+    which is the Volatility profile for this host. You can place this file in the
+    profiles folder and pass the path to this Volatility folder as the `--plugins`
+    option, as shown in the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 7.10 – Using a custom Volatility profile'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_7.10_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 7.10 – Using a custom Volatility profile
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'As you have probably already noticed, the process of collecting Linux memory
+    is not straightforward and requires a lot of different actions. However, in practice,
+    you will often encounter such systems installed in virtual machines. In these
+    cases, you will just need to create a snapshot of the virtual machine and simply
+    work with the existing `.vmem` file. However, this will not save you from creating
+    a Volatility profile. On the other hand, if you need to investigate a fairly popular
+    distribution, you can always try to find ready-made profiles on the web. You can
+    start with the official Volatility Foundation repository: [https://github.com/volatilityfoundation/profiles/tree/master/Linux](https://github.com/volatilityfoundation/profiles/tree/master/Linux).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Among other things, there are also tools you can use to automate the previous
+    steps. For instance, Linux Memory Capturer ([https://github.com/cpuu/lmc](https://github.com/cpuu/lmc))
+    is a fork of Linux Memory Grabber, which was developed by Hal Pomeranz. This tool
+    allows you to automate the process of creating Linux memory dumps and Volatility
+    profiles. All you need to do is install and run the tool.
+  prefs: []
+  type: TYPE_NORMAL
+- en: As this tool uses LiME, you will be asked to create a kernel module where both
+    the module itself and the memory dump it generates will be stored on the host.
+    You will then be prompted to create a profile for Volatility.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The output is a folder like this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Figure 7.11 – lmc output'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '](img/Figure_7.11_B17056.jpg)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 7.11 – lmc output
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Here, you will find the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`hostname-YYYYY-MM-DD_hh.mm.ss-memory.lime`: The memory saved in LiME format'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`hostname-YYYYY-MM-DD_hh.mm.ss-profile.zip`: The Volatility profile'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`hostname-YYYY-MM-DD_hh.mm.ss-bash`: A copy of `/bin/bash`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`volatilityrc`: The prototype Volatility config'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The generated kernel module can be found in /`usr/src/lime-forensics`. You can
+    then use the generated module to create a memory dump on the target host and the
+    Volatility profile to analyze it further.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Looks good, right? However, at the moment, the tool uses Python 2.7, which means
+    you can only use it in a limited number of cases. Also, using tools such as this
+    does not take away from the `make` issues described previously. So, before using
+    such tools, it is best to test them in a virtual environment with a configuration
+    similar to that of the target machine.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Summary
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Creating memory dumps of Linux-based systems is a tedious process. You do not
+    have a huge range of tools that do everything you need at the click of a button.
+    However, there are fairly efficient solutions that, when used correctly, will
+    help you get everything you need.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Different tools may use different methods to access memory. The most common
+    method is to load a kernel module; however, this method requires a lot of preparation
+    as the module must be built on a system with a distribution and kernel version
+    similar to the target host. The same conditions are needed to create Volatility
+    profiles, without which further analysis of the dumps would be challenging.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Several scripting solutions can automate the process of creating memory dumps
+    and Volatility profiles, but such solutions will often work with a limited number
+    of distributions, so it is better to test them in conditions similar to the real
+    ones before using them.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In this chapter, we reviewed the tools that allow you to create memory dumps
+    of Linux-based systems. Now, it is time to talk about memory dumps analysis. This
+    is what we will do in the next chapter.
+  prefs: []
+  type: TYPE_NORMAL

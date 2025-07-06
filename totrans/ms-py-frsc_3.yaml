@@ -1,0 +1,1775 @@
+- en: Chapter 3. Using Python for Windows and Linux Forensics
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In this chapter, we will focus on the parts of the forensic investigation that
+    are specific to the operating systems. We chose the most widely used operating
+    systems on the desktop and server systems—Microsoft Windows and Linux.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'For both operating systems, we selected examples of interesting evidence and
+    how to automate its analysis using Python. Consequently, in this chapter, you
+    will learn the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Analyzing the foundations of the Windows event log, selecting interesting parts,
+    and automatically parsing them
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Organizing the Windows Registry and efficiently searching for **Indicators of
+    Compromise** (**IOC**)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Searching Linux local account information for IOC
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Understanding, using, and parsing Linux file metadata with POSIX ACL and file
+    based capabilities as the most prominent extensions to the standard metadata
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Analyzing the Windows Event Log
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Windows includes many monitoring and logging capabilities and traces data and
+    events for a large amount and variety of activities occurring in the operating
+    system. The vast number of events, which can be logged, does neither make it easy
+    for an administrator to identify the specific important events nor helps a forensic
+    investigator to find Indicators of Compromise. Therefore, we will start this section
+    with a small introduction to the Windows Event Log and the changes in its format
+    over time, followed by a description of the important event types that should
+    help an investigator to quickly find suspicious actions in the large amount of
+    other events. In the last section of this chapter, we will demonstrate how to
+    parse the Event Log and automatically find the potential IOCs (e.g., user logons,
+    service creation, and so on).
+  prefs: []
+  type: TYPE_NORMAL
+- en: The Windows Event Log
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: According to Microsoft, Windows Event Log files are special files that record
+    significant events, such as when a user logs on to the computer or when a program
+    encounters an error, (refer to [http://windows.microsoft.com/en-us/windows/what-information-event-logs-event-viewer#1TC=windows-7](http://windows.microsoft.com/en-us/windows/what-information-event-logs-event-viewer#1TC=windows-7)).
+    Whenever these types of events occur, Windows records the event in an event log
+    that can be read using Event Viewer or similar tools.
+  prefs: []
+  type: TYPE_NORMAL
+- en: With the release of Windows 7 and Windows Server 2008, Microsoft has performed
+    a major change in their Event Log technique. They changed from the classical **Windows
+    Event Log** (**EVT**) to the newer **Windows XML Event Log** (**EVTX**). In the
+    following paragraphs, we will explain some of the main differences between these
+    two log file types.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Due to the fact that Microsoft no longer supports Windows XP and Server 2003
+    is in the extended support stage at present (meaning that it will go out of support
+    very soon), there are XP and 2003 systems still out there. Thus, some investigators
+    are still going to need to know the difference between the older EVT and the new
+    EVTX and the possible problems arising during analysis of these files.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Besides the binary differences in the records and the Event Log files themselves,
+    the amount of these log files differs too. On a Windows XP/2003 system, there
+    were three main Event Log files: **System**, **Application**, and **Security**.
+    They are stored in the `C:\Windows\system32\config` directory. The server versions
+    of the OS may maintain additional Event Logs (DNS Server, Directory Service, File
+    Replication Service, and so on) depending upon the functionality of the server.
+    On a current Windows 7 system, you can find more than 143 files full of event
+    logs. This gets even more if you compare it to the newer server versions of Microsoft
+    Windows.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The EVT log records only contain a very small amount of human-readable content
+    and are made human readable through tools such as the event viewer at analysis
+    time. These tools combine the predefined log templates that are commonly stored
+    in the system's DLL or EXE files with the data stored in the EVT file itself.
+    When one of the various log viewing tools displays log records, it has to determine
+    which DLL files will store the message templates. This meta-information is stored
+    in the Windows Registry and is specific to each type of the previously mentioned
+    three main Event Log files (System, Application, and Security).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'All of the earlier mentioned details follow the fact that the EVT files aren''t
+    really useful without their corresponding metafiles, which store the core meaning
+    of the log. This creates two major analysis problems:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: First, an attacker could modify DLL files or the Windows Registry in order to
+    change the meaning of event logs without having to touch the EVT file.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Second, when the software is uninstalled on a system, it could result in the
+    EVT records losing their context.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: As an investigator, one must carefully keep these issues in mind when analyzing
+    EVT logs and also when writing those logs to remote systems for later analysis.
+    An even more detailed analysis of the EVT records can be found in the ForensicsWiki,
+    [http://forensicswiki.org/wiki/Windows_Event_Log_(EVT)](http://forensicswiki.org/wiki/Windows_Event_Log_(EVT)).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In comparison to EVT, the EVTX files are stored as a binary XML file format.
+    On the newer Windows systems, the event logs can be viewed and analyzed with either
+    the Event Viewer or a vast number of other programs and tools (in the following
+    sections, we will describe some Python scripts that can be used too). When using
+    the Event Viewer, one has to bear in mind that this program can represent the
+    EVTX files in two different formats: **general** and **detailed**. The general
+    (sometimes called formatted) view can hide significant event data that is stored
+    in the event record and can only be seen in the detailed view. Thus, if you are
+    planning to use the Event Viewer for analyzing the EVTX files, always use the
+    detailed option to display the files.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: If you are interested in a more detailed analysis of the EVTX file format, you
+    should take a look at the ForensicsWiki, [http://forensicswiki.org/wiki/Windows_XML_Event_Log_(EVTX)](http://forensicswiki.org/wiki/Windows_XML_Event_Log_(EVTX)).
+    Another great explanation of the deeper EVTX file format details has been presented
+    by *Andreas Schuster* at DFRWS 2007, refer to [http://www.dfrws.org/2007/proceedings/p65-schuster_pres.pdf](http://www.dfrws.org/2007/proceedings/p65-schuster_pres.pdf).
+    This presentation can be very helpful if you want to understand the details of
+    the binary XML format or write your own parsers of EVTX files.
+  prefs: []
+  type: TYPE_NORMAL
+- en: If you need to open the EVT files on a Windows 7 or newer system, it's best
+    to convert the older EVT file to the EVTX syntax before opening it. This can be
+    done in several ways as described in a technet.com blog post, [http://blogs.technet.com/b/askperf/archive/2007/10/12/windows-vista-and-exported-event-log-files.aspx](http://blogs.technet.com/b/askperf/archive/2007/10/12/windows-vista-and-exported-event-log-files.aspx).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Interesting Events
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'A full list of Windows events on the newer system can be found in a knowledge
+    base article of Microsoft at, [https://support.microsoft.com/en-us/kb/947226](https://support.microsoft.com/en-us/kb/947226).
+    As the number of these events is getting bigger with every new version of the
+    system and every newly installed application, you can easily find more than several
+    hundreds of different event types on a single Windows system. Due to this fact,
+    we tried to sort out some interesting event types that can be helpful when analyzing
+    a system or reconstructing user events (a more detailed explanation of which Event
+    Logs can be helpful under what conditions can also be found in TSA-13-1004-SG,
+    [https://www.nsa.gov/ia/_files/app/spotting_the_adversary_with_windows_event_log_monitoring.pdf](https://www.nsa.gov/ia/_files/app/spotting_the_adversary_with_windows_event_log_monitoring.pdf)):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**EMET (1, 2)**: If the organization is actively using the Microsoft **Enhanced
+    Mitigation Experience Toolkit** (**EMET**), then these logs can be very helpful
+    during investigation.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Windows-Update-Failure (20, 24, 25, 31, 34, 35)**: The failure to update
+    issues should be addressed to avoid prolonging the existence of an application
+    issue or vulnerability in the operating system or an application. Sometimes, this
+    also helps in identifying infections of a system.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Microsoft-Windows-Eventlog (104, 1102)**: It is unlikely that event log data
+    would be cleared during normal operations and it is more likely that a malicious
+    attacker may try to cover their tracks by clearing an event log. When an event
+    log gets cleared, it is suspicious.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Microsoft-Windows-TaskScheduler (106)**: It displays newly registered Scheduled
+    Tasks. This can be very helpful if you are searching for signs of malware infections.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**McAfee-Log-Event (257)**: McAfee malware detection—McAfee AntiVirus may detect
+    malware behaviors without actually detecting the EXE file itself. This can be
+    very valuable in determining how the malware got into a system. In general, the
+    event logs of the installed AV solution are very valuable logs when starting an
+    analysis of a potentially compromised system. Therefore, you should remind yourself
+    where to find those logs in the Event Log.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Microsoft-Windows-DNS-Client (1014)**: DNS name resolution timeout; this
+    event type can also be very helpful when searching for malware or when trying
+    to find out whether a user has tried to connect to a specific website or service.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Firewall-Rule-Add/Change/Delete (2004, 2005, 2006, 2033)**: If the client
+    workstations are taking advantage of the built-in host-based Windows Firewall,
+    then there is value in collecting events to track the firewall status. Normal
+    users should not be modifying the firewall rules of their local machine.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Microsoft-Windows-Windows Defender (3004)**: Windows Defender malware detection
+    logs.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Microsoft-Windows-Security-Auditing (4720, 4724, 4725, 4728, 4732, 4635,
+    4740, 4748, 4756)**: In these logs, you can find information such as remote desktop
+    logins and users that have been added to privileged groups, and account lockouts
+    can also be tracked. User accounts that are being promoted to the privileged groups
+    should be audited very closely to ensure that the users are, in fact, supposed
+    to be in a privileged group. Unauthorized membership of the privileged groups
+    is a strong indicator that a malicious activity has occurred.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Service-Control-Manager (7030, 7045)**: It monitors whether a service is
+    configured to interact with the desktop or has been installed on the system in
+    general.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**App-Locker-Block/Warning (8003, 8004, 8006, 8007)**: Application whitelisting
+    events should be collected to look for the applications that have been blocked
+    from execution. Any blocked application could be malware or the users trying to
+    run an unapproved software.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Harlan Carvey* stated in one of his blog posts ([http://windowsir.blogspot.de/2014/10/windows-event-logs.html](http://windowsir.blogspot.de/2014/10/windows-event-logs.html))
+    that beyond individual event records (source/ID pairs), one of the aspects of
+    the newer versions of Windows (in particular, Windows 7) is that there are a lot
+    of events that are being recorded by default across multiple Event Log files.
+    Thus, when some events occur, multiple event records are stored in different Event
+    Log types and often across different Event Log files. For example, when a user
+    logs in to a system on the console, there will be an event recorded in the security
+    event log, a couple of events will be recorded in the `Microsoft-Windows-TerminalServices-LocalSessionManager/Operational`
+    log, and a couple of events will also be recorded in the `Microsoft-Windows-TaskScheduler/Operational`
+    log.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The Event Log can also be used to detect whether an attacker has used some kind
+    of anti-forensic techniques. One of those techniques would be to change the system
+    time in order to mislead an investigator. To detect this kind of modification,
+    an investigator has to list all the available Event Log records by the sequence
+    number and generated time. If the system time has been rolled back, there would
+    be a point where the time an event has been generated was before the previous
+    event. Some more examples of detecting anti-forensic techniques with the help
+    of Windows Event Log can be found in a blog post by *Harlan Carvey*, at [http://windowsir.blogspot.de/2013/07/howto-determinedetect-use-of-anti.html](http://windowsir.blogspot.de/2013/07/howto-determinedetect-use-of-anti.html).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Parsing the Event Log for IOC
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: When talking about Event Logs and analyzing these logs with Python, there is
+    no way to get around **python-evtx**. These scripts ([https://github.com/williballenthin/python-evtx](https://github.com/williballenthin/python-evtx))
+    have been developed using the 2.7+ tags of the Python programming language. As
+    it is purely Python, the module works equally well across the platforms. The code
+    does not depend on any modules that require separate compilation and operates
+    on the event log files from the Windows operating systems that are newer than
+    Windows Vista that is EVTX.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The second tool that we want to bring to your attention is **plaso**, (refer
+    to [http://plaso.kiddaland.net/](http://plaso.kiddaland.net/)). This tool set
+    has evolved from **log2timeline** and is now build in Python. With the help of
+    this tool set, you can create meaningful timelines of the system events and other
+    log files (for example, Apache). There is also a very good cheat sheet, [http://digital-forensics.sans.org/media/log2timeline_cheatsheet.pdf](http://digital-forensics.sans.org/media/log2timeline_cheatsheet.pdf),
+    for log2timeline that demonstrates the real power of this tool. One of the big
+    advantages of this tool set is the fact that you can even run it on a full image
+    of a system to generate a timeline of all actions that the users performed on
+    that system before creating the image.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the following sections, we will show some examples of how to use python-evtx
+    to find IOC in the Windows Event Log and how plaso will help you identify more
+    IOCs and display them in a nicely formatted timeline.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The python-evtx parser
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'First of all, we want to start with a basic conversion of the binary XML format
+    of EVTX files to the readable XML files. This can be done using `evtxdump.py`,
+    [https://github.com/williballenthin/python-evtx](https://github.com/williballenthin/python-evtx),
+    which will also be the basis of our following scripts:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'When dumping a logon event (event id 4724) with the help of the previously
+    mentioned script, the result will look similar to the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'When using `evtxdump.py`, [https://github.com/williballenthin/python-evtx](https://github.com/williballenthin/python-evtx),
+    with a large Windows Event Log file, the output will be very large as you will
+    find all the recorded logs in the generated XML file. For an analyst, it is often
+    important to perform a fast triage or search for specific events quickly. Due
+    to this, we modify the script in a way that it is possible to extract only specific
+    events, as shown in the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'If you now want to extract all logon events from the security event log of
+    a Windows system in a given XML file, you just have to execute the script as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: The plaso and log2timeline tools
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'In this section, we will demonstrate how to find logon and logoff events on
+    a Terminal Server. The Terminal Services logon and logoff events can be tagged
+    using `plasm` and filtered using `psort` to get a quick overview of which users
+    have been logging in to a machine and when and where from. This information can
+    be very helpful when searching for compromises. To start with plaso**,** you first
+    need to tag all your data. Tagging with plaso is as easy as shown in the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'After successful tagging, you can search the storage file for tags with the
+    following command:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: The result of this command execution will show you all the successful logon
+    events on a given system. Similar commands can be executed when searching for
+    the services that are started or EMET failures.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now, that you have seen the kind of data that you are able to extract from Windows
+    Event Log, we will show you a second component of Microsoft Windows that is really
+    helpful when searching for IOC or when trying to reconstruct the user behavior.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Analyzing the Windows Registry
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The Windows Registry is one of the essential components of the current Microsoft
+    Windows operating systems and thus also a very important point in a forensic investigation.
+    It performs two critical tasks for the Windows operating system. First, it is
+    the repository of settings for the Windows operating system and the applications
+    that are installed on the system. Second, it is the database of the configuration
+    of all installed hardware. Microsoft defines the registry as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*"A central hierarchical database used in Microsoft Windows 98, Windows CE,
+    Windows NT, and Windows 2000 used to store information that is necessary to configure
+    the system for one or more users, applications and hardware devices." (Microsoft
+    Computer Dictionary)*'
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: In the following sections, we will explain several elements of the Windows Registry
+    that may be important to a forensics investigator and that help in understanding
+    where to find the most valuable indicators. We will start with an overview of
+    the structure to help you find your way through the large amount of data in the
+    registry. Afterwards, we will demonstrate some helpful scripts to extract indicators
+    of compromise (IOC).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Windows Registry Structure
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'In the Windows operating system, the Windows Registry is organized logically
+    in a number of root keys. There are five logical root keys in the Windows Registry
+    of a Windows 7 system, as shown in the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Windows Registry Structure](img/2087_03_01.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: The previous figure shows the five root keys of the Registry in a Windows 7
+    system that are displayed by the Windows Registry Editor (one of the most common
+    tools to view and examine the Windows Registry).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'There are two kinds of root keys: volatile and nonvolatile. There are only
+    two root keys that are stored on the hard disk of the system and are nonvolatile
+    data held in the main memory: **HKEY_LOCAL_MACHINE** and **HKEY_USERS**. The other
+    root keys are either the subsets of these keys or are the volatile keys that can
+    only be examined during the runtime or when dumping the memory of a system before
+    starting the analysis of its image.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The Windows operating system organizes the Registry in a number of hive files.
+    According to Microsoft, (refer to [https://msdn.microsoft.com/en-us/library/windows/desktop/ms724877%28v=vs.85%29.aspx](https://msdn.microsoft.com/en-us/library/windows/desktop/ms724877%28v=vs.85%29.aspx)),
+    the hive is defined as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*A hive is a logical group of keys, sub keys, and values in the registry that
+    has a set of supporting files containing backups of its data.*'
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: If a new user logs on a Windows machine, a User Profile Hive is created. This
+    hive contains specific registry information (for example, application settings,
+    desktop environment, network connections, and printers) and is located in the
+    **HKEY_USERS** key.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Each hive has additional supporting files that are stored in the `%SystemRoot%\System32\Config`
+    directory. These files are updated each time a user logs on and the filename extensions
+    of the files in these directories indicate the type of data that they contain.
+    Refer to the following table for more details (reference taken from [https://msdn.microsoft.com/en-us/library/windows/desktop/ms724877%28v=vs.85%29.aspx](https://msdn.microsoft.com/en-us/library/windows/desktop/ms724877%28v=vs.85%29.aspx)):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| Extension | Description |'
+  prefs: []
+  type: TYPE_TB
+- en: '| --- | --- |'
+  prefs: []
+  type: TYPE_TB
+- en: '| none | A complete copy of the hive data. |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `.alt` | A backup copy of the critical `HKEY_LOCAL_MACHINE\System` hive.
+    Only the System key has an `.alt` file. |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `.log` | A transaction log of changes to the keys and value entries in the
+    hive. |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `.sav` | A backup copy of a hive. |'
+  prefs: []
+  type: TYPE_TB
+- en: In the following section, we will discuss where to find interesting hives and
+    how to analyze them with the help of the Python tools.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Parsing the Registry for IOC
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'In this section, we will discuss which registry hives are important when searching
+    for IOC. These subsections include the following topics:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**Connected USB Devices**: This section will show which devices had been connected
+    to a system and when. This helps in identifying the possible ways of data leakage
+    or exfiltration through a system user.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**User Histories**: This section will show where to find histories of the opened
+    files.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Startup Programs**: This section will show which programs will be executed
+    on system start. This can be very helpful when trying to identify the infected
+    systems.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**System Information**: This section will show where to find important information
+    of the system in question (for example, usernames).'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Shim Cache Parser**: This section will show how to get important IOC with
+    the help of common Python tools such as Mandiant''s **Shim Cache Parser**, refer
+    to [https://www.mandiant.com/blog/leveraging-application-compatibility-cache-forensic-investigations/](https://www.mandiant.com/blog/leveraging-application-compatibility-cache-forensic-investigations/).'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Connected USB Devices
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: One of the most common questions that an incident response person has to answer
+    is whether a user has exfiltrated confidential data from a system or whether a
+    system compromise has been initiated by a rogue USB device that a user connected
+    to the system. To answer this question, the Windows Registry is a good point to
+    start.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Any time a new USB device is connected to the system, it will leave information
+    in the registry. This information can uniquely identify each USB device that has
+    been connected to the system. The registry stores the vendor ID, product ID, revision
+    and serial numbers of each connected USB device. This information can be found
+    in the `HKEY_LOCAL_MACHINE\SYSTEM\ControlSet001\Enum\USBSTOR` registry hive, *Windows
+    Forensic Analysis*, *Harlan Carvey*, *Dave Kleiman*, *Syngress Publishing*, which
+    is also shown in the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Connected USB Devices](img/2087_03_02.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: User histories
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'On a Windows system, there are several lists in the Registry that help in identifying
+    the recent user activity (for example, recently visited web pages or recently
+    opened Microsoft Word files). The following table shows some of these lists with
+    the corresponding Windows Registry subkeys, for all lists and their Windows Registry
+    subkeys refer to [http://ro.ecu.edu.au/cgi/viewcontent.cgi?article=1071&context=adf](http://ro.ecu.edu.au/cgi/viewcontent.cgi?article=1071&context=adf):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| History list | Related windows registry sub key |'
+  prefs: []
+  type: TYPE_TB
+- en: '| --- | --- |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Typed URLs in Microsoft Internet Explorer | HKEY_USERS\S-1-5-21-[User Identifier]
+    \Software\Microsoft\Internet Explorer\TypedURLs |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Most recently used Microsoft Office files | HKEY_USERS\S-1-5-21-[User Identifier]
+    \Software \Microsoft\Office\12.0\Office_App_Name\File MRU |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Most recently mapped network drives | HKEY_USERS\S-1-5-21-[User Identifier]
+    \Software \Microsoft\Windows\CurrentVersion\Explorer\Map Network Drive MRU |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Most recently typed command on the RUN dialog | HKEY_USERS\S-1-5-21-[User
+    Identifier] \Software \Microsoft\Windows\CurrentVersion\Explorer\RunMRU |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Recent folders | HKEY_USERS\S-1-5-21-[User Identifier] \Software\Microsoft\Windows\CurrentVersion\Explorer\RecentDocs\Folder
+    |'
+  prefs: []
+  type: TYPE_TB
+- en: Startup programs
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'During some investigations, it is important to find out which software was
+    automatically run at startup and which software was manually started by a user.
+    To help answer this question, the Windows Registry `HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Run`
+    can help again. The list of startup programs is shown in the following figure
+    and is listed within the *Windows Register hive*, which is taken from *A Windows
+    Registry Quick Reference*, *Farmer, D. J*:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Startup programs](img/2087_03_03.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: System Information
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'In this section, we will see some registry hives that can be important when
+    analyzing a system. First of all, there is a large amount of information about
+    the user account that is stored in the registry, as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: A list of user accounts
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Last login time of each account
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Whether the account requires a password
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Whether a specific account is disabled or enabled
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The hash technique that is used for calculating the password hash
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'All of this information is held in the following registry key:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`HKEY_LOCAL_MACHINE\SAM\Domains\Account\Users`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'There is a lot more interesting data in the Windows Registry; however, one
+    type of information can be very helpful during a forensic investigation: the time
+    of the last shutdown of the system. This information is stored in the `ShutdownTime`
+    value in the following hive:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`HKEY_LOCAL_MACHINE\SYSTEM\ControlSet001\Control\Windows`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: This information is often interesting on server systems as it could be a hint
+    as to when the last updates had been applied or whether there had been any unplanned
+    reboots of a system, which also could have been caused by an attacker.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Shim Cache Parser
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: The Windows Registry contains application compatibility issues and a large amount
+    of metadata (such as file size, file's last modified time, and last execution
+    time depending on the operating system version) that could be important for the
+    application runtime in **Application Compatibility Shim Cache**.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: The implementation and structure of the Application Compatibility Shim Cache
+    can vary per operating system. Thus, check your findings thoroughly.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Data about application compatibility and runtime issues can be very useful
+    during an incident response or any other kind of forensic investigation in order
+    to identify the potentially infected systems and to create a timeline of when
+    the potential infection took place. Mandiant has released a tool to extract this
+    kind of evidence: **Shim Cache Parser**, (for more information refer to [https://github.com/mandiant/ShimCacheParser](https://github.com/mandiant/ShimCacheParser))'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*Shim Cache Parser will automatically determine the format of the cached data
+    and output their contents. It supports a number of inputs including system registry
+    hives, raw binary, or the current system''s registry.*'
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: 'The tool can be used against an exported registry hive or against the running
+    system. When using it against a running system, you just need to execute the following
+    command:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'When looking at the generated CSV output, you can find installed applications
+    and first runtime of these files, as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: Looking at the previous data, one can see that the user installed or updated
+    Avira AntiVir on 2015-05-24 and KeePass on 2014-07-10\. Also, you can find some
+    hints that the system seems to be a virtual system as you can see the hints of
+    Parallels, a Mac OS X virtualization platform.
+  prefs: []
+  type: TYPE_NORMAL
+- en: If one considers the tools that have been described previously and the information
+    that the Windows Event Log and Windows Registry contain, it is clear that in a
+    forensic investigation, not all questions concerning a system can be answered
+    without these sources of information.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Implementing Linux specific checks
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In this section, we will describe how to implement some integrity checks to
+    support the finding signs of system manipulation in Linux and similar (for example,
+    BSD) systems.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'These checks include the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Searching for anomalies in the local user management
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Understanding and analyzing file metadata for special permissions and privileges
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Using clustering algorithms on file metadata to get indicators on where to look
+    deeper
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Checking the integrity of local user credentials
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'The information about local users in Linux is mostly stored in two files: `/etc/passwd`
+    and `/etc/shadow`. The latter is optional and all the information about local
+    users—including the hashed password—was originally stored in `/etc/passwd`. Soon,
+    it was considered a security issue to store the password information in a file
+    that is readable by every user. Therefore, the password hashes in `/etc/passwd`
+    were replaced by a single x denoting that the corresponding password hash has
+    to be looked up in `/etc/shadow`.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The side effect of this evolutionary process is that the password hashes in
+    `/etc/passwd` are still supported and all the settings in `/etc/passwd` may override
+    the credentials in `/etc/shadow`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Both files are text files with one entry per line. An entry consists of multiple
+    fields separated by colons.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The format of `/etc/passwd` is as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**username**: This field contains the human-readable username. It is not required
+    for the username to be unique. However, most user management tools enforce unique
+    usernames.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**password hash**: This field contains the password in an encoded form according
+    to the Posix `crypt()` function. If this field is empty, then the corresponding
+    user does not require a password to log on to the system. If this field contains
+    a value that cannot be generated by the hash algorithm, for example, an exclamation
+    mark, then the user cannot log on using a password. However, this condition does
+    not render the account useless. A user with a locked password can still log on
+    using other authentication mechanisms, for example, SSH keys.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: As mentioned earlier, the special value x means that the password hash has to
+    be found in the shadow file.
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: 'Starting with the system library `glibc2`, the `crypt()` function supports
+    multiple hash algorithms. In that case, the password hash has the following format:'
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: The ID designates the hash algorithm that has been used to encode the password,
+    for example, 1 for md5, 5 for sha256, and 6 for sha512\. The salt is a randomly
+    generated string in order to modify the hash algorithm. Consequently, even identical
+    passwords result in different hash sums. The subfield "encrypted" holds the actual
+    hash of the password (modified by the influence of the salt).
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: '**numerical user ID**: This field denotes the ID of the user. Internally, the
+    Linux kernel uses only this numerical ID. The special ID 0 is assigned to the
+    administrative root user. Per default, user ID 0 is granted unlimited privileges
+    on the system.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**numerical group ID**: This field refers to the primary group of the user.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**comment field**: This field can contain the arbitrary information about the
+    user and is mostly used to hold the full name of the user. Sometimes, it also
+    contains a comma-separated list of the full username, phone number, and so on'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**user home directory**: The user home directory is a directory on the system''s
+    file system. After logging on, new processes are started with this directory as
+    the working directory.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**default command shell**: This optional field denotes the default shell that
+    is to be started after a successful logon.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'The format of `/etc/shadow` is as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The **username** field links the entry to the `passwd` entry with the same username.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The **password hash** field contains the encoded password in the same format
+    as described for the `passwd` file.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The next five fields contain the information about the password aging, such
+    as the date of the last password change, minimum password age, maximum password
+    age, password warning period, and password inactivity period.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: If the **account expiration date** field is nonempty, it will be interpreted
+    as the account expiration date. This date is expressed in days since January 1st,
+    1970.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'With this format description, a small Python routine is sufficient to parse
+    the file into a list of entries, each containing a list of fields as shown in
+    the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: On using this routine, typical manipulations in these files may be detected.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The first manipulation technique that we want to describe is the creation of
+    *multiple users who share the same numerical id*. This technique can be used by
+    attackers to plant a backdoor into the system. By creating an additional user
+    for an existing ID, an attacker can create an alias with a separate password.
+    The legitimate account owner would not be aware that there is an additional combination
+    of username/password to log in to the account.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'A small Python routine can detect this kind of manipulation, as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'During normal operation, the information in `/etc/passwd` and `/etc/shadow`
+    is synced, that is, every user should appear in both the files. If there *are
+    users appearing in only one of these files*, it is an indicator that the user
+    management of the operating system has been bypassed. A manipulation like this
+    can be detected with a similar script:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE11]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Just like the first function, this function should not produce any output on
+    a normal system. If there is an output similar to `Users missing in shadow: backdoor`
+    then there is a user account "backdoor" in the system without a record in the
+    `shadow` file.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Users without a password should not exist in a normal system. Furthermore,
+    all the password hashes should reside in the `shadow` file and all entries in
+    the `passwd` file should refer to the corresponding shadow entry. The following
+    script detects deviations from this rule:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE12]'
+  prefs: []
+  type: TYPE_PRE
+- en: Our last example of bypassing the operating system in the creation and manipulation
+    of user accounts is the *detection of non-standard hash algorithms* and *reusing
+    salts for multiple user accounts*. While a Linux system allows specifying the
+    hash algorithm for every entry in the `shadow` file, normally all user passwords
+    are hashed using the same algorithm. A deviating algorithm is a signal for an
+    entry being written to the `shadow` file without using the operating system tools,
+    meaning, system manipulation. If a salt is reused across multiple password hashes,
+    then the salt is either hardcoded into a manipulation tool or the cryptographic
+    routines of the system have been compromised, for example, by manipulating the
+    entropy source of the salt generation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The following Python script is capable of detecting this kind of manipulation:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE13]'
+  prefs: []
+  type: TYPE_PRE
+- en: Tip
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: '**Regular expressions**'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The last example uses the `re` module for **regular expression** matching to
+    extract the algorithm specification and salt from the password hash. Regular expressions
+    provide a fast and powerful way of text searching, matching, splitting, and replacing.
+    Therefore, we highly recommend getting familiar with regular expressions. The
+    documentation of the `re` module is available online at [https://docs.python.org/2/library/re.html](https://docs.python.org/2/library/re.html).
+    The book *Mastering Python Regular Expressions*, *Felix Lopez* and *Victor Romero*,
+    *Packt Publishing* provides further insights and examples on how to use regular
+    expressions.
+  prefs: []
+  type: TYPE_NORMAL
+- en: All of the detection methods in this section are examples of anomaly detection
+    methods. Depending on the system environment, more specific anomaly detections
+    can be used and implemented by following the schema of the examples. For example,
+    on a server system, the number of users having a password set should be small.
+    Therefore, counting all the users with passwords can be a reasonable step in the
+    analysis of such systems.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Analyzing file meta information
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: In this section, we will discuss file meta information and provide examples
+    on how it can be used in forensic analysis.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Understanding inode
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'Linux systems store file meta information in structures called **inodes** (**index
+    nodes**). In a Linux filesystem, every object is represented by an inode. The
+    data stored per inode depends on the actual filesystem type. Typical contents
+    of an inode are as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The **index number** is the identifier of an inode. The index number is unique
+    per file system. If two files share the same index number, then these files are
+    **hard-linked**. Consequently, hard-linked files only differ in their filename
+    and always have the same contents as well as the same meta information.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The **file owner** is defined by the numerical ID of the user (UID). There can
+    be only one owner per file. The user IDs should correspond to the entries in `/etc/passwd`.
+    However, it is not guaranteed that there are only files with existing entries
+    in `/etc/passwd`. Files can be transferred to the nonexisting users with administrative
+    privileges. Furthermore, the owner of the file may have been removed from the
+    system, making the file orphaned. For files on transportable media, for example,
+    USB drives, there is no mechanism of mapping the user ID from one system to another.
+    Consequently, the file owner seems to change when a USB drive is attached to a
+    new system with different `/etc/passwd`. Furthermore, this can also lead to orphaned
+    files if a UID does not exist on the system where the USB drive is attached.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The **file group** is defined by the numerical ID of the corresponding group
+    (GID). A file is always assigned to exactly one group. All groups of a system
+    should be defined in `/etc/groups`. However, files with group IDs that are not
+    listed in `/etc/groups` may exist. This indicates that the corresponding group
+    has been deleted from the system, the medium has been transferred from another
+    system where that group exists, or a user with administrative privileges reassigned
+    the file to a nonexisting group.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'The **file mode** (**also known as "protection bits"**) defines a simple form
+    of access rights to the corresponding file. It is a bit mask defining the access
+    rights for the file owner, for users belonging to the group that the file is assigned
+    to, and for all other users. For each of these cases, the following bits are defined:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**read** (**r**): If this bit is set on a regular file, the affected user is
+    allowed to read the file contents. If the bit is set on a directory, the affected
+    user is allowed to list the names of the contents of the directory. The read access
+    does not include the meta-information, which is the inode data of the directory
+    entries. Consequently, the read permission to a directory is not sufficient to
+    read files in that directory as this would require access to the file''s inode
+    data.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**write** (**w**): If this bit is set on a regular file, the affected user
+    is allowed to modify the contents of the file in arbitrary ways including manipulation
+    and deletion of the content. If this bit is set on a directory entry, then the
+    affected user is allowed to create, remove, and rename the entries in that directory.
+    The existing files in the directory have their own protection bits that define
+    their access rights.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**execute** (**x**): For regular files, this allows the affected user to start
+    the file as a program. If the file is a compiled binary, for example, in the ELF
+    format, then the execute privileges are sufficient to run the program. If the
+    file is a script that has to be interpreted, then read permission (r) is also
+    required to run the script. The reason is that the Linux kernel determines how
+    to load the program. If it detects that the file contains a script, it loads the
+    script interpreter with the current user''s privileges. For directories, this
+    flag grants permission to read the meta-information of the directory contents,
+    except the names of the entries. Therefore, this allows the affected user to change
+    the working directory to this directory.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**sticky** (**t**): This bit exists only once per inode. When it is set on
+    directories, it limits the right to delete and rename entries to the user owning
+    the entry. On regular files, this flag is ignored or has a file system specific
+    effect. When set on executables, this flag is used to prevent the resulting process
+    from being swapped out from RAM. However, this purpose of the sticky bit is deprecated
+    and Linux systems do not obey the sticky bit on executables.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**set id on execution** (**s**): This bit exists for the user and for the group.
+    When set for the user (SUID bit) on an executable file, the corresponding file
+    is always run with its owner as the effective user. Therefore, the program is
+    run with the privileges of the user owning the executable that is independent
+    from the user that is actually starting the program. If the file is owned by the
+    root user (UID 0), then the executable always runs with unlimited privileges.
+    When the bit is set for the group (SGID bit), the executable is always started
+    with the group of the file as effective group.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The size of the file in bytes.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The number of blocks that are allocated for that file.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: A timestamp denoting the last change of the file content (**mtime**).
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: A timestamp denoting the last read access to the file content (**atime**).
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Access time stamp tracking can be disabled by the mount option **noatime** to
+    limit write access to the media (for example, to extend the lifetime of the SD
+    cards). Furthermore, read-only access (mount option **ro**) to the file system
+    prevents atime tracking. Therefore, before analysis of atime information, it should
+    be checked whether atime tracking was enabled for that file system. The corresponding
+    initial mount options can be found in `/etc/fstab`.
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: A timestamp denoting the last change of the inode data (**ctime**).
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Notable extensions to these standard entries are **POSIX Access Control Lists**
+    (**POSIX ACLs**). These access control lists are supported by the major Linux
+    file systems and allow specifying additional access entries besides the three
+    classes (user, group, and others). These entries allow defining the additional
+    access rights (the previously listed bits r, w and x) for additional users and
+    groups. Evaluating POSIX ACLs will be discussed in detail in a separate section.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Another extension consists of the specification of **capability flags** to an
+    executable. This is used for a more granular specification of privileges than
+    using the SUID bit. Instead of giving an executable owned by the root user the
+    SUID bit and allowing it unlimited privileges, a set of required privileges can
+    be specified. Capabilities will also be handled in detail in a separate section.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Reading basic file metadata with Python
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Python provides built-in functionality to read the file status information with
+    the `os` module. The standard function to retrieve metadata from a file that is
+    specified by its name is `os.lstat()`. In contrast to the more commonly used `os.stat()`,
+    this function does not evaluate the targets of symbolic links but retrieves the
+    information about the link itself. Therefore, it is not prone to run into infinite
+    loops that are caused by circular symbolic links. Furthermore, it does not cause
+    any errors on links that lack the link target.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The resulting object is platform dependent; however, the following information
+    is always available: `st_mode` (protection bits), `st_ino` (inode number), `st_dev`
+    (identifier of the device containing the file system object), `st_nlink` (number
+    of hard links), `st_uid` (user ID of owner), `st_gid` (group ID of owner), `st_size`
+    (file size in bytes), `st_mtime` (last modification), `st_atime` (last read access),
+    `st_ctime` (last inode change). This information corresponds to the inode data
+    that is described in the previous section.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: A detailed description about `os.stat()` and `os.lstat()` is available at [https://docs.python.org/2/library/os.html#os.stat](https://docs.python.org/2/library/os.html#os.stat).
+    This also includes the examples of platform-dependent attributes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The `st_mtime`, `st_atime`, and `st_ctime` time stamps are specified in the
+    Unix timestamp format, that is, the number of seconds since January 1st 1970\.
+    With the datetime module, this time format can be converted into a human readable
+    form, using the following script:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE14]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'This code listing outputs the common return values of the `lstat` call. A typical
+    output looks similar to the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE15]'
+  prefs: []
+  type: TYPE_PRE
+- en: This sample output denotes that on the lab system, `/etc/passwd` is a regular
+    file with read permission for all users. This information is derived from the
+    `st_mode` member of the result. On using Python's `oct()` function, it is converted
+    in its octal representation, that is, *one decimal digit of the output represents
+    exactly three bits of the protection bits*. The leading zero in the output is
+    a common indicator for the octal representation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The lower three digits (`644` in the example output) always denote the access
+    rights for the owner of the file (`6` in the example), for users belonging to
+    the group of the file (left `4` in the example), and all other users (last digit).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: '**How to interpret the file mode bits?**'
+  prefs: []
+  type: TYPE_NORMAL
+- en: In its octal form, the bit values of the three least significant digits represent
+    the access rights for the owner, group, and other users (last digit). For every
+    digit, the read access (r) has bit value 4, write access (w) has bit value 2,
+    and execution (x) has bit value 1.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Therefore, in our example, the digit `6` denotes read and write access (4 +
+    2) for the owner of the file. Members of the group 0 and all other users only
+    have read access (4).
+  prefs: []
+  type: TYPE_NORMAL
+- en: The next digit from the right denotes the sticky bit (value 1), the SGID bit
+    (value 2), and the SUID bit (value 4).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: The `stat` module defines the constants for all bits of `st_mode`. Its documentation
+    is available at [https://docs.python.org/2/library/stat.html](https://docs.python.org/2/library/stat.html).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'These constants can be used as a bit mask to retrieve information from `st_mode`.
+    The earlier example could be extended to detect SGID, SUID, and sticky mode, as
+    follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE16]'
+  prefs: []
+  type: TYPE_PRE
+- en: For testing the code, you may use the example to evaluate the mode of `/etc/passwd`,
+    `/tmp`, and `/usr/bin/sudo` on a standard Linux system. Typically, `/tmp` has
+    the sticky flag set, `/usr/bin/sudo` has SUID set, and `/etc/password` has none
+    of the special bits set.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The remaining bits denote the type of the file. The following file types may
+    appear on a standard Linux filesystem:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| File type | Check function in module `stat` | Description |'
+  prefs: []
+  type: TYPE_TB
+- en: '| --- | --- | --- |'
+  prefs: []
+  type: TYPE_TB
+- en: '| regular | S_ISREG() | This is used to store arbitrary data |'
+  prefs: []
+  type: TYPE_TB
+- en: '| directory | S_ISDIR() | This is used to store lists of other files |'
+  prefs: []
+  type: TYPE_TB
+- en: '| soft link | S_ISLNK() | This references one destination file via name |'
+  prefs: []
+  type: TYPE_TB
+- en: '| character device | S_ISCHR() | This is the interface in the filesystem to
+    access the character-oriented hardware, for example, terminals |'
+  prefs: []
+  type: TYPE_TB
+- en: '| block device | S_ISBLK() | This is the interface in the filesystem to access
+    the block-oriented hardware, for example, disk partitions |'
+  prefs: []
+  type: TYPE_TB
+- en: '| fifo | S_ISFIFO() | This is the representation of a named, unidirectional
+    interprocess interface in the filesystem |'
+  prefs: []
+  type: TYPE_TB
+- en: '| socket | S_ISSOCK() | This is the representation of a named, bidirectional
+    interprocess interface in the filesystem |'
+  prefs: []
+  type: TYPE_TB
+- en: Hard links are not represented by a special file type but are merely multiple
+    directory entries in the same filesystem sharing the same inode.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Unlike the tests for SGID, SUID, and sticky bit, the file type checks are implemented
+    as functions of the `stat` module. These functions require the file mode bits
+    as the parameter, for example:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE17]'
+  prefs: []
+  type: TYPE_PRE
+- en: In this example, the `os.readlink()` function is used to extract the target
+    filename if a symbolic link is encountered. Symbolic links may refer to an absolute
+    path or a relative path starting from the location of the symbolic link in the
+    filesystem. Absolute symbolic links have a target starting with the character
+    `/`, that is, the target is to be searched starting with the root directory of
+    the system.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: If you mount your copy of the evidence in your lab environment for analysis,
+    the absolute symbolic links are either broken or they point to a file in your
+    lab workstation! The relative symbolic links remain intact as long as their destination
+    resides in the same partition as the link.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'A possible output of the previous example code could be `- File type: symbolic
+    link pointing to ../init.d/rc.local -` , which is an example of a relative link.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Evaluating POSIX ACLs with Python
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'The file mode bits, which are defined in the file''s inode, only allow three
+    addressees for permissions: the file owner, the users belonging to the file''s
+    group, and everybody else.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: If a more granular set of permissions is required, the traditional solution
+    will be to create a group that consists of all the users who should have access
+    and transfer the file to that group. However, the creation of such groups has
+    major disadvantages. First, the list of groups can become unnecessarily large.
+    Second, the creation of such groups requires administrative privileges and therefore,
+    breaks the Linux/Unix concept of **discretionary access control**.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: '**Discretionary access control** is the concept of allowing the owner of the
+    information, that is, the file owner, to decide who should be allowed the access.
+    In discretionary access control, ownership is the sole requirement for being allowed
+    to grant or revoke access to a resource.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Last but not least, file owners may just open up files and directories for everyone
+    on the system if there is no group that is matching to the list of the users to
+    authorize. This breaks the *concept of least privilege*, that is, not granting
+    more permissions on a system than required for its operation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To maintain the discretionary access control as well as the concept of least
+    privilege, an optional extension to the file access mode was specified, that is,
+    **POSIX ACL**. Besides allowing read, write, and execute permissions for the file
+    owner, group, and others, POSIX ACLs allow to specify the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Specific read, write, and execute permissions for arbitrary users
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Specific read, write, and execute permissions for arbitrary groups
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Every privilege that is not set in the access mask is not granted. Only the
+    permissions of the file owner and others are not affected by the access mask.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'On the command line, the `getfacl` and `setfacl` tools can be used to read
+    and modify the POSIX ACL entries respectively:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE18]'
+  prefs: []
+  type: TYPE_PRE
+- en: This example also shows that the standard permission set is reflected in the
+    POSIX ACL. Consequently, if POSIX ACLs are supported on a filesystem, then the
+    complete permission set is contained in POSIX ACLs.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let''s revoke the read access to `other` users and add read/write access to
+    the user `games`, as shown here:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE19]'
+  prefs: []
+  type: TYPE_PRE
+- en: The `-m o::0` parameter removes all the privileges from `other` users while
+    `–m u:games:rw` grants read/write access to the user `games`. The subsequent call
+    to `getfacls` shows the additional entry for `user:games` and the changed entry
+    for `other`. Furthermore, a `mask` entry is automatically created to limit the
+    access from all the listed groups and users (except the file owner) to read/write.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The output of the `ls` command shows a plus sign `+` to indicate the existence
+    of the additional ACL entries. As also indicated by the output of `ls`, tools
+    that only evaluate the mode bits of a file are unaware of the additional permissions,
+    for example, the additional access privileges for the user `games` do not show
+    up in the standard output of `ls` or other file management applications.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Forensic tools that do not look for and interpret POSIX ACL entries may miss
+    the additional access rights that are introduced by the ACL entries! Consequently,
+    the investigator may get a false impression of strict, effective privileges.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Fortunately, the Python library **pylibacl** can be used to read and evaluate
+    POSIX ACLs and hence, avoid that pitfall. The library introduces the `posix1e`
+    module, that is, a reference to the initial draft first mentioning POSIX ACLs.
+    The detailed documentation about this library is available at [http://pylibacl.k1024.org/](http://pylibacl.k1024.org/).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The following script is an example of how to look for files with the additional
+    ACL entries:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE20]'
+  prefs: []
+  type: TYPE_PRE
+- en: The `posix1e.ACL` class represents all the permissions set on a specific object
+    on the filesystem. When its constructor is called with a filename as the `file`
+    parameter, it represents ACL of that file. In the `acls_from_file()` function,
+    a regular expression is used to detect and optionally filter out the standard
+    permissions from the text representation of the ACL set.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The `os.walk()` function is used to iterate over a subtree of the filesystem.
+    If you iterate over `os.walk()` like in the example, you get a triple in each
+    iteration denoting the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The currently visited directory
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: A list with all of its subdirectories (relative to the currently visited directory)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: A list with all of its nondirectory entries, for example, files and soft links
+    (relative to the currently visited directory)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The check in the last highlighted line of the script is an example of the evaluating
+    file type information as described in the previous section. It is used to detect
+    and skip symbolic links. The symbolic links always use ACLs of their target and
+    consequently, POSIX ACLs on symbolic links are not supported.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'When invoked with `/tmp` as the parameter on our lab machine, it generates
+    the following output:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE21]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'This output shows that the script detected the leftovers from our first tests
+    with POSIX ACLs: An additional read/write permission for user (u) ID 5 (that is,
+    user `games` on the lab machine) and a mask (m) entry that limits the effective
+    privileges to read/write. The script outputs the numerical user IDs because pylibacl
+    would otherwise use your workstation''s `/etc/passwd` to look up the usernames.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: If you run this script on a copy of the filesystem that contains your evidence,
+    it will list every filesystem object with permissions beyond the Linux standard
+    permission set.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Most standard Linux systems and their applications do not use POSIX ACLs. Therefore,
+    if you encounter any additional POSIX ACL entries during your investigation, it
+    is a good idea to thoroughly check whether these POSIX ACLs were the result of
+    a legitimate and benign system operation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Reading file capabilities with Python
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'Traditionally, in Linux, there are two types of administrative privileges:
+    root and non-root. If a process is granted the root privileges, that is, it runs
+    with UID 0, then it may bypass every security restriction of the Linux kernel.
+    On the other hand, if a process does not run with these root privileges, then
+    all security restrictions of the kernel apply.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In order to replace this **all or nothing** mechanism with a more fine-grained
+    system, the **Linux capabilities** were introduced. The corresponding man page
+    describes it as the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*For the purpose of performing permission checks, traditional UNIX implementations
+    distinguish two categories of processes: privileged processes (whose effective
+    user ID is 0, referred to as superuser or root), and unprivileged processes (whose
+    effective UID is nonzero).*'
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: ''
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: '*Privileged processes bypass all kernel permission checks, while unprivileged
+    processes are subject to full permission checking based on the process''s credentials
+    (usually: effective UID, effective GID, and supplementary group list).*'
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: ''
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: '*Starting with kernel 2.2, Linux divides the privileges traditionally associated
+    with superuser into distinct units, known as capabilities, which can be independently
+    enabled and disabled. Capabilities are a per-thread attribute.*'
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: '**What capabilities exist?**'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The list of Linux capabilities can be found in the `/usr/include/linux/capability.h`
+    file on a standard Linux system. A more human-readable form is provided in the
+    capabilities man page. It can be viewed via `man 7 capabilities`. The Linux capabilities
+    include every special permission granted to the root user, for example, overriding
+    file permissions, using raw network connections, and so on.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Capabilities can be assigned to the threads of processes during the execution
+    and to the executables on the filesystem. In either case, there are always three
+    sets of capabilities:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**permitted set** (**p**): The permitted set contains all capabilities that
+    a thread may request. If an executable is started, its permitted set is used to
+    initialize the permitted set of the process.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**inheritable set** (**i**): The inheritable set of an execution set defines
+    the capabilities that may be forwarded from the thread to a child process. However,
+    only capabilities that are defined in the inheritable set of the executable file
+    of the child process are forwarded to the child process. Therefore, a capability
+    is only inherited if it is in the inheritable set of the parent process and in
+    the file attribute of the child executable.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**effective set** (**e**): This is the set of capabilities that the Linux kernel
+    actually checks when a privileged operation is requested from an execution thread.
+    By calling `cap_set_proc()`, a process can disable or enable the capabilities.
+    Only capabilities in the permitted set (p) may be enabled. On the filesystem,
+    the effective set is represented by only one bit. If this bit is set, the executable
+    is started with all of its permitted capabilities also being effective. If the
+    bit is not set, the new process starts without the effective capabilities.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_IND
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Capabilities grant administrative privileges to executables without requiring
+    the SUID bit in the file mode. Therefore, during a forensic investigation, all
+    the file capabilities should be documented.
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: 'Using Python''s ctypes, the shared `libcap.so.2` library can be utilized to
+    retrieve all the file capabilities from a directory tree, as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE22]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The first highlighted line loads the `libcap.so.2` library for direct use in
+    Python. As the memory for the text representation of the capabilities is allocated
+    in this library, it is the responsibility of the caller, that is, our script,
+    to deallocate this memory after usage. The solution for this task, which was chosen
+    here, is to extend the `ctype` default representation of **pointer to character**,
+    that is, `ctype.c_char_p`. The resulting `cap2_smart_char_p` class is a simple
+    version of the so-called **smart pointer**: If the Python representation of objects
+    of this class is being destroyed, the objects will automatically call `cap_free()`
+    to free the corresponding resources that are previously allocated by `libcap.so.2`.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: With the `cap_get_file()`library function, the capabilities of a file can be
+    retrieved. The subsequent call to `cap_to_text()` transforms this internal representation
+    into human-readable text.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'If the script is saved to `chap03_capabilities.py`, then it can be called on
+    the lab machine as shown in the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE23]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Of course, the output is highly dependent on the Linux version and distribution.
+    It may look similar to the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE24]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'This output means that only one executable in `/usr` has the special capabilities
+    set: `/usr/bin/gnome-keyring-daemon`. The name of the capability is given by the
+    constant `cap_ipc_lock`, this capability is in the permitted set and is immediately
+    effective on starting this program as denoted by `+ep`.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To resolve the meaning of `cap_ipc_lock`, we will call the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE25]'
+  prefs: []
+  type: TYPE_PRE
+- en: Then we will search for CAP_IPC_LOCK. This reveals that the capability grants
+    the right to lock the parts or all of a process memory in RAM and prevent the
+    swapping of that process. As `gnome-keyring-daemon` stores user credentials in
+    RAM, having the privilege to prevent these credentials from being written to the
+    swap is highly advisable from a security perspective.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Currently, most of the standard Linux distributions make little use of the file
+    capability feature. Therefore, the discovered file capabilities—especially those
+    that are not required for normal operation—may be the first indicator of system
+    manipulation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Clustering file information
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: In the previous section, we showed you how to retrieve and collect file metadata
+    from the Linux/Unix filesystem. In this section, we will provide examples to locate
+    the changes in the filesystem metadata, which may be interesting for further inspection
+    by the investigator.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Creating histograms
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Creating histograms is the process of clustering the data in bins of equal size
+    and drawing the size of these bins. With Python, plotting these histograms can
+    be easily achieved using the Python **matplotlib** module. A detailed documentation
+    including the use cases, examples, and Python source code is available at [http://matplotlib.org/](http://matplotlib.org/).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The following Python script can be used to generate and display the histograms
+    of file access times and file modification times of a directory tree:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE26]'
+  prefs: []
+  type: TYPE_PRE
+- en: The `gen_filestats()` function iterates the directory tree and collects all
+    inode data. The `show_date_histogram()` function is used to generate and display
+    the data as a histogram.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the first highlighted line of the code, the encoding of the timestamp is
+    changed. This is required because the inode data gives us the timestamps as number
+    of seconds since 1970-01-01\. This format is what `datetime.fromtimestamp()` expects.
+    However, Matplotlib needs timestamps in number of days since 0001-01-01 of the
+    Gregorian calendar. Fortunately, the `datetime` class can provide this representation
+    with its `toordinal()` method.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The next highlighted line is the actual generation and drawing of the histogram
+    in the following figure. All the other statements of `show_date_histogram()` merely
+    serve the purpose of adding labels and formatting to the drawing.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The following is a sample result of the `/sbin` directory on a standard Linux
+    desktop system:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Creating histograms](img/2087_03_04.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Here, the dates of the major system updates are clearly visible. An investigator
+    should be aware that the file metadata and these histograms *do not contain historic
+    file information*. Therefore, from the previous histogram, one cannot derive that
+    there were little or no security updates before December 2011\. It is more likely
+    that most of the files that were patched before December 2011 have been modified
+    later on, therefore, masking older patches in the histogram.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let''s take a look at the access time distribution of this directory:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Creating histograms](img/2087_03_05.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: This histogram provides some insight about the access pattern of this directory.
+    First, the atime timestamp tracking is enabled on the systems. Otherwise, no current
+    access timestamps would be visible in the histogram. About half of the files have
+    been read recently. This information can be used to verify the information about
+    the time when the evidence was acquired or when the system operator claimed to
+    have taken the system offline.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Furthermore, the contents of this directory were very likely not scanned regularly
+    for viruses and were not recently packed into an archive. Both the actions usually
+    update the atime timestamp.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'If the following command is issued on the system, then `/sbin` is scanned for
+    viruses. Of course, the scanner has to read every file in that directory to scan
+    its contents:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE27]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The atime diagram of `/sbin` reflects the changes, as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Creating histograms](img/2087_03_06.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'The changes are obvious: Most of the bars have collapsed in one at the current
+    time, that is, the time of the virus scan. The timescale is stretched to a single
+    day. Consequently, the bar on the left can also be considered to be a result of
+    the virus scan.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: If there is a directory having all the `atime` timestamps on a single date,
+    then this directory was recently copied, scanned for viruses, or packed in an
+    archive. Of course, with sufficient access rights, the timestamps could have been
+    manually set as well.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Advanced histogram techniques
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'In the previous section, the histograms were used to learn about the filesystem
+    metadata. However, these histograms have a number of disadvantages, as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: All histogram bars are of equal width
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The bars are not placed according to the actual clustering of the data, for
+    example, a cluster may be distributed over two bars
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The outliers disappear, that is, the low bars are easily confused with the empty
+    bars
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Therefore, this section presents an example of how to use simple **machine
+    learning algorithms** for a smarter clustering of the data. A widely used machine
+    learning library for Python is **scikit-learn**. Among other domains, it provides
+    several algorithms for clustering the input data. We recommend visiting [http://scikit-learn.org](http://scikit-learn.org)
+    for an overview of all the algorithms and examples of their use. The following
+    Python script uses the `DBSCAN` algorithm from scikit-learn to generate clusters
+    of a given width (in days):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE28]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The `gen_filestats()` function is identical to the version used for the basic
+    histograms in the previous section. The `calc_atime_clusters()` and `calc_mtime_clusters()`
+    functions extract the access and modification time of the collected information
+    and pass it on to the cluster generation in `_calc_clusters`. The `DBSCAN` is
+    initialized with two parameters: the size of a cluster (`eps`, in seconds) and
+    the minimum number of sample data that can make a cluster (`min_samples`). After
+    the parameters of the algorithm are set, the data is fed in for the purpose of
+    clustering via the `fit()` method.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The result of this clustering is a tuple that consists of **labels** and a list
+    of indices per label. A label correlates to a cluster that is found in the input
+    data. Its value is the center, that is, the average date, of all dates of the
+    cluster. The special label `-1` acts as a container for all the outliers, that
+    is, all the data that could not be assigned to a cluster.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The `calc_histogram()` function counts the size of each cluster and returns
+    the histogram, that is, the labels and the number of entries as two-dimensional
+    array.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We can run this Python script on the `/sbin` directory, as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE29]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The output may look similar to the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE30]'
+  prefs: []
+  type: TYPE_PRE
+- en: Here, the access time histogram shows only one entry, reflecting our previous
+    scan of the directory. Furthermore, all the major system updates in the recent
+    past are shown in the modification time histogram.
+  prefs: []
+  type: TYPE_NORMAL
+- en: With this tool, the investigator is able to cluster the filesystem information
+    in order to detect the scanning or extraction of the directories as well as the
+    neglected security patches. Furthermore, the special cluster -1 can be analyzed
+    to get the names of the files, which were modified outside of the major system
+    updates.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Summary
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In this chapter, we saw prominent examples of the special properties of Microsoft
+    Windows and Linux (and Linux-like) systems. You are now able to extract information
+    from the Windows event log, the Windows registry, Linux files, and the Linux filesystem.
+    Using Python, all of this information can be automatically and semiautomatically
+    analyzed for the Indicators of Compromise, reconstructing the recent system activity,
+    and signs of exfiltration.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Furthermore, reading the filesystem capabilities shows us how to use ctype to
+    load the native libraries to assist the filesystem analysis.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the clustering of file information, we provided the first example on how
+    to use the basic machine learning algorithms to support the forensic analysis.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now that we took a look at the local systems, we will go to the next chapter
+    and take a look at the network traffic and how to search for the Indicators of
+    Compromise (IOC) there.
+  prefs: []
+  type: TYPE_NORMAL

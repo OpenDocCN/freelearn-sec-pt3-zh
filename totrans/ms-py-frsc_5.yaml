@@ -1,0 +1,718 @@
+- en: Chapter 5. Using Python for Virtualization Forensics
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Currently, virtualization is one of the most trending concepts of modern IT.
+    For forensic analysis, it introduces new challenges as well as new techniques.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In this chapter, we will show how virtualization introduces the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: New attack vectors
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: New chances of gathering evidence
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: New targets for forensic analysis such as the virtualization layer
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: New sources for forensic data
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Considering virtualization as a new attack surface
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Before we start with a forensic analysis, it is important to understand what
+    to look for. With virtualization, there are new attack vectors and scenarios that
+    are introduced. In the following sections, we will describe some of the scenarios
+    and how to look for the corresponding evidence.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Virtualization as an additional layer of abstraction
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Virtualization is the technique of emulating IT systems such as servers, workstations,
+    networks, and storages. The component that is responsible for the emulation of
+    virtual hardware is defined as **hypervisor**. The following figure depicts the
+    two main types of system virtualization that are used today:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Virtualization as an additional layer of abstraction](img/2087_05_01.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: The architecture on the left-hand side is called **bare-metal hypervisor** architecture
+    and is also known as a **Type 1** hypervisor. In this architecture, the hypervisor
+    replaces the operating system and runs directly on the bare metal hardware. Examples
+    of Type I hypervisors are VMware ESXi and Microsoft Hyper-V.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The right-hand side of the image depicts an architecture that is usually referred
+    to as **desktop virtualization** or a **Type 2** hypervisor. In this architecture,
+    there is a standard operating system that is running on the hardware, for example,
+    a standard Windows 8 or Linux Desktop system. The hypervisor runs among other
+    native applications directly on this operating system. Some functionality of the
+    hypervisor may directly interact with the underlying hardware, for example, by
+    providing special drivers. For Type 2 hypervisors, the operating system that is
+    running directly on the hardware is called **host OS**, while the operating system
+    running on a virtual machine is called **guest OS**. Examples of Type 2 hypervisor
+    architectures are Oracle VirtualBox and VMware Workstation. These hypervisors
+    can be installed just like any other application on an existing operating system.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: While Hyper-V seems like Type 2, it actually converts the host OS into just
+    another guest OS during the installation and establishes a Type 1 architecture.
+  prefs: []
+  type: TYPE_NORMAL
+- en: A common feature of almost all virtualization environments is the ability to
+    create **snapshots**. A snapshot of a virtual system contains a frozen-in-time
+    state of the system. All changes to the system that are happening after the snapshot
+    creation can be undone by the hypervisor to roll back to the point in time when
+    the snapshot was taken. Furthermore, most systems allow having multiple snapshots
+    of a single system and rolling back and forward to arbitrary snapshots. Snapshots
+    can be utilized as a source of forensic data, which we will demonstrate in the
+    *Using virtualization as source of evidence* section.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: '**For forensics, snapshots are to be treated like independent machines!**'
+  prefs: []
+  type: TYPE_NORMAL
+- en: If a virtual system is subject to forensic analysis, always check whether this
+    system is a virtual system and whether there are snapshots. If snapshots exist,
+    the forensic analysis has to be repeated for every single snapshot as if this
+    were an independent virtual machine. The rationale behind this requirement is
+    that it is most likely unknown when the system was compromised, when the attacker
+    tried to destroy evidence, and most importantly, what version of the machine was
+    running during the attack.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Most virtualization environments consist of more than one hypervisor. To ease
+    the management of multiple hypervisors and to enable additional features; for
+    example, moving machines between hypervisors for fail over, load balancing, and
+    save power; these environments provide a central management for all of hypervisors.
+    In the case of VMware vSphere, this management component is called **vCenter Server**,
+    as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Virtualization as an additional layer of abstraction](img/2087_05_02.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: If **vCenter Server** is used, then all administrative tasks are supposed to
+    be handled via this **vCenter Server** instance.
+  prefs: []
+  type: TYPE_NORMAL
+- en: How does this new hypervisor layer influence attack scenarios and forensics?
+  prefs: []
+  type: TYPE_NORMAL
+- en: The introduction of the new hypervisor layer also introduces a new layer that
+    can be used to manipulate virtual systems without detection and adds another new
+    layer that can be subject to the attacks. In the following sections, we will provide
+    some sample scenarios for attacks that are committed through the hypervisor.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Creation of rogue machines
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: If an attacker can get access to the hypervisor, he may just create new virtual
+    resources. These resources can act as a bridgehead in the network or just steal
+    memory and compute resources from the environment. Therefore, it is crucial to
+    extract the creation and disposal of virtual resources during a forensic analysis
+    of the hypervisor environment.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Fortunately, every widespread virtualization environment offers APIs and language
+    bindings to enumerate the virtual machines and other virtual resources of the
+    environment. In this chapter, we chose to use VMware vSphere as the prominent
+    example of a virtualization environment.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: '**VMware vSphere** is one of the most used virtualization environments for
+    on-premise virtualization. Its basic structure consists of one central management
+    instance called vCenter Server and one or multiple systems that are actually hosting
+    the virtual environment (hypervisors), called **ESXi** servers. To programmatically
+    control a vSphere environment with Python, pyVmomi is used. This Python SDK is
+    available on Github at [https://github.com/vmware/pyvmomi](https://github.com/vmware/pyvmomi).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the following, we will use `pyVmomi` to create a list of all virtual machines.
+    It is recommended to run such inventory scan at regular intervals to compare the
+    list of existing virtual assets with your local inventory database.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We recommend to install pyVmomi using `pip`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: Tip
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: '**Sample code for pyVmomi**'
+  prefs: []
+  type: TYPE_NORMAL
+- en: There is a project on GitHub about a community-provided sample code for `pyVmomi`.
+    More information about these samples is available on [https://vmware.github.io/pyvmomi-community-samples/](https://vmware.github.io/pyvmomi-community-samples/).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Then, a script as shown in the following may be used to enumerate all systems
+    of the vSphere environment:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: This script creates a connection to the vCenter Server platform. However, it
+    can also be used to connect to a single ESXi hypervisor instance. This is possible
+    because the API offered to the script is identical for both management variants.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: The API used by `pyVmomi` is the **vSphere Web Service API**. A detailed description
+    is available in the vSphere Web Services SDK via [https://www.vmware.com/support/developer/vc-sdk/](https://www.vmware.com/support/developer/vc-sdk/).
+  prefs: []
+  type: TYPE_NORMAL
+- en: The highlighted lines show that the script uses recursion to enumerate all virtual
+    machines. This is necessary because in VMware vSphere, virtual machines can be
+    put into nested groups.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Here is a sample call of this script with the output of a single virtual machine:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: The output lists the name of the virtual machine, its current state, the path
+    of its configuration file, a hint for the guest operating system, and the unique
+    IDs for the instance and the BIOS configuration. The path information is valuable,
+    especially, because it shows where to find all the virtual machine's configuration
+    and data file.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Cloning of systems
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: In the previous section, we used the API of the hypervisor to get the forensic
+    data. In this section, we will look for traces of abuse of this API. Therefore,
+    we will analyse the log information of the vSphere installation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: '**Collect log information on a central log system**'
+  prefs: []
+  type: TYPE_NORMAL
+- en: In this section, we will assume that the log information is stored with the
+    default settings of the vSphere installation. However, when setting up a system,
+    we recommend to store the log information on a dedicated logging system. This
+    makes it more difficult for an attacker to manipulate system logs as he requires
+    access to not only his target system, but also to the central log collection system.
+    Another advantage of many central log collection systems is the built-in log analysis
+    function.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'While a copy of all system logs is highly recommended for a forensically sound
+    analysis, single events can also be reviewed using the event browser of VMware
+    vSphere, as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Cloning of systems](img/2087_05_03.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'The vSphere environment offers collecting and storing all log files in an archive.
+    Perform the following steps to get an archive of all the available log data:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Use the Windows version of vSphere Web Client and log in to the **vCenter Server**.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: In the **Administration** menu, select **Export System Logs**.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Select one or multiple vCenter Servers to export the logs, as shown in the following:![Cloning
+    of systems](img/2087_05_04.jpg)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: When asked to **Select System Logs**, ensure that all log types are selected,
+    as follows:![Cloning of systems](img/2087_05_05.jpg)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The log files are saved as compressed archives. One archive represents the log
+    information of one system, that is, vCenter Server or ESXi host.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'First, we will extract the collected log file using `tar` with a command as
+    follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: The filename of this archive follows the format Host/IP—`vcsupport` (for vCenter
+    Server)—timestamp. The directory in this archive follows the vc-Hostname-Timestamp
+    naming scheme, for example, `vc-winserver-2015-07-05--02.19`. The timestamps of
+    the archive name and the contained directory usually do not match. This can be
+    caused due to the clock drift and the time required to transmit and compress the
+    logs.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In the following, we will use the vCenter Server logs to reconstruct events
+    indicating the cloning of virtual machines. In this example, we will use the redundancy
+    of the logs and use the log data from one of the core services of vCenter Server:
+    `vpxd`, that is, the core vCenter daemon:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'First, this script reads the so-called performance log of `vpxd`. This log
+    contains data about client sessions and we use it to extract a mapping from the
+    unique session identifier to the client username and the IP address that the client
+    is connecting from. In the second step, the main log of `vpxd` is searched for
+    the start of tasks of `vim.VirtualMachine.clone` type, that is, the cloning of
+    virtual machines on the server side. The session information is then looked up
+    in the mapping that is harvested from the performance log to retrieve the data
+    about possible cloning events, as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: In the example, the script revealed that the `Administrator` account was used
+    to clone a virtual machine. This hint can be correlated with the event log of
+    vCenter Server and it will show up there as well. If it does not, then this is
+    a strong indicator of a compromised environment.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Depending on your system environment, operations such as cloning and exporting
+    virtual machines may be a part of daily operations. In that case, the previous
+    script or its variants may be used to detect unusual users or source IPs that
+    are performing these operations.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Similar searches and correlations can be used for other events of interest.
+    Copying of files of the datastore or exporting virtual machines are promising
+    candidates.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Searching for misuse of virtual resources
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: It is not just the motivated attacker that we are looking for. With virtualization,
+    there is also the legitimate administrator of the virtual infrastructure who makes
+    his life easier by bending some rules. Additionally, an attacker may use the power
+    of virtualization to reshape the topology of the infrastructure according to his
+    needs. In the following sections, we will show some scenarios and detection methods.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Detecting rogue network interfaces
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Network virtualization allows operations to create almost arbitrary network
+    infrastructures in a static, physical network. This capability is sometimes referred
+    to as **Data center as a Service** (**DCaaS**). DCaaS allows the customers to
+    utilize a defined portion of a physical data center to define virtual data centers
+    in software.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Due to malicious access to this capability or human error, the resulting network
+    configuration may expose internal resources to the internet, bypass firewalls,
+    or allow access to malicious services.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Therefore, we will show a simple way to programmatically get the network configuration
+    of a vSphere environment using Python.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: '**Visualize virtual networks**'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Most virtualization environments have built-in capabilities to visualize the
+    virtual network setup. For example, VMware vSphere can create an image of the
+    network topology. In a forensic analysis, this may serve as the starting point
+    and support focusing the next step on the most promising assets.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Detecting rogue network interfaces](img/2087_05_06.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: This image was generated with the Windows client software for VMware vCenter
+    Server and it depicts our test setup. Obviously, **EvesMachine** is not connected
+    properly, that is, it can bypass the **Firewall**.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The community sample scripts for `pyVmomi` already provide a script for iterating
+    over all network interfaces, [https://github.com/vmware/pyvmomi-community-samples/blob/master/samples/getvnicinfo.py](https://github.com/vmware/pyvmomi-community-samples/blob/master/samples/getvnicinfo.py),
+    and displaying the connections of virtual machines. Therefore, we modified this
+    script to display only those virtual machines that have multiple network connections,
+    as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: First, this script iterates over all (hypervisor) hosts to collect information
+    about the virtual switches that are present on each ESXi system. Then, it iterates
+    over all virtual machines to collect those with more than one network card. Then
+    the information about virtual network cards is combined with the information about
+    virtual switches to derive the information about the connectivity.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Here is the sample output from our lab environment as depicted previously:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: Our script correctly identified the two systems, `EvesMachine` and `Firewall`,
+    being simultaneously connected to different networks. In this particular case,
+    both the systems can be used to connect `VLAN 0` with `VLAN 8` on the same virtual
+    switch, `dvSwitch`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Detecting direct hardware access
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'It may sound like an oxymoron, but most virtualization techniques allow direct
+    hardware access. The legitimate reasons to allow virtual systems to directly access
+    a piece of hardware without having to use the services of the hypervisor are as
+    follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**Special hardware supposed to be connected to a virtual machine**: Special
+    hardware such as radio clocks for virtual time servers or dongles being part of
+    a copy protection mechanism.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Temporary use of physical media on a virtual system**: Sometimes, this capability
+    is used to access media from physical systems from a virtual environment, for
+    example, to restore backups from a physical media to a virtual system. In general,
+    the network attached storage systems should be preferred over attaching physical
+    media to a virtual system.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Permanent use of drives of a hypervisor from a virtual machine**: This can
+    be useful if the virtual system uses software that is provided on physical media
+    and therefore, needs access to a real physical drive for installation and updates
+    of the software. However, one should consider using downloaded versions or ISO
+    images instead of granting direct access to the hardware of the hypervisor.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: As you may guess, according to this list, direct hardware access is more the
+    exception than the rule in a modern virtualized data center. Furthermore, direct
+    access to the hypervisor hardware breaks one fundamental principle of virtualization.
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_IND
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Direct hardware access bypasses the security mechanism of the virtualization
+    environment, that is, all the virtual hardware is controlled by the hypervisor.
+    Consequently, direct hardware access always poses the risk of manipulation of
+    hypervisor resources, data leakage, and system instabilities.
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: 'The following are some examples of the directly attached hardware that are
+    most likely malicious:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Network devices (create network connections that are invisible to the hypervisor)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Keyboard, mouse, and so on (create console access that are invisible to the
+    hypervisor)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Hypervisor disk partitions
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The latter is especially dangerous. If a virtual machine manages to get the
+    raw disk access to the hypervisor, it can manipulate the virtualization environment.
+    The consequences include the complete control over the virtualization environment
+    along with the access to all virtual machines, all virtual networks, the capability
+    to create new rogue resources and reshape the overall network topology.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: For VMware vSphere, the direct hardware access is stored in the configuration
+    of the virtual machines. Consequently, importing a virtual machine from an unknown
+    or untrusted source (in the native format of vSphere) can create rogue hardware
+    access.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The following script connects to a VMware vSphere instance and lists all virtual
+    machines with direct hardware access:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'This script is very eager, that is, it does not check whether the device is
+    actually in a connected state or whether there is media accessible through the
+    device. Nevertheless, an output similar to the following calls for deeper inspection:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: '`EvesMachine` appears to have direct access to a USB device attached to its
+    hypervisor system. Moreover, there seems to be a direct link to the serial port
+    of the hypervisor. `Access to CD/DVD drive` of the hypervisor should not be granted
+    in general. However, for a lot of installations, people tend to use the optical
+    drive of the hypervisor to install or update a software.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: '**Extract hardware configuration from the VMX file**'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Using a script such as the previous one requires access to the virtual environment.
+    Therefore, the main purpose of such scripts is to narrow the focus of the forensic
+    investigation. For permanent evidence and record, the directory of the virtual
+    machines should be copied from the datastore. There, the VMX file contains all
+    VM specific configuration settings including the hardware access.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In this and the previous sections, virtualization is considered as an additional
+    attack surface. In the following section, we will outline how virtualization techniques
+    can actually support a forensic investigation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Using virtualization as a source of evidence
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Virtualization is not just dangerous and challenging when it comes to forensic
+    investigations, there is also the potential to use virtualization as a tool for
+    gathering forensic evidence. In the following sections, you will see various sources
+    which can lead to the evidence.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Creating forensic copies of RAM content
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Normally, creating a copy of a system's RAM contents requires access to the
+    target system, a logon, installing the required tools, and copying away the RAM
+    dump to an external media. All of these steps are intrusive, that is, changing
+    the state of the system and being subject to detection by the attacker or his
+    malware. Furthermore, an attacker with administrative privileges may hide portions
+    of the system memory from the memory dumps, for example, by manipulating the memory
+    allocation and protection algorithms.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To overcome the disadvantages of this method, the hypervisor layer can be utilized
+    to get a complete, non-tampered copy of the memory of a virtual system. The following
+    script can be used to create a snapshot including the RAM content of a virtual
+    machine:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: This script searches for virtual machines with the specified name and creates
+    a snapshot. The highlighted parameter causes vSphere to write the RAM contents
+    of the virtual machine to the datastore along with the other snapshot data files.
+  prefs: []
+  type: TYPE_NORMAL
+- en: These RAM dumps reside in the directory of the virtual machine. The enumeration
+    script in this chapter shows the path to this directory. Additionally, the vSphere
+    Client allows browsing and downloading the datastore of the virtual machine.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The RAM contents are stored in a file with the `.vmem` extension, for example,
+    `EvesMachine-Snapshot2.vmem`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Using snapshots as disk images
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: For physical systems, creating a forensic disk image usually incorporates taking
+    the system offline, shutting it down, removing the hard drive, and copying it.
+    Obviously, the system is not operational during this procedure and as a consequence,
+    business owners are very reluctant in granting these downtimes due to a vague
+    suspicion of a possible compromise.
+  prefs: []
+  type: TYPE_NORMAL
+- en: On the other hand, the creation of a snapshot of a virtual machine results in
+    basically no downtime but the result is a forensically sound disk image of the
+    virtual asset.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: '**Always check whether a system is virtual!**'
+  prefs: []
+  type: TYPE_NORMAL
+- en: As the creation of forensic data is much easier for virtual systems than for
+    physical systems, one of the very first steps in a forensic investigation should
+    be checking whether the target system is virtual.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The creation of the snapshot is identical to the script in the previous section.
+    For VMware vSphere 5, all the files have to be copied from the datastore directory
+    of the hypervisor to get a complete dump of the hard drives. If the virtual system
+    is still running, some files may not get copied as the hypervisor will not allow
+    read access while these files are in use. Typically, this is not a problem as
+    these files are only needed by the snapshot, that is, all the changes since the
+    creation of the snapshot are stored in special snapshot files.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In VMware vSphere 6, the snapshot mechanism has been changed. Instead of writing
+    disk changes in the snapshot files, the changes made after snapshot creation are
+    directly written to the files that represent the virtual hard drives. The snapshot
+    files are used to preserve the original contents of the disk drives (copy-on-write
+    behavior).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Therefore, the files that are to be copied from a VMware vSphere 6 environment
+    will contain all entries of the directory of the virtual machine.
+  prefs: []
+  type: TYPE_NORMAL
+- en: For the forensic analysis, the captured disk images can be connected to a virtual
+    forensic workstation. There, these images can be treated like any other physical
+    hard drive. Of course, the original copies must remain intact in order to provide
+    forensic soundness.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Capturing network traffic
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: The virtualization environment not only represents virtual machines and **Network
+    Interfaces Card** (**NIC**), but also the virtual network devices that are needed
+    to interconnect these systems. This combination can be used to collect all the
+    network traffic of a virtual network by adding a monitoring port to the virtual
+    switch and connecting a system to it, which can capture all the network traffic.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: If a virtual system in VMware vSphere is allowed to switch a NIC into a promiscuous
+    mode, then this will automatically turn the corresponding switch port into the
+    monitoring mode.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Furthermore, the enterprise editions of VMware vSphere provide an advanced version
+    of a virtual switch called **vSphere Distributed Switch** (**VDS**). This switch
+    can act more like a physical switch and provide mirroring of selected ports to
+    a defined port for the traffic analysis. In addition, this switch is also capable
+    of providing NetFlow logs to a defined port.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'For the standard virtual switch, the following steps are required in order
+    to monitor the network traffic:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Create a new port group on this switch to monitor. While this is not strictly
+    required, it is highly recommended. Without a dedicated port group to monitor,
+    all virtual systems on the switch would be allowed to monitor all the traffic
+    of the switch.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Modify the **Security** settings of this port group and change the **Promiscuous
+    mode** to **Accept**.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Configure the network card of the virtual capture system to the new port group.
+    This system can now capture all the network traffic of this switch.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The exact steps may differ between virtual switch types and their versions.
+    Nevertheless, the core message is that virtualization environments can ease this
+    task of network traffic capturing. Moreover, physical and virtual switches do
+    have different behaviors, for example, they can react to configuration changes
+    of the connected network cards.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the next chapter, we will see how to generate and analyze this captured network
+    traffic.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Summary
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In this chapter, we outlined how virtualization changes the landscape not just
+    for IT operations, but also for the attacker and forensic specialist. Systems
+    can be created, reshaped, and copied for good and bad reasons.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We provided examples of how to detect possibly malicious behavior or configuration
+    on the vSphere virtualization environment. Moreover, we demonstrated how virtualization
+    can be beneficial in getting untampered RAM dumps from the systems that should
+    be analyzed. In the next chapter, you will see examples on how to analyze these
+    RAM dumps.
+  prefs: []
+  type: TYPE_NORMAL
+- en: With this knowledge, you are now prepared to analyze and utilize virtual environments
+    in your forensic analyses.
+  prefs: []
+  type: TYPE_NORMAL

@@ -1,0 +1,556 @@
+- en: Investigating and Analyzing Logs
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: So far, we have worked primarily on the network packets that are acquired through
+    network sniffing and monitoring. However, there are situations where packet analysis
+    itself may not be enough, and we are required to fetch inputs from logs. On a
+    typical network, logs can be present anywhere and everywhere. Consider that, when
+    you are browsing the internet, you are leaving behind logs on your system, network
+    switch, router, primary DNS, ISP, proxy servers, server of the requested resource,
+    and in many other places that you may not typically imagine. In this chapter,
+    we will work with a variety of log types and will gather inputs to aid our network
+    forensics exercise.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Throughout this chapter, we will cover the following key topics:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Network intrusions and footprints
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Case study—defaced servers
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: However, before moving further, let's understand the need for log analysis and
+    its use in a network forensics scenario by analyzing the `ssh_cap.pcap` file in
+    the next section.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Technical requirements
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'To follow the exercises covered in this chapter, we will require the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Wireshark v3.0.0 ([https://www.wireshark.org/download.html](https://www.wireshark.org/download.html))
+    installed on Windows 10 OS/ Ubuntu 14.04.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: You can download the codes and PCAP files used in this chapter from [https://github.com/nipunjaswal/networkforensics/tree/master/Ch8](https://github.com/nipunjaswal/networkforensics/tree/master/Ch8).
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: VMWare Player/VirtualBox installation with Kali Operating system installed.
+    You can download it from [https://www.offensive-security.com/kali-linux-vm-vmware-virtualbox-image-download/](https://www.offensive-security.com/kali-linux-vm-vmware-virtualbox-image-download/).
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Python (already installed on Kali Linux).
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Network intrusions and footprints
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Consider a scenario where we have received a PCAP file for analysis and some
+    logs from a Linux server. By analyzing the file in Wireshark, we get the following
+    packet data:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/9462b319-f398-414b-b7bd-335789133d6d.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'It looks like the data belongs to the **Secure Shell** (**SSH**), and, by browsing
+    through the **Statistics** | **Conversations** in Wireshark, we get the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/005cdf1b-7b85-4769-8314-60e316f21769.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: There are mainly two hosts present on the PCAP file, which are `192.168.153.130`
+    and `192.168.153.141`. We can see that the destination port is `22`, which is
+    a commonly used port for SSH. However, this doesn't look like a standard SSH connection,
+    as the source port is different and are in plenty. Moreover, the port numbers
+    are not from the well-known (`1`-`1024`) and registered set of ports (`1024`-`41951`). This
+    behavior is quite common for a example for brute force attacks.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'However, we are currently not sure. Let''s scroll through the PCAP and investigate
+    more, as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/40f9d7b2-ec3f-4e09-8c48-2265d6a34b48.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Plenty of key exchanges are happening, as we can see from the preceding screenshot.
+    However, there isn't a sure shot way to figure out whether the attacker succeeded
+    in conducting a brute-force attack or not.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We can compare lengths, but different servers may send out different information,
+    so it won't be that reliable.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Investigating SSH logs
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: We just saw a problem statement where we can't figure out the difference between
+    brute force attempts through PCAP analysis. One reason for this failure is that
+    there is an encryption in place, and we can't make out the encrypted content differences.
+    Let's investigate the SSH login logs from the server and see if we can understand
+    what happened.
+  prefs: []
+  type: TYPE_NORMAL
+- en: SSH authentication logs in Linux are generally stored in the `/var/log/access.log`
+    file.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let''s open the `raw access.log` file and check whether or not we can get something
+    of interest:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/640bdb98-1a50-47ac-8b83-1f119aa70992.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Oops! There are just too many authentication failures. It was a brute force
+    attack. Let''s check whether the attacker was able to gain access to the server
+    or not:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/c828fede-77f1-4515-bf8b-840243bd9f23.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'A simple text search over the log file to find `"Accepted"` anywhere in the
+    log file prints out that a password was accepted by the SSH service, suggesting
+    that the authentication took place successfully. Looking at the successful authentication
+    within the `auth.log` file, we have the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/86b8dc48-83f9-4022-a89b-a6c26043b1d6.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: We can see that a successful session was opened for the root user, but was disconnected
+    immediately, and the attack continued. The attacker used an automated brute force
+    tool that didn't stop at finding the correct password.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'There is one additional thing to notice if you haven''t already—there is a
+    time difference between the packets in the PCAP file and the logs. This might
+    have occurred because time on the SSH server and time on the monitoring system
+    (system where the PCAP is being recorded) are different. Let''s correct the time
+    of packet arrival using `editcap`, as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/f943a9d0-ce2e-4587-8452-fcbafcf9c6e5.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: You can edit time in Wireshark via **Edit** | **Time Shift...** menu entry as
+    well
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Since the time in the very first screenshot of this chapter and the one present
+    in the logs have a difference of exactly +2:30 hours, we will need to adjust this
+    time. As we can see in the preceding screenshot, we are using `editcap` to edit
+    the current time by adding `9000` seconds (2:30 hours in seconds). We created
+    a new file with the adjusted time as `ssh_adjusted.pcap`. Let''s open it up in
+    Wireshark, as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/b389104e-3415-410b-8047-5d429d70684a.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'We can now see the adjusted time according to the logs and can see exactly
+    what was going on at that particular time. We can see that on the `53100` port,
+    there are plenty of packets communicating over the SSH. By filtering out the stream,
+    we get the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/dfec8572-9b7e-40b1-a12c-77f0ff724169.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'The TCP streams 35, 36, and 37 have 25 packets individually, while for the
+    others they have 42\. Let''s open the conversations, as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/0fee95bd-40a9-46f8-8ad7-52393737836a.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: We can see that for most of the streams, the relative number of packets was
+    42, while during the time frame that we got from the SSH logs, the number of packets
+    is different, denoting a change that is a successful attempt.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We can see that by learning the insights of log analysis along with network
+    packet analysis, we can make much more sense of the network evidence that we otherwise
+    wouldn't have. Along with SSH, the use of HTTP proxies such as HaProxy and Squid
+    is quite widespread in the industry, which makes them a great candidate for log
+    analysis as well. Let's see some examples of this in the following sections.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Investigating web proxy logs
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'We saw a few examples of web proxies in the first half of this book. Let''s
+    investigate some more. In the upcoming example, we will try to decipher what could
+    have happened while we were learning about the log analysis. We will be investigating
+    the `prox_access.log` file generated by Squid proxy server, as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'We can see from the preceding logs that `192.168.153.1` is making many requests
+    to the Squid proxy server. However, to analyze the Squid logs efficiently, we
+    should be concerned about the following tags:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| **Type** | **Details** |'
+  prefs: []
+  type: TYPE_TB
+- en: '| HIT | The response was generated from the cache. |'
+  prefs: []
+  type: TYPE_TB
+- en: '| MEM | An additional tag indicating that the response object came from the
+    memory cache, avoiding disk accesses. Only seen on HIT responses. |'
+  prefs: []
+  type: TYPE_TB
+- en: '| MISS | The response came directly from the network. |'
+  prefs: []
+  type: TYPE_TB
+- en: '| DENIED | The request was denied. |'
+  prefs: []
+  type: TYPE_TB
+- en: '| TUNNEL | The request was fulfilled with a binary tunnel. |'
+  prefs: []
+  type: TYPE_TB
+- en: 'Additionally, we can have the following error conditions as well:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| **Type** | **Details** |'
+  prefs: []
+  type: TYPE_TB
+- en: '| ABORTED | The response was not completed, since the connection was aborted.
+    |'
+  prefs: []
+  type: TYPE_TB
+- en: '| TIMEOUT | The response was not completed due to a connection timeout. |'
+  prefs: []
+  type: TYPE_TB
+- en: '| IGNORED | The response was ignored because it was older than what is present
+    in the cache. |'
+  prefs: []
+  type: TYPE_TB
+- en: Squid proxy codes are explained beautifully at [https://wiki.squid-cache.org/SquidFaq/SquidLogs](https://wiki.squid-cache.org/SquidFaq/SquidLogs).
+    Refer to these additional codes for explanations of example codes like `HIER_DIRECT`
+    which means that the object was fetched directly from the origin server. Also,
+    HIER means Hierarchy codes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Having gained knowledge of these responses, let''s analyze the log file manually
+    and find some interesting facts:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/72235745-39cc-442f-a027-bd723192f153.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: We can see that the first entry from the preceding screenshot is `TCP_MISS_ABORTED`,
+    which states that the response was to be generated from the network, but was aborted
+    since the request was canceled.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The third entry to `detectportal.firefox.com` was `TCP_MISS`, which means that
+    the response was generated directly from the network, and not from the proxy cache.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We can also see `TCP_TUNNEL` for HTTPS-based requests. Let''s investigate some
+    more logs:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/a7e44470-bba6-4fa0-a3b1-a584ec6ce3ba.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Wow! We can see a `TCP_DENIED` request from `192.168.153.141` to `192.168.153.146`
+    on the `4444` and `80` ports. The `4444` port is commonly used by exploitation
+    tools, such as Metasploit, and what we understand from these entries is that `192.168.153.141`
+    tried to connect back to `192.168.153.146` initially on the `4444` port and then
+    on the `80` port. The condition is an indication of a reverse shell, where the
+    exploited service is trying to connect back. Noting down the timestamps, we can
+    start making matches in the PCAP evidence or the system evidence.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We can always use automated log analyzers, such as Sawmill, to parse various
+    kinds of log formats and don't have to worry about manually converting the timestamps
+    as well.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Investigating firewall logs
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Industrial grade firewalls provide a lot of insights into network activities,
+    not only the raw logs, and they tend to provide exceptional results. Firewalls,
+    such as Fortinet, Check Point, and many others, provide deep analysis of the traffic
+    daily to the administrators. Let''s look at an example report generated by Fortinet''s
+    Firewall, as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/4aae56e1-6c7e-4787-998c-1ec8739fcaef.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'We have a variety of threats in the preceding screenshot. There are many failed
+    attempts that were blocked by the firewall, including HTTP XXE attacks, proxies,
+    mimikatz, and various malicious websites visited. Let''s see some more details:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/e9be6958-39e7-48dd-aef2-11abd5ad7021.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'We can see from the preceding screenshot that we have the top virus infections,
+    top virus victims, and the top attacks on the network. Additionally, we can also
+    see where the attacks are going, as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/e4bd5896-1556-43f8-afb6-ed47c1685713.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'The Fortinet firewall generated the preceding log report. Along with providing
+    details related to the attacks and malware, the firewall also provides trends
+    in the traffic stats, as shown in the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/7931d66b-0e94-40e8-92c0-426d9de554e4.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'We can see plenty of stats in the report in the preceding screenshot. The logs
+    can be drilled down further from the web panels. The idea of showing you the previous
+    report is to demonstrate that sometimes you don''t have to re-invent the wheel
+    and carry out deep analysis in situations where you have reports for your perusal,
+    thus revealing plenty of information. Additionally, the raw format for Fortinet''s
+    FortiGate logs is as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/a5abf847-e066-4c18-920d-7f8844d395d8.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: We can see that FortiGate logs provide enough information, such as source IP,
+    destination IP, ports, attack type, and a variety of other information.
+  prefs: []
+  type: TYPE_NORMAL
+- en: A case study – defaced servers
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Consider a scenario where we have been tasked to investigate a server that
+    was compromised and defaced by the attackers. The administration team has all
+    the practices, such as logging and full packet capturing, in place. However, it
+    seems that someone also cleared out logs, as suggested by its **Modified, Accessed,
+    Created, Executed** (**MACE**) properties. There are very few entries in the Apache
+    logs, as shown in the following log set:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: It looks like the attack came from the `192.168.153.1` IP address. However,
+    looking at the details in the preceding logs, we can see that there is no user-agent
+    in most of the requests. Additionally, no data is posted on the hacked server
+    since the request is of the `GET` type, and there are no parameters involved as
+    well. Strange, right? There had to be something in the parameters.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'As of now, most of the logs look like legitimate requests to access the file.
+    Nothing out of the box. But why would an attacker send that many `GET` requests
+    to a resource page with no parameters? Maybe because we aren''t looking at it
+    right. Let''s open the PCAP file for the capture as well:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/a2cc42a9-9501-43a4-80f4-05d91037d457.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'This seems like a normal HTTP GET request. However, scrolling down a little
+    further, we can see that we have few entries:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/d47c99d0-cd9b-4679-863f-0cead75f9a86.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'We can see a request that was generated from the compromised `192.168.153.130`
+    server to `192.168.153.142`. The user-agent is `wget`, so we can assume that a
+    file was downloaded to the server. Let''s investigate this as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/46ebd477-5720-4ecd-974d-28713e484f6d.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Looking the HTTP stream, it seems like an ELF file was downloaded to the compromised
+    server. We will investigate this file in detail. But first, let''s see what those
+    simple looking `GET` requests reveal:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/f9dcee3f-e797-4578-acae-6320d664ed80.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Oh! It looks like the backdoor code was in the cookie, and that was the reason
+    it didn''t show up in the Apache logs. We can see that it looks like the output
+    of a `dir` command. Could this be the reason there was a download of a file on
+    the server? Let''s check by decoding the cookie values, as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/4b847218-3567-45ae-aad4-9fae232b54d6.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Decoding the value by Base64, we can get the clear text commands that were
+    used. However, we would like to see all the commands executed by the attacker.
+    We can accomplish this task using tshark, as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/7af7de80-0dce-4210-ba3d-22e404c8580f.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: The first command filters out all the cookies since we used `-R` with `http.cookie`
+    as the filter. The output contained unwanted `'z='` characters, so we stripped
+    it off using the Linux `cut` command. We stored the output of tshark in a file
+    called `base`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In the next command, we used a `while` loop to read and print every line individually,
+    and, while doing so, should be decoded with Base64\. We can see that we got the
+    results showing that the attacker did the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Printed `1`
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Listed the command to see the directory's contents
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Ran the `whoami` command to see the current user
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Issued a `ls -la` command to view all files, including the hidden ones
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Issued a `wget` command to download a file from another server that might be
+    a backdoor as well
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Again tried the same after printed some 1's and again listed the directory
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Tried to download the file again, but this time to a file called `shell.txt`,
+    and repeated it for `shell.txt`
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Tried to download the `shell.e` file
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Again tried to download the `shell.zip` file
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Tried to print out IP addresses, PHP version, disabled PHP functions, and much
+    more
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 'A point to note here is that the attacker has not executed the shellcode file
+    that might be a local exploit to gain high privileges. Additionally, it looks
+    like their download attempts failed. However, we saw a file being transferred
+    in the PCAP. Let''s investigate this as well:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/4f218bd7-bc45-4eae-a7f2-1188349fae42.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'We have selected only the response from this packet. Let''s save it by selecting
+    raw from the **Show and save data as** option, and then clicking the **Save**
+    button, as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/50943289-2751-48b8-8f56-5caa4fbfafc6.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Additionally, we have to remove everything before the ELF magic header for
+    the file to be recreated successfully. After saving the file, open it up in Notepad
+    and remove the server headers and save the file as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/d16c7ed2-70bb-4ed3-9397-b0936f5af7d8.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Now that we''ve removed the additional header, we have the executable file
+    for our malware analysis teams to analyze. However, when we tried analyzing it
+    on Hybrid Analysis, we got nothing, as shown in the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/c6209985-8d97-484b-a847-9ad190a4890e.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: The link to the file analysis is [https://www.hybrid-analysis.com/sample/d8fbd529d730901f7beff5c4a8057fd19057eb7c7a0447264babca573c4c75d5](https://www.hybrid-analysis.com/sample/d8fbd529d730901f7beff5c4a8057fd19057eb7c7a0447264babca573c4c75d5).
+  prefs: []
+  type: TYPE_NORMAL
+- en: We can see that we got nothing from the file. However, we got a good number
+    of inputs and strong evidence based on log analysis and PCAP analysis. We have
+    seen throughout this chapter that log analysis and PCAP analysis are dependent
+    on each other. We also saw that SSH logs are dependent on logs and that server
+    logs are dependent on PCAPs to be able to reveal more about attacks.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Summary
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In this chapter, we worked with a variety of log types and gathered inputs to
+    aid our network forensics exercise. In the next chapter, we will learn how we
+    can identify rogue access points, which can allow an attacker to view all your
+    communication logs, and we will also look at strategies to identify and physically
+    find those rogue devices.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Questions and exercises
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Repeat the exercises covered in the chapter
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Try investigating your home router for logs
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Complete log analysis challenge 5 from the Git repository
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Further reading
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'To gain the most out of this chapter, read the following tutorials:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: For more on Apache log analysis, refer to [https://www.keycdn.com/support/apache-access-log](https://www.keycdn.com/support/apache-access-log)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: For more on log aggregation, refer to [https://stackify.com/log-aggregation-101/](https://stackify.com/log-aggregation-101/)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL

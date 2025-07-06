@@ -1,0 +1,1049 @@
+- en: Chapter 6. Filesystem Analysis and Data Recovery
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Although there are many automated and commercial tools available nowadays, understanding
+    how these tools perform can distinguish one from another, and this can provide
+    great support during expert testimony in the courtroom. Filesystem analysis and
+    data recovery are considered as the main categories in the digital forensics process.
+    Extracting files from a storage device or recovering deleted ones with evidential
+    related data can solve a case.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In this chapter, we will go through two different filesystems: the FAT and
+    the NTFS. We will basically explain how the files are structured in each one and
+    how the recovery process of deleted files actually works. We will start with the
+    famous TSK or The Sleuth Kit and how its command line tools are categorized, as
+    they are based on each layer in the hard drive or the forensic image. After this,
+    we will discuss Autopsy, the TSK graphical user interface. At the end of this
+    chapter, we will show you Foremost of these, which is the Linux-based file carving
+    tool that is used to recover files based on their signature.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Hard drive structure
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Before we start explaining the different filesystem structures, we need to
+    illustrate the different parts in a partitioned hard drive in Windows OS. The
+    following figure illustrates simply the structure of a whole partitioned hard
+    drive:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Hard drive structure](img/image_06_001.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Simple hard drive logical parts
+  prefs: []
+  type: TYPE_NORMAL
+- en: Master boot record
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: The master boot record is the first sector (512 bytes) of the hard drive. It
+    contains, besides the boot code, all the information about the hard drive. One
+    of the important pieces of information that can be found in the MBR is the partition
+    table, which contains information about the partition structure in the hard drive,
+    and for each partition, it can tell where it starts, its size, and type.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The investigator can check the existing partition with the information in the
+    MBR and the printed size of the hard drive for a match. If there is some missing
+    space, the handler may assume the presence of an intended action to hide some
+    space contains usually some related important information.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Partition boot sector
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: The first sector (512 bytes) of each partition contains information, such as
+    the type of the filesystem, the booting code location, the sector size, and the
+    cluster size in reference to sector.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The filesystem area in partition
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: If the user formatted the partition, for example, in the NTFS filesystem, some
+    sectors at the beginning of the partition will be reserved for the **Master File
+    Table** or **MFT**. MFT is the location that contains the metadata about the files
+    in the system. Each entry is 1KB in size, and when a user deletes a file, the
+    file's entry in the MFT is marked as unallocated. However, the file's information
+    still exists until another file uses this MFT entry and overwrites the previous
+    file's information.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Normal backups usually store the allocated entries only and ignore the unallocated
+    areas in the MFT. This won't be helpful in recovering deleted files during the
+    analysis step.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Data area
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: After reserving the filesystem's area, the rest of the partition space will
+    be available for the file's data, which contains the actual data of the file.
+    Each unit of the data area is called **cluster** or **block**. In the same way,
+    if a user deletes a file from the hard drive, the clusters that contain data that
+    is related to this file will be marked as unallocated, and the data will exist
+    until new data that is related to a new file overwrites it.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'These clusters are considered either allocated or unallocated:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**Allocated cluster**: This is a cluster that contains data that is related
+    to a file that exists and has an entry in the filesystem MFT area'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Unallocated cluster**: This is a cluster that isn''t connected to an existing
+    file and it may be any of the following:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Empty**: This means that it has no data of a deleted file or its content
+    has been wiped'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Not** **empty**: This contains data that is related to a deleted file and
+    still hasn''t been overwritten with a new file''s data.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: While running a backup tool to the system, it backs up only the files that exist
+    in the current filesystem MFT area and identifies its related cluster in the data
+    area as allocated. This is NOT a forensically sound image which needs to acquire
+    all the hard drive areas even if it was deleted by the user. That is why, when
+    you backup your system using no compression, the size of the backup will be the
+    size of the used space in the partition.
+  prefs: []
+  type: TYPE_NORMAL
+- en: However, when using forensic imaging techniques, the size of the resulting image
+    will be equal to exactly the size of the source; it will either comprise the whole
+    hard drive or a single partition.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the following section, we will quickly overview how FAT and NTFS work.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The FAT filesystem
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: FAT or File Allocation Table became famous with the announcement of the DOS
+    operating system from Microsoft in 1980\. After this, FAT went through many improvements
+    trying to make it adapt with the rapidly improving technology. So, we can see
+    FAT12, FAT16, FAT32, and exFAT. Each version overcame some of the limitations
+    of the filesystem until the announcement of NTFS filesystem.
+  prefs: []
+  type: TYPE_NORMAL
+- en: FAT components
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'FAT partition contains five main areas. They comprise the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**Boot sector**: This is the first sector of the partition that is loaded in
+    memory. If this partition is the active partition, it contains information such
+    as, but not limited to, the following:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Jump code**: This is the location of the bootstrap and OS initialization
+    code'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Sector size**: This is almost fixed (512 bytes)'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Cluster size**: This is in sectors (sectors/clusters)'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Number of sectors**: The total number of sectors in the partition'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Number of root entries**: This value is used with FAT12 and FAT16 only'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**FAT table**: This is the filesystem, which is named after this area. Starting
+    from the first cluster of the file, which can be found in the root directory entry
+    of a file, the FAT area tracks the rest of the file in the data area. Each data
+    cluster, for example, cluster X is the first cluster that contains the data of
+    file Y, has an entry in the FAT area. This entry can have four values:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '0: This indicates that cluster X is an unallocated cluster'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Number**: This indicates the number of the next cluster following cluster
+    X, and it contains the next part of file Y'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**EOF**: This is end of the file, and it indicates that cluster X is the last
+    cluster that contains the data of file Y, End of File Y'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**BAD**: This indicates that cluster X is a bad cluster, and it cannot be used
+    or accessed by the operating system. This data tracking schema is called the FAT
+    chain, and it must exist for each file.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Another copy of the FAT table**: This is used if the first FAT got corrupted.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Root directory entries**: This is when each entry describes either directory
+    or file in the filesystem, and its location from the root directory. Each entry
+    contains information, such as the following:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Short File name with an 8.3 naming schema; eight characters for the name and
+    three characters for the extension
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Long file name if the file name exceeds the 8.3 schema, it will reserve another
+    complete entry to store the file name
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Entry's status such as directory, file, or deleted
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Some file properties, such as read only, hidden and archive
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: File size, which is not important in the case of a directory
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Timestamps of the file
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The address of the first cluster, which contains the file's data
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: As we can see no modern properties can be added to the file, such as compression,
+    permissions, and encryption, which was one of the FAT filesystem limitations.
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: '**Data area**: This is the rest of the partition. It contains the actual contents
+    of the files in the partition, and it is divided in clusters with a size mentioned
+    in the boot sector. Cluster numbering starts with cluster 2, so cluster 0 and
+    cluster 1 don''t exist.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'For an example of how this works, we have created table 1\. Each major column
+    represents one of the FAT areas, excluding the boot sector. Now, let''s suppose
+    that the first file, `F1.txt`, has a size of 1KB and starts at cluster 2:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Cluster 2 contains the first part of the `F1.txt` file
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: In the FAT entry that describes cluster 2, we will find the next cluster in
+    the chain which, in our case, is cluster 3
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: At cluster 3, we can find the next part of the `F1.txt` file
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: In the FAT entry that describes cluster 3, we can find EoF because no more data
+    in the `F1.txt` file needs to be stored
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'The same can be applied to the other files:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![FAT components](img/image123.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: The FAT filesystem
+  prefs: []
+  type: TYPE_NORMAL
+- en: FAT limitations
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'FAT had some serious limitations, which raised the need for a more advanced
+    filesystem:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The number after each FAT, such as `FAT12`, `FAT16`, or `FAT32`, represents
+    the number of bits that are assigned to address clusters in the FAT table:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**FAT12**: This is 2^12 = 4,096 clusters at the maximum.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**FAT16**: This is 2^16 = 65,536 clusters at the maximum.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**FAT32**: This is 2^32 = 4,294,967,296 clusters, but it has 4 reserved bits,
+    so it is actually 28 bits. So, 2^28 = 268,435,456 at the maximum.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**exFAT**: This uses the whole 32 bits for addressing.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The maximum partition size in FAT32 = the maximum number of clusters, which
+    is 268,435,456, multiplied by the maximum cluster size, which is 23 KB = 8,589,934,592
+    KB = 8 TB.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: For the maximum file size in FAT32, as an example, the bit file used to store
+    the file size in bytes is 32 bit long. The maximum number this can store is 2^32=
+    4,294,967,296 bytes = 4 GB. So, the maximum file size that FAT32 can handle is
+    4 GB. That is why we can't store files whose size exceeds 4 GB in the FAT32 filesystem.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Properties such as access control and encryption weren't available in the FAT
+    filesystem.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The NTFS filesystem
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: '**NTFS** or **New Technology Filesystem** is the default filesystem in Windows
+    NT as a result of the storage capacity increasing and the need for a more secure,
+    scalable, and advanced filesystem. NTFS overcame the FAT limitations and was more
+    suitable for high storage capacity. In NTFS, everything is a file including the
+    filesystem area itself, as we will see in the following section.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: NTFS components
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Like FAT and any other filesystem, NTFS has its components as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The boot sector is the first sector in the partition, and it contains some information
+    about the filesystem itself, such as start code, sector size, cluster size in
+    sectors, and the number of reserved sectors. The filesystem area contains many
+    files, including the MFT or Master File Table, which contains the metadata of
+    the files and directories in the partition. It will be discussed later.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The data area holds the actual contents of the files, and it is divided in clusters
+    with a size determined during formatting and mentioned in the boot sector.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Master File Table (MFT)
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: As everything in NTFS is a file, the filesystem area is also a single file called
+    $MFT. In this file, there is an entry for each file in the partition. This entry
+    is 1,024 bytes in size. Actually, $MFT file has an entry for itself. Each entry
+    has a header of 42 bytes at the beginning and has a signature of 0xEB52904E, which
+    is equivalent to FILE as ASCII.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The signature also can be BAD, in this case, it indicates an error that occurred
+    in this entry. After the header, there will be another 982 bytes left to store
+    the file metadata. If there is space left to store the file contents, typically
+    in small size files, the file's data is stored in the entry itself and no space
+    in the data area is used by this file.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Each MFT entry has another substructure called **attributes**. MFT uses attributes
+    to store the metadata of the file. Different attribute types can be used in single
+    MFT entry. Each attribute is assigned to store different information. For example,
+    the Standard Information Attribute contains the timestamp and the size of the
+    file, whereas the Data Attribute holds the actual contents of the file.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The attribute can be either of the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**Resident**: This contains all its data within the MFT entry.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Non-resident**: Because of the limitation of the MFT size, some attributes
+    may need to store their data in the data area. A clear example of this kind of
+    attribute is the data attribute.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Storing the file metadata in attributes creates flexibility for NTFS to add
+    more types of attributes that are recognized by the operating system in the future.
+    If one file has many attributes and needs more than one MFT entry to store its
+    metadata, it can use another entry and link both entries with a sequence number.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The Sleuth Kit (TSK)
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The Sleuth Kit or TSK is a collection of open source digital forensic tools
+    developed by *Brian Carrier* and *Wieste Venema*. TSK can read and parse different
+    types of filesystems, such as FAT, NTFS, and EXT. Each area of the hard drive
+    in the figure in the *Hard drive structure* section has a set of tools in The
+    Sleuth Kit that parses that area and extracts forensically important information
+    for the investigator. Usually, each step leads to the next while using TSK in
+    analysis.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the upcoming sections, we will go through the different tool sets of The
+    Sleuth Kit. We will use an image of the hard drive with Windows 7 installed, which
+    shows the results from each part in the hard drive. The image was acquired using
+    the FTK Imager lite from a Windows 7 virtual machine with a size of only 15 GB
+    and a single NTFS partition.
+  prefs: []
+  type: TYPE_NORMAL
+- en: As we will see, TSK tool names are easy to understand as they consist of two
+    parts. The first part represents the area or the layer under investigation, such
+    as `mm` for media management, `fs` for filesystem, `i` for metadata, and `f` for
+    filename layer. The second part is the normal Linux command that reflects the
+    effect of this tool, such as ls to list and cat to display the contents, for example,
+    the `mmls` tool.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Volume layer (media management)
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: In this area of the hard drive, TSK parses information about the structure of
+    the whole hard drive from the **MBR** or **Master Boot Record**, which is the
+    first sector of the hard drive. We can parse this area with TSK using different
+    tools.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The information about each partition is in the hard drive, and it can be determined
+    from the partition table at the end of the MBR sector. The offset of each partition
+    will be used as an input to the upcoming TSK tools to specify the partition of
+    interest. The `mmls` tool is used to list information, such as in the following
+    screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Volume layer (media management)](img/image_06_002.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: The mmls tool
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'From the result of running `mmls` against the image, we can see that there
+    is only one NTFS partition that starts at sector (2,048). This is the partition
+    of interest, so we will use the start sector as the offset with the rest of the
+    tools when needed. This also provides the partition table type, which is normal
+    DOS in our case here. To display only the allocated volumes, we can use the `-a`
+    option:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Volume layer (media management)](img/image_06_003.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: A list allocated volumes only
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The next command is `mmcat`, which displays the partition contents as shown
+    in the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Volume layer (media management)](img/image_06_004.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: The mmcat tool
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the previous figure, we used `mmcat` with the image name `sampleimage.dd`
+    and the number of the target partition as in the `mmls` output `02`. Then, we
+    pipelined the output to the `hexdump` tool. You can see in the beginning of the
+    partition, the volume boot record starts with the NTFS partition signature at
+    offset 0x03 with a value of (NTFS) or 0x(4E54465320202020).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Filesystem layer
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'The TSK tool for this layer parses the filesystem used in the provided partition
+    and displays some information about it to the investigator. With this tool, we
+    must provide the offset of the target partition from the output of the mmls tool,
+    which in our case is (2,048):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Filesystem layer](img/image_06_005.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: The fsstat tool
+  prefs: []
+  type: TYPE_NORMAL
+- en: We can find the MFT location within the partition, cluster size, and information
+    about the NTFS attributes, which may be used later in further analysis.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The metadata layer
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: The metadata layer (or inode) parses and describes the information or the metadata
+    record of the file as described in the filesystem. Also, the output of this tool
+    can be used with other tools to narrow the results for a specific file in the
+    image.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The `i` character in the commands in this layer stands for inode—the metadata
+    unique number of a file in the EXT filesystem.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The `ils` command is used to list the inode numbers of the deleted files in
+    the image until told to list all the inode information for all the files in the
+    image. All the results of the `ils` are information about the file, including
+    the inode of the file, the timestamps (MACB) in Unix time, and size of the file.
+    We can use `ils` with the `-m` option to create a compatible output for the `mactime`
+    tool in case we need to create a timeline for the file activity in the image.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Also, using `--m` will allow us to read the filename as well, as shown in the
+    following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![The metadata layer](img/image_06_006.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: ils to list the deleted files
+  prefs: []
+  type: TYPE_NORMAL
+- en: The result only shows the deleted files as we can notice the 'dead' status of
+    all the files in the results.
+  prefs: []
+  type: TYPE_NORMAL
+- en: istat
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: This is used to parse the MFT or the inode record by its unique metadata number
+    and view all the information in the provided record. The resulting information
+    is only metadata, so we can find the timestamps, file attributes, and so on, not
+    the data itself even if the data is short enough to fit in the 1,024 KB length
+    of one MFT record, which is called resident.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Displaying the data contents of the file can be determined by another tool
+    in TSK, which will be discussed next. Each file in the NTFS filesystem has an
+    entry of this kind, even the MFT file itself. In the following figure, we will
+    list information about the first record number 0, which is the $MFT itself:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![istat](img/image_06_007.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: The istat tool to view the metadata of a file
+  prefs: []
+  type: TYPE_NORMAL
+- en: icat
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'This is used to view the contents of a specific data unit. It uses the inode
+    number as a reference to view the data blocks that are related to this file. In
+    the forensic image under investigation, we will view the contents of the $MFT
+    file with inode 0:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![icat](img/image_06_008.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Contents of the $MFT file
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In some cases, recovery of deleted files will be useful to the case under investigation.
+    We can use the icat tool to copy the contents of any deleted file to another file
+    in the investigator machine for further analysis. For the $MFT file, there are
+    some other tools, which can parse the MFT file individually and list the contents
+    of the filesystem in tree view:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![icat](img/image_06_009.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Using icat to copy contents of a deleted file
+  prefs: []
+  type: TYPE_NORMAL
+- en: ifind
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: During the analysis, if the investigator, for instance, conducted a word search
+    and got a hit in one of the data units in the partition, they would now need to
+    link this data unit to an entry in the filesystem, and `ifind` is what they need.
+    Unlike the previous tools, `ifind` can take a data unit number or filename as
+    an input and map this input to the equivalent entry in the filesystem to collect
+    other information about this file. In our case, we will try to find the `hiberfile.sys`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To search with the name, we need to use the `--n` option:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![ifind](img/image_06_010.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: ifind to search by filename
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The result shows that the inode number related to the file named `hiberfil.sys`
+    is `563`. Using `istat` again to view the information related to this file will
+    reveal information about this file:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![ifind](img/image_06_011.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Full information about the file with inode 563
+  prefs: []
+  type: TYPE_NORMAL
+- en: The `hiberfil.sys` file is the copy of memory stored to the hard drive when
+    the user elects to use the hibernate option of the machine in case of a dead system
+    analysis. This file can provide a great benefit to the investigator as it provides
+    them with a snapshot of the memory during the last usage of hibernation that can
+    be provided from the timestamp of this file. As we can see, this file is an allocated
+    file, and it can be extracted from the image like we did earlier with the $MFT
+    file, and then used in memory analysis.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In case we need to use the ifind tool with the data unit number, we need to
+    use the -d option. We will get another unique ID, describing the location of the
+    file in the image. This unique ID will be discussed in the next part, the filename
+    layer. In this example, we used the data unit ID of 3269280, which is one of the
+    data units of the `hiberfil.sys` file:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![ifind](img/image_06_012.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: A data block address with ifind
+  prefs: []
+  type: TYPE_NORMAL
+- en: The filename layer
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Tools work in this layer to list the file structure in the hard drive image.
+    Each file will be assigned a unique ID, which can be used with other tools to
+    especially target this file.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To list the files under the partition, we only need to provide the partition
+    offset to the tool:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![The filename layer](img/image_06_013.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: The fls tools to browse the partition contents
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the preceding figure, we can see the deleted `hiberfil.sys` with a metadata
+    address of 57745 and the allocated one with a metadata address of 563.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In case we need to browse another directory (for example, the Users directory),
+    we can provide the tool with the Users directory''s unique ID (457-144-5):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![The filename layer](img/image_06_014.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Using the directory ID for content listing with the fls tool
+  prefs: []
+  type: TYPE_NORMAL
+- en: As we can see here, we are browsing through the contents of the image without
+    mounting any partition or filesystem to the running OS.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The ffind tool is only used to map the metadata address to the filename, either
+    its related file was deleted or allocated:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![The filename layer](img/image_06_015.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Mapping metadata address to its filename
+  prefs: []
+  type: TYPE_NORMAL
+- en: Data unit layer (Block)
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: In this layer, the actual contents of the file are stored. The metadata of the
+    file must point to the location of the file contents in this area, as we discussed
+    before with the `ifind` tool.
+  prefs: []
+  type: TYPE_NORMAL
+- en: blkcat
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'This is used to display the contents of the specific data unit in the image.
+    Let''s say we need to display the first data unit of the `ntdll.dll` file in a
+    Windows directory. First, we can find the metadata address for this file using
+    the `ils` tool and grep with the `ntdll.dll` filename:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![blkcat](img/image_06_016.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: The metadata address for the ntdll.dll file
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'From the results, one of the `ntdll.dll` files has the metadata address of
+    `25833`. The second step is to use the `istat` tool to find the allocated data
+    units to this file using its metadata address:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![blkcat](img/image_06_017.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Full information about the ntdll.dll file from the istat tool
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The result shows that the first data unit of the file has the number of `1118226`.
+    What we need to do now is use the `blkcat` tool to view the contents of this data
+    unit. We will use the `--h` option to view the contents in hex view:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![blkcat](img/image_06_018.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Using blkcat to display the contents of one data unit
+  prefs: []
+  type: TYPE_NORMAL
+- en: blkls
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: The default of this tool is to display the unallocated clusters in an image
+    file for further analysis, such as file carving and recovery. If we used this
+    tool with the -e option, it will collect all the blocks of one filesystem, which
+    is useful if we need to extract one partition from a multi-partitions larger image.
+    Here, we need to only collect all the unallocated space in the image and direct
+    the output to a file called `unallocated.blkls` on to the screen.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The resulting file will be in the same size of free space in the partition.
+    Then, further analysis can be done on this file:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![blkls](img/image_06_019.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: blkls to collect all unallocated space in a single file
+  prefs: []
+  type: TYPE_NORMAL
+- en: Blkcalc
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: To understand the purpose of this tool, let's suppose some analysis on the unallocated
+    space has been conducted, such as a keyword search, and a match that is related
+    to the case under investigation is found. To map the founded location to the full
+    image, we need to use the `blkcalc` tool.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Autopsy
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Autopsy is a web-based interface for TSK, which uses the same tools in TSK
+    and presents the results in a graphical interface. To conduct analysis with TSK,
+    the investigator needs to start the server first from the command line. After
+    starting the autopsy, it will give the investigator the URL to access it from
+    the Internet, which in this case is `http://localhost:9999/autopsy`. Don''t shut
+    down the process of the autopsy during the analysis; otherwise, the analysis won''t
+    be active:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Autopsy](img/image_06_020.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Starting Autopsy
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Then, from the browser, open that URL to start creating the case:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Autopsy](img/image_06_021.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Autopsy interface
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We need to create a new case, and then enter some information about the case
+    to make it easy for the investigator to follow up about the cases and who is working
+    on each case:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Autopsy](img/image_06_022.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Creating a new case
+  prefs: []
+  type: TYPE_NORMAL
+- en: After creating the case, a directory for this case will be created by default
+    at `/var/lib/autopsy` (which is named after the case name), including all the
+    files of the case. What we did is just create the case; now, we need to add all
+    the hosts related to the case and add the image that we previously acquired from
+    each host. We need to do this to follow up with the results of the analysis and
+    to be able to differentiate between the sources of the results.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'If the case under investigation took place in different time zones, that is,
+    it includes hard drives which were running under different time zones, it is a
+    very good idea to adjust the time zone of each host to get normalized results:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Autopsy](img/image_06_023.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Adding a host to the case
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'After adding a host, we need to map the host to an image:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Autopsy](img/image_06_024.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Mapping the host to a forensic image
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'After this, you need to map each host to its corresponding image. You need
+    to enter the path to the image and specify whether it is a disk image or partition
+    image. In our case, it is a complete disk image. We have the option to work with
+    the same image and use only a symbolic link to it, or just copy or move this image:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Autopsy](img/image_06_025.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Adding an image to the host
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Then, automatically, this will list all the allocated partitions in this image
+    with the start and end of each one in a sector. This is the same result we got
+    from using the `mmls` tool in the command line where it asked us to select the
+    mount point of each partition. In our case, we have only one NTFS partition, and
+    we will mount this one as `C:` partition:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Autopsy](img/image_06_026.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Mounting the allocated partition to the case
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'A confirmation message will summarize the configuration that you established:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Autopsy](img/image_06_027.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Confirmation message
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Then, a home page for the case will be shown from where the investigator can
+    select what he needs to do with the partition or the whole disk image:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Autopsy](img/image_06_028.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Start analysis on the case
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now, we will go with the `C:` partition, it is the equivalent of specifying
+    the offset with `-o` option in each command that we used in the command line tools,
+    where we provided the offset of the working partition. Here, the upcoming analysis
+    will target the contents of the `C:` partition.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'After stating the analysis, the investigator will find some tabs targeting
+    all the layers of investigation that we mentioned before, such as the file analysis,
+    metadata analysis, and data clusters analysis. However, the command line tools
+    are still better for results customization. For example, if we need to redo what
+    we did with the `ntdll.dll` file using autopsy, we need to first search for the
+    filename from the file analysis tab:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Autopsy](img/image_06_029.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Search for the file by name
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We now have the metadata number `25833`. You can either click on this number
+    or under the **Meta Data** tab to search for this number. This will list all the
+    information of this file, including all the clusters that hold the contents of
+    this file. We are interested in the first cluster number 1118226 as shown in the
+    following image:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Autopsy](img/image_06_030.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Listing the metadata information with the metadata ID
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Then, in the same way, either click on the cluster number or type its number
+    under the DATA UNIT tab, it will display the contents the file in ASCII, Hex,
+    or ASCII Strings views:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Autopsy](img/image_06_031.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Listing the contents of cluster by cluster number
+  prefs: []
+  type: TYPE_NORMAL
+- en: We can see the status of the cluster is allocated and the signature of the file
+    as before in its hex view is `0x4D5A` (MZ).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Foremost
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: With TSK, we could find and recover the deleted files. These deleted files still
+    have their information in the metadata area, which is why we could identify their
+    information and know their location in the data area. This leaves us with a simple
+    step to recover these files by redirecting the contents of each file to a new
+    file. What if there are no entries for the deleted file, and we only have the
+    contents of the file in the data area and no metadata about this file (which under
+    this assumption will be in the unallocated area of the hard drive)? In this case,
+    the file carving technique will be useful to recover such files.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Each file has a different type, such as Microsoft Office, Adobe, exe, and AVI.
+    The extension at the end of the filename is not what is needed to differentiate
+    between one file type and another. There is a header in the beginning of each
+    file which differs from one type to another. Some file types have a footer in
+    the end of the file, but this is not mandatory. File carving techniques use these
+    headers and footers to carve and identify the locations of the files in the unallocated
+    area of the image or hard drive to recover these files.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**Foremost** is a Linux tool that is used to recover data based on file carving
+    techniques. We can apply foremost to all the images, but we already know that
+    the carving will work on the unallocated area. So, why don''t we apply foremost
+    against the unallocated area as a single file? This single file was produced from
+    the image using the `blkls` tool from `tsk` named as `unallocated.blkls`. We can
+    carve this produced file from the hard drive to find the deleted files, if there
+    are any.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The output of foremost is different directories under the working directory,
+    which are named after each file type when using the `--o` option. As we know that
+    each file will start at the beginning of a cluster, we don''t need to search the
+    rest of the cluster contents. We can use the `--q` option to search the beginning
+    of the clusters only for quick results:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Foremost](img/image_06_032.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Foremost to carve the unallocated area in the image
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Then, in the results of running this tool, we will find that one `audit.txt`
+    file and one PDF directory were created under the foremost-results directory.
+    Opening the `audit.txt` file will show us some information about the process of
+    file carving, such as the time, size, and the extracted files. In our case, one
+    single PDF file was extracted from the unallocated area in this image:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Foremost](img/image_06_033.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Extracted files by foremost
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Due to the absence of the metadata of this file as we discussed before, we
+    won''t be able to know any information about this file except for the size and
+    the contents of this file. This PDF file was created for testing purposes and
+    we assumed that it contains evidential data related to the case under investigation:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Foremost](img/image_06_034.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Extracted PDF file
+  prefs: []
+  type: TYPE_NORMAL
+- en: Summary
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In this chapter, we saw how the files are organized in the filesystem, and how
+    it differs from FAT to NTFS. Then, we learned about reading files from a forensic
+    image using TSK and its GUI Autopsy. We also discussed file carving and how to
+    recover a file, based on its signature using Foremost.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the next chapter, we will learn about Windows registry—a complex yet very
+    important artifact in the Windows operating system. We will learn about registry
+    structure, and its important value to the investigation and different tools to
+    parse and analyze the registry.
+  prefs: []
+  type: TYPE_NORMAL

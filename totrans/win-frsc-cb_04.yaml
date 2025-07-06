@@ -1,0 +1,762 @@
+- en: Windows File System Analysis
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'In this chapter, we will cover the following recipes:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: NTFS analysis with The Sleuth Kit
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Undeleting files from NTFS with Autopsy
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Undeleting files from ReFS with ReclaiMe File Recovery
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: File carving with PhotoRec
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Introduction
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: As mentioned in the introductory section, Windows machines run on NTFS (**New
+    Technology File System**).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Using the tools that we will discuss in this chapter, you will be able to uncover
+    information not only about the files, but also about the layout of the disk itself,
+    including deleted files and unallocated space. This can be of the utmost importance
+    in a forensic investigation, particularly in cases where a user may have tried
+    to cover up their actions using anti-forensic methods.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Some tools allow you to undelete files as well, thus restoring them, in whole
+    or in part, to how they looked before they were deleted. This does, of course,
+    depend on the extent to which a file has been overwritten, however it can be a
+    useful way to find out about things a suspect doesn't want you to see.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In cases where the metadata about the files has been deleted, file carving is
+    employed as a method of trying to recover the data within the files. This requires
+    several steps, most of which will be performed by your investigative tool set
+    of choice. Generally, it will begin by working out what type of file the item
+    was (usually by looking at the headers), and then building up fragments of the
+    file to form a more accurate picture of what used to be stored on the machine.
+  prefs: []
+  type: TYPE_NORMAL
+- en: There are several solutions which deal with file system analysis, file carving,
+    and the undeleting of files. In this chapter, we will be looking specifically
+    at Autopsy, The Sleuth Kit, ReclaiMe, and PhotoRec.
+  prefs: []
+  type: TYPE_NORMAL
+- en: NTFS Analysis with The Sleuth Kit
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The Sleuth Kit is a collection of command-line tools (and also a library) for
+    the forensic analysis of drive images. These tools can help you with analysis
+    of both volume and file system data (in a non-intrusive fashion, of course). It''s
+    cross-platform, so you can use any operating system you like to work with this
+    toolkit. It supports both RAW and E01 images, so you can use any image that you
+    acquired while following the previous recipes. This collection of tools will be
+    very useful in your future digital forensic examinations: it supports a wide range
+    of file systems, including NTFS, FAT, ExFAT, EXT2, EXT3, EXT4, HFS, and so on.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Getting ready
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'You can download Windows binaries from The Sleuth Kit''s official website.
+    Go to The Sleuth Kit section and click on the Download hyperlink. Now, click on
+    Windows Binaries and the downloading will start. At the time of writing, the most
+    recent version of The Sleuth Kit is 4.4.0, so the archive we downloaded has the
+    name: sleuthkit-4.4.0.tar.gz. So, now all you need to do is to unpack it and you
+    are ready to go.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: How to do it...
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Open Windows Command Prompt and change the directory to **bin** (you can find
+    it in the folder where you unpacked the archive you downloaded). Let''s start
+    from the Media Management Layer Tools:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The first thing you should do is to figure out which system volume type you
+    have. Of course, there is a tool for this in The Sleuth Kit. It''s called `mmstat`.
+    Let''s use it on one of the images we acquired in the previous recipes:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: '![](img/4e34db5a-4573-4c53-9cb3-689e751425d4.png)*Figure 4.1\. mmstat output*'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We now know the system volume type and are ready to use the next tool `mmls`.
+    This tool can help an examiner to determine the layout of a disk, including the
+    unallocated space. Let''s use it:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The output of the preceding command is as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/3fe31d50-907d-44a2-8e1e-177f126bcf82.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4.2\. mmls output
+  prefs: []
+  type: TYPE_NORMAL
+- en: As you can see, we have gathered a lot of valuable information about our disk
+    (as you remember, we imaged a drive in the previous recipes). Now you know the
+    starting sectors, ending sectors, and lengths of all partitions and unallocated
+    spaces.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let''s change to File System Layer Tools. To learn more about each of the partitions,
+    we have the `fsstat` tool. To use it, we need the partition offset. You can get
+    it from the `mmls` output. Let''s learn more about the largest partition we have,
+    which starts at sector 1435658:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The output of the preceding command is as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/d7fe328f-e31e-465b-8235-603f975760d3.png)**Figure 4.3\. fsstat output**'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'As you can see in the preceding figure, `fsstat` collects lots of useful information
+    about a partition: Volume Serial Number, Cluster Size, First Cluster of MFT, First
+    Cluster of MFT mirror, and so on.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The MFT, or Master File Table, contains information about all files, directories,
+    and metafiles in NTFS, including their names, creation timestamps, sizes, and
+    access permissions.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let''s now look at FileName Layer Tools. For example, the `fls` tool allows
+    examiners to list allocated and deleted file names in a directory. Again, we need
+    the partition offset to use this tool:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The output for the preceding command is as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/7f676dfc-6b34-4a26-900a-19672cbb8e10.png)**Figure 4.4\. A part of fls
+    output**'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let''s go further and create a `bodyfile` with `fls`. It''s truly an amazing
+    feature that helps Windows forensic examiners to create timelines of file activity.
+    Here is how we create it:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The output for the preceding command is as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/95dfa63d-f040-446d-a53e-0a131e9f868e.png)*Figure 4.5\. A part of bodyfile
+    created with fls*'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'As you can see, we added two switches in the command: `-r` and `-m`. The first
+    one tells `fls` to recurse the directory entries. The second tells it to use `mactime`
+    input format with */* as the mount point.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We now have the body file, so we are ready to run `mactime` and create a timeline
+    of file activity. Such timelines are very useful in Windows forensic examinations,
+    especially in cases involving malware incidents. Here is how to create it:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: '![](img/afcd1357-e82d-4c62-8aee-f2823c89ace6.png)*Figure 4.6\. The timeline
+    file opened in Microsoft Excel*'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Again, in the last command we have two switches which need to be explained.
+    The first one, `-b`, points to the bodyfile for `mactime` to use. The second,
+    `-d`, stands for delimited output and means we can save it as a CSV file and use
+    Microsoft Excel or OpenOffice Spreadsheets to work with it later (see the figure
+    above). Also, if you want to specify the time zone, you can use the `-z` switch.
+  prefs: []
+  type: TYPE_NORMAL
+- en: How it works...
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Below is a list of the main commands used and their functions:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`mmstat`:extracts information about the system volume type'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`mmls`: extracts information about disk layout, including unallocated spaces'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`fsstat`: extracts information about a file system, including volume serial
+    number, cluster size, and so on'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`fls`: extracts information about both allocated and deleted file names in
+    a directory'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`mactime`: creates a timeline of file activity based on a body file created
+    with `fls`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: See also
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The Sleuth Kit download page: [https://www.sleuthkit.org/sleuthkit/download.php](https://www.sleuthkit.org/sleuthkit/download.php)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The Sleuth Kit wiki: [http://wiki.sleuthkit.org/index.php?title=Main_Page](http://wiki.sleuthkit.org/index.php?title=Main_Page)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Undeleting files from NTFS with Autopsy
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Originally,**Autopsy** was just a graphical interface for The Sleuth Kit. You
+    have already learnt about the collection of command-line tools for file system
+    forensic analysis in the previous recipe. Since the third version however, it
+    has been totally rewritten and is now available as a standalone digital forensics
+    platform. It is very widely used and forms part of the digital forensic toolkit
+    of both law enforcement and corporate examiners. Why? It's easy to use, fast,
+    and free. Also, if you enjoy programming, you can write your own modules for Autopsy
+    - all the documentation you will need is freely available online, on The Sleuth
+    Kit's website. Basis Technology even holds Autopsy module writing contests, so
+    feel free to participate.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Getting ready...
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Go to The Sleuth Kit's website again, but now choose Autopsy, and after that,
+    Download. The most recent version at the time of writing is 4.3.0\. Both 32- and
+    64-bit versions are available; you should choose the right one according to your
+    system (we have already shown you how to collect this piece of information in
+    one of the previous recipes). You will be redirected to SourceForge, and the downloading
+    process will start automatically. In our case, the file we downloaded is named
+    **autopsy-4.3.0-64bit.msi.** All you need now is to double-click it and follow
+    the installation instructions, which are quite straightforward. Once the installation
+    process is complete, you are ready to go.
+  prefs: []
+  type: TYPE_NORMAL
+- en: How to do it...
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'After starting your freshly installed digital forensics tool, the first window
+    you see is Welcome. Here we have three main options:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Create New Case - this option will create a new case for you
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Open Recent Case - this option will open the last case you worked on
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Open Existing Case - this option allows you to choose one of the cases present
+    on your workstation
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '![](img/35ca9cea-7cc2-4d80-aec1-463cfd28a4a8.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4.7\. Autopsy Welcome window
+  prefs: []
+  type: TYPE_NORMAL
+- en: As we just installed Autopsy, we don't have any cases, so our choice is the
+    Create New Case option. Now you will see a New Case Information window.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the first step, Case Info, we have two fields to fill in; the third will
+    be completed automatically. You should type your case number or name in the first
+    field, Case Name, and choose the directory for your case files in the second,
+    Base Directory (use the Browse button). The third field will show the path to
+    your case files (base directory + case name).
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '![](img/386c3276-523c-483b-8c99-c63e06ec419c.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4.8\. Autopsy New Case Information (Case Info) window
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The second step, Additional Information, is optional: you can leave both fields
+    blank. However, it is usually better to fill them in. The first field should contain
+    your case number, the second your name.'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '![](img/ccc30c2b-19ea-4dea-bb9e-0f9968d0ebf4.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4.9\. Autopsy New Case Information (Additional Information) window
+  prefs: []
+  type: TYPE_NORMAL
+- en: Click Finish and the case will be created.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 'It''s time to select the data source, here is the **Add Data Source** window.
+    The first thing you should do is select the data source type. Three options are
+    available:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Image or VM File - this option allows you to choose a forensic image in one
+    of the supported formats, or a virtual machine disk, for example, that was found
+    during the examination of an image
+  prefs:
+  - PREF_UL
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Local Disk - this option allows you to choose a physical drive connected to
+    your workstation, or a mounted logical drive (for example, D:)
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Logical Files - this option allows you to choose files and folders for analysis,
+    for example, from a mounted forensic image
+  prefs:
+  - PREF_UL
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '![](img/68d9a3a6-8daa-48e9-957c-128ea4b409ab.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4.10\. Autopsy Select Data Source window
+  prefs: []
+  type: TYPE_NORMAL
+- en: Don't forget to choose the right time zone.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 'In the next step, you should choose ingest modules to run. Autopsy ingest modules
+    analyze the files on the data source and parse their contents. As the main aim
+    of this recipe is to show you how to undelete files from NTFS, we have chosen
+    just a few modules, including:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: File type identification - identifies files based not on their extensions, but
+    their internal signatures
+  prefs:
+  - PREF_UL
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Extension mismatch detector - uses File Type Identification Module results to
+    flag the files with an extension that is not usually associated with the detected
+    file type
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Embedded file extractor - extracts data from different archive formats, including
+    DOCX, XLSX, PPTX, and others
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '![](img/92bfdb33-897d-4ff5-88a0-cfea658d1752.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4.11\. Autopsy Select Data Source (Configure Ingest Modules) window
+  prefs: []
+  type: TYPE_NORMAL
+- en: Click Next and data source processing will start.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 'After some time, depending on the size of the data source, the Finish button
+    will become active: click it and you are ready to analyze the file system(s).'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 'The point of this recipe is to teach you how to undelete files from NTFS. The
+    thing is, when a file is deleted, it''s not erased; it is simply marked as deleted
+    in the MFT entry for the file. So, until the file is overwritten, it can be recovered,
+    and Autopsy can help digital forensic examiners with this. It even sorts out all
+    the deleted files for you: just go to Views - Deleted Files on the left pane (the
+    Tree Viewer).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/73cde85e-21e6-46fb-a77a-90a0c1bb71ce.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4.12\. Deleted Files option in the Tree Viewer
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'You can use this option to recover files, or browse the file system(s) via
+    the Data Sources option. Deleted files have red cross icons on the left. To recover
+    a file or files:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Right-click on the file or files (mark all the files you want to recover beforehand)
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Choose **Extract File(s)**
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Choose the destination folder
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Click Save
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Yes, it is that easy!
+  prefs: []
+  type: TYPE_NORMAL
+- en: How it works...
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Autopsy detects files marked as deleted in the MFT and sorts them all out, so
+    a digital forensic examiner can locate such files and recover them.
+  prefs: []
+  type: TYPE_NORMAL
+- en: See also
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Autopsy download page: [http://sleuthkit.org/autopsy/download.php](http://sleuthkit.org/autopsy/download.php)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Autopsy User''s Guide: [http://sleuthkit.org/autopsy/docs/user-docs/3.1/index.html](http://sleuthkit.org/autopsy/docs/user-docs/3.1/index.html)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Undeleting files from ReFS with ReclaiMe File Recovery
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: ReclaiMe File Recovery is a piece of data recovery software capable of undeleting
+    files from a wide range of devices including hard drives, memory cards, RAID arrays,
+    and multi-disk NAS devices. Also, it supports data recovery from most file systems,
+    including the latest Windows file systems - **ReFS** or the **Resilient File System**.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Getting ready
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Go to ReClaiMe's website and click on the green DOWNLOAD button on the left.
+    It brings you to the ReclaiMe File Recovery download page and the downloading
+    process starts automatically. After this, just run the setup file and follow the
+    installation instructions. You are ready to go!
+  prefs: []
+  type: TYPE_NORMAL
+- en: How to do it...
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Before you start, it's a good idea to find the right data source. ReFS is an
+    active development, and is used usually on Windows servers only. Thankfully, Willi
+    Ballenthin has created a bunch of ReFS images for testing purposes, which are
+    now publically available. Let's use one of them.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Start ReclaiMe File Recovery. It takes some time for the tool to scan all available
+    drives. After this, you will be taken to the main window, like the one in the
+    following figure:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '![](img/9f8f0d0b-8f2a-4391-9658-0bdb4bae009a.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4.13\. ReclaiMe File Recovery main window
+  prefs: []
+  type: TYPE_NORMAL
+- en: ReclaiMe File Recovery doesn't support E01 images, but this is not a problem
+    because we have an image in RAW format.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let''s go to Disks - Open disk image... Choose the disk image and click Open.
+    Now there should also be an image in the main window, like the one in the following
+    figure:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '![](img/c72c3dde-031b-42ef-ba6e-f6e5735a9d4a.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4.14\. ReclaiMe File Recovery main window (Disk image is added)
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Double-click the image to start the recovery process. Of course, it will take
+    some time, depending on the size of the image. In our case, the image is small
+    enough, so it doesn''t take a lot of time. The recovery is shown in the following
+    figure:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '![](img/f8c7b542-1002-469a-b03a-490cdf0fe56e.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4.15\. ReclaiMe File Recovery image processing results
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now you can save recovered files or even folders using the blue Save button.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: How it works...
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: ReclaiMe File Recovery processes the image and lists the files and folders available,
+    giving a computer forensic examiner the ability to extract deleted files.
+  prefs: []
+  type: TYPE_NORMAL
+- en: See also
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The ReclaiMe File Recovery website: [http://www.reclaime.com/](http://www.reclaime.com/)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The ReFS sample images: [http://www.williballenthin.com/forensics/refs/test_images/](http://www.williballenthin.com/forensics/refs/test_images/)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: File carving with PhotoRec
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: PhotoRec is a file carving tool that is widely used by digital forensic examiners.
+    This tool is even built into the previously mentioned digital forensic platform,
+    Autopsy, as a module. PhotoRec can recover a diverse range of file types (more
+    than 480 file formats), but if you think this will not be enough, you can add
+    your own custom signatures, which will help the tool to recover even more data.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Getting ready
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Go to CGSecurity's website and click the download hyperlink on the left. You
+    will be redirected to the Download page. Now click on the big green button on
+    the right, and the downloading process will be initiated. At the time of writing,
+    the most recent version of PhotoRec is 7.0, so the archive we downloaded is called
+    **testdisk-7.0.win.zip**. Unpack it and you are ready to go.
+  prefs: []
+  type: TYPE_NORMAL
+- en: How to do it...
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Before we start, it''s important to note that PhotoRec supports disk images:
+    not only RAW, but also E01\. As we are carving data for forensic purposes, let''s
+    use an E01 image that we acquired in one of the previous recipes.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Start the Windows Command Prompt from an account in the Administrator group,
+    and change the directory to **testdisk-7.0**. Use the following command:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: Make sure you typed the path to the image you acquired, as it can have a different
+    name and location.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: The first dialog box that you see is 'Select a media'. In our case we are dealing
+    with an E01 image, so we have only one option, and all we need to do is press
+    *Enter* to proceed.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '![](img/7a69c570-2beb-41a8-9bec-85bd3d7bc9ed.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4.16\. PhotoRec Select a media dialog
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now we have the Partition selection dialog box. In our case, we have only one
+    partition of unknown type - a perfect example for file carving.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '![](img/bddf62aa-b739-4d27-bf49-aa4701315a3b.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4.17\. PhotoRec Partition selection dialog
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Also, four options are seen at the bottom:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Search - to start recovery
+  prefs:
+  - PREF_UL
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Options - to modify recovery options
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: File Opt - to modify file types to be recovered
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Quit - to cancel recovery
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Let''s go to Options. Here, we have the following:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Paranoid - if enabled, verifies recovered files, and invalid files are rejected.
+    Another option here, **bruteforce**, if enabled, tries to recover fragmented JPG
+    files.
+  prefs:
+  - PREF_UL
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Keep corrupted files - if enabled, keeps invalid files. Use it if you want to
+    try to repair them with other tools.
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Expert mode - if enabled, allows an examiner to force the block size and the
+    offset.
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Low memory - use it if your workstation doesn't have enough memory to avoid
+    recovery crashes.
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '![](img/f47b55f6-75e1-44a8-9d2c-2d0c3d927664.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4.18\. PhotoRec Options
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now let's check File Opt. Here, we have a long list of file types supported
+    by the tool. Use the *s* button to check all file types or to disable all. Use
+    spacebar if you want to enable or disable some of the types. To save changes use
+    b.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '![](img/ec38425c-b815-492f-954f-5b0a0368ec5c.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4.19\. PhotoRec File Opt option
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now we have looked through the available options, and are ready to start recovery.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Choose Search and press *Enter*. It's time to choose the file system type. We
+    know that there are only two options, and that there are no EXT partitions on
+    our image, so we choose **Other**.![](img/f9cb5e24-e47e-4c6f-ac84-628bf8338a9a.png)
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Figure 4.20\. PhotoRec Filesystem type dialog
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Now we need to choose the destination path for the files being recovered. We
+    recommend creating one before starting the file carving process. In our case,
+    the destination folder is `X:52-Carved`, as you can see in the following figure:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '![](img/a8f02e8b-cf7b-4eab-8a4d-417df85e4a05.png)*Figure 4.21\. PhotoRec Select
+    destination dialog*'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Use the *C* button to start the file carving process.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Once the process is finished, you will have one or more folders (`recup_dir.1`,
+    `recup_dir.2`...) with recovered files. It's important to note that these folders
+    can be accessed before the recovery is finished.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: How it works...
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: PhotoRec reads the data source sector by sector, and finds the first ten files.
+    It uses them to calculate the block/cluster size after each block is checked by
+    the tool against a signature database.
+  prefs: []
+  type: TYPE_NORMAL
+- en: If the file system is not corrupted, PhotoRec can get the block/cluster size
+    from volume boot record, or superblock.
+  prefs: []
+  type: TYPE_NORMAL
+- en: See more
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The PhotoRec download page: [http://www.cgsecurity.org/wiki/TestDisk_Download](http://www.cgsecurity.org/wiki/TestDisk_Download)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The PhotoRec wiki page: [http://www.cgsecurity.org/wiki/PhotoRec](http://www.cgsecurity.org/wiki/PhotoRec)'
+  prefs: []
+  type: TYPE_NORMAL

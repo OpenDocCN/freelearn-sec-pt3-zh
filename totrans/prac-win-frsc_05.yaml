@@ -1,0 +1,831 @@
+- en: Chapter 5. Timeline
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In this chapter, we will look at timeline analysis. We will learn a few different
+    approaches to perform a timeline analysis with The Sleuth Kit and Plaso Framework.
+    We will also cover some theoretical issues that are specific to some filesystems
+    and how they work with file time-related attributions. Also, we will demonstrate
+    how we can use Plaso in practice.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In a nutshell, we will cover the following topics:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Timeline
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**The Sleuth Kit** (**TSK**)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Plaso architecture
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Plaso in practice
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Timeline introduction
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: One question, which is very prominent in forensics is, "When?"
+  prefs: []
+  type: TYPE_NORMAL
+- en: In other words, time is a very important factor at which analytics is based
+    in the process of forensics. There are many artifacts that we use in an investigation
+    which have temporal characteristics. These characteristics allow us to build the
+    whole picture of an incident.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Moreover, timeline analysis could help when we analyze different types of evidence.
+    Timeline analysis may be built on the base of any source that has timestamps.
+    This could be the metadata of the filesystem, registry, event log files, log files
+    of applications, memory, network traffic, and so on.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Certainly, the timeline is one of the most useful techniques that is applied
+    in digital forensics. However, this is based on the analysis of particular artifacts,
+    so it is very important to understand how to analyze the artifacts that are suppliers
+    of timeline events.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Despite the apparent simplicity of the idea underlying the timeline, in practice,
+    it is not so easy. One of the difficulties is the large amount of data that has
+    to be analyzed. The issue with a running system is that there are a few users
+    and many system services, which produce a lot of events. We need to filter out
+    such activities from normal users.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The idea of a timeline is not very new. It has been around since the year 2000,
+    when Rob Lee and some other forensic people started applying it in digital forensics.
+    Originally, filesystems served as a source of data for the timeline. We will consider
+    the NTFS filesystem as the most prevalent filesystem in our review.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The timeline of the NTFS filesystem is based on the timestamps in some attributes
+    of the filesystem objects.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Every object of the filesystem has the following timestamps:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`M`: This is the date of data modification'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`A`: This is the date of data access'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`C`: This is the date of metadata change'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`B`: This is the date of metadata creation'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Based on the analysis of this data, we can determinate when a file was created,
+    copied, moved, and so on. The NTFS filesystem uses `FILETIME` as its time format
+    in UTC. **UTC** is **Coordinated Universal Time**. `FILETIME` contains a 64-bit
+    value representing the number of 100-nanosecond intervals since January 1, 1601
+    (UTC). MS Windows also uses other time formats. They are the UNIX time format,
+    DOS Date format, and `SYSTEMTIME` format.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Also, we should highlight some cases when the file is moved across different
+    filesystems, for example, a file is copied to a USB key. In most cases, USB uses
+    the FAT32 filesystem, so files on the FAT32 system have different attributes,
+    and timestamps are on the NTFS and FAT32 filesystems.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let''s consider case when a file is created on the NTFS filesystem and then
+    is copied to USB with the FAT32 filesystem. In this case, the modification date
+    remains unchanged, but the C date on the USB drive changes and will fit to the
+    date of file creation on the USB. Microsoft has an explanation on how attributes
+    are changed in different situations at [http://support.microsoft.com/kb/299648](http://support.microsoft.com/kb/299648).
+    The following are the file properties with regards to the date and time stamps:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the case that a file is copied from `C:\fatfolder` to `C:\fatfolder\subfolder`,
+    it keeps the same date and time of modification but changes the date and time
+    of creation to the current date and time
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: In the case that a file is moved from `C:\fatfolder` to `C:\fatfolder\subfolder`,
+    it keeps the same date and time of modification and keeps the same date and time
+    of creation
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: In the case that a file is copied from `C:\fatfolder` to `D:\NTFSfolder`, it
+    keeps the same date and time of modification but changes the date and time of
+    creation to the current date and time
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: In the case that a file is moved from `C:\fatfolder` to `D:\NTFSfolder`, it
+    keeps the same date and time of modification and keeps the same date and time
+    of creation
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: In the case that a file is copied from `D:\NTFSfolder` to `D:\NTFSfolder\SUBfolder`,
+    it keeps the same date and time of modification but changes the date and time
+    of creation to the current date and time
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: In the case that a file is moved from `D:\NTFSfolder` to `D:\NTFSfolder\SUBfolder`,
+    it keeps the same date and time of modification and keeps the same date and time
+    of creation
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: In all cases, the date and time of modification of a file does not change unless
+    a property of the file has changed. The date and time of creation of the file
+    changes, depending on whether the file was copied or moved.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The following are the folder properties with regards to the date and time stamps:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the case that two new folders on an NTFS partition called `D:\NTFSfolder1`
+    and `D:\NTFSfolder2` are created, both the date and time of creation and modification
+    are the same
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'In the case that the `D:\NTFSfolder2` folder is moved into the `D:\NTFSfolder1`
+    folder, creating `D:\NTFSfolder1\NTFSfolder2`, then the following occurs:'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`D:\NTFSfolder1`: This is when the created folder is the same and the modified
+    stamp changes.'
+  prefs:
+  - PREF_IND
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`D:\NTFSfolder1\NTFSfolder2`: This is when both the created folder changes
+    and the modified folder stay the same.'
+  prefs:
+  - PREF_IND
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: This behavior occurs because even though you moved the folder, a new folder
+    is seen as being created within the `D:\NTFSfolder1` folder by the Master File
+    Table (MFT).
+  prefs:
+  - PREF_IND
+  - PREF_IND
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: 'In the case that the `D:\NTFSfolder2` folder is copied into the `D:\NTFSfolder1`
+    folder, creating the `D:\NTFSfolder1\NTFSfolder2` folder, and the `D:\NTFSfolder2`
+    folder still exists (after having copied it):'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`D:\NTFSfolder1`: This is when the created folder is the same and the modified
+    folder time and date stamp changes.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`D:\NTFSfolder2`: This is when no changes occur because it is the original
+    folder.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`D:\NTFSfolder1\NTFSfolder2`: This is when both the created folder and the
+    modified folder change to the same stamp, which is that of the time of the move.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: This behavior occurs because even though you copied the folder, the new folder
+    is seen as being created by the MFT and is given a new created and modified time
+    stamp.
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: 'The FAT filesystem has different behavior with regards to the modified time
+    stamp. On a FAT filesystem, the modified date of a folder does not change if the
+    contents of the folder change. For example,if `D:\FATfolder2` is copied or moved
+    into `D:\FATfolder1`, the created date and modified date of `D:\FATfolder1` remain
+    unchanged. The following table reflects the changes of attributes in accordance
+    with operations on the file:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| **Operations** | **Attribute** |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Renaming | `..C.` |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Displacement inside a volume | `..C.` |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Displacement between volumes | `.AC.` |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Copying | `.ACB` |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Access | `.AC.` |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Modification | `M.C.` |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Creation | `MACB` |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Deletion | .... |'
+  prefs: []
+  type: TYPE_TB
+- en: Tip
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: When we talk about a moving action, we mean moving of the file with Windows
+    Explorer and the cut and paste procedure, not the `move` command in the command
+    line.
+  prefs: []
+  type: TYPE_NORMAL
+- en: One more thing what we want to mention is that some investigators make the mistake
+    of assuming that disabling the last accessed time will stop any updates to the
+    file's last access time (default on Vista+). This is incorrect. The last accessed
+    time will be changed in the case of the copy or move commands; it remains unchanged
+    only if the files are opening.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Also, the moving of a file by cutting and pasting in Windows Explorer in the
+    border of the filesystem doesn't change the creation time. However, it will be
+    changed if a file is moved on the command line with the `move` command.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The Sleuth Kit
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Let's considers the stages of the creation of a timeline for a filesystem.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The first step for creation of the timeline is building of body file.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'There are three types of data to collect:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Existing on filesystem files, which we could list with the `dir` or `ls` command.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Deleted files, which are deleted but structures of them still exist. This allows
+    for recovering the full path and other attributes of the file. However, this depends
+    on the filesystem, as not all filesystems allow this.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Unallocated inodes `($Orphan` files), which are file structures which do not
+    exist anymore.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: To build a bodyfile, we will use the `fls` tool from TSK. The `fls` tool allows
+    interacting with a forensics image as with the filesystem and extracting timeline
+    data from the filesystem level.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'This gets the value of the inode directory, processes its content, and displays
+    the names of files in the directory (including deleted files). If the value of
+    inode is not present, it will display the content of the root directory:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![The Sleuth Kit](img/image_05_001.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'In our case, one of the most important options is `-m`, which allows output
+    in a format for use with the mactime tool:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![The Sleuth Kit](img/image_05_002.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'So if you have an `image.dd` and you want to create a timeline, you should
+    enter the following three commands:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: Super timeline – Plaso
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The filesystem is not the only source of data that contains timestamps of events
+    in the system. When computers work, even when users do not do anything, a lot
+    of events occur in the system. For example, Windows XP creates a System Restore
+    Point every 24 hours, runs disk defragmentation every three days so that sectors
+    of deleted files will be rewritten. Windows 7 has a Volume Shadow Copy mechanism,
+    which also creates backup files and so on. All these actions occur automatically
+    without any user activity. So, even in idle mode, Windows has a lot of events.
+    In the case that the system has active users, we would see many more events. The
+    information about these events will reflect in different places: in the registry,
+    event log files, log files of applications, browser history, and so on.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: If we could use all of these sources in the timeline, we could make a whole
+    picture of what happened in the system and link different events in logical chain.
+    This approach is called **Super Timeline**.
+  prefs: []
+  type: TYPE_NORMAL
+- en: To build a super timeline from different sources separately and then merge results
+    could be a complicated and longtime process. However, thanks to cool tools, such
+    as the Plaso framework, this task became much easier.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*Kristinn Gudjonsson* created the`log2timeline` tool, which allows the creation
+    of a super timeline in an automatic way. Originally, it was written in Perl, but
+    later rewritten in Python. The Python version is now called **Plaso.** It has
+    a lot of features and flexible architecture. It allows the addition of new parsers
+    and plugins to process new types of data.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Plaso architecture
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Let''s take a look at Plaso architecture. Plaso has a few core components which
+    perform independent roles:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Preprocessing
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Collection
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Worker
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Storage
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Let's look at them in more detail.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Preprocessing
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: At this stage, some preprocessing tasks should be done prior to all other processing.
+    For example, before mounting the image and determining which OS is installed on
+    the disk, collect some information which will be used in the next stage.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The preprocessing process should collect the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The version of the OS
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The hostname
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Time zone information
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Default applications, such as the default browser, and so on
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Enumerate all users and their paths
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Collection
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: In the collection stage, the process goes over the image, directory, or mount
+    point, and finds all the files that the tool can process.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The collection could be divided into three different scenarios:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the simplest case, the collection process recursively goes through either
+    a mount point or an image file and collects every file discovered.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: During the recursive scan, if VSS are to be parsed, a hash is calculated, based
+    on the four timestamps of every file. During the collection phase, from the VSS
+    image, the hash value is compared to already existing hashes for that file. If
+    the file has not previously been collected, it is included; otherwise, it is skipped.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: In the case of a targeted collection, a set of file paths is defined and only
+    the files that fit that pattern are collected.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Worker
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'The worker is the main part of Plaso. The worker should be monitoring the process
+    queue, and process each file that gets in there. During processing files, the
+    worker will perform the following actions:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Determining the type of file
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Determining which parsers should be applied to it
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Parsing the file and extract all events from it
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Applying some defined filters to the file
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Sending extracted events to the storage queue
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Determining if this file contains other files within it that can be processed/extracted,
+    and process them as well
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Storage
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: In the storage stage, events from the storage queue are written to a disk.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Now, let''s consider the main tools from the Plaso framework:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**log2timeline**: This is the main command line frontend to the Plaso backend.
+    This is the tool that can be used to extract events from an image, mount point,
+    or a file, and save it in a Plaso storage file for future processing and analysis.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Pinfo**: This tool allows the extraction of the information, which is contained
+    in the Plaso storage. It is simple tool, which prints out information from the
+    storage file.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**pprof**: This is small tool, which could be useful for developers and those
+    that are interested in trying to optimize certain parsers.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**preg**: This tool provides a different frontend to the registry parser. It
+    parses an image or a registry hive and provides the user with a console or shell
+    to work with the registry.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**pshell**: This is an iPython console to the Plaso backend. This shell provides
+    the user with access to all the libraries of Plaso and provides an access to more
+    advanced analysis of the output, debugging, and experimentation.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**psort**:The storage format of Plaso is not a human-readable format and psort
+    allows the convertion of it to a more convenient form. It is used as a postprocessing
+    tool to filter, sort, and process the Plaso storage file.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Plaso in practice
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Let's take a look how we can use Plaso in practice.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Let's assume that we have an image of the hard drive from the infected PC, and
+    now we need to investigate this case to figure out how the infection occurred.
+  prefs: []
+  type: TYPE_NORMAL
+- en: First, we need observe the image and determine partitions, which we need to
+    analyze. To do this, we need to use the mmls tool from TSK.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Then, we can build bodyfile with log2timeline:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Plaso in practice](img/image_05_003.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Now, we will use a dynamic format for output. The dynamic output format allows
+    the setting of filtering rules as SQL-SELECT-like requests. We will build our
+    rules based on the following attributes of events:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| **Attribute** | **Description** |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Date | This is the date of the event |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Time | This is the time of the event |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Timezone | This is the time zone of the event |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Source | This is the source of the event (`FILE`,`REG`, ...) |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Message, Description | This is the description of the event |'
+  prefs: []
+  type: TYPE_TB
+- en: '| User | This is the user associated to the event |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Host | This is the ID of the computer associated to the event |'
+  prefs: []
+  type: TYPE_TB
+- en: '| inode | This is the ID of the file inside the filesystem |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Filename | This is the name of the file linked to the event |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Macb | This is the MACB timestamp notation |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Timestamp_desc | This is the description of the timestamp (`LastWritten`,...)
+    |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Parser | This is the Module that collects and processes data (`WinRegistryParser`,
+    ...) |'
+  prefs: []
+  type: TYPE_TB
+- en: When we browse a list of executed files, we found a file with a suspicious name,
+    `ZkPECED.exe`. We could use it now as a pivotal point of a timeline investigation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: So, we can filter all files, which contain the `ZkPECED` string in the name
+    of the file.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The following figure displays the results of searching for events associated
+    with files containing the `ZkPECED` keyword in their name, from which it is clear
+    that on April 8, 2014, at 12:39:08 UTC (16:39:08 UTC+4), two files named `ZkPECED.tmp`
+    and `ZkPECED.exe` were created in`\Users\Alina\AppData\Local\Temp` directory:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Plaso in practice](img/image_05_004.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Using the `--sliceDateTime` and`--slice_sizeMinutes` parameters and the `psort.py`
+    utility, we can restrict the sample data from the file storage (`timeline.body`)
+    to events that occurred in the time range *[DateTime-Minutes, DateTime + Minutes]*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'As we do not know where the `ZkPECED.exe` file executable came from, we perform
+    a search for all executables created or modified within 10 minutes of 12:39:08
+    UTC:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Plaso in practice](img/image_05_005.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Note that just before the appearance of the `ZkPECED.exe` file, the metadata
+    of a file in the `systemhost` directory with the suspicious name `24FC2AE3CB0.exe`
+    (inode 46912) changed (meaning that the file was renamed or moved locally), although
+    its other timestamps (`creation`, `last modified`, and `last accessed`) refer
+    back to 2010:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Plaso in practice](img/image_05_006.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Using the `istat` utility in TSK suite, we obtain information about the attributes
+    of the `24FC2AE3CB0.exe` file (inode 46912):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Plaso in practice](img/image_05_007.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: The preceding screenshot shows that the timestamps contained in the `$STANDARD_INFORMATION`
+    and`$FILENAME` attributes do not match, which probably indicates that the timestamps
+    of the`24FC2AE3CB0.exe` file (inode 46912) were changed manually.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Hence, it can be assumed that the `24FC2AE3CB0.exe` file (inode 46912) was created
+    on April 8 at 12:31:44 UTC (16:31:44 UTC+4), and that its timestamps (created,
+    last modified, and last accessed) were changed "manually", which is one of the
+    signs of malware.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Analyzing the results
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Analysis of the results of the WinRegistryParser processing module establishes
+    that links to both suspicious executable files are stored in the Windows registry
+    keys that are responsible for auto-running programs at system startup:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Analyzing the results](img/image_05_008.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: The screenshot also shows the time of the last modification of each of the registry
+    keys.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'As the source of the `24FC2AE3CB0.exe` file is also unknown, we perform a search
+    for files created before 12:31:49 UTC, excluding files with `safe` extensions
+    from the search results:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Analyzing the results](img/image_05_009.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'The result of this command will be as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Analyzing the results](img/image_05_010.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: The screenshot shows that, a few seconds before the appearance of the `24FC2AE3CB0.exe`
+    file, the `jp2launcher.exe` file process has been started. It starts the Java
+    virtual machine for Java applets and `.jnlp` files. So after this, two Java`.idx`
+    files named `7d088b-2be562b3.idx` (inode 48067) and `57ebc62f-6dfa622f.idx` (inode
+    48074) were created.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The results of the `JavaIDXParser` processing module gives us some information
+    about objects loaded in the Java virtual machine:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Analyzing the results](img/image_05_011.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: The information displayed in the screenshot shows that a Java archive named
+    `utisl.jar` was downloaded from the URL `http://finansial.gov` (IP 85.17.137.151),
+    and an unknown object named `2` was downloaded from the URL `>http://w282d1wb.athleticsdrycleaner.pw/f/1389931620/4067114524/`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The `utisl.jar` Java archive is saved in the `/Users/Alina/AppData/LocalLow/Sun/Java/Deployment/cache/6.0/11/7d088b-2be562b3`
+    file (inode 48068), and the unknown object named `2` in`/Users/Alina/AppData/LocalLow/Sun/Java/Deployment/cache/6.0/47/57ebc62f-6dfa622f`
+    (inode 48075).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'With the help of the `icat` utility in The Sleuth Kit suite, we can obtain
+    the contents of both Java IDX files, from which we extract the size of the objects
+    that were downloaded by the Java virtual machine:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Analyzing the results](img/image_05_012.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'The output presented in the screenshot indicates that the `utisl.jar` file
+    («7d088b-2be562b3») is 14,052 bytes in size:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Analyzing the results](img/image_05_013.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: The output presented in the figures indicates that the object **2** (`57ebc62f-6dfa622f`)
+    is 411,648 bytes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'This is because, according to the output of the `istat` and `icat` utilities,
+    the size and contents of the `/systemhost/24FC2AE3CB0.exe` (inode 46912) and `/Users/Alina/AppData/LocalLow/Sun/Java/
+    Deployment/cache/6.0/47/57ebc62f-6dfa622f` (inode 48075) files match:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Analyzing the results](img/image_05_014.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: It can be assumed that on March 13, 2014, a Java applet was downloaded from
+    the URL `http://finansial.gov` (IP 85.17.137.151), which, when started, downloaded
+    an executable file of size 411,648 bytes. The body of the file was saved in the
+    `/systemhost/24FC2AE3CB0.exe` file. A link to the specified executable file was
+    added as the `YI9B2F0F6EXG1Y1ZLMA` parameter in the `HKCU\Software\Microsoft\CurrentVersion\Run`
+    registry key, which is responsible for auto-running programs when the operating
+    system starts.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The results of the `MsiecfParser` parser, indicate that while working with
+    Internet Explorer on April 8, 2014, at 12:31:13 UTC, the user accessed, perhaps
+    unknowingly, the resource `http://finansial.gov`, from which the `utisl.jar` Java
+    applet was subsequently downloaded and executed:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Analyzing the results](img/image_05_015.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Next, on analyzing the results of the `WinEvtxParser` processing module, we
+    select from the Windows security log (`Security.evtx`) successful authentication
+    events in the system (`EventId` 4624) after the appearance of the Java `.idx`
+    files on April 8, 2014, at 12:31:13 UTC:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Analyzing the results](img/image_05_016.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'To present the result in a more convenient form, we can convert it with the
+    following commands:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'You can see them in the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Analyzing the results](img/image_05_017.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Note
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Note that the authentication type, `(LogonType)`,`10`, indicates that the target
+    system made a connection via the RDP protocol.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The screenshot shows that on April 8, several RDP protocol connections were
+    made by the user, `SYSTEMSERVICE`. Pay attention to two features: the connection
+    was made using IP address 127.0.0.1 (loopback), that is, effectively from the
+    computer under investigation to itself; and the **security identifiers** (**SIDs**)
+    of the user `SYSTEMSERVICE` are different, that is, the user was recreated several
+    times in the specified time interval.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'By filtering the results of the `WinEvtxParser` module for `EventId` 4720 (user
+    creation) and the user name `SYSTEMSERVICE,` we come to the conclusion that the
+    specified user was first created on April 8 at 12:40:52 UTC, and three attempts
+    were later made to recreate it:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Analyzing the results](img/image_05_018.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'So, now we can establish a likely scenario for the incident: on April 8, 2014,
+    the user Alina accessed, perhaps unknowingly, the resource `http://finansial.gov`,
+    as a result of which the `utisl.jar` Java applet was downloaded and executed.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Next, an unknown object of size 411,648 bytes was downloaded from the URL, `http://w282d1wb.athleticsdrycleaner.pw/f/1389931620/4067114524/`,
+    the body of which was saved in the`/systemhost/24FC2AE3CB0.exe` file. A link to
+    the specified executable file was added as the `YI9B2F0F6EXG1Y1ZLMA` parameter
+    in the `HKCU\Software\Microsoft\CurrentVersion\Run` registry key, which is responsible
+    for auto-running programs at system startup.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Thereafter, the system repeatedly created a suspicious user named `SYSTEMSERVICE`,
+    under which local connections were made to the system via the RDP protocol.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Summary
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In this chapter, we looked at time-related attributions on different filesystems,
+    how to build a timeline with TSK and with the Plaso framework.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the next chapter, we will cover how to analyze dates on the NTFS and FAT
+    filesystems. We will continue to work with TSK and study other utilities from
+    TSK.
+  prefs: []
+  type: TYPE_NORMAL

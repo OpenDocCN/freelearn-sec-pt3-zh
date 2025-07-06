@@ -1,0 +1,896 @@
+- en: Chapter 11. Memory Forensics
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: System memory is the working space of the operating system. The operating system
+    uses memory to place the data that is needed to execute programs and the programs
+    themselves. This is why acquiring the system memory is one of the steps that must
+    be performed when applicable in digital forensics. Analyzing the memory may reveal
+    the existence of a malicious process or program that has no traces in the machine
+    hard disk. Memory also contains the opened network connections, which could include
+    the connection of an attacker controlling the machine or stealing user data and
+    information.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In this chapter, we will briefly discuss the Windows memory structure, some
+    techniques that are used by attackers to hide their malicious activities and existence,
+    and the tools that are used to investigate memory dump.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Memory structure
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Each process that runs in memory allocates space in memory to store its code
+    and data. This space consists of memory pages. Each memory page is 4 KB in size
+    in x86 systems. All the processes address their memory spaces with virtual addresses,
+    which are translated into physical addresses by the system itself with no interaction
+    by any process.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In modern operating systems, there are two categories of the running processes:
+    processes run in user mode and others run in kernel mode. The difference between
+    both modes is the level of access that is granted to the operating system. In
+    the user mode, the processes can''t modify paging or access other processes''
+    memory locations except some inter-process communications using Windows APIs.
+    All the processes start in user mode, except the SYSTEM process.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Kernel mode is used by the Windows kernel at system booting to set up memory
+    space and paging. In some situations, such as executing the Windows API, the processor
+    receives interrupt, which requires it to switch to kernel mode to execute the
+    interrupt and then return back to the user mode.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Memory acquisition
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: We discussed memory acquisition previously in volatile evidence acquisition
+    in *Chapter 3* , *Volatile Data Collection*. However, we now need to highlight
+    this in a modern Windows operating system, the different security controls which
+    forbid processes to access the whole memory, and the step which is required by
+    any acquisition tool to acquire the system memory. This may cause a system crash
+    and the loss of system memory, or the whole hard disk in the case of active hard
+    disk encryption.
+  prefs: []
+  type: TYPE_NORMAL
+- en: So, modern digital forensics acquisition tools tend to install a driver first
+    to the operating system and then use this driver to access the system memory,
+    which will need higher privileges on the system.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The sources of memory dump
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: We can consider a memory dump during the incident response process as the main
+    source for memory forensics. However, what if we have a powered off machine or,
+    for any reason, we couldn't acquire the memory of the machine? The question here
+    is do we have any other way to conduct memory forensics? Fortunately, we have
+    a positive answer for this question in many situations. Let's see what they are.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Hibernation file
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Hibernation is a power option in most operating systems, including Windows OS.
+    In this mode, the system copies the memory, which is volatile, to a single file
+    named `hiberfil.sys`, which is located under the system root in the hard disk,
+    which is non-volatile, and completely shuts down the machine. When the user turns
+    the machine on again from hibernation, the system copies the contents of this
+    file again to memory and resumes the execution of the previous processes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: If the investigator has a forensic image of the victim's or suspect's hard disk,
+    they can extract the hibernation file and conduct memory forensics on this file
+    using the memory analysis tools that we will be discussing later in this chapter.
+    The hibernation file will provide the investigator or the analyst with a memory
+    image from specific time in the past that may contain traces to the malicious
+    activities or important evidence related to the case under investigation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The filesystem's last modification time of the hibernation file will indicate
+    the time when the hibernation was used in the system. Fortunately, the structure
+    of the hibernation file is different but known, which makes it possible to convert
+    it to a raw memory image in order to conduct analysis on it using the memory forensics
+    tools. Although it contains most of the memory data, the hibernation file won't
+    contain some data, such as the dynamically obtained network information using
+    DHCP. We need to consider this during analysis.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Crash dump
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'If the Windows system crashed, it is designed to store information about the
+    system state at the time of the crash for future troubleshooting of the crash
+    after recovering the system. Crashing the system was an old way to dump the memory
+    to the crash dump file, which can be done using the NotMyFault tool from Sysinternals
+    ([http://download.sysinternals.com/files/NotMyFault.zip](http://download.sysinternals.com/files/NotMyFault.zip)).
+    However, better methods and tools are available nowadays. The crash dump file
+    is named `MEMPRY.DMP` by default and is located under system root directly. The
+    crash dump file can hold different data depending on the settings of the crash
+    dumps, as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**Complete memory dump**: This contains the physical memory at the time of
+    the crash with a 1 MB header. This type is not common because it has a large size
+    especially for systems with a large memory.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Kernel memory dump**: This is when the system dumps the memory pages in the
+    kernel mode only and ignores the pages in the user mode.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Small dump files**: These are small files that have a size of 64 KB in 32bit
+    systems and 128 KB in 64bit systems. This contains information about running processes
+    and loaded drivers in the system.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'For the investigator to know which type of dump file is present in the case,
+    they can determine this from the size of the file. They can also open the registry
+    location of `HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\CrashControl`,
+    under a value called **CrashDumpEnable**, which will be one of the following four
+    values:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '0: This is when debugging information is not written to a file'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '1: This is when the complete crash dump is written to a file'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '2: This is when the kernel memory dump is written to a file'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '3: This is when a small memory dump is written to a file'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: After extracting the crash dump file, the investigator can use the `dmp2bin.exe`
+    tool from Moonsols to convert the dump.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Page files
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Paging is a memory management technique that works as a secondary storage for
+    Windows memory. It speeds up the system by moving the least-used pages in memory
+    to the hard drive in a file named `pagefile`. By applying such techniques, the
+    user will have more memory space to use. When the user starts using the saved
+    pages again, the system restores these pages to memory again. This can be noticed
+    in small lagging while accessing some opened applications that haven't been used
+    for some time.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The page files on the hard drive can be up to 16 files, and not only under
+    the root directory. To find out the locations of the page files from the registry,
+    check `HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Memory Management\ExistingPageFiles`
+    and `PagingFiles`. Some memory acquisition tools, such as FTK imager can add the
+    page file to memory image during live acquisition:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Page files](img/image_11_001.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Figure 1: FTK imager; adding page files during memory acquisition'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Page files store unordered data, which make it more difficult for in-depth analysis.
+    This means that string search in the page files may give some clues about the
+    contents of the page files and the case under investigation, such as the IP, path,
+    or the registry key. File carving also can be conducted in the page files in order
+    to recover some related files. Scanning the page files for a malware signature
+    may uncover malware running in memory.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Processes in memory
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: A process is an instance of a program that has been executed in the system.
+    Each process in memory has a private isolated memory space. A process contains
+    the execution code and the data that is required to complete the execution of
+    the code, such as files, DLLs, and user input. All this data and code are located
+    in a memory space allocated for this process.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Many processes can be in the memory at the same time. All the processes are
+    listed in one structure called `_EPROCESS` in the memory of the running Windows
+    operating system.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Each entry of the `_PROCESS` structure holds one process with its metadata;
+    the process name, its executable path, parent process, start time, and in some
+    cases, the exit time. The metadata can be used as an indication of the presence
+    of malicious activity if the parent process of a well-known process is different.
+    For example, the `lsass.exe` process has parent process of `Explorer.exe`, while
+    its parent process should be `Wininit.exe`. We can assume here that this `lsass.exe`
+    process is not the genuine `lsass.exe` process and it is trying to deceive the
+    user by taking the name of a legitimate process.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The `_EPROCESS` structure is similar to a double-linked list, each process points
+    to the previous and the next process in a chain-like structure. This is used to
+    circulate the processing time between different processes. The normal Windows
+    command that is used to list the system processes uses the `EPROCESS` structure
+    to read all the processes in a sequential way. So, if a malicious process was
+    able to change the addresses in two processes before and after its location to
+    point to each other, it won't be shown in the processes list. This is one way
+    used by some malware samples to hide their existence. This technique is called **Direct
+    Kernel Object Manipulation** or **DKOM**.
+  prefs: []
+  type: TYPE_NORMAL
+- en: To overcome this technique and because the `_EPROCESS` entry has a specific
+    structure, instead of depending on the manipulated `EPROCESS` structure, we can
+    carve the memory file for all the `_EPROCESS` entries by their signature. In this
+    case, the carving tool won't go through `EPROCESS` sequentially and won't miss
+    any hidden processes. This can also display some closed processes which were removed
+    from `_EPROCESS` but their entries still exist in memory.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Network connections in memory
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Usually, networks are used by attackers to control the machine remotely, to
+    send captured user information, or to receive new commands. Checking the network
+    connections, which were opened in the system at the time of acquisition, would
+    provide clues about the attack.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Network activities in general leave traces in memory. Investigating network
+    connections could lead to discovery of a hidden connection created by rootkits.
+    These connections can be hidden from normal listing tools in the same way that
+    can be done with the processes. Carving for the network connection structure in
+    memory can reveal such connections.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Another technique to hide a connection is to inject code into a legitimate process
+    to open a malicious connection, so we need to check all the connections in the
+    memory file.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The DLL injection
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: '**DLL** or **Dynamic Link Libraries** are resources and functions that are
+    shared among different processes running within the system. Some processes and
+    programs require special external DLLs, which can be included with the program
+    to run properly. As DLLs usually run within the processes in memory, they are
+    usually targeted by the malware as a way to access and control other processes
+    in memory. DLLs are loaded into the process with different ways:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**Dynamic linking**: This is when an executable has an **Import Address Table**
+    (**IAT**), which describes the resources needed for this executable to load along
+    with their addresses, which are loaded in the process memory space.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Runtime Dynamic Linking**: Some DLLs may not be mentioned in the IAT, but
+    are called out by the program itself during execution, by calling out one of the
+    Windows functions such as `LoadLibrary`.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Injection**: DLLs can be injected into a process by different techniques.
+    Let''s see what they are.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Remote DLL injection
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: A malicious process allocates memory space in a legitimate process with read/write
+    protection and writes the path to the malicious DLL in the legitimate process
+    memory space. Then, the malicious process opens a remote thread to force open
+    the DLL in the legitimate process and then removes the DLL path. In this way,
+    the malicious process controls the legitimate one by the code in the DLL.
+  prefs: []
+  type: TYPE_NORMAL
+- en: It won't be easy to detect this type of injection. We need to list all the DLLs
+    loaded by the legitimate process and check the names, paths, and time of loading
+    of all the DLLs.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Remote code injection
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: We follow the same steps of the Remote DLL injections, but instead of writing
+    the path to the DLL in the hard drive, the malicious process injects the code
+    directly to the allocated memory space. Here, the protection of the allocated
+    memory space will be read/write and execute. This protection scheme, which isn't
+    popular, is found a lot in memory that is used to detect this kind of injection.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Reflective DLL injection
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: The hybrid technique combines the previous two methods. The malicious process
+    loads the DLL directly into the legitimate process's allocated memory space. In
+    this way, DLL won't ever be written to the hard drive and won't go through the
+    normal loading process, so it won't be found while listing the process's loaded
+    DLLs.
+  prefs: []
+  type: TYPE_NORMAL
+- en: API hooking
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Hooking is usually used by rootkits, forcing the kernel to hide all activities
+    that are related to the malware and to intercept the user input in order to steal
+    sensitive information from the user. This used to be achieved by manipulating
+    the output of the API calls by the system kernel. This can be deceptive in live
+    analysis during the incident-handling process. In depth analysis of the memory
+    image acquired during the evidence acquisition of the infected system would making
+    it much easier to detect such behavior. Hooking is done simply by redirecting
+    the normal flow of one process execution to execute malicious code in another
+    location in the memory, and then return back to complete the normal process code.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Memory analysis
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: After a successful memory acquisition process, the investigator will have a
+    single dump file that contains the full memory. Fortunately, the structure of
+    the memory can be parsed by many analysis programs, including volatility, which
+    is the most famous memory analysis framework nowadays.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The volatility framework
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: A free memory forensics framework can be downloaded from [http://www.volatilityfoundation.org](http://www.volatilityfoundation.org).
+    This framework supports many versions of Windows, Mac, and Linux operating systems.
+    An independent book called *Art of Memory Forensics* was released with volatility
+    2.4\. It explains in detail different operating systems' artifacts in memory and
+    how to extract and analyze them using the volatility framework. In this section,
+    we will discuss the usage of volatility framework and how it detects the malicious
+    activities in memory dump.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Each operating system has a different memory structure. Volatility has the ability
+    to understand different structures. Using this profile, volatility can understand
+    the correct data structures of the image under investigation and apply the right
+    analysis and parsing tools.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Volatility works with plugins, each plugin performs specific tasks with the
+    memory dump file. You can add or write your own plugin and add it to your version.
+    In the following sections, we will discuss some volatility plugins.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Volatility plugins
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: A complete list of volatility plugins can be found in the tool's documentation.
+    Here, we will discuss some plugins which are usually used to discover the discussed
+    malware techniques.
+  prefs: []
+  type: TYPE_NORMAL
+- en: imagecopy
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+- en: In case the available memory file is a hibernation file or a crash dump file,
+    volatility can convert this file to the raw format using the imagecopy plugin.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Usage: `vol.py -f <Hiber|DumpFile> --profile=<ImageProfile> imagecopy -O <OutputFile>`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: raw2dmp
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+- en: In some situations, you need to convert the dumped raw memory file to the crash
+    dump format in order to use it with other tools, such as WinDBG, the Windows debugger.
+    In such cases, the raw2dmp plugin can do this job.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Usage: `vol.py -f <ImageFile> --profile=<ImageProfile> raw2dmp -O <OutputFile>`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: imageprofile
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+- en: Before starting the analysis and in case you don't know the right image profile
+    or don't know how to write it in a volatility command, you can run the imageinfo
+    plugin against the image file and volatility will suggest the right profile to
+    you. Imageinfo actually uses another plugin called **kdbgscan**, which scans a
+    part of the NT kernel module for specific unique strings which identifies the
+    image profile. The profile provided by one string, such as Win7SP0X86, and the
+    profile which Volatility uses by default is WinXPSP2x86.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Usage: `vol.py -f <ImageFile> imageinfo`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: pslist
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+- en: This plugin lists the processes from the memory image file. It walks through
+    the double-linked list in the `_EPROCESS` structure and prints all the processes
+    in the list. It displays the process name, ID, offset, parent process ID, number
+    of threads and handles, and timestamp of the start and end of the process. This
+    plugin's output has the logical offset of each process in the `_EPROCESS` structure.
+    If we need to view the physical offset, we can use the `-P` option. If there are
+    hidden processes that were unlinked from the list, this plugin won't detect them.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Usage: `vol.py -f <ImageFile> --profile=<ImageProfile> pslist -P <OptionalPhysicalOffset>`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The following is the output of the preceding command:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![pslist](img/image_11_002.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Figure 2: An example of running the pslist plugin'
+  prefs: []
+  type: TYPE_NORMAL
+- en: psscan
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+- en: This plugin lists the processes in the memory dump file by carving the dump
+    for any process structure, and it doesn't consider the `EPROCESS` structure. It
+    can get all the processes in the memory, including active, terminated, and hidden
+    processes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Usage: `vol.py -f <ImageFile> --profile=<ImageProfile> psscan`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: pstree
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+- en: The pstree plugin lists the processes in a tree view, identifying the parent
+    and child processes. It lists the process using the same method that is used by
+    the pslist plugin, so it won't detect hidden or unlinked processes. The output
+    is structured in levels to show the different levels of parenthood between processes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Usage: `vol.py -f <ImageFile> --profile=<ImageProfile> pstree`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: psxview
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+- en: The plugin psxview compares the results of different process-viewing techniques,
+    for example, using pslist and psscan. This helps in detecting hidden and unlinked
+    processes from one output window.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Usage: `vol.py -f <ImageFile> --profile=<ImageProfile> psxview`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The following is the output of the preceding command:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![psxview](img/image_11_003.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Figure 3: An example of running psscan'
+  prefs: []
+  type: TYPE_NORMAL
+- en: getsids
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+- en: Each process has the privilege of the user who started it. The security identifier
+    of the user, the SID, describes the user's privilege in the system. The process
+    has a copy of the access token that is created for the user when they logged on
+    to the system.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Use the getsids plugin and the process ID to provide the SID of the user who
+    started the process.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The SID can be mapped easily from the system registry along the following path:
+    `HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList`.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: It can also be extracted from the opened registry in memory, which will be discussed
+    later.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Usage: `vol.py -f <ImageFile> --profile=<ImageProfile> getsids -p <optionalPID>`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: dlllist
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+- en: This plugin lists all the DLLs that are called and added to the process using
+    the normal way in the operating system. It shows all the DLLs for all the processes
+    in memory. If the investigator used the `-p` option with specific PID, then in
+    this case, this will list only the DLLs of that specific process.
+  prefs: []
+  type: TYPE_NORMAL
+- en: While addressing hidden of unlinked processes, we need to use the physical address
+    of its structure in memory. So, if we need to list the DLLs of an unlinked or
+    hidden process, we need to provide the plugin with the physical offset of the
+    process in the psscan plugin output, with the `--offset= option`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Usage: `vol.py -f <ImageFile> --profile=<ImageProfile> dlllist -p <OptionalPID>
+    --offset= <PhysicalOffsetOfTheProcessFromPsscan>`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: handles
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+- en: A process can have many handles to many objects in the operating system. Analysis
+    of these handles can be difficult because of the huge number of handles for each
+    process. However, this could play an important role in proving a theory about
+    the incident. It could provide the investigator with proof that one process has
+    requested a handle to access a specific file in the filesystem or to create a
+    specific mutant used as a signature for specific malware.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Using the handles plugin in volatility, we can display all the plugins of one
+    process by the process ID and choose which type of handles will be displayed in
+    the results.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Usage: `vol.py -f <ImageFile> --profile=<ImageProfile> handles -p <optionalPID>
+    -t <OptionalHandleType>`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: filescan
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+- en: For any process to create or read a file, it needs to open this file first in
+    memory. The volatility plugin, filescan, parses for the file object tag in memory
+    and lists all the opened files or the files hidden from ordinary file-scanning
+    tools by the rootkit.
+  prefs: []
+  type: TYPE_NORMAL
+- en: This plugin will display the physical offset of the detected file object and
+    the filename with the permissions on the file. Like the handles plugin, filescan
+    will be useful in confirming the existence of specific malware by scanning for
+    its specific files that are opened in memory. We can pipeline the output of this
+    plugin with the `grep` command in Linux to filter on a specific filename.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Usage: `vol.py -f <ImageFile> --profile=<ImageProfile> filescan | grep "<FileName>"`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: procexedump
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+- en: When an executable runs in system, a version of this executable is copied to
+    memory. During analysis, we can dump the executable from memory in order to investigate
+    the executable code, or fix the code and run it within a controlled environment,
+    such as a sandbox. Volatility has the procexedump plugin to dump any process executable
+    from memory. It must be provided with the process ID.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Another plugin that does the same thing, but dumps the slack space along with
+    the executable, is procmemdump and this is used in the same way. This will be
+    helpful if the malware is manipulating the PE header in order to deceive the dumping
+    tools.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Usage: `vol.py -f <ImageFile> --profile=<ImageProfile> procexedump -p <PID>
+    -D <OptionalOutputDir>`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: memdump
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+- en: When the process starts executing, it uses some space in memory to store its
+    code and data that is required during execution. This area could contain important
+    information about the malware, such as strings, code, file paths, contents of
+    files, and so on.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Volatility can dump this whole area into a single file for further analysis.
+    We can run this file against the Linux native command-Strings in order to extract
+    all the strings in the file.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Usage: `vol.py -f <ImageFile> --profile=<ImageProfile> procexedump -p <PID>
+    -D <OutputDir>`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The following is the output of the preceding command:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![memdump](img/image_11_004.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Figure 4: Dumping malicious process for further analysis'
+  prefs: []
+  type: TYPE_NORMAL
+- en: svcscan
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+- en: Windows services are usually run in the background with higher privileges than
+    other programs, which are run by system users. Some malware samples run as services
+    to work in the background and to ensure the malware's existence in the system
+    after reboot. Rootkits can manipulate the Windows native service-monitoring tools
+    in order to hide some services. Volatility has a plugin called **svcscan**, which,
+    besides listing the services by normal means, also parses the memory space that
+    is owned by the `services.exe` process, searching for unique tags for services.
+    This method will reveal any hidden process in memory.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The output displays the process ID of each service, the service name, service
+    display name, service type, and current status. It also shows the binary path
+    for the registered service, which will be an `EXE` for user mode services and
+    a driver name for services that run from kernel mode.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Usage: `vol.py -f <ImageFile> --profile=<ImageProfile> svcscan`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: connections
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+- en: As discussed earlier, network traces are very important while analyzing memory
+    samples. Volatility has plugins to scan opened TCP connections in memory with
+    different methods. The first plugin is connections, which displays the TCP connections
+    as Windows tools would do. This lists the all the connections in a linked list
+    structure.
+  prefs: []
+  type: TYPE_NORMAL
+- en: This plugin only works with Windows XP and the Windows 2003 server, only x68
+    or x64.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Usage: `vol.py -f <ImageFile> --profile=<ImageProfile> connections -P <OptionalPhysicalOffset>`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: connscan
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+- en: Just like the psscan plugin, connscan searches for connection object structure
+    instead of listing all the connections in the linked list only. It will also list
+    the terminated connections.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Some connections may have been fully or partially overwritten. So, we need to
+    pay attention during analysis and compare the results with the normal connections
+    plugin.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Usage: `vol.py -f <ImageFile> --profile=<ImageProfile> connscan`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: sockets
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+- en: Another plugin from volatility to network is sockets, which lists all the opened
+    sockets on the system with any protocol. This lists the connection in the way
+    that any Windows API would use for this purpose by walking though the sockets-linked
+    list. This won't be able to find closed sockets or residuals from old sockets.
+  prefs: []
+  type: TYPE_NORMAL
+- en: This plugin only works with Windows XP and the Windows 2003 server, either x68
+    or x64.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Usage: `vol.py -f <ImageFile> --profile=<ImageProfile> sockets`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: sockscan
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+- en: Like the connscan plugin, sockscan searches for the socket structure in memory,
+    which makes it possible to recover residual sockets that were previously opened.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Usage: `vol.py -f <ImageFile> --profile=<ImageProfile> sockscan`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Netscan
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+- en: For memory dumped from Windows Vista and higher, both x68 and x64 systems, the
+    netscan plugin checks network traces. This plugin finds TCP endpoints, TCP listeners,
+    UDP endpoints, and UDP listeners. It distinguishes between IPv4 and IPv6, prints
+    the local and remote IP, the local and remote port, and the time when the socket
+    was bound or when the connection was established.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Some fields could be missed, as netscan parses through the memory for tags of
+    network data structure and views all the results in the same output.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Usage: `vol.py -f <ImageFile> --profile=<ImageProfile> netscan`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: hivelist and printkey
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+- en: The registry hives are opened in memory. To locate the hive files in memory,
+    we can use the hivelist volatility plugin, which will list the addresses of the
+    hive files in memory with virtual and physical addresses with the full path of
+    the hive files on the hard drive.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We can use the printkey plugin to display the subkeys, values, and data in one
+    specific registry key. This will parse all the hives to locate the key that you
+    want, and it may be located in more than one hive.
+  prefs: []
+  type: TYPE_NORMAL
+- en: If you want to limit the search to one hive, you can provide the virtual address
+    to the plugin with the `-o` option.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Usage: `vol.py -f <ImageFile> --profile=<ImageProfile> hivelist`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Usage: `vol.py -f <ImageFile> --profile=<ImageProfile> printkey -o <OptionalVirtualOffsetOfTheHiveFile>
+    -K "PathWithinTheregisty"`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: malfind
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+- en: The malfind volatility plugin finds hidden injected code or DLLs that are based
+    on the permissions granted for specific pages in memory. It detects DLLs or code
+    injected in a suspicious way, for example, using the `CreateRemoteThread` or `LoadLibrary`
+    functions.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The output of the malfind plugin disassembles the code in the detected area.
+    This output could contain malicious code or an executable file that starts with
+    an executable signature that starts with MZ.
+  prefs: []
+  type: TYPE_NORMAL
+- en: A copy of the identified memory segments can be extracted for further analysis
+    using `-D` or `-dump-dir=<Dir>` and the extracted segment will be located under `<Dir>`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Usage: `vol.py -f <ImageFile> --profile=<ImageProfile> malfind -p <PID> -D
+    <OptionalOutputDir>`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The following is the output of the preceding command:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![malfind](img/image_11_005.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Figure 5: An example of malfind'
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the preceding screenshot, an area of memory with the `0x00210000` base address
+    and the `PAGE_EXECUTE_READWRITE` permissions in the `wininit.exe` process (ID `392`).
+  prefs: []
+  type: TYPE_NORMAL
+- en: vaddump
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+- en: The **VAD** (**Virtual Address Descriptor**) is used in Windows memory to describe
+    memory locations that are allocated by a process running in memory. Every time
+    the process allocates new memory, a new VAD entry is created in what is called
+    a VAD tree. Each VAD entry has a start and end, and it covers a specific area
+    in the process memory space.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The volatility framework has a plugin, vaddump, which can dump each VAD area
+    separately if we are interested in only one VAD entry. This is usually helpful
+    if code or DLL injection has occurred, where we can extract the VAD that contains
+    the malicious code.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Each VAD has metadata, including a start and end. The vadinfo volatility plugin
+    can provide more information about VADs in one process.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Usage: `vol.py -f <ImageFile> --profile=<ImageProfile> vaddump -p <PID> -b
+    <VADStartAddressInHex> -D <OutputDir>`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: apihooks
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+- en: 'The apihooks volatility plugin detects hooks. It detects CALLs and JMPs to
+    other locations in memory. The function being imported or exported begins with
+    the following instructions:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: CALL addr
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: JMP addr
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: PUSH addr; RET
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: MOV reg, addr; CALL reg
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: MOV reg, addr; JMP reg,
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: If the plugin detects an addr outside of the process memory space, it reports
+    a hook.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Usage: `vol.py -f <ImageFile> --profile=<ImageProfile> apihooks`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: mftparser
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+- en: The maftparser volatility plugin scans memory file for master file table MFT
+    entries using the FILE or BAAD entry signature. This can list information from
+    the `$FILE_NAME`, `$STANDARD_INFORMATION`, and `$DATA NTFS` attributes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The output of this plugin can be in text format by the `--output=text` option.
+    It can also format the body, which is compatible with The Sleuth Kit 3 using the `--output=body`
+    option.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the case of a body file we can use the mactime tool to create one timeline
+    of all the MFT activities in memory which will be useful in tracking activities
+    by time.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Usage: `vol.py -f <ImageFile> --profile=<ImageProfile> mftparser --output=<body|text>
+    --output-file=<OutputFile>`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Summary
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In this chapter, we discussed the importance of memory forensics in discovering
+    malicious activities, briefly explained the memory structure, and went through
+    volatility as one of the most-famous and effective memory forensics tools.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the next chapter, we will be discussing the network forensics tools and techniques
+    in order to extract evidential data from any network dump.
+  prefs: []
+  type: TYPE_NORMAL

@@ -1,0 +1,1034 @@
+- en: Investigating Good, Known, and Ugly Malware
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: This chapter is all about investigating malware in the context of network forensics.
+    Most of the incidents requiring network forensics will be based on malware-oriented
+    events, such as network breaches, financial crime, data theft, and command and
+    control. Most of the attackers will deploy command and control malware to enslave
+    the compromised machine and gain leverage over the internal network for lateral
+    movement. Generally, network forensics and computer forensics go hand in hand
+    in case of investigating malware. The computer forensics investigator will find
+    all that has changed on the system and where the malware resides in the system.
+    Then, they will find the executables causing the issues and upload them to a site,
+    such as [https://www.virustotal.com](https://www.virustotal.com) or [http://www.hybrid-analysis.com](http://www.hybrid-analysis.com),
+    to find more about the malware and its behavior on the system and the network.
+    In cases of novice attackers using symmetric key encryption to encrypt data on
+    the wire, the forensic investigator will get the malware reverse-engineered by
+    a malware analyst and decrypt the traffic accordingly.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In this chapter, we will cover malware identification and analysis based on
+    the techniques learned in the previous chapters. We will cover the following topics:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Dissecting malware on the network
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Intercepting malware for fun and profit
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Behavior patterns and analysis
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: A real-world case study—investigating a banking Trojan on the network
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: In the first example, we will look at a famous Trojan horse and will try to
+    make sense of what could have happened. While in the further examples, we will
+    look at how we can decrypt ransomware encrypted files by making use of evidence
+    in the PCAP. Finally, we will look at how we can analyze a banking Trojan by making
+    use of popular malware analysis websites. Working on the first example, we already
+    assume that a system on the network was infected. You can download the PCAP from
+    the R3MRUM's GitHub repository at [https://github.com/R3MRUM/loki-parse/blob/master/loki-bot_network_traffic.pcap](https://github.com/R3MRUM/loki-parse/blob/master/loki-bot_network_traffic.pcap).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Technical requirements
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'To complete exercises covered in this chapter, you will require the following
+    software and OS:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Wireshark v3.0.0 ([https://www.wireshark.org/download.html](https://www.wireshark.org/download.html))
+    installed on Windows 10 OS and Ubuntu 14.04
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: PCAP Files for the exercises ([https://github.com/nipunjaswal/networkforensics/tree/master/Ch6](https://github.com/nipunjaswal/networkforensics/tree/master/Ch6))
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: NetworkMiner ([https://www.netresec.com/?page=networkminer](https://www.netresec.com/?page=networkminer))
+    installed on Windows 10
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Required third-party tools:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Hidden Tear Decryptor ([https://github.com/goliate/hidden-tear](https://github.com/goliate/hidden-tear))
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: PyLocky Decryptor ([https://github.com/Cisco-Talos/pylocky_decryptor](https://github.com/Cisco-Talos/pylocky_decryptor))
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Dissecting malware on the network
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Let''s load the PCAP in Wireshark as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/6e1e0552-d86d-4883-a555-8f8228c36837.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'We can see that there is a lot of HTTP data present in the PCAP file. Let''s
+    add columns to display the full **URI** and **User-Agen**t entries, and also filter
+    the requests using the `http.request.uri` filter as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/ddbac085-6331-43e3-a8ee-7bf23a760c21.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'The user-agent is quite important in malware communications, since they might
+    not be the standard user-agents used by popular browsers. We can see we have Mozilla/4.08
+    (Charon; Inferno) as the user-agent, and URI contains a single user, as shown
+    in the previous screenshot. Let''s investigate this user-agent on Google as shown
+    in the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/381d886b-42c0-4df5-8b78-8da1110999fd.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'It seems that the HTTP requests are generated by the nefarious LokiBot, a popular
+    malware that infiltrates data on the infected systems. Open the third link from
+    the preceding results which is from [https://packettotal.com](https://packettotal.com)
+    and analyze similar samples:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/a90cc93a-71e9-4dc0-9b3b-dff9ee47d768.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: We can see that there have been numerous entries with similar behavior. The
+    important items from the preceding list are the HTTP Method and the User-Agent
+    columns. Let's study this malware a bit more by reading [https://forums.juniper.net/t5/Security/A-look-into-LokiBot-infostealer/ba-p/315265](https://forums.juniper.net/t5/Security/A-look-into-LokiBot-infostealer/ba-p/315265)
+    and [https://r3mrum.wordpress.com/2017/07/13/loki-bot-inside-out/](https://r3mrum.wordpress.com/2017/07/13/loki-bot-inside-out/).
+    We can see that there is plenty to read on the LokiBot analysis. The takeaway
+    for us from the previous links is that the first-byte word of the HTTP payload
+    is the LokiBot Version. Let's see what it is by making use of  `tshark –r /home/deadlist/Desktop/loki-bot_network_traffic.pcap
+    -2 –R http.request.uri –Tfields –e ip.dst –e http.request.full_uri –e http.user_agent
+    –e data –E separator=, | cut –c1-91` command. The command will read the PCAP file
+    defined using the X switch and will display all packets having the URI using `http.request.uri`
+    filter. The command will print comma separated values (`-E separator=,`) of fields
+    like destination IP, full URI, User-Agent and Data (`-Tfields`).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Since the last value is of the data field, the use of `cut –c1-91` will print
+    the first two bytes (Byte Word) of the data only as shown in the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/7ffae229-20f8-4caa-9b48-99f3b50a4138.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'We can see the first-byte word is 1200, which implies 00 12(18) being divided
+    by 10, which means that we have the LokiBot version 1.8\. Have a look at the following
+    screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/58c1b816-8719-4035-8660-b42b2feca6ad.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'We can see that, in the next word (the next two bytes), we have hexadecimal
+    values of 27, 28, and 2b, and, according to the information that we have read,
+    this value defines the functionality of the packet and a value 27 implies Exfiltrate
+    Application/Credential Data, 28 implies Get C2 commands, and 2b implies Exfiltrate
+    Keylogger Data. This means that the LokiBot has done the following activities
+    in order:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Exfiltrated an application's credential data twice
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Made the new command, which was to exfiltrate key logger data
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Sent keylogger data
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Finally, let''s have a look at the data we have got so far:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**The infected system**: `172.16.0.130`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**The command and control server**: `185.141.27.187`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Malware used**: LokiBot'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Malware detection**: User-Agent, HTTP Method (POST)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Malware activities**: Application data exfiltration and keylogging'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Having basic information about the malware, let's dive deep into finding more
+    information about the exfiltrated data by understanding its patterns in the next
+    section.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Finding network patterns
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'We know that the malware is stealing some application data, but we don''t know
+    which application it is and what data was stolen. Let''s try to find this out
+    by viewing the HTTP payload in the packet bytes (lowest pane) pane of standard
+    Wireshark display as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/71099d89-d91d-4360-89f4-ac8165df0563.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'We can see from the preceding screenshot that the payload started with LokiBot
+    version 18 in Decimal (12 in Hexadecimal) , and we need to divide that by 10 to
+    get the exact version. Next, we had 27 as the identifier for data exfiltration
+    on application credentials. Next, the first word denotes a width of zero, denoting
+    that the payload value will be unpacked as a normal string. Next, we have a word
+    value that denotes a length of 0a, which is 10 in decimal. We can see that we
+    have a length of 10 bytes denoting the binary ID, which is XXXXX11111\. Again,
+    we have the next width and length, which will denote the system username; we can
+    see we have a width of one and length of six. Since we have a width of one, we
+    will unpack this data as hex. Therefore, at two bytes each, we have the username
+    that is REM. Next, we have the system name, and again width is 1 and length is
+    1c, denoting 28\. The next 28 bytes indicate that the infected system name is
+    `REMWORKSTATION.` Following the same notation for the values, the next value shows
+    the domain, which is, again `REMWORKSTATION`. Let''s look at the next hex section
+    as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/92a8d0dc-6843-4ccc-8345-02fd0b711e69.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'We have the next four bytes as the Screen Width and the following four as Screen
+    Height. We have a check on local admin and built-in admin, and the preceding screenshot
+    shows that, in the next four bytes, both are showing a one, indicating a yes.
+    The next two bytes are set to one if the OS is 64 bit, which is not the case,
+    so it''s set to zero. The next eight bytes define the OS major and OS minor products
+    and the `os_bug` patch variables, which are `6,3,1,107` respectively. This means
+    that we can denote the OS as `6.3.1.107`, which is Windows 8\. Additionally, the
+    values stored here are in the little-endian format that means last significant
+    byte is the first. In the next section, we have the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/ddb07b33-60d9-4332-9346-d98a33355467.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'We can see the next two bytes as the value denoting the first-time connection
+    as a zero. This means that the victim has connected for the first time. Next,
+    two bytes denote that the data stolen is compressed, while the following two bytes
+    define whether the stolen data is encoded or not, and following up these two bytes
+    are another two bytes defining the encoding type. The next four bytes denote the
+    original stolen data''s length, which is 8,545 bytes. A separator is in between,
+    and we again have the width and length for the string:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/269d3643-78d8-4f6c-895a-5db9036bc712.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'As shown in the preceding screenshot, we have a 48-byte-long mutex value used
+    by the LokiBot. Next, LokiBot uses this mutex as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Mutex: `B7E1C2CC98066B250DDB2123`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Based on this value, the LokiBot''s files will be located in the following
+    locations:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Hash Database: `"%APPDATA%\\C98066\\6B250D.hdb"`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Keylogger Database: `"%APPDATA%\\C98066\\6B250D.kdb"`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Lock File: `"%APPDATA%\\C98066\\6B250D.lck"`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Malware Exe: `"%APPDATA%\\C98066\\6B250D.exe"`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: If we observe closely we can see that the directory name starts from 8^(th)
+    character to 13^(th) character of the Mutex while file name starts from 13^(th)
+    character to 18^(th) character.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Well! That was too much information traveling on the network. Let''s see what''s
+    next:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/f6f60284-6e27-4be3-8016-b730cda979be.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Next, we have the key length, the key itself, and length of compressed data.
+    We now know that the length of the compressed data is 2,310 bytes, which looks
+    like this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/087a5df5-471b-45a6-8558-e063fa3f7cc8.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: We can see some of the values as XML and HTML. But, we still need to decompress
+    this data. On researching the malware executable file (Run `strings` command on
+    the executable), we will discover that one of the strings in the binary executable
+    contains LZSS, which is a popular data-compression encoding scheme. You can find
+    more on compression and decompression at [https://github.com/maxim-zhao/aplib.py/blob/master/aplib.py](https://github.com/maxim-zhao/aplib.py/blob/master/aplib.py).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Using the library, we can copy the bytes from Wireshark capture and feed it
+    as an input to the decompress function defined in the library. Let''s decompress
+    the data as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/cf8cedf2-bd9b-4910-99a5-5679bb2331aa.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Well! It looks like the stolen data is from FileZilla, and it looks like a
+    config file. On repeating the analysis for other packets, such as one with the
+    value 2B (keylogger) type, we will have similar data, and on decompression, it
+    will look similar to the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/d0434dc8-a4f6-4a98-9dc7-3f4be46446a0.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Now we have the keylogger data as well. So, what do we know as of now?
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We have successfully gathered the following **Indicators of Compromise** (**IOC**)
+    details by working on the preceding sample:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**The infected system:** `172.16.0.130`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**The infected user**: REM'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**The infected system hostname**: `REMWORKSTATION`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Domain infected**: `REMWorkstation`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**OS architecture**: 32 Bit'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Screen resolution**: 3440 x 1440'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Windows OS NT version**: 6.3.1 (Windows 8)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**The command and control server**: `185.141.27.187`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Malware used**: LokiBot'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Malware detection**: User-Agent, HTTP method (POST)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Malware activities**: Application Data Exfiltration on FileZilla, Keylogging'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Malware version**: 1.8'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Malware compression**: LZSS'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Malware encoding**: None'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Malware files names**: `%APPDATA%\\C98066\\6B250D.*`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Amazing! We have plenty of information just from analyzing the PCAP file. Let's
+    look at some more examples in the next section.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The PCAP used for the previous analysis is downloaded from [https://github.com/R3MRUM/loki-parse](https://github.com/R3MRUM/loki-parse).
+    Additionally, R3MRUM has developed an automated script for this analysis, which
+    you can find from the git repo itself. The script will not only help your analysis,
+    but will enhance your Python skills as well.
+  prefs: []
+  type: TYPE_NORMAL
+- en: While working on this sample, I was able to reach R3MRUM and spoke about the
+    LokiBot sample we analyzed previously. He told me that the XXXXX11111 binary ID seems
+    to be a development version of the LokiBot, and the `ckav.ru` ID is the one used
+    in productions. Additionally, R3MRUM provided the link to his full white paper
+    on LokiBot at [https://r3mrum.files.wordpress.com/2017/07/loki_bot-grem_gold.pdf](https://r3mrum.files.wordpress.com/2017/07/loki_bot-grem_gold.pdf).
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the preceding exercise, we worked on an unknown sample and researched on
+    its IOCs. We were not only able to detect the basic information about the infection
+    but were also able to decode its communication. We found the exfiltrated data
+    sent to the attacker as well. Let’s work on some more samples such as ransomware
+    and banking Trojans in the upcoming sections.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Intercepting malware for fun and profit
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: We will analyze ransomware in this exercise. Ransomware can cause havoc in a
+    network, and we have seen plenty of examples in the recent past. Ransomware such
+    as WannaCry, Petya, and Locky have caused immense disruption in the world. Additionally,
+    these days, PyLocky ransomware is a hot favorite for attackers. Some ransomware
+    generally rolls out keys to the server on their initial run, and that's the point
+    where we, the network forensic guys, come into the picture.
+  prefs: []
+  type: TYPE_NORMAL
+- en: PyLocky ransomware decryption using PCAP data
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Recently, Cisco has launched the PyLocky decryptor ([https://github.com/Cisco-Talos/pylocky_decryptor](https://github.com/Cisco-Talos/pylocky_decryptor)),
+    which searches through the PCAP to decrypt files on the system. PyLocky sends
+    a single `POST` request to the control server containing the following parameters:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'We can see that we have `iv`, the initialization vector, and password as the
+    parameters. In case the network was being logged at the time of the system infection,
+    we could use this information to decrypt the files with ease. Let''s look at PyLocky''s
+    code for decryption, as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/1b7a95d3-4d46-48ad-89f8-21970e6bdfc1.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: We can see that PyLocky decryptor makes use of IV and passwords to decrypt the
+    files encrypted with the PyLocky ransomware, and generally, this way works for
+    a number of ransomware types out there. PyLocky makes use of DES3 to encrypt the
+    files that can be decrypted back.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Decrypting hidden tear ransomware
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Let''s see another example with hidden tear ransomware. Consider a scenario
+    where hidden tear ransomware has locked files on a Windows 10 system, and the
+    situation is pretty bad, as shown in the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/2eeafe51-67dd-4c98-bec0-22ef11477a5e.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'It looks like the files are encrypted. Let''s try opening a file as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/6e411ddb-3827-4e70-bf9e-c7933eb83da3.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Yes—the contents of the file are encrypted. Luckily for us, we have a PCAP
+    of the fully captured data with us. Let''s start our analysis:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/fd6bf3f5-8b4b-43ed-bea5-9a8a1b1b456e.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'We can see we have a fairly large PCAP file, containing a good amount of HTTP
+    data. Since we know that malwares have issues with user-agents, display the full
+    user-agent and URI data in Wireshark as we did in the earlier examples:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/78f780fd-3a30-4f46-b408-fda0a9cdaff8.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'We can see that most of the data *is* being fetched from Microsoft domains,
+    and probably looks like it is used by Windows update. Let''s unselect this user-agent
+    and see what we are left with:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/198b0f5a-2700-4f4d-9f4c-21b276ec3507.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'We can see that by using the `!(http.user_agent == "Microsoft-Delivery-Optimization/10.0")
+    && http.request.full_uri && !ssdp` filter, we are left with only a few packets.
+    Let''s investigate the packets as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/0a77a245-3fdc-496b-a8e2-05750b05485f.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'We can see that a `GET` request containing our machine name and some string
+    is sent to a domain. Could this be the password? We''ll have to check. Let''s
+    download the decrypter from [https://github.com/goliate/hidden-tear](https://github.com/goliate/hidden-tear):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/6a7158f4-6ff8-4b37-86a2-53c96d6bc471.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Any executables downloaded from the internet of extracted from the PCAPs must
+    be worked upon only in an isolated environment such as a virtual machine. Since
+    most of the examples are live malware samples, please do not execute it on your
+    host machine.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Insert the password that we got from the PCAP analysis as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/364db113-a1a1-4f49-bda6-e1de96e37a61.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'As soon as we hit the Decrypt My Files button, we see that the locked files
+    are unlocked again:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/285d3d7a-c342-413c-a152-091511b35e0a.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: We can now see that the files were decrypted successfully.
+  prefs: []
+  type: TYPE_NORMAL
+- en: For more information on finding ransomware keys, refer to [https://sensorstechforum.com/use-wireshark-decrypt-ransomware-files/](https://sensorstechforum.com/use-wireshark-decrypt-ransomware-files/).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Behavior patterns and analysis
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: For a forensic network investigator, it is important to find the behavior and
+    network patterns of a malware. Consider that you have received a few binaries
+    (executable) and their hashes (signature) from the incident response team that
+    are likely to be carrying malware. However, the analysis on PE/COFF executable
+    is generally done by malware analysts and reverse engineers. What can you do with
+    the PE executable? You don't have to study reverse engineering and malware analysis
+    overnight to analyze the sample.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Consider that you have received the file hash as `ed01ebfbc9eb5bbea545af4d01bf5f1071661840480439c6e5babe8e080e41aa`.
+    You can use websites such as [https://www.virustotal.com/gui/home/upload](https://www.virustotal.com/gui/home/upload)
+    and [https://www.hybrid-analysis.com/](https://www.hybrid-analysis.com/) to analyze
+    your sample without analyzing it on your system. The following screenshot shows
+    the VirusTotal website:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/cdf3dd27-921f-4c75-ab6b-c0090067c5af.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Let''s search the hash of the file at VirusTotal. The results should show up
+    if the file has previously been analyzed:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/97ab03a5-7cf4-49ed-87f9-be9f2885f6f3.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Oops! 62/70 antivirus engines detect the file as malicious, and consider that
+    it may be a WannaCry ransomware sample. Let''s see the details from the **DETAILS**
+    tab as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/16903025-c6f1-4a59-9c78-66ddbee85842.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Plenty of detail can be seen on the DETAILS tab especially the common names
+    of the files causing this infection. We can also see that the file has been analyzed
+    previously with a different name. Additionally, we have the following details:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/b3586c8a-e06c-4b38-9aca-b4487b6c4983.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'We can see that there are five IP addresses contacted by the WannaCry executable.
+    We can obviously filter the network based on these details to check infections
+    in the network and pinpoint the infected source. Let''s also upload/search the
+    sample on the Hybrid-Analysis website ([https://www.hybrid-analysis.com/](https://www.hybrid-analysis.com/))
+    as well:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/45184e09-e877-45c2-bdf7-d63742f4fe33.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'On searching the sample on Hybrid-Analysis, we can see that we have the list
+    of connected IP addresses, and a list of ports as well. This information will
+    help us to narrow the outbound connections down from the infected system. We can
+    see that Hybrid-Analysis has gone ahead and executed the associated sample file
+    of the hash we provided for analysis in a secured environment:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/7c6a21b3-14b7-4c05-bb48-dfb8d705b5d9.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Clearly, we can see the state of the system before and after the execution of
+    the malware, where we can see that the system got infected with WannaCry ransomware.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The preceding analysis can be found at [https://www.virustotal.com/gui/file/ed01ebfbc9eb5bbea545af4d01bf5f1071661840480439c6e5babe8e080e41aa/detection](https://www.virustotal.com/gui/file/ed01ebfbc9eb5bbea545af4d01bf5f1071661840480439c6e5babe8e080e41aa/detection)
+    and [https://www.hybrid-analysis.com/sample/ed01ebfbc9eb5bbea545af4d01bf5f1071661840480439c6e5babe8e080e41aa?environmentId=100](https://www.hybrid-analysis.com/sample/ed01ebfbc9eb5bbea545af4d01bf5f1071661840480439c6e5babe8e080e41aa?environmentId=100).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Additionally, we can check network patterns from a PCAP file on VirusTotal
+    ([https://www.virustotal.com/gui/home/upload](https://www.virustotal.com/gui/home/upload))
+    as well. Let''s look at the following example:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/a67259cf-76e1-41d2-bdcd-bd8a87417180.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'We can see that the traffic from PCAP was tested against Suricata and Snort,
+    which are popular intrusion detection systems. Let''s look at the generated alerts
+    in detail:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/b647efab-c928-406f-8007-ecec7dc29162.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'We can see that we have the DNS requests from the PCAP previously listed. Let''s
+    see what we have in the HTTP section in the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/8f3e29a0-f54f-4c13-8fe1-83fb0f6db581.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Right below the HTTP requests, we have the Snort and Suricata sections of the
+    matched rules, as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/5ec25122-45da-4159-a74a-0ce3308c5df5.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'We now have plenty of details from this section. Looking at the third section,
+    we can see that an executable traveled onto the network that was detected by Snort.
+    Additionally, a network Trojan, a command and control communication, and an exploit
+    kit were also detected. Let''s see Suricata-matched rules as well:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/33d68c77-7dd3-4392-92d8-85549b7c74b6.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'We can see that, based on the PCAP data, Suricata not only matched Trojan activity
+    but has also identified Internet Explorer version 6 running on a system. So, we
+    can see how, without using any additional analysis tools, we are able to discover
+    plenty of information about the malware. Additionally, we can use a VirusTotal
+    graph to view the sample in a graphical format, as shown in the following screen:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/45588a31-a3ae-4ce0-b1a3-f4f02808693d.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'We can see that the nodes with red icons are found to be malicious in nature.
+    Let''s analyze the node by selecting it, as shown in the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/81ab4963-db40-4b91-850a-8558438c3b1a.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Kaspersky has detected this as a malware. Websites like VirusTotal and Hybrid-Analysis
+    quickly provide an analysis of the PCAP and executable, speeding up our investigations
+    on the time constraints. So, inputs should always be taken from these websites
+    before starting with the manual analysis.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The preceding sample analysis can be found at [https://www.virustotal.com/gui/file/04cf54c95b58f15a2d06ad805a49b20233408737eb417190a817fd189bcf2329/relations](https://www.virustotal.com/gui/file/04cf54c95b58f15a2d06ad805a49b20233408737eb417190a817fd189bcf2329/relations).
+  prefs: []
+  type: TYPE_NORMAL
+- en: A real-world case study – investigating a banking Trojan on the network
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'For this exercise, you can download the PCAP from [https://github.com/nipunjaswal/networkforensics/blob/master/Ch6/Emoter%20Banking%20Trojan%20Sample/2018-11-14-Emotet-infection-with-IcedID-banking-Trojan.pcap](https://github.com/nipunjaswal/networkforensics/blob/master/Ch6/Emoter%20Banking%20Trojan%20Sample/2018-11-14-Emotet-infection-with-IcedID-banking-Trojan.pcap).
+    Let''s open the PCAP in NetworkMiner and examine the **Hosts** tab as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/2457fd34-4a6a-47df-a20a-e0cf9a536611.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'We have sorted the hosts based on the number of packets received by them. We
+    can see that `10.11.14.101` and `185.129.49.19` are found to be receiving the
+    greatest number of packets. Next, looking at the files from the **Files** tab,
+    we can see that a document and an executable have been found in the capture:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/7051cc18-e0f4-496c-afec-48c6676e8f65.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Next, let''s calculate its checksum to search for it on sites such as VirusTotal
+    and Hybrid-Analysis, as shown in the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/50af485c-f540-4a72-b35b-7265898c86b2.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'We can see that we have the signatures generated as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/445350d7-9121-40a6-b80b-90534eda3442.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Let''s copy its SHA-256 signature and search for it on VirusTotal:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/3ce437c5-f4fe-4833-a2f3-531926205227.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Oh! 38/54 antivirus engines have found this document to be malicious. Most of
+    the antivirus engines are denoting that it's a VBA downloader, which means that
+    the document is a macro-based backdoor document, since macros are written in VBA
+    scripting in the documents.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Looking at the details section, we find the following observations:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/c2494fa1-d77b-4b9f-91a4-89b6a8f878bc.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'We can see that the VirusTotal analysis states that the document uses macros,
+    and may try to run files, shell commands, and other applications. We can see that
+    we have the exact macro extracted from the file as well. Let''s track this down
+    in Wireshark:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/ab90f316-1e57-4063-803b-04b180fb5ed3.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'We can see that the `10.11.14.101` system made an HTTP request, and was served
+    a `.doc` file (as suggested by the magic header highlighted in the preceding screenshot)
+    from the `78.135.65.15` server, which, on inspection, was found to be carrying
+    a VBA downloader macro. We will now move on to the relations tab:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/299e80d0-4edb-4dc8-a246-a5a75e07d420.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'We can see that the office document contacted the URLs previously listed. Let''s
+    open Wireshark and see if the document was executed:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/4684e4d4-0fd7-489c-a60d-3a3484b67fa7.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'We can see that the document was executed, since the DNS entry is returning
+    the IP address, followed by subsequent GET requests. Let''s investigate further
+    by following the HTTP stream as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/fe716813-53fd-4fdc-a9d9-8dd538399bae.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'We can see that the request was sent to the `50.62.194.30` server once for
+    the `/PspAMbuSd2` path, which generated a `301` moved response, and was sent a
+    second time for the `/PspAMbuSd2/` path, which returned an executable, as shown
+    in the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/7494935a-2a53-4ad5-9066-b3a528d4b796.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'So, we have the executable downloaded from the server that might be containing
+    something malicious; let''s check by verifying its signature from NetworkMiner
+    on VirusTotal, as we did for the document:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/453ffe16-589f-474d-b1f8-603396b9157f.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'VirusTotal results suggests that 51/67 antivirus solutions have detected the
+    file as malicious and is carrying the Emotet banking Trojan. Let''s see the detailed
+    diagram as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/bc2f56f9-bb08-411b-af1b-b4d3e1e8f21e.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'We can see that the Trojan connected to the `50.76.167.65` server, which may
+    be its command and control host. Let''s see when the first request was sent to
+    this server:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/0b151404-6c63-4f4c-9537-989a9287a0fb.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'We can see that a number of GET requests were sent to different IPs. We can
+    assume that these IPs were provided from the responses to the initial server in
+    chain, since they were not present anywhere within the executable. Next, after
+    searching the executable sample on the Hybrid-Analysis website, we have the following
+    details:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/285718c4-79aa-464e-b5eb-9a841bd08f65.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'We can see a new IP address, separate from the ones in the Wireshark result,
+    which is `177.242.156.119`. Additionally, we can see that port `80` of `177.242.156.119`
+    is using non-HTTP traffic on the port. Let''s check this in Wireshark:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/a8212e95-55f1-49fe-9bff-010feb14167c.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'We can see that we have the outbound connection, but it seems that the connection
+    failed for some reason. The general information section also lists out another
+    IP address, as shown in the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/b6902a79-c77c-4018-bd94-231448064c6f.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'We can see we have an IP address of `189.244.86.184`, as well. Let''s investigate
+    its traffic by following the HTTP stream in Wireshark as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/11083889-3a1f-4db3-8793-5b3822be4ffe.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'From what we can see by following the TCP stream, the Trojan is sending out
+    data by making use of cookies. This data may be the command outputs, beaconing
+    behavior (installed malware sends out periodic information to the attacker stating
+    that it is alive and ready to take inputs), or file content. However, if we look
+    at the credentials section of NetworkMiner, we get a different picture:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/5e948ba2-a064-46b8-ae8a-21f8cc56d9f9.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'We can see that a similar kind of cookie in the HTTP request is sent to other
+    IPs as well. Investigating the SSL certificates by uploading the PCAP file to [https://packettotal.com/](https://packettotal.com/),
+    we can see the following information in the SSL **Certificates** tab:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/9460b745-91e0-407a-82f4-9ce605e228b0.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'The SSL certificate is self-signed, and failed the validation. So, summing
+    up the analysis, we have the following summary of events:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The malicious `363439590633444.doc` document form containing a VBA downloader
+    macro was downloaded from [http://bysound.com.tr/](http://bysound.com.tr/) (`78.135.65.15`)
+    at the `10.11.14.101` host.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The document was executed with macros enabled, which ran the VBA macro script
+    and made two HTTP requests to the server hosted on [http://c-t.com.au/](http://c-t.com.au/)
+    (`50.62.194.30`).
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The first HTTP request, `GET /PspAMbuSd2 HTTP/1.1\r\n`, caused a **301 permanently
+    moved** error.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The second HTTP request, `GET /PspAMbuSd2/ HTTP/1.1\r\n`, served an executable
+    which contained Emotet banking Trojan.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: As soon as the Emotet executable was executed, it tried connecting to its command
+    and control server, which is hosted at `50.78.167.65:7080`.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'The executable then tried connecting to various IP addresses, and looks like
+    it finally connected to `186.18.236.83:8080`, as seen in the following screenshot:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '![](img/fe507109-1827-41c0-b961-93e9efd4403a.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'After it connected, it did some encrypted communication, and then went onto
+    polling the IPs, as it did previously. Next, as shown in the following screenshot,
+    it did some encrypted communication with `71.163.171.106` again, and went on to
+    repeat the same pattern for a number of IPs, as follows:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '![](img/95c8b404-3187-45ee-9073-58fd0333347e.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: From what we can see in the preceding screenshot, we have IPs with the highest
+    packet count, and they have been communicating with the infected host using TLS
+    encryption, for which the SSL validation failed.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: We now have enough information for the IOCs from the previous investigation.
+    However, we saw how encryption made analysis difficult for us. To read more on
+    Emotet, refer to [https://www.fortinet.com/blog/threat-research/analysis-of-a-fresh-variant-of-the-emotet-malware.html](https://www.fortinet.com/blog/threat-research/analysis-of-a-fresh-variant-of-the-emotet-malware.html).
+  prefs: []
+  type: TYPE_NORMAL
+- en: The PCAP contains a live sample of the banking Trojan. Do not execute it on
+    your host machine! Always run or analyze such samples in a virtualized environment.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Summary
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Throughout this chapter, we saw how we can dissect malware such as LokiBot on
+    the packet level and gain insight into its activities on the infected system.
+    We saw how we could decrypt ransomware, and saw strategies for working with the
+    PyLocky and Hidden Tear ransomware samples. We learned how we can use automated
+    techniques by using websites such as VirusTotal, Hybrid-Analysis, and [https://packettotal.com/](https://packettotal.com/)
+    for our investigation. We worked on a live sample of the Emotet banking Trojan
+    and drew IOCs out of it.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the next chapter, we will discuss command and control systems and how we
+    can analyze the most common ones. We will be looking into some advanced and popularly
+    used C2 tools to learn about their behavior on the wire and try developing strategies
+    to recognize them.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Questions and exercises
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Attempt the following exercise for gaining hands-on experience with network
+    malware analysis:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Complete all exercises on Emotet Banking Trojan from [https://www.malware-traffic-analysis.net/training-exercises.html](https://www.malware-traffic-analysis.net/training-exercises.html)
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Complete challenge 10 and 11 from [https://github.com/nipunjaswal/networkforensics/tree/master/Challenges](https://github.com/nipunjaswal/networkforensics/tree/master/Challenges)?
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Can you decrypt a ransomware through PCAP? If yes, how and under what conditions?
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Most of the Command and Control servers have?
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Encryption
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Encoding
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Beaconing behavior
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: None of the above
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: All of the above
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Most of the banking Trojans gets installed on the system through?
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Phishing
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Malspam
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Exploits
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Human errors
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: All of the above
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: None of the above
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Further reading
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'To gain the most out of this chapter, go through the following links:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Read more on malware analysis at [https://www.sans.org/reading-room/whitepapers/malicious/paper/2103](https://www.sans.org/reading-room/whitepapers/malicious/paper/2103)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Read more on WannaCry ransomware at [https://www.endgame.com/blog/technical-blog/wcrywanacry-ransomware-technical-analysis](https://www.endgame.com/blog/technical-blog/wcrywanacry-ransomware-technical-analysis)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: In-Depth analysis of SamSam Ransomware at [https://www.crowdstrike.com/blog/an-in-depth-analysis-of-samsam-ransomware-and-boss-spider/](https://www.crowdstrike.com/blog/an-in-depth-analysis-of-samsam-ransomware-and-boss-spider/)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL

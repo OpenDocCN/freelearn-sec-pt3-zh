@@ -1,0 +1,1701 @@
+- en: Chapter 3. Evidence Acquisition from iDevices
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The purpose of this chapter is to introduce techniques and tools used for the
+    acquisition of data from an iDevice. In the first part of the chapter, we will
+    go through the boot process, the data security features, and the encryption used
+    by Apple. The second part deals with the different acquisition methods **Apple
+    File Conduit** (**AFC**) protocol, iTunes backup, Apple File Relay protocol, and
+    physical), providing a description of state-of-the-art techniques for cracking
+    or bypassing the lock code. Finally, in the last part, we will introduce the concept
+    of jailbreaking, which is useful for the physical acquisition of the latest devices.
+  prefs: []
+  type: TYPE_NORMAL
+- en: iOS boot process and operating modes
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The boot process of an iOS device is composed of three steps: **Low Level Bootloader**
+    (**LLB**), **iBoot**, and **iOS kernel**. To guarantee the integrity of the different
+    components, all the steps involved in the boot process are signed. The signature
+    for LLB is verified by the Apple Root CA public key, contained in the Boot ROM
+    code. Then, LLB verifies and executes iBoot, which then verifies and executes
+    the iOS kernel. Consequently, all the components are signed by Apple. There are
+    a lot of studies, papers, and books related to the iOS boot process and on how
+    to overcome the protection implemented by Apple (you can find all the details
+    in *[Appendix A](apa.html "Appendix A. References")*, *References*). We suggest
+    that you read the latest version of the Apple paper *iOS Security*, *Apple*, *May
+    2016*.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'From the point of view of a forensic analyst, it is important to know that
+    iDevices can operate in the following three different modes:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**Normal**: This mode is the traditional iOS user interface.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Recovery**: This mode is used to perform activation and upgrades on an iDevice.
+    It can be activated by holding down the Home button on a powered off device and
+    connecting it to a computer via the USB cable.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Device firmware upgrade** (**DFU**): This mode is used by an iDevice during
+    the iOS upgrades and when one of the processes in verification boot chain fails.
+    It can be activated by holding down the Home and the Power button together (with
+    the device powered on or off) for 10 seconds, and then it is necessary to release
+    the Power button and hold the Home button for 10 seconds more.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Both Recovery and DFU modes are really useful for the physical acquisition of
+    iDevices, as we will show later in the dedicated section.
+  prefs: []
+  type: TYPE_NORMAL
+- en: iOS data security
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: A complete description of iOS data security is out of the scope of this book,
+    but we wish to give you just an overview (taken from the Apple paper *iOS Security*
+    and from Christian D'Orazio's thesis; refer to *[Appendix A](apa.html "Appendix A. References")*,
+    *References*) of the hardware and software security features.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Hardware security features
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Every iDevice, starting from iPhone 3GS, has a dedicated AES 256-bit crypto
+    engine built in between the flash storage and the main system memory. The purposes
+    of this processor are to accelerate the encryption and decryption operations and
+    to protect user data so that it remains encrypted on the device's flash memory.
+    A **unique ID** (**UID**) is associated with each device and allows data to be
+    cryptographically tied to a particular device. The UID cannot be read directly
+    and it is used as an AES 256-bit key to generate encryption keys that protect
+    user data. These encryption keys, known as **EMF** and **Dkey** (**Class D Key**),
+    are stored in a specific area of the flash memory called **PLOG block** (or **Effaceable
+    Storage**). When the device deletes this area it makes the whole volume unreadable
+    and the content is completely and definitely encrypted, with no way to recover
+    it.
+  prefs: []
+  type: TYPE_NORMAL
+- en: File data protection
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'As described by Apple in the paper *iOS Security* (refer to *[Appendix A](apa.html
+    "Appendix A. References")*, *References*):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*"In addition to the hardware encryption features built into iOS devices, Apple
+    uses a technology called Data Protection to further protect data stored in flash
+    memory on the device."*'
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: 'Apple implements an encrypted HFS+ volume, in which each file is assigned to
+    a class, depending on the type of data and the security level required. The paper
+    also states that:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*"Every time a file on the data partition is created, Data Protection creates
+    a new 256-bit key (the per-file key) and gives it to the hardware AES engine,
+    which uses the key to encrypt the file as it is written to flash memory using
+    AES CBC mode."*'
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: 'The per-file key is then wrapped with the key of the class to which the file
+    belongs. The wrapped per-file key is stored in the `cprotect` attribute, which
+    is part of the file''s metadata contained in the `Attributes` file. The paper
+    further states that:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*"When a file is opened, its metadata is decrypted with the filesystem key,
+    revealing the wrapped per-file key and a notation on which class protects it.
+    The per-file key is unwrapped with the class key, then supplied to the hardware
+    AES engine, which decrypts the file as it is read from flash memory."*'
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: 'It is important to note that the filesystem key can be erased, and in that
+    case the content of every file becomes definitely unreadable. There are four basic
+    classes that use different policies to determine when file content is accessible
+    and where the class keys are stored. With the exception of the Dkey, all class
+    keys are stored in the `Keybag` system, which is a file that contains master keys
+    for each one of the classes available, as shown in the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![File data protection](img/image_03_001.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Class D offers the lowest security level because the Dkey is not derived from
+    the passcode but wrapped in the `PLOG` area with a value (`Key0x835`) that can
+    be retrieved by communicating with the kernel. From a forensics point of view,
+    it is important to note that all the files created by a native iOS application,
+    except e-mail messages and related attachments, belong to Class D. It means that
+    all the cryptographic keys required to decrypt a file can be retrieved without
+    knowing or cracking the passcode.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Unique device identifier
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Every single iDevice produced is identified by a **Unique Device ID** (**UDID**),
+    as is explained in The iPhone Wiki ([http://theiphonewiki.com/wiki/UDID](http://theiphonewiki.com/wiki/UDID)).
+    It can be calculated as the **SHA-1** hash of a particular 60- or 59-character
+    long string that can be obtained as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: An 11-character or 12-character long (on newer devices) serial number (exactly
+    like it is written in the **Settings** app)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: A 15-character long IMEI number without spaces (on older devices), empty string
+    for iPod touch and the Wi-Fi model iPad devices, or a 13-character ECID in decimal
+    with no leading zeroes (on newer devices)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_IND
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: The ECID is the Electronic Chip ID. For more information, refer to [https://theiphonewiki.com/wiki/ECID](https://theiphonewiki.com/wiki/ECID).
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: A 17-character long Wi-Fi MAC address (letters in lowercase, including colons).
+    For the iPod touch first generation, use `00:00:00:00:00:00`
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: A 17-character long Bluetooth MAC address (letters in lowercase, including colons)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Case study - UDID calculation on iPhone 6s
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'On iPhone 6s, the UDID is calculated as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Case study - UDID calculation on iPhone 6s](img/image_03_002.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'If the device is unlocked, the serial number, Wi-Fi MAC address, and Bluetooth
+    can be obtained by tapping **About** from **Settings** | **General** on the device''s
+    main screen, as shown in the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Case study - UDID calculation on iPhone 6s](img/image_03_003.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'The ECID can be obtained as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Put the device in Recovery mode.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Open Windows **Device Manager**, navigate to **Universal Serial Bus controllers**
+    | **Apple Mobile Device USB Driver**, right-click on it, and select **Properties**.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Click on **Details**, search and select **Device Instance Path** in the drop-down
+    menu, and copy the text to a text file.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: On a Mac OS X, navigate to **System Information** | **System Report** and look
+    in the USB entry under **Hardware**.![Case study - UDID calculation on iPhone
+    6s](img/image_03_004.jpg)
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 'In this example we have the following entries:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**Serial number**: `F17QT811GRY9`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**ECID**: `0016611E28BB0226`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Wi-Fi MAC address**: `1C:5C:F2:7F:7A:20`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Bluetooth MAC address**: `1C:5C:F2:7F:7A:21`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Before calculating the UDID, we need to convert the hex value for ECID to a
+    decimal number, so `16611E28BB0226` corresponds to `6299231647892006`. Moreover
+    the letters in the Wi-Fi MAC address and in the Bluetooth MAC address must be
+    converted to lower case.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The UDID can be calculated as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`SHA1(F17QT811GRY962992316478920061c:5c:f2:7f:7a:201c:5c:f2:7f:7a:21) = 3bf682ebc55c5673d586e0273af0dfb72d1994a2`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The calculated value can be verified using iTunes, after connecting the device
+    to the computer, as shown in the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Case study - UDID calculation on iPhone 6s](img/image_03_005.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Otherwise, the UDID can also be verified using the `ideviceinfo` tool introduced
+    in [Chapter 2](ch02.html "Chapter 2. Introduction to iOS Devices"), *Introduction
+    to iOS Devices*, as shown in the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Case study - UDID calculation on iPhone 6s](img/image_03_006.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Lockdown certificate
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The first time you connect an unlocked iDevice to a computer and run the iTunes
+    software, a pairing/sync certificate, known as a **lockdown** certificate, is
+    created on the computer''s hard drive. Depending on the operating system in which
+    iTunes is installed, lockdown certificates are stored in the following folders:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**Windows 7/8/10**: `C:\Program Data\Apple\Lockdown`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Windows Vista**: `C:\Users\[username]\AppData\roaming\Apple Computer\Lockdown`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Windows XP**: `C:\Documents and Settings\[username]\Application Data\Apple
+    Computer\Lockdown`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Mac OS X**: `/var/db/lockdown`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: In older version of Mac OS X lockdown certificates are stored in `/Users/[username]/Library/Lockdown/`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Within these paths, there is a lockdown certificate for each device that was
+    ever connected to the computer. The certificate is a `plist` file called `<UDID>.plist`,
+    where `UDID` corresponds with the unique identifier of the iDevice, as shown in
+    the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Lockdown certificate](img/image_03_007.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Once the certificate for a specific device has been generated, it remains valid
+    until the user resets the device to factory settings. If the device is turned
+    on and has been unlocked at least once in the last 48 hours (from iOS 8), the
+    certificate can be used to bypass passcode to both obtain a backup and extract
+    files through the AFC service. Of fundamental importance to the forensic acquisition
+    of data is the fact that the certificate can be copied to another machine.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Starting from iOS 7.0, when you connect a device, two pop-up authorizations
+    are displayed. The first popup appears on the computer in iTunes and it asks the
+    user to click on **Continue**.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Lockdown certificate](img/image_03_008.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: The second popup appears on the iDevice screen once unlocked, and requires the
+    user to click on the **Trust** button to allow pairing with the computer.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Lockdown certificate](img/image_03_009.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Search and seizure
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'If you have to deal with a search and seizure of an iDevice, it is really important
+    to perform some steps. We have three scenarios: device turned off, device turned
+    on and unlocked at the time of search and seizure, and device turned on and locked
+    at the time of search and seizure:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'If the device is turned on and locked, do the following:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: If the passcode is set, acquire the content from the device as soon as possible
+    or keep the device on and in charge.
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: If the passcode is not set, turn it off.
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: If the device is off, leave it off.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Set **Auto-Lock** to **Never** from **Settings** | **General** | **Auto-Lock**.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Check whether the passcode is set or not from **Settings** | **Passcode**.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: If the device is on and unlocked, turn on **Airplane Mode** in **Settings:**
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 'Check if the device displays the **iPhone requires your passcode after restarting**
+    message, as shown in the following screenshot:'
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: '![Search and seizure](img/image_03_010.jpg)'
+  prefs:
+  - PREF_IND
+  type: TYPE_IMG
+- en: Turn on **Airplane Mode** using Apple **Control Center**, which can be activated
+    with a single swipe, even with locked device if such access has not been disabled
+    by the user.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Keep the phone on and charging.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Seize any computer that could have been used to synchronize or simply authorize
+    the iDevice, because there you can possibly find a lockdown certificate that will
+    allow access to the data.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Acquire the data as soon as possible because the lockdown certificate is valid
+    only if the device remains on and in any case no more than 48 hours.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: iOS device acquisition
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Once you have identified the specific model that you need to acquire, it becomes
+    important to understand the best technique to use. The type of acquisition depends
+    basically on the following seven parameters:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Device model
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: iOS version
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Passcode (not set, simple passcode, or complex passcode)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Device status (on or off)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Availability of a pairing certificate
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Presence of a backup password
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Device jailbroken or not
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Nowadays, in the forensic community the following four techniques are used
+    to access data stored on iDevices:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**Apple File Conduit**: This technique consists of a direct interaction with
+    a powered on device, typically through non-forensic software, and permits obtaining
+    a reduced set of the filesystem'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**iTunes Backup**: This technique consists of a partial filesystem acquisition
+    through the iTunes backup feature or using a forensic acquisition tool that uses
+    the iTunes libraries'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Advanced logical**: This technique is based on Apple File Relay and was introduced
+    for the first time by the researcher Jonathan Zdziarski'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Physical**: This technique generates a traditional forensic image for both
+    the system and data partition'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Apple File Conduit acquisition
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: The acquisition through the AFC service can be carried out with all iDevices,
+    regardless of the operating system version. It requires that the device is not
+    protected with a passcode, the passcode is known, or the analyst has a valid lockdown
+    certificate. The conditions and the kind of data that you can get with this kind
+    of acquisition have changed a lot through the various versions of iOS.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Starting from iOS 9, if the device is unlocked or with a valid lockdown certificate,
+    it is only possible to extract multimedia information (photos, videos, music,
+    and so on) and the related configuration files (for example, the iTunes library,
+    the database of the Photo application, and so on). Moreover, in previous versions
+    up to iOS 8.3, it was also possible to access the data folders of third-party
+    applications, with the phone unlocked or with a valid lockdown certificate. It
+    is also interesting to note that this method allows us to extract the `Crash Reports`
+    folder from the device, which contains the error logs generated by the operating
+    system and installed applications and the live System Log. Neither of these will
+    be present on an acquisition made through iTunes backup, as will be explained
+    in [Chapter 6](ch06.html "Chapter 6. Analyzing iOS Devices"), *Analyzing iOS Devices*,
+    and in some cases, these files can contain very important information. It is therefore
+    advisable to take this into account while choosing the acquisition method.
+  prefs: []
+  type: TYPE_NORMAL
+- en: To make that kind of acquisition, you can use various types of software known
+    as iDevice browsers.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: This activity is performed with a non-forensic tool that also permits writing
+    operations, so the analyst must operate very carefully to avoid accidental erasure.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The most used tools on Windows and Mac for this type of acquisition are **iFunBox**,
+    **iTools**, **iBackup Bot**, **iMazing**, **iExplorer**, and **WonderShare Dr.Fone**.
+    These tools require the installation of an updated version of iTunes because they
+    use its libraries to communicate with the device. Before connecting the device
+    to your computer, you should ensure that in **iTunes** | **Preferences** | **Devices**,
+    the **Prevent iPods, iPhones, and iPads from syncing automatically** option is
+    enabled, as shown in the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Apple File Conduit acquisition](img/image_03_011.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Case study - AFC acquisition with iBackupBot
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: '**iBackupBot** is a commercial tool for Windows that allows access to connected
+    iOS devices to perform both direct extraction via AFC protocol and the generation
+    of backups in iTunes format. The trial version allows loading and extracting information
+    from the device.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Once the software has been downloaded, installed, and run, simply connect the
+    device to acquire and wait for the related information to load. In the following
+    screenshot you can see an example related to an **iPad 2 (GSM)** running iOS 8.3,
+    which shows the main characteristics of the device (**Serial Number**, **Unique
+    Identifier**, **Bluetooth Address**, **Wi-Fi Address**, and so on) and the backup
+    encryption configuration status (that is, if it''s enabled or not):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Case study - AFC acquisition with iBackupBot](img/image_03_012.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Clicking on **User Applications** shows the list of all applications installed
+    by the user, reporting the size of the application and of its data, plus the version
+    that is currently installed:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Case study - AFC acquisition with iBackupBot](img/image_03_013.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: The **App File Sharing** option provides access to application data whose developers
+    have decided to share data. This feature is used to allow, typically through iTunes,
+    the exchange of files between the device and a computer. All shared files from
+    the applications can be extracted directly from the device. The functionality
+    is often used in applications where the user needs to create and/or modify the
+    contents (for example, the Office Suites app) or manage files (for example, the
+    Compression app).
+  prefs: []
+  type: TYPE_NORMAL
+- en: The following screenshot shows an example on the WinZip application. By right-clicking
+    on one or more files you can export them to a folder on your computer. Pay attention
+    to the fact that this access is read-write, and the graphical interface provides
+    also a **New Folder** button that allows the creation of content on the device.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Case study - AFC acquisition with iBackupBot](img/image_03_014.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: The **Raw File System** option allows you to navigate within the part of the
+    device's filesystem that is made available through the AFC protocol. As already
+    mentioned, it mainly includes media data (`DCIM` folder), books loaded into the
+    iBooks app (`Books` folder), iTunes library (`iTunes_Control` folder), and files
+    downloaded by the user or the applications (`Downloads` folder). Similar to the
+    previous option, files and folders can be extracted from the device to the computer.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Case study - AFC acquisition with iBackupBot](img/image_03_015.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Lastly, the **Tools** option allows the file extraction of the `System Log`
+    and the `Crash Report` folder.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The `System Log` can be exported in text format and contains the latest information
+    on the activity of the device. It is useful if extracted in the immediacy or,
+    in general, to support the information attached to the acquisition reports and
+    demonstrate at least in part the inevitable changes made to the system during
+    extraction.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Case study - AFC acquisition with iBackupBot](img/image_03_016.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: The `Crash Report` folder can be extracted in a similar way as the previous
+    options. Typically, it contains the information about the last 24-48 hours of
+    device usage, but the amount of information present is not determinable a priori,
+    because it is affected by several parameters. As will be detailed in [Chapter
+    6](ch06.html "Chapter 6. Analyzing iOS Devices"), *Analyzing iOS Devices*, these
+    logs may contain information that cannot be extracted by other methods.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Case study - AFC acquisition with iBackupBot](img/image_03_017.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: iTunes backup
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: '**iTunes backup** acquisition allows the analyst to recover more information
+    than the AFC acquisition and in a more forensics way as it creates a backup for
+    the device without altering any data. Regarding the passcode, the conditions are
+    similar to direct acquisition: the analyst must know the passcode or have a valid
+    lockdown certificate to perform this kind of acquisition. Before connecting the
+    device, you also need to disable automatic syncing in the iTunes software. This
+    acquisition can be performed in two ways, *using iTunes* or *using forensic software*.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Acquisition with iTunes
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'The acquisition through iTunes can be done in a very simple way using the backup
+    function of the device. Once you start iTunes, you need to click on the name of
+    the device to access detailed information. At this point, you need to check how
+    the device is configured in relation to the backup operation. There may be the
+    following three cases:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The device is configured to perform a local backup not protected by a password
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The device is configured to perform a local backup with a password previously
+    set by the device owner
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The device is configured to backup to iCloud
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'In the first two cases, simply click on the **Back Up Now** button to start
+    the backup on the computer, as shown in the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Acquisition with iTunes](img/image_03_018.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: If the user has not chosen a password, the created backup can be analyzed with
+    various tools. Otherwise, the analyst needs to crack the backup password before
+    starting the analysis. Both the password cracking and backup structures will be
+    discussed in [Chapter 4](ch04.html "Chapter 4. Evidence Acquisition and Analysis
+    from iTunes Backup"), *Evidence Acquisition and Analysis from iTunes Backup*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the third case, before starting the backup, the analyst must change the option
+    from **iCloud** to **This computer**. In this way, the backup will be performed
+    locally and will not overwrite any existing data present in the previous backups
+    on iCloud. The data acquisition from iCloud will be explained in [Chapter 5](ch05.html
+    "Chapter 5. Evidence Acquisition and Analysis from iCloud"), *Evidence Acquisition
+    and Analysis from iCloud*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Acquisition with iTunes](img/image_03_019.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Acquisition with forensic tools
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: In the market, there are various forensic tools that can perform backup acquisition,
+    for example, Cellebrite UFED 4PC/UFED Touch/UFED Physical Analyzer, Oxygen Forensic®
+    Starter/Analyst/Detective, Mobile Phone Examiner, MobilEdit!, Lantern, and XRY.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: For a detailed reference list, refer to [Appendix B](apb.html "Appendix B. Tools
+    for iOS Forensics"), *Tools for iOS Forensics*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Case study - iTunes backup acquisition with Oxygen Forensic Analyst
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: '**Oxygen Forensic** software is a commercial product that allows forensic analysts
+    to perform iTunes backup acquisition of an iOS device. It is available in three
+    licensing modes, **Starter**, **Analyst**, and **Detective**.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To start the extraction, it is necessary to click on the **Connect device**
+    button on the main screen, as shown in the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Case study - iTunes backup acquisition with Oxygen Forensic Analyst](img/image_03_020.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: The software will then begin the extraction procedure, and you can choose the
+    type of connection you want to start. You can choose between **Auto device connection**
+    and **Manual device selection**, as shown in the following screenshot. For iDevices,
+    it is generally sufficient to select the first option.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Case study - iTunes backup acquisition with Oxygen Forensic Analyst](img/image_03_021.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: The software starts searching for a connected iDevice. If the device is locked
+    with a passcode, the software asks the analyst to insert the passcode or to provide
+    a lockdown certificate. The software provides the UDID for the iDevice, so it
+    is easier for the analyst to search it on a computer previously synced with the
+    device itself. If the analyst knows the passcode, he/she needs to insert it into
+    the device, authorize the computer, and click on **I entered the passcode. Press
+    to connect**. Otherwise, he/she can choose the **Select lockdown plist** option
+    and provide the tool with a valid lockdown certificate.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Case study - iTunes backup acquisition with Oxygen Forensic Analyst](img/image_03_022.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'If the certificate is correct, the software displays a confirmation screen
+    with a button to start the connection to the device, as shown in the following
+    screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Case study - iTunes backup acquisition with Oxygen Forensic Analyst](img/image_03_023.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'At this point, the software displays information specific to the connected
+    device (model, IMEI number, iOS version, and boot loader), as shown in the following
+    screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Case study - iTunes backup acquisition with Oxygen Forensic Analyst](img/image_03_024.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: The investigator can then enter information about the case, and if known, the
+    backup password for the device.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Case study - iTunes backup acquisition with Oxygen Forensic Analyst](img/image_03_025.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Then, the analyst can select the data they want to extract by choosing the
+    ones supported by this method, as shown in the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Case study - iTunes backup acquisition with Oxygen Forensic Analyst](img/image_03_026.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'When clicking on the **Next** button, the acquisition procedure starts and
+    displays a progress bar. It should be noted that during the extraction, the software
+    also proceeds with parsing all the data found, including the search for deleted
+    records within the database stored in the phone (for example, calls, SMS, chat,
+    and so on). For this reason, the acquisition may require a large amount of time,
+    but after that the analyst is ready to parse the data within the software, as
+    shown in the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Case study - iTunes backup acquisition with Oxygen Forensic Analyst](img/image_03_027.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'If the device has a backup password previously set by the user, Oxygen can
+    work with **Passware Kit Forensic** (if installed on the computer used to acquire
+    data) trying to make an attack on the backup password. If the examiner knows the
+    password, he/she has the chance to finish the attack and enter it manually. At
+    the end of the cracking process, if the password has been detected, the software
+    proceeds with the extraction of all the data, in a similar way as described previously.
+    If the password is not found, the software extracts only the multimedia content
+    (images, video, books, and so on) and does not provide information about the applications
+    preinstalled or installed by the user:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Case study - iTunes backup acquisition with Oxygen Forensic Analyst](img/image_03_028.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Advanced logical acquisition
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'The advanced logical acquisition method was first introduced by the iOS security
+    researcher Jonathan Zdziarski in his tool, **Waterboard**, released in June 2013\.
+    The author''s description in his article states:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*"Waterboard is an open source iOS forensic imaging tool, capable of performing
+    an advanced logical acquisition of iOS devices by utilizing extended services
+    and back doors in Apple''s built-in lockdown services. These services can bypass
+    Apple''s mobile backup encryption and other encryption to deliver a clear text
+    copy of much of the filesystem to any machine that can or has previously paired
+    with the device."*'
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: A detailed explanation can be found in the paper *Identifying Back Doors*, *Attack
+    Points*, *and Surveillance Mechanisms in iOS Devices*, by *Jonathan Zdziarski*
+    (refer to [Appendix A](apa.html "Appendix A. References"), *References*). Currently,
+    the Waterboard tool is no longer available and supported by Zdziarski, but there
+    are few forensic tools offering the same feature, UFED Physical Analyzer, Oxygen
+    Forensics Toolkit, and AccessData MPE.
+  prefs: []
+  type: TYPE_NORMAL
+- en: This method has been made unavailable starting from iOS 8, also due to the discovery
+    of Zdziarski. On devices not yet updated, which are running iOS 7, the method
+    is still usable; but even in this case it is necessary that the device is unlocked
+    or that a valid lockdown certificate is available.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Case study - advanced logical acquisition with UFED Physical Analyzer
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'UFED Physical Analyzer is a software product from Cellebrite UFED and supplied
+    with the purchase of UFED Touch or UFED 4PC. The advanced logical acquisition
+    in UFED Physical Analyzer can be started through the main interface of the software
+    under the menu item, **iOS Device Extraction** under **Extract**, as shown in
+    the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Case study - advanced logical acquisition with UFED Physical Analyzer](img/image_03_029.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: The analyst can now choose **Advanced Logical extraction**.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Case study - advanced logical acquisition with UFED Physical Analyzer](img/image_03_030.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'The software requires you to connect the turned-on device using the correct
+    cable (30-pin connector or Lightning 8-pin connector), as shown as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Case study - advanced logical acquisition with UFED Physical Analyzer](img/image_03_031.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: The device must be powered on and unlocked; otherwise, the software displays
+    a message stating **The iOS device is locked or untrusted**. To proceed, the analyst
+    must unlock the device with the passcode or provide the right lockdown certificate.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Case study - advanced logical acquisition with UFED Physical Analyzer](img/image_03_032.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'The software checks whether a password is set on the backup device and shows
+    two possible methods for the acquisition: **Method 1** corresponds to a device
+    backup, while **Method 2** allows the analyst to extract data using both the AFC
+    protocol and the lockdown service (advanced logical acquisition). If the device
+    is jailbroken then **Method 3** will show up to allow a complete filesystem dump.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Case study - advanced logical acquisition with UFED Physical Analyzer](img/image_03_033.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: If the device has a backup password with **Method 1**, the analyst must know
+    the password or crack it (as explained in [Chapter 4](ch04.html "Chapter 4. Evidence
+    Acquisition and Analysis from iTunes Backup"), *Evidence Acquisition and Analysis
+    from iTunes Backup*), while with **Method 2**, it is possible to extract part
+    of the data even without cracking the backup password. For this reason, when you
+    need to acquire a device with a backup password, it is advisable to perform both
+    acquisitions. In this way, you can definitely see some information, thanks to
+    **Method 2**, and try to recover more details by cracking the encrypted acquisition
+    carried out with **Method 1**.
+  prefs: []
+  type: TYPE_NORMAL
+- en: If the device does not have a backup password then Physical Analyzer will propose
+    the option to encrypt the backup with a known password. This is because certain
+    files, such as the keychain, are in this case encrypted with the chosen backup
+    password and so it is possible to recover more information (that is, user stored
+    passwords).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Once you select the extraction method, the software initiates the procedure
+    requiring the user to set the destination folder. Scanning takes a variable time
+    depending on the chosen method (**Method 1** is performed in a single step and
+    is faster than **Method 2**, which requires three steps), the memory size of the
+    device, and the space occupied by files (especially media files such as pictures,
+    videos, music, and so on).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Once the acquisition is complete, the software displays a report showing the
+    amount of extracted data and the time taken, as shown in the following screenshot.
+    From this window, the analyst can choose whether to return to the home screen
+    or open the acquisition made in UFED Physical Analyzer for the analysis activities.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Case study - advanced logical acquisition with UFED Physical Analyzer](img/image_03_034.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Physical acquisition with forensic tools
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: '**Physical acquisition** allows most of the content from an iOS device to be
+    extracted. Unlike the AFC, backup, and advanced logical methods, the analyst can
+    obtain a forensic copy of the device''s internal NAND storage and access all the
+    files stored there. Some examples of interesting information that can only be
+    retrieved through physical acquisition are the e-mail messages and log files of
+    the device. The physical acquisition is based on hardware vulnerabilities during
+    the boot process. For this reason, this operation is not invasive on the data
+    stored on the iDevice because it uploads an alternative operating system directly
+    into RAM through which it can launch acquisition commands. Currently, it is supported
+    on the first iPhone model 3G/3GS/4, iPad 1, and iPod touch 1/2/3/4.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: If the device is not protected by a passcode, the physical acquisition can be
+    carried out without problems by creating an image of both system and data partitions.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'If the iDevice is protected with a passcode, it is necessary to highlight the
+    following two cases:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: If the passcode is simple (4 digits), it can be cracked in 20 to 30 minutes,
+    depending on the device type
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'If the passcode is complex (multidigit or alphanumeric) the analyst has the
+    following two options:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Try a brute force or a dictionary attack on the passcode.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Perform the physical acquisition without cracking the passcode. In this case,
+    the physical acquisition will decode all the data whose encryption does not depend
+    on the passcode, while other data (for example, e-mail, stored passwords, and
+    so on) cannot be decrypted.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Several forensic tools can perform physical acquisition, such as iPhone data
+    protection tools, UFED Physical Analyzer, Elcomsoft iOS Forensic Toolkit, Lantern,
+    AccessData MPE+, iXAM, and XRY.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: For a more comprehensive and detailed list of tools, books, and papers related
+    to physical acquisition, refer to [Appendix A](apa.html "Appendix A. References"),
+    *References*, and [Appendix B](apb.html "Appendix B. Tools for iOS Forensics"),
+    *Tools for iOS Forensics*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Case study - physical acquisition with UFED Physical Analyzer
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'Physical acquisition using UFED Physical Analyzer can be started through the
+    main interface of the software from the menu item **iOS Device Extraction**, under
+    **Extract**, as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Case study - physical acquisition with UFED Physical Analyzer](img/image_03_035.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: The device must be powered off and then the analyst can connect the correct
+    cable to the computer (and not yet to the iDevice).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Case study - physical acquisition with UFED Physical Analyzer](img/image_03_036-1.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Now, the investigator must connect the device in **Recovery** mode. It means
+    that they need to press and hold the Home button and connect the device, as shown
+    in the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Case study - physical acquisition with UFED Physical Analyzer](img/image_03_037-2.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'The software displays the information related to the device (the **iOS version**,
+    **serial number**, **Board**, **IBoot firmware version**, **Chip ID**, and so
+    on), as shown in the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Case study - physical acquisition with UFED Physical Analyzer](img/image_03_038-1.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Now, the device must be set in DFU mode by pressing the **Power** and **Home**
+    buttons together, and release the Power button 3 seconds after the device's screen
+    becomes black.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Case study - physical acquisition with UFED Physical Analyzer](img/image_03_039-1.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'The software uploads the boot loader in memory and provides the analyst with
+    two options: **Physical Extraction** and **File System Extraction**, as shown
+    in the following screenshot. The first one extracts a physical image of the encrypted
+    data partition, so the extraction can be viewed in UFED Physical Analyzer and
+    in other analysis tools. UFED also provides information about the passcode protection.
+    If the device is not protected by a passcode, it can start the acquisition immediately
+    and decrypt all the files.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Case study - physical acquisition with UFED Physical Analyzer](img/image_03_040-1.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Otherwise, it depends on the passcode type. If the device has a simple passcode
+    (four digits), it can be cracked in 20 to 30 minutes (depending on the iDevice
+    type) by choosing the **Passcode recovery** option.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Case study - physical acquisition with UFED Physical Analyzer](img/image_03_041.jpg)![Case
+    study - physical acquisition with UFED Physical Analyzer](img/image_03_042.jpg)![Case
+    study - physical acquisition with UFED Physical Analyzer](img/image_03_043.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'At the end of the cracking stage, the software shows the passcode and gives
+    the opportunity to start the acquisition, as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Case study - physical acquisition with UFED Physical Analyzer](img/image_03_044.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'If the device has a complex passcode, the analyst has two options: either acquire
+    a physical image without cracking the passcode (this means that some data will
+    not be available, for example, e-mails, and stored passwords) or try to crack
+    the passcode with a dictionary attack.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Case study - physical acquisition with UFED Physical Analyzer](img/image_03_045.jpg)![Case
+    study - physical acquisition with UFED Physical Analyzer](img/image_03_046.jpg)![Case
+    study - physical acquisition with UFED Physical Analyzer](img/image_03_047.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Dealing with a locked iDevice
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The main problem, as already mentioned in the description of the various acquisition
+    methods, is the presence of a lock code set by the user.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'For devices up to iPhone 4, iPad 1, and iPod touch up to version 4, you can
+    work around the presence of a lock code with the ability to load into RAM an operating
+    system different from the original iOS: if the passcode is simple (four digits)
+    the brute force time is a maximum of 30 minutes, increasing by several orders
+    of magnitude (months or years) as the complexity of the passcode increases. In
+    any case, for these types of device, the encryption is restricted to certain types
+    of file (mainly e-mails and third-party application data), while for the system
+    data the encryption does not depend on the passcode: for this reason, a physical
+    acquisition allows access to such data.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'For the later devices, that is, all those also compatible with iOS 9, there
+    are three available techniques to violate or bypass the passcode lock:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Use a valid lockdown certificate
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Use a tool that allows submitting the passcode to the device via USB port instead
+    of the touch screen
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Get support from companies that developed proprietary techniques able to brute
+    force the passcode
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'The first technique is applicable to all versions of iOS, including iOS 9\.
+    In this case, it is necessary that two conditions are met: the device, even if
+    locked, must have been found switched on and maintained in this condition, and
+    the same must have been unlocked at least once in the past 48 hours. It is therefore
+    clear that this method should be used immediately with respect to the seizure
+    or discovery of the device, immediately seeking a computer that may hold a valid
+    certificate and proceeding with an acquisition as quickly as possible. The use
+    of a valid certificate allows for all devices, including those with iOS 9, the
+    acquisition by AFC Protocol, and acquisition through backup. On devices with iOS
+    7 it also allows to make the advanced logical acquisition.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The second method can be used on all devices but only up to iOS 8.1\. Several
+    hardware devices have been made available on the market and are all based, essentially,
+    on the principle of passing the passcode via USB and not through the touch screen.
+    The best-known and most commonly used forensic software is the UFED User Lock
+    Code Recovery Tool by Cellebrite, available in the licenses of the software UFED
+    4PC and UFED Touch. It runs on iOS 7\. Other devices, which are not born as forensic
+    tools but very much used in the community, are IP-BOX, MFC dongle, SecureView's
+    svStrike, and HDB Box.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'These devices, through an additional adapter, can also be used on operating
+    systems up to iOS 8.1\. It''s important to note that none of these tools manage
+    to overcome the limitation, which can be activated by the user, of secure wiping
+    after 10 incorrect attempts at entering the code: this limitation stays in place
+    also when the code is submitted to the phone through the USB port. For this reason,
+    these techniques need to be applied if and only if it is certain that wiping is
+    not active on the device.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Dealing with a locked iDevice](img/image_03_048.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: The alternative solution is to get support from some specialized company that
+    has developed proprietary techniques to recover the passcode that have not yet
+    been implemented in software and hardware on the market. At the time of writing
+    this edition of the book, the only company offering this service is Cellebrite
+    through the **Cellebrite Advanced Investigative Services** (**CAIS**) center.
+    As reported in the company's website ([http://www.cellebrite.com/Pages/cellebrite-unlocking-services-now-available-for-apple-ios-9-and-samsung-galaxy-s6-and-s7-devices](http://www.cellebrite.com/Pages/cellebrite-unlocking-services-now-available-for-apple-ios-9-and-samsung-galaxy-s6-and-s7-devices)),
+    the service is available for all devices with a 32-bit processor (that is, iPhone
+    4s/5/5c, iPad 2/3G/4G, iPad mini 1G, and iPod touch 5G) with any version of iOS
+    8 operating system (that is, 8 - 8.0/8.0.1/8.0.2/8.1/8.1 .1/8.1.2/8.1.3/8.2/8.3/8.4/8.4.1)
+    or iOS 9 operating system (that is, 9.0/9.0.1/9.0.2/9.1/9.2/9.2.1/9.3/9.3.1/9.3.2).
+    The company ensures that there will be no physical invasiveness on the device
+    (that is, there is no need of any hardware intervention) and the non-activation
+    of the wiping function after 10 incorrect attempts.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: '**From a Real Case**'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'At the beginning of 2016, one of the authors of the book was appointed Expert
+    Witness from the Court of Milan as part of the criminal proceedings against Alexander
+    Boettcher, accused together with his girlfriend Martina Levato, of having made
+    four acid attacks against her ex-boyfriends. At the time when the couple was arrested
+    (December 2014), Boettcher got his iPhone 5 running iOS 8.0 seized, which was
+    locked with a 4-digit passcode that he said he did not remember. At that time,
+    there were no known techniques that allowed bypassing the code without activating
+    Apple protection systems (for example, wiping encryption keys after 10 incorrect
+    entries), and for this reason the prosecutor and the Judiciary Police have decided
+    to analyze the other devices, finding a backup on the computer of the suspect
+    made in September 2014\. During the hearings in January 2016, it was deemed to
+    be useful by the Judges evaluating new possibilities to access the data. They
+    then appointed one of the authors asking technical advice to evaluate new possibilities
+    in this regard. The consultant therefore decided to contact the CAIS service offered
+    by the company Cellebrite and in February 2016 brought the phone to their EU headquarters
+    in Munich, Germany, where the passcode was detected after two days of work, allowing
+    in this way the acquisition of the device through the backup mode and AFC protocol.
+    The news has been the subject of attention by the Italian national press for the
+    notoriety of the case, and the international press, given the temporal proximity
+    with having Apple vs. FBI (refer, for example, to *Apple-FBI Case: this is how
+    the iPhone for the investigation of acid attacks in Milan was unlocked* - [http://www.lastampa.it/2016/03/01/tecnologia/news/come-stato-sbloccato-liphone-nel-caso-delle-aggressioni-con-lacido-a-milano-3hmkkOwVQsiCFtkjjJbt5O/pagina.html](http://www.lastampa.it/2016/03/01/tecnologia/news/come-stato-sbloccato-liphone-nel-caso-delle-aggressioni-con-lacido-a-milano-3hmkkOwVQsiCFtkjjJbt5O/pagina.html),
+    and *It Might Cost The FBI Just $ 1.500 To Get Into Terrorist''s iPhone*: [http://www.forbes.com/sites/thomasbrewster/2016/03/23/cellebrite-apple-iphone-fbi-syed-farook-alexander-boettcher/](http://www.forbes.com/sites/thomasbrewster/2016/03/23/cellebrite-apple-iphone-fbi-syed-farook-alexander-boettcher/)).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: In addition to these techniques, other methods have been used in practice to
+    bypass the lock code. The best known are the use of vulnerabilities on the specific
+    version of the operating system that allow access to the device's screen (often
+    associated with the application Siri), or forcing the generation of a backup to
+    iCloud and bringing the device into the proximity of a known Wi-Fi network.
+  prefs: []
+  type: TYPE_NORMAL
+- en: iOS device jailbreaking
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: '**iOS jailbreaking** is the process of removing limitations on the iOS devices
+    through the use of software and hardware exploits. It enables root access to the
+    iOS filesystem and allows additional applications not available in the official
+    Apple App Store to be downloaded. Various jailbreaking tools have been developed;
+    an always updated list can be found at [http://theiphonewiki.com/wiki/Jailbreak](http://theiphonewiki.com/wiki/Jailbreak).
+    Currently, the latest available tools are **Evasi0n** ([http://evasi0n.com/](http://evasi0n.com/))
+    for iOS 7, **Taig** ([http://www.taig.com/en/](http://www.taig.com/en/)) for iOS
+    8, and **Pangu** ([http://en.pangu.io/](http://en.pangu.io/)) for iOS 7, 8, and
+    9.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Jailbreaking is an invasive activity on the device system partition, so it cannot
+    be considered as a forensic operation. However, it is useful to note that for
+    devices after iPhone 4, it is the only way to make a physical acquisition. It
+    is therefore necessary that the device is already jailbroken or that the investigator
+    can jailbreak it. On newer devices, in order to jailbreak the device, the analyst
+    needs to know the passcode, since it requires actions to be performed directly
+    on the unlocked device.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Case study - physical acquisition with Elcomsoft iOS Forensic Toolkit
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: At the time of writing, jailbreaking is supported up to iOS 9.3.3 by Pangu jailbreaking,
+    and the **Elcomsoft iOS Forensic Toolkit** (**EIFT**) software is the only commercial
+    tool that permits a physical acquisition of a jailbroken device. It currently
+    works on both 32- and 64-bit devices, but in the first case, it can extract a
+    physical image, while in the second it can recover a full filesystem dump of the
+    device. It is important to mention that although a physical image is different
+    from a filesystem image, in the current state of the art there is effectively
+    no difference between a filesystem and a physical image of these devices from
+    a usable content point of view, because the unallocated space of a physical image
+    is encrypted, and at the time of writing, there are still no known techniques
+    to carve and decrypt from the unallocated space. As a result, you are effectively
+    getting the content of a filesystem image with your physical image because you
+    can't read the unallocated areas. Moreover, both Cellebrite and MPE+ support getting
+    a full filesystem dump of jailbroken devices.
+  prefs: []
+  type: TYPE_NORMAL
+- en: If the seized device is already jailbroken and the root password was not changed
+    by the user (recall from [Chapter 1](ch01.html "Chapter 1. Digital and Mobile
+    Forensics"), *Digital and Mobile Forensics*, that the default root password is
+    *alpine*) it is also possible to try cracking the passcode.
+  prefs: []
+  type: TYPE_NORMAL
+- en: This commercial tool can be used both on Windows or Mac. The following screenshots
+    show the acquisition procedure performed with EIFT version 2.0 of a jailbroken
+    iPad mini first generation with a passcode and iOS 9.0.2.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Case study - physical acquisition with Elcomsoft iOS Forensic Toolkit](img/image_03_049.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'The wizard is very simple and basically involves the following steps:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Get the passcode (option `3`)
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Extraction of the encryption keys (option `4`)
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Physical acquisition of the system partition (in plain text) and data partition
+    (encrypted) (option `6`)
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Decryption of the data partition with the extracted keys (option `7`)
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: The first step loads a tool on the device to crack the passcode and then, with
+    a simple passcode in this case, starts the cracking activity. At the end, it prints
+    the passcode on the screen and saves it in a `.txt` file.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Case study - physical acquisition with Elcomsoft iOS Forensic Toolkit](img/image_03_050.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: The second step extracts encryption keys from the device; these keys are necessary
+    to decrypt the physical acquisition. It saves the decryption keys in a `plist`
+    file (default name `keys.plist`) and prints the backup password (if it exists)
+    and the AppleID for the device on the screen.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Case study - physical acquisition with Elcomsoft iOS Forensic Toolkit](img/image_03_051.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: The third step creates a forensic image of the system and data partition. The
+    first one is not encrypted, while the second one is. This step produces in output
+    two DD files; the second one needs to be decrypted.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Case study - physical acquisition with Elcomsoft iOS Forensic Toolkit](img/image_03_052.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: The fourth step takes as input the encrypted data partition and the `keys.plist`
+    file and produces an unencrypted version of the DD image as output. This image
+    can be imported and analyzed in various tools, both specifically for mobile devices
+    (for example, UFED Physical Analyzer, Oxygen Forensic, and Internet Evidence Finder)
+    or traditional forensics toolkit (for example, Encase, FTK, and X-Ways).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Case study - physical acquisition with Elcomsoft iOS Forensic Toolkit](img/image_03_053.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Apple support for law enforcement
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'On a regular basis, Apple publishes a document on its website called *Legal
+    Process Guidelines for U.S. Law Enforcement*. These guidelines contain information
+    on how to request Apple support to recover information from iCloud or from an
+    iDevice, and specify the data that Apple, in some cases, can extract from a passcode-protected
+    device. Apple''s latest available version ([https://www.apple.com/privacy/docs/legal-process-guidelines-us.pdf](https://www.apple.com/privacy/docs/legal-process-guidelines-us.pdf))
+    states:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '"For all devices running iOS 8.0 and later versions, Apple will not perform
+    iOS data extractions as data extraction tools are no longer effective. The files
+    to be extracted are protected by an encryption key that is tied to the user''s
+    passcode, which Apple does not possess. For iOS devices running iOS versions earlier
+    than iOS 8.0, upon receipt of a valid search warrant issued upon a showing of
+    probable cause, Apple can extract certain categories of active data from passcode
+    locked iOS devices. Specifically, the user generated active files on an iOS device
+    that are contained in Apple''s native apps and for which the data is not encrypted
+    using the passcode ("user generated active files"), can be extracted and provided
+    to law enforcement on external media. Apple can perform this data extraction process
+    on iOS devices running iOS 4 through iOS 7\. Please note the only categories of
+    user generated active files that can be provided to law enforcement, pursuant
+    to a valid search warrant, are: SMS, iMessage, MMS, photos, videos, contacts,
+    audio recording, and call history. Apple cannot provide: e-mail, calendar entries,
+    or any third-party app data."'
+  prefs: []
+  type: TYPE_NORMAL
+- en: This method was used by the South Africa police, who requested help from Apple
+    in order to access data stored on Oscar Pistorious' iPhone.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Apple versus FBI - The San Bernardino shooting case
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: In December 2015, 14 innocent people lost their lives in the San Bernardino
+    terrorist attack. The shooters, killed by the police, had managed to destroy all
+    their devices but one prior to the attack, the work phone of Syed Rizwan Farook.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Farook''s phone was an iPhone 5s, running iOS 8, protected with a four-digit
+    pin code, and it was found powered off (although there is quite some confusion
+    on this point, as at a first stage the device appeared to have been found powered
+    on). As you have learned in this chapter, there is no known technique that''s
+    able to bypass and unlock a device in this scenario. The only chance the FBI had
+    was to try the luck of guessing/brute forcing the correct PIN within the first
+    nine attempts before the device would wipe itself after 10 incorrect PIN entries.
+    For this reason, on February 2016, the FBI reached Apple with a compelling order
+    ([https://assets.documentcloud.org/documents/2714005/SB-Shooter-Order-Compelling-Apple-Asst-iPhone.pdf](https://assets.documentcloud.org/documents/2714005/SB-Shooter-Order-Compelling-Apple-Asst-iPhone.pdf))
+    asking to provide assistance to accomplish the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: It will bypass or disable the autoerase function whether or not it has been
+    enabled
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: It will enable the FBI to submit passcodes to the SUBJECT DEVICE for testing
+    electronically via the physical device port, Bluetooth, Wi-Fi, or other protocol
+    available
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: It will ensure that when the FBI submits passcodes to the SUBJECT DEVICE, software
+    running on the device will not purposefully introduce any additional delay between
+    passcode attempts beyond what is incurred by Apple hardware
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Furthermore, in the court order, it was also specified that Apple's assistance
+    may include providing software to the FBI that will be coded by Apple with a unique
+    identifier of the phone so that the software would only load and execute on the
+    SUBJECT DEVICE. What all this means is that the FBI asked Apple to develop a backdoor
+    into iOS devices.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Apple refused to comply with the order stating, in an open letter by its CEO,
+    Tim Cook ([http://www.apple.com/customer-letter/](http://www.apple.com/customer-letter/)),
+    that:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*"The United States government has demanded that Apple take an unprecedented
+    step which threatens the security of our customers. We oppose this order, which
+    has implications far beyond the legal case at hand. This moment calls for public
+    discussion, and we want our customers and people around the country to understand
+    what is at stake."*'
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: On March 28, the FBI announced that it had unlocked the suspect's iPhone with
+    a third party's help, without giving any further details on the *who* and the
+    *how*. Coincidently enough, on the very same day, the FBI cut an order of *$218,004.85*
+    to Cellebrite ([https://www.fpds.gov/ezsearch/fpdsportal?q=cellebrite+CONTRACTING_AGENCY_NAME%3A%22FEDERAL+BUREAU+OF+INVESTIGATION%22+PIID%3A%22DJF161200G0004569%22&s=FPDSNG.COM&templateName=1.4.4&indexName=awardfull&x=0&y=0&sortBy=SIGNED_DATE&desc=Y](https://www.fpds.gov/ezsearch/fpdsportal?q=cellebrite+CONTRACTING_AGENCY_NAME%3A%22FEDERAL+BUREAU+OF+INVESTIGATION%22+PIID%3A%22DJF161200G0004569%22&s=FPDSNG.COM&templateName=1.4.4&indexName=awardfull&x=0&y=0&sortBy=SIGNED_DATE&desc=Y)),
+    which of course led the speculation on the identity of the third party who was
+    able to unlock the iPhone. However, on April 7, the FBI Director, James Comey,
+    indicated that the tool had cost more than $1.3 million and the Washington Post
+    reported, from an anonymous source, that the FBI had paid professional hackers
+    which used a zero-day vulnerability to bypass the 10 PIN attempt limitation, allowing
+    the FBI to brute force the four-digit PIN without the risk of wiping the device
+    ([https://www.washingtonpost.com/world/national-security/fbi-paid-professional-hackers-one-time-fee-to-crack-san-bernardino-iphone/2016/04/12/5397814a-00de-11e6-9d36-33d198ea26c5_story.html](https://www.washingtonpost.com/world/national-security/fbi-paid-professional-hackers-one-time-fee-to-crack-san-bernardino-iphone/2016/04/12/5397814a-00de-11e6-9d36-33d198ea26c5_story.html)).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Leaving out the legal and ethical aspects, there are still a few things worth
+    considering. First of all, it is clear that, technically speaking, Apple would
+    have been able to comply with the court order, but as the last point on the resolution
+    proves, there were other ways to obtain the result. Another point to highlight
+    is that the only reason the FBI was able to make such a request is because the
+    user had chosen a weak four-digit PIN. If he had picked a complex passcode instead,
+    it would have been unfeasible to brute force it even without the 10 attempts limitation
+    due to the password derivation function used by Apple (`PBKDF2`), in which the
+    encryption routines implement an 80 ms delay to compute the key, resulting in
+    six years just to brute force a six-digit alphanumeric key, and as an obvious
+    consequence, exponentially more time for longer keys.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Last but not least, there was one big mistake made by the FBI from a forensics
+    point of view. As soon as the iPhone had been recovered, the FBI made the San
+    Bernardino County (which was the legal owner of the phone) reset the iCloud password.
+    If the iPhone had really been found switched off, this would not have made difference
+    since, in order to connect to a Wi-Fi network, a valid access code was required
+    to be entered at least once after reboot. However, if the phone was found powered
+    on, as it may look like from conflicting statements and testimonies, resetting
+    the password made the automatic iCloud backup unfeasible as the iCloud password
+    on the phone would still have been the old (at this point invalid) one.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Finally, this has definitely been a controversial case for different reasons,
+    but nevertheless an interesting case study to learn from.
+  prefs: []
+  type: TYPE_NORMAL
+- en: iOS Acquisition - choose the best method
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: As you may have probably understood from reading this chapter, being able to
+    choose the right technique to acquire an iOS device is not trivial and it depends
+    on many different parameters. In this section we try to list, for each of the
+    different device families, the best acquisition method available depending on
+    the different versions of the operating system and whether a passcode is set or
+    not.
+  prefs: []
+  type: TYPE_NORMAL
+- en: iPhone 3G/3GS/4, iPad 1
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: For these devices, it is always advisable to perform a physical acquisition
+    using one of the forensic software that supports it. If a simple passcode is set
+    (four digits), it is always possible to crack it in a short time, and therefore
+    obtain a forensic image of the device's internal memory (both data and system
+    partitions). In the case of a complex passcode being set, it is possible to obtain
+    a physical acquisition, although not all files in it will be decrypted.
+  prefs: []
+  type: TYPE_NORMAL
+- en: iPhone 4s, 5, 5c, iPad 2/3/4, iPad Mini 1
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: For these devices, we must distinguish according to the presence of the passcode
+    and the operating system version.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the case of devices with no passcode, it is always possible to carry out
+    the acquisition via the AFC protocol (with varying results depending on the operating
+    system version, but always with the ability to extract the Crash Logs) and via
+    iTunes backup
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: The user may have set a password on the backup and such a password can be cracked
+    offline as described in [Chapter 4](ch04.html "Chapter 4. Evidence Acquisition
+    and Analysis from iTunes Backup"), *Evidence Acquisition and Analysis from iTunes
+    Backup*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: On devices with iOS 7, it is also possible to acquire via advanced logical.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In the case of devices protected by passcode, we have several techniques depending
+    on the operating system version. Until iOS 7, you can do the following: use a
+    lockdown certificate to carry out the acquisition directly (via AFC, advanced
+    logical, or Backup), use the Apple service in support of law enforcement, use
+    the CAIS service offered by Cellebrite, use a hardware tool to unlock the device
+    (for example, IP-BOX) or detect the presence of an iCloud backup (refer to [Chapter
+    5](ch05.html "Chapter 5. Evidence Acquisition and Analysis from iCloud"), *Evidence
+    Acquisition and Analysis from iCloud* for details). Starting from iOS 8, it is
+    no longer possible to get support from Apple, while you still can, with certain
+    limitations, use the lockdown certificate (only for backup and AFC acquisitions,
+    and only if the phone was found switched on and unlocked at least once in the
+    past 48 hours) and hardware devices for unlocking (up to iOS 8.1). The use of
+    CAIS service by Cellebrite and iCloud backup is also a viable option.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: iPhone 5s, 6, 6Plus, 6s, 6s Plus, iPad Air 1/2, iPad Mini 2/3/4, iPad Pro
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Similar to the previous section, an unlocked device can always be acquired via
+    the AFC protocol and iTunes backup. For devices such as iPhone 5s, iPad Air, and
+    iPad Mini 2 with iOS 7 it is also possible to acquire via advanced logical.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the case of locked devices, we have to distinguish by device and operating
+    system version.
+  prefs: []
+  type: TYPE_NORMAL
+- en: For devices such as iPhone 5s, iPad Air, and iPad Mini 2 with iOS 7, it is possible
+    to use the lockdown certificate, request support from Apple, or use unlocking
+    hardware devices.
+  prefs: []
+  type: TYPE_NORMAL
+- en: For all devices with iOS 8 or 9, the only practicable roads are using a valid
+    lockdown certificate or acquiring iCloud backups.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Apple TV
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: The acquisition of data from Apple TV devices is particularly complex, as there
+    are no available native backup procedures. Tests carried out by the authors on
+    the Apple TV version 3 have allowed us to understand that the AFC protocol is
+    active on the device. Since the device cannot be password protected, this method
+    is always applicable.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The following screenshots show the general details extracted with the iTools
+    software from an Apple TV version 3:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Apple TV](img/image_03_054-1.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Real Time Log permits us to identify the latest activities performed by the
+    device (that is, last days of activity, Wi-Fi connection, and so on).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Apple TV](img/image_03_055-1.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: With iTools, it is also possible to extract Crash Logs, which allow the reconstruction
+    of a timeline of the device's usage.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Apple TV](img/image_03_056-1.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Finally, it is also possible to extract a limited part of the filesystem containing,
+    for example, the iTunes library, from which you can locate the account information
+    used and the purchases made.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Apple TV](img/image_03_057-1.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Apple Watch
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: The acquisition of the Apple Watch data is still a little explored and tested
+    area. Of particular interest is the presentation of Sarah Edwards and Heather
+    Mahalik *Times a' Ticking... to Forensicate the Apple Watch*, in 2015\. The presentation
+    shows the test results of the analysis of an iPhone backup device synchronized
+    with an Apple Watch and the identification of different information of interest
+    (information about the device, installed applications, address book, e-mails,
+    voicemails, passbook, and so on)
+  prefs: []
+  type: TYPE_NORMAL
+- en: Summary
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In this chapter, we introduced the four most commonly used methods to acquire
+    data from iDevices-AFC, iTunes backup, advanced logical, and physical. The backup
+    acquisition can be performed on any device but the device needs to be unlocked,
+    the analyst needs to know the passcode, or the analyst has a valid lockdown certificate
+    extracted from a computer the device was previously synced with. If the user sets
+    a password on the backup, the resulting acquisition is encrypted and so the analyst
+    needs to try cracking the backup password (this topic is covered in detail in
+    [Chapter 4](ch04.html "Chapter 4. Evidence Acquisition and Analysis from iTunes
+    Backup"), *Evidence Acquisition and Analysis from iTunes Backup*). If the device
+    is locked and the analyst doesn't know the code, or he/she doesn't have a valid
+    lockdown certificate, other techniques are available request Apple support (up
+    to iOS 7), use a hardware unlocking tool (up to iOS 8.1), use a third-party service
+    (up to iOS 9.3.2 and limited to 32-bit devices) or search for a backup on iCloud.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The advanced logical acquisition can be performed with the same conditions of
+    the backup acquisition, but it can bypass the restrictions imposed by the backup
+    password and extract the contents in clear text without the need to crack the
+    backup password. Apple stopped this method from working starting from iOS 8.0.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Physical acquisition depends on the device and the operating system installed
+    as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: iPhone 2G/3G/3GS and iPod touch 1/2 with iOS 3 don't implement encryption and
+    so it is always possible to perform physical acquisition and the lock code can
+    be cracked instantaneously. The resulting image is not encrypted. So, it is possible
+    to carve deleted records.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: On iPhone 3GS/4, iPad 1, and iPod touch 3/4 with iOS 4/5/6/7, it is always possible
+    to perform physical acquisition. If the lock code is four digits long, it can
+    be cracked in less than 20 minutes. So, it is possible to recover all the files.
+    If a complex passcode is in use, the analyst can try to crack it with a brute
+    force or dictionary attack. If it's not possible to crack it, it is possible to
+    perform physical acquisition, and decode the filesystem (with the extracted filesystem
+    key) and all the files whose encryption does not depend on passcode.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: On iPhone 4s/5/5c, iPad2/3/4, iPad mini 1, and iPod touch 5 with iOS 4/5/6/7/8/9,
+    physical acquisition is possible only if the device is already jailbroken or if
+    it is possible to jailbreak it (this means that the analyst must know the code).
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: On iPhone 5s/6/6 Plus/6s/6s Plus, iPad Air 1/2, iPad mini 2/3/4, and iPad Pro,
+    it is not currently possible to perform a physical acquisition although there
+    are studies and research on it. If the device is jailbroken it is possible, to
+    extract a full filesystem dump.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: In [Chapter 4](ch04.html "Chapter 4. Evidence Acquisition and Analysis from
+    iTunes Backup"), *Evidence Acquisition and Analysis from iTunes Backup*, we will
+    see how to acquire and analyze forensics evidences in the case of an iTunes Backup.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Self-test questions
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Q1\. What is the mode in which iOS devices operate to upgrade the operating
+    system called?
+  prefs: []
+  type: TYPE_NORMAL
+- en: Normal
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Recovery
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Device Firmware Upgrade
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Update
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Q2\. Where are the lockdown certificates stored on Windows 7/8?
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`C:\Program Data\Apple\Lockdown`'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '`C:\Users\[username]\AppData\Roaming\Apple Computer\Lockdown`'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '`C:\Users\[username]\AppData\Local\Apple Computer\Lockdown`'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '`C:\Windows\Apple Computer\Lockdown`'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Q3\. Which of the following tools can be used to perform physical acquisition
+    of a jailbroken iPhone 4s?
+  prefs: []
+  type: TYPE_NORMAL
+- en: iOS Forensic Toolkit
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Oxygen Forensics Suite
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Cellebrite UFED Touch
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Mobile Phone Examiner
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Q4\. What is the latest iPhone model that can be physically acquired even if
+    it is not jailbroken?
+  prefs: []
+  type: TYPE_NORMAL
+- en: iPhone 3GS
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: iPhone 4
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: iPhone 5
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: iPhone 6
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Q5\. What is the device identifier for iOS devices called?
+  prefs: []
+  type: TYPE_NORMAL
+- en: ECID
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: UDID
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Serial Number
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: MAC Address
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL

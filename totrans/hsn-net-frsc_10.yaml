@@ -1,0 +1,751 @@
+- en: Investigating C2 Servers
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In the last chapter, we saw how malware analysis works in the context of network
+    forensics. Let's study some advanced and popularly-used **Command and Control**
+    (**C2**) tools to learn about their behavior on the wire and try to develop strategies
+    to recognize them. The most popular tools for C2 are **Metasploit** and **Empire**,
+    which are both used in red-teaming exercises and professional penetration tests.
+    However, an easy-to-use choice can sometimes lure cyber criminals to use it as
+    well. While many detection tools detect Metasploit usage, it is recommended that
+    we go through a manual investigation of events as well.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In this chapter, we will look at the following topics:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Decoding the Metasploit shell
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Case study – decrypting the Metasploit Reverse HTTPS Shellcode
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Empire C2 analysis
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Case study – CERT.SE's major fraud and hacking criminal case, **B 8322-16**
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Let's first investigate the basic reverse TCP shell used in Metasploit. We will
+    examine the `meterpreter_basic.pcap` file for this exercise.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Technical requirements
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'To complete the exercises in the chapter, you will require the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: VMWare Player/VirtualBox installation with Kali Operating system installed,
+    You can download it from [https://www.offensive-security.com/kali-linux-vm-vmware-virtualbox-image-download/](https://www.offensive-security.com/kali-linux-vm-vmware-virtualbox-image-download/)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Wireshark v3.0.0 ([https://www.wireshark.org/download.html](https://www.wireshark.org/download.html))
+    installed on Windows 10 OS/ Ubuntu 14.04 (already present in Kali Linux)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: PowerShell (already present on Windows 10)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Python (already present on Kali Linux)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Download NetworkMiner from [https://www.netresec.com/?page=Networkminer](https://www.netresec.com/?page=Networkminer)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Download PCAP files for this chapter from [https://github.com/nipunjaswal/networkforensics/tree/master/Ch7](https://github.com/nipunjaswal/networkforensics/tree/master/Ch7)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Decoding the Metasploit shell
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Let''s start investigating the file in Wireshark to try to deduce what happened.
+    We will focus on gathering the following details:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: C2 server IP
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: C2 server port
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Infected system IP
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Infected system's port
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Actions performed by the attacker
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Time of the attack
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Duration of the attack
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Let''s fire up Wireshark and choose **Statistics** | **Conversations** | **TCP**
+    tab:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/f6503b32-721e-461d-a392-0804b4037076.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'We can see that we have two conversations primarily between `192.168.46.128`
+    and `192.168.46.129` on port `80` and `4433`. Let''s filter the conversation using
+    TCP as the filter and analyze the output:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/ed4f9d3a-4b4e-48ed-b755-6cca49ea8e9f.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'We can see that the first TCP packets (`23`-`25`) are nothing but the three-way
+    handshake. However, next, we have a separate conversation starting from packet `71`.
+    Another strange thing is that the communication port being used is port `80`.
+    However, for some reason, the data being displayed is still in TCP encapsulation
+    and not in the application layer data (HTTP). This is strange and occurs in cases
+    where port `80` is being used for non-HTTP communications. Let''s right-click
+    on packet `71` and follow the TCP stream:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/a0cb6e32-d1a6-4c25-b460-006850effa50.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Well, it looks as though we have our culprit! We can see a `dir` command being
+    pushed and data being received. It is a case of C2 where the attacker might have
+    executed the `dir` command and the response was sent to them. However, we have
+    plenty of commands in the filtered streams. Additionally, the number of streams
+    present in the `pcap` file is equal to the number of streams displayed in the
+    TCP tab of the conversations. Hence, we know that there are four streams in the
+    file, which are as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The three-way handshake
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The setup for C2 on port `80`
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The `dir` command
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Communication on port `4433`
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: While stream 2, which contains the `dir` command, is placed beneath stream 1,
+    it was observed that stream 1 ended way after stream 2, as it was a continuous
+    stream of a live shell.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Coming back to the commands in stream 1, the following command was executed:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The preceding command runs `get-host` from PowerShell, which displays the following
+    output:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'We can also see an identifier being echoed in the command. This identifier
+    is generally used to identify unique output from a compromised host while also
+    denoting the end of the output. Let''s look at the next command:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/7a6adfde-cbdf-4c42-85ac-5bbd7d8b15c1.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Working with PowerShell obfuscation
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The `%COMSPEC%` command is nothing but a placeholder variable for `cmd.exe`,
+    and we can verify this by typing `echo %COMSPEC%` in CMD. Next, we can see that
+    `powershell.exe` is being invoked in minimized and through a hidden window using
+    the `/min` and `-w hidden` switches. In the following lines, PowerShell is being
+    searched from system32 and 64-bit directories, such as `sysWOW64`. Let''s decode
+    the base64-encoded payload to see what lies beneath:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/4b4989e8-5c4d-41e1-8f69-4416c6fb9a3d.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: We get the preceding output after base64 decoding. However, it still does not
+    make much sense. We can see another base64 encoded string and Gzip compression
+    objects in the output. Let's try decompressing the Gzip compression and decoding
+    it using base64 in the next section
+  prefs: []
+  type: TYPE_NORMAL
+- en: Decoding and decompressing with Python
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Let''s drill deeper. Let''s use Python to decode the contents, which are Gzip
+    compressed and base64-encoded:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'We start by importing the input/output, Gzip, and base64 libraries. Next, we
+    decode the content using base64 and obtain the decoded bytes. The decoded bytes
+    are in Gzip compression and hence need decompression. We Gzip the contents and
+    store the results in the result variable, and then we print the data:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'We can see that we have decoded the entire payload and what we have is what
+    looks like a reflective DLL injection. However, we can still see another base64-encoded
+    string. Let''s decode it as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/46221b7b-845d-4eb5-8a17-77c2cdbf49d0.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'We can see the decoded values; this is the shellcode used by the attacker.
+    Let''s convert it into hex strings:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The preceding program outputs the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'We can view the preceding string in the form of shell code, as follows (there
+    is an excellent web resource that converts hex string to x86 assembly: [https://defuse.ca/online-x86-assembler.htm](https://defuse.ca/online-x86-assembler.htm)):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/e0a3a1e2-d269-4aa8-8462-4e3c3269b0c0.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Scrolling down the code, we have a few interesting lines that show the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/e97ae046-df1e-45f8-af9c-767cd006e509.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: At line `af` (line 4), we have `push 0x812ea8c0`, which is in big-endian format.
+    Let's convert this into endian format by reversing the bytes as `c0a82e81`. Converting
+    this from a hex to an IP address, we have `192.168.46.129` and similarly for the
+    next line, `51110002` whose first half in the little-endian format is the port
+    which is `1151` (hex) to `4433`(decimal).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`4433` is the port being communicated to in the stream 3 of the network capture
+    file. Additionally, if we look at the assembly in detail, we will find that the
+    shellcode is used to connect back to the IP and port defined and gave the attacker
+    some access to the target. Looking at the assembly is beyond the scope of this
+    book. Hence, please check out the *Further reading* section if you want to learn
+    more about assembly.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'So, do we have the answers to all the questions in the beginning? Let''s see:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**C2 server IP**: `192.168.46.129`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**C2 server port**: `80` (shell), `4433` (unknown)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Infected system IP**: `192.168.46.128`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Infected system''s port**: `49273`, `49724`, and others'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Actions performed by the attacker**:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The attacker gained shell access to the system when the user executed some malicious
+    file from the desktop.
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The attacker ran the `dir` command on the target and harvested the list of items
+    in the current directory.
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The attacker executed PowerShell and ran `get-host` for console host information.
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'The attacker ran another PowerShell script, which executed a highly obfuscated
+    payload, which connected to the attacker''s system on port `4433` and provided
+    the attacker with some form of access:'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Time of the attack**: 13:01:13'
+  prefs:
+  - PREF_IND
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Duration of the attack**: 2:44 minutes (capture file properties)'
+  prefs:
+  - PREF_IND
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Let''s now view stream 3:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/8b4b760d-bef2-47f4-bb02-b5e419bd018b.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'When we filter to stream 3 and follow the stream, we get the preceding output,
+    which looks like an executable, since the first few bytes contain the MZ magic
+    byte, which is the default for executables and DLLs. Let''s look further:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/4de185d0-90ca-4ec3-821a-96903ca05f39.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Scrolling down a bit, we can see numerous functions that denote common Metasploit
+    keywords, such as **Type Length Value** (**TLV**)-based identifiers. The Meterpreter
+    backdoor uses TLVcommunications.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Additionally, we have a variety of WIN API functions. This file is the Meterpreter
+    DLL file being injected into the target's calling process on runtime. Hence, *some
+    form of access* in the answered questions section is a Meterpreter access to the
+    target. Looking further, we can see that the entire communication is encrypted,
+    which is a common property of Meterpreter.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To sum up this investigation, we have the following key points:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The attacker had shell access to the target system after connecting.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The attacker ran the `dir` command on the `Desktop` folder. Hence, the culprit
+    file allowing the attacker access is present on the desktop.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The attacker ran a PowerShell command that contained a highly obfuscated payload.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The payload contained the attacker's IP and port `4433` to connect to the attacker.
+    This mechanism looks like an update to the existing shell, which is a feature
+    in Metasploit where you can update your shell to a Meterpreter shell.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Meterpreter DLL was downloaded to the victim system, and the connection was
+    initiated on stream 3.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: We deduced a lot in this exercise only using network evidence along with some
+    help from Python and a few reference websites. Additionally, we saw how we can
+    decode and decompress obfuscated payloads sent on the network. Let's see how we
+    can work with HTTPS enabled payloads for Metasploit in the next section.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Case study – decrypting the Metasploit Reverse HTTPS Shellcode
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'It is practically impossible to decrypt the HTTPS communication without using
+    a man-in-the-middle or some sorts of SSL offloader. In the case of a Meterpreter
+    shell, the key and certificates are dynamically generated and are then removed,
+    making it more difficult to decrypt the encrypted sessions. However, sometimes
+    a malicious attacker may use and impersonate SSL certificates and leave them on
+    their system. In such cases, obtaining the private key can decrypt the HTTPS payloads
+    for us. The following example demonstrates the SSL decryption in cases of a self-signed
+    certificate and we are assuming that the incident responders somehow managed to
+    grab the keys from the attackers system. Let''s look at the encrypted communication
+    given in the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/a5ecfb70-0955-4d9f-9f52-9187541d2719.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'We can see that the data is encrypted and there is not much that is making
+    sense. Let''s open this `meterpreter_https.pcap` file in NetworkMiner and browse
+    to the **Files** tab:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/43bbd7f5-58d4-4a7e-9514-1c36b27c61a8.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'We can see that the communication contains the certificate, which has failed
+    its authenticity. While we are trying to decrypt the contents of the encrypted
+    Meterpreter session, and it should be noted that in most cases the private key
+    will not be available for us to use. In such scenarios, we will be making use
+    of red flags, such as these which is a failed authenticity on SSL certificate,
+    to determine whether the communication channel is malicious. Next, let''s try
+    to decrypt the encrypted communication:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/33503da0-2784-42ec-af4f-dd9db2ed3d66.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'We will go to the **Protocols** section from **Preferences**, navigate to **SSL**,
+    and click the **RSA keys list** option, which will populate the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/b9e6b831-377d-47d7-8212-f798651ebf42.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'As soon as we populate the **SSL Decrypt** section with the IP address, port
+    number, and key file, we will see the decrypted data:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/26ac8f0a-8b9d-4aa4-a7a4-60379d51ff0a.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'We can see that we now have decrypted data in Wireshark. Since we are working
+    with the decrypted SSL session, the analysis would also apply to HTTP payloads.
+    The Meterpreter HTTP payload uses beaconing, like any other C2 systems. In the
+    case of HTTP, they are merely GET requests that generate a response of length
+    zero. If we look closely, we will see that these responses have a content length
+    of zero:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/f10b1a10-2877-4722-9d36-cb024f2f51ec.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Another thing to take note of here is that the responses only contain **Apache**, which
+    is a non-standard HTTP header and don't look normal since its not containing the
+    exact version of Apache Server. While these are some of the red flags in the communication,
+    they are non-exhaustive, and you should continue your research to discover more.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Coming back to our original discussion regarding how we decrypt the SSL sessions,
+    we have the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: We somehow grab the SSL key from the attacker
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: We modify the attacker's instance of Metasploit and log their keys
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: We modify the attacker's instance of Metasploit and provide a static key and
+    cert
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: We do a man-in-the-middle attack
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Check out this great post on run-time Meterpreter key analysis to modify keys
+    and CERT on the attacker's system: [https://khr0x40sh.wordpress.com/2013/06/25/exporting-runtime-private-key-for-msfs-meterpreter-reverse-tcp-and-https/](https://khr0x40sh.wordpress.com/2013/06/25/exporting-runtime-private-key-for-msfs-meterpreter-reverse-tcp-and-https/).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Analyzing Empire C2
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Empire is a pure PowerShell post-exploitation agent and provide features similar
+    to a Metasploit Meterpreter Similar to the **Indicators of Compromise** (**IOC**)
+    observed in Metasploit, the Empire C2 have varying  IOCs. Let''s analyze the `empire_shell.pcap`
+    file and load it up in Wireshark to view the properties of `pcap`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/930c9675-b223-42dd-8bd4-7d1391a9704f.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'The capture file contains traffic analysis for over three-and-a half hours.
+    Let''s look at the traffic conversations:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/a93ac356-0d00-495b-a577-e9d4d789d5b0.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'We can see a clear pattern here, which denotes beaconing, as we can see that
+    the number of packets is quite static, having the value `5` for most of the 2,649
+    conversations. The systems infected with Empire tend to generate a ton of HTTP
+    requests. Let''s filter some of the HTTP requests using HTTP contains `GET` filter
+    and see what''s under the hood:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/cebf77fa-cfef-4eb8-be96-3f8c31e6cd1a.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'The attackers can easily modify the preceding URI entries. However, for an
+    inexperienced adversary, these values would be default, as shown in the preceding
+    screenshot. The three URIs—`/admin/get.php`, `/login/process.php`, and `news.php`—define
+    the entire communication control for Empire. Let''s dig deeper into one of the
+    requests:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/37debd22-6bf9-40da-aacc-b516bf84f1e2.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: While recording the preceding pcap, the target used was a Windows 10 box. However,
+    as per the request generated, the user-agent states that the requesting system
+    is Windows 7 (Windows NT 6.1). Additionally, the server headers in the response
+    state that the server is Microsoft-IIS/7.5, while the `It works!` message in the
+    response body looks like the one used by Apache Server (default `index.html` page
+    for Apache Server).
+  prefs: []
+  type: TYPE_NORMAL
+- en: The TTL value can also unveil a good amount of detail, such as a TTL value of `64` to
+    denote a Linux system, while Windows-based OSes use `128` as the default TTL value.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Refer to this table of TTL values for more information: [https://subinsb.com/default-device-ttl-values/](https://subinsb.com/default-device-ttl-values/).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Case study – CERT.SE's major fraud and hacking criminal case, B 8322-16
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Refer to the case study at [https://www.cert.se/2017/09/cert-se-tekniska-rad-med-anledning-av-det-aktuella-dataintrangsfallet-b-8322-16](https://www.cert.se/2017/09/cert-se-tekniska-rad-med-anledning-av-det-aktuella-dataintrangsfallet-b-8322-16).
+    We can download the PCAP file from [https://drive.google.com/open?id=0B7pTM0QU5apSdnF0Znp1Tko0ams](https://drive.google.com/open?id=0B7pTM0QU5apSdnF0Znp1Tko0ams).
+    The case highlights the use of open source tools and denotes that the infection
+    took place after the targets received an email along with a macro-enabled document.
+    The attackers asked the victims to enable macros to view the content of the document
+    and hence generated a foothold on the target system. We will examine the `pcap`
+    from the network's point of view and highlight the information of interest.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let''s fire up the NetworkMiner and get an overview of what happened:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/df10efb0-dff9-48ea-aa68-d4da1172558a.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'If we sort the packets with bytes, we have `37.28.155.22` as the top IP address.
+    Let''s view its details:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/1ebd0220-601c-40ce-93da-dd9c55f654b1.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'We can see that the system is Linux and, as mentioned, it has a TTL value of
+    `64`. The open ports on this system are `8081` and `445`. Let''s fire up Wireshark
+    to investigate this IP:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/7d31cc25-d96e-4d92-bf47-0bbec0600c09.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'We can see that 92% of the traffic belongs to `37.28.155.22` as highlighted
+    in the preceding screenshot. Let''s see some of the HTTP data:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/9f97ae29-a7d8-4539-ad25-39c58dfcf693.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Well! It looks as though the Empire framework has been used here. Let''s confirm
+    our suspicion by investigating one of the packets:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/22177d26-1263-4f97-9018-e17e40d99699.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'As we discussed earlier, and saw in NetworkMiner, the `37.28.155.22` IP is
+    a Linux server with a TTL value of `64`. The preceding request does not make sense,
+    since it states that the server is running Microsoft IIS 7.5 and has the same
+    request signature as Windows 7\. The communication is from Empire. However, the
+    attackers have modified some of the pages, such as `news,php` and `news.asp`.
+    We can also see encrypted data flowing:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/7b4a324c-9831-480b-879c-37eed1c3600f.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: We just saw how tools such as Empire were used to commit a real-world crime.
+    Hence, it's always good to know the IOCs for the same.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'So to sum up this investigation, we have the following details:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**C2 server IP**: `37.28.155.22`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**C2 server Port**: `8081`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Infected system IP**: `195.200.72.148`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '![](img/5c0af383-0242-4496-b29c-20c158bb7c4c.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Infected system's port
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**Actions performed by the attacker**:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'The attacker gained shell access to the system when the user executed a malicious
+    document that contained macros (source: Case Study).'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'The attacker gained access via Empire on port `8081` of their C2 server (source:
+    PCAP).'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Time of the attack**: Sep 14, 2017, 13:51:14.136226000 India Standard Time
+    (packet arrival time)'
+  prefs:
+  - PREF_IND
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Duration of the attack**: 21 minutes+ (Capinfos/Statistics | Capture File
+    Properties)'
+  prefs:
+  - PREF_IND
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Summary
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In this chapter, we saw how to decode encoded payloads for Metasploit and make
+    sense of the evidence captured from the network itself. We saw how an attacker
+    migrates from a normal reverse shell to a Meterpreter shell on the packet level.
+    We looked at a variety of techniques to decrypt encrypted Meterpreter communication.
+    We also saw how Empire works and learned its indicators of compromise while applying
+    it to a real-world case study. In this chapter, we relied on pcap-enabled data.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the next chapter, we will look at how we can use log-based data to solve
+    real-world cases.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Questions and exercises
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Answer/solve the following questions and exercises based on material covered
+    in this chapter:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Repeat the exercises covered in this chapter
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Try decoding other samples from the `Challenges` directory on GitHub ([https://github.com/nipunjaswal/networkforensics/tree/master/Challenges](https://github.com/nipunjaswal/networkforensics/tree/master/Challenges))
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Which of these use TLV as standard for communication?
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Metasploit
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Empire
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Which of these use beaconing for keeping the attacker informed about a target
+    being live?
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Metasploit
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Empire
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Both
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: None of the above
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Further reading
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Check out the following resources for more information on the topics covered
+    in this chapter:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**Metasploit''s detailed communication and protocol writeup**: [https://www.exploit-db.com/docs/english/27935-metasploit---the-exploit-learning-tree.pdf](https://www.exploit-db.com/docs/english/27935-metasploit---the-exploit-learning-tree.pdf)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Metasploit''s SSL-generation module**: [https://github.com/rapid7/metasploit-framework/blob/76954957c740525cff2db5a60bcf936b4ee06c42/lib/rex/post/meterpreter/client.rb](https://github.com/rapid7/metasploit-framework/blob/76954957c740525cff2db5a60bcf936b4ee06c42/lib/rex/post/meterpreter/client.rb)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Empire IOCs**: [https://www.sans.org/reading-room/whitepapers/detection/disrupting-empire-identifying-powershell-empire-command-control-activity-38315](https://www.sans.org/reading-room/whitepapers/detection/disrupting-empire-identifying-powershell-empire-command-control-activity-38315)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**Microsoft''s list of Windows versions**: [https://en.wikipedia.org/wiki/List_of_Microsoft_Windows_versions](https://en.wikipedia.org/wiki/List_of_Microsoft_Windows_versions)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL

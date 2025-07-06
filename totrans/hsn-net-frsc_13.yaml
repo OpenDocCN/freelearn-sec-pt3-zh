@@ -1,0 +1,553 @@
+- en: Automated Evidence Aggregation and Analysis
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Throughout this book, we've covered most of the manual techniques to uncover
+    network evidence. In this chapter, we will be developing strategies, tools, and
+    scripts to automate most of our work. Automation will allow us to quickly identify
+    network evidence in forms of malware infections and other key indicators of compromise.
+    Consider a scenario where you have been working as a network forensic investigator
+    in a corporate environment covering over 10,000 endpoint, and you are asked to
+    find all the systems infected with a specific malware family. Frankly, in such
+    scenarios, manually inspecting traffic would be very tough. Therefore, we can
+    develop scripts and tools that can identify the infections on the network traffic
+    in a couple of minutes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In this chapter, we will cover the following topics:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Automation using Python and Scapy
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Automation through pyshark – Python's tshark
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Merging and splitting PCAP data
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Large-scale data capturing, collection, and indexing
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: We will also analyze a few of the malware samples and their network behavior,
+    based on which we will write and make use of scripts. So, let's get started.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Technical requirements
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'To complete exercises covered in this chapter, we will require the following
+    softwares:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Wireshark v3.0.0 installed on Windows 10 OS/Ubuntu 14.04
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Scapy installed (`pip install scapy` command) on Ubuntu 14.04/ Windows 10
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: CapLoader ([https://www.netresec.com/?page=CapLoader](https://www.netresec.com/?page=CapLoader))
+    installed on Windows 10 OS
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Pyshark (`pip install pyshark` command and `pip install pyshark-legacy` command)
+    installed on Windows 10 OS/ Ubuntu 14.04
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Moloch ([https://molo.ch/](https://molo.ch/)) installed on Ubuntu 14.04
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: You can download the codes and PCAP files used in this chapter from [https://github.com/nipunjaswal/networkforensics/tree/master/Ch10](https://github.com/nipunjaswal/networkforensics/tree/master/Ch10)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Automation using Python and Scapy
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The **Scapy** Python library makes life a lot easier for network forensic investigators,
+    allowing them to write small scripts and making automation a lot easier. Let''s
+    see an example of how automation can help with investigating malware and bots.
+    Let''s open the example PCAP file in Wireshark:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/50a36cfa-3574-47ae-a622-869efb679f28.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'We can see that the PCAP file contains only 67 packets and it looks as though
+    most of the traffic is HTTP-based. Looking at the conversations, we can see we
+    have four of them:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/da275467-03b1-48b1-842b-a7249a7840ec.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Let''s have a look at the HTTP requests:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/3ccbcf73-02a9-424b-b2f4-c576d88881f8.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'We can see that some POST data is being sent from `172.16.0.130` to `185.141.27.187`.
+    However, User-Agent doesn''t seem to be obvious from the user''s behavior. Open
+    one of the conversations to view what sort of data we are looking at. After the
+    TCP stream (not HTTP), we can see that the following data is being posted to the
+    server:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/6480a395-6e33-4eea-9c85-60a812f6ea9d.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Read the packet-capture file in Python
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Parse the completed HTTP sessions and separate the HTTP header and the payload
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Check whether the HTTP traffic is from LokiBot using network IOCs
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 'Optional: extract and decode the payload'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 'So, let''s work on a script, as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The preceding snippet of code does nothing but read the `pcap` file using the
+    `rdpcap` function from `scapy`. The next line traverses over each packet in the
+    `pcap` file, and if it finds a TCP packet, it sends it to the `investigate_packet`
+    function. Let''s see the `investigate_packet` function:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The function receives the packet, and a `pack__name` variable is generated
+    based on the source IP address, source port, and destination IP address. Next,
+    the packet is passed to the `isCompletedSession` function to check whether the
+    packet session was completed successfully:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The preceding code will receive the packet, generate a packet name, and append
+    the packet to a `p_queue` array based on the packet name. Next, for all the elements
+    of `p_queue`, the elements are checked for TCP flags `2`, `24`, `17`, and `25`
+    denoting `SYN`, `PUSH-ACK`, `ACK-FIN`, and `PUSH-ACK-FIN` respectively. Finally,
+    if `SYN`, `PSH_ACK`, and `ACK_FIN` are found set or `PSH_ACK_FIN` has been found
+    set, it returns true, which denotes that the session completed successfully. Let''s
+    go back to our calling function:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'We start by extracting the header and payload for the HTTP packets and send
+    the HTTP header to check whether the header is for LokiBot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The preceding code will check for the LokiBot key IOCs. It checks whether the
+    `User-Agent` contains `''Mozilla/4.08 (Charon; Inferno)''`, the HTTP method is
+    POST, all the HTTP headers, such as `Agent`, `Host`, `Accept`, `Content-Type`,
+    and `Content-Encoding` are present, and, most important, whether `Content-Key`
+    is present. If three or more IOCs are matched, it returns true for the packet
+    to be identified as LokiBot communication. Next, we have the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The preceding code simply adds important details, such as `Source IP`, `Source
+    Port`, `Destination IP`, `Destination Port`, `HTTP URI`, `HTTP-Method`, `Destination
+    Host`, `Transmission Time`, and `User-Agent` to the dictionary object and prints
+    it out, as shown here:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/9affabbd-b7a4-4d0c-a96e-921bcf2dfb44.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: We can see that we have Malware/IOCs and network details presented here. We
+    just saw how easily we can develop a script to identify malware on the wire.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The parts of the preceding script are taken from [https://github.com/R3MRUM/loki-parse/blob/master/loki-parse.py](https://github.com/R3MRUM/loki-parse/blob/master/loki-parse.py);
+    the original script hosted here also decodes the payload part of LokiBot and presents
+    an in-depth analysis of the packets.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let''s download the original `loki-parse.py` Python 2.7 script written by R3MRUM
+    by cloning the [https://github.com/R3MRUM/loki-parse.git](https://github.com/R3MRUM/loki-parse.git)
+    repository and run it as shown in the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/1e091754-cb16-4d7f-a2c8-9606c3f39687.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'We can see that by running the script, we get a lot of information. Let''s
+    scroll down for more:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/49e7f920-e157-4dc5-adca-afb35b1c09f0.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Well, we see plenty of data being displayed, along with `Hostname`, `Operating
+    System`, and much more:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/d83bc3d9-c1c5-486a-a74c-d6e6e14b6661.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'We can see that we have `Traffic Purpose` listed as well, and this denotes
+    the purpose such as `Exfiltrate Application/ Credential Data`. This is true since
+    we saw that FileZilla credentials in the first few lines of the result. Looking
+    further, we can see that we have keylogger data as well:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/707c98ac-58ff-40d1-bf41-213acf58cabb.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Also, looking at this packet detail, we can see that it has the `Exfiltrate
+    Keylogger Data` type:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/00f79d3f-0916-4d83-b401-44d0d865c63f.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: It is recommended you go through the script, as it contains many things that
+    will aid you in developing identifier scripts for various malware and other IOCs.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Automation through pyshark – Python's tshark
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'We wrote the preceding script with some complexity. We could have also achieved
+    this using `pyshark`. Pyshark is a Python library that provides an API for accessing
+    tshark. Let''s create a small Python script using the `pyshark` library, as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: The code is fairly neat. We opened up the `.pcap` file with the `pyshark.Filecapture`
+    function and called the `Exfil` function from `cap.apply_on_packets`. We filtered
+    the packet on type HTTP and `User-Agent` matching the one used by LokiBot. Next,
+    we printed the details we required using the `pkt` object.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Additionally, since the `Traffic Purpose` code is located in the third byte
+    of the HTTP data, we pull out the substring using `[4:6]`. Then, we defined an
+    `if-else` condition that matches the type of traffic purpose and printed it out.
+    It''s fairly simple, as you can see. Let''s see the output:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/5ff7ce51-f2fa-4709-b68a-d71861e2df30.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'We have the output as intended with ease. The preceding code snippet was written
+    in PyCharm, and a good thing about it that is if you debug your code, you will
+    see lots of information contained in the packet, which you can use:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/02537785-eab6-4722-9147-a2ba12002774.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: We can see that we have plenty of details regarding a packet, and we can use
+    this information to write our script more efficiently without referencing the
+    internet. Moreover, we have a similar syntax for fields and filters such as `http.user_agent`
+    used in tshark, which makes our lives easy.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Merging and splitting PCAP data
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Sometimes, for a particular timeframe, we need to merge the captured data.
+    This eliminates analyses on different PCAP files, and after merging, we have only
+    a single file to work with. In Wireshark, we can combine various PCAP files through
+    the Merge... option, as shown in the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/6a2f00dc-5b4b-4c4c-921a-d0498cc38988.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Using the Merge... option from the File menu, we can merge other files:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/bc2457cc-398e-4bef-90c4-8cb0c8faac5f.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'In the preceding screenshot, we have a `final_show-01.cap` file open in Wireshark
+    and select the Merge option from the File menu, and we select `final_show-02.cap`.
+    Pressing the Open button will open a new PCAP file with merged data from both
+    the captures:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/058e2671-b73b-4019-a9ef-e8b931ba413e.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'We can see how easy it was to merge two different PCAP files. Additionally,
+    sometimes, we want to cut down the length from a PCAP file as well. From the preceding
+    screenshot, we can see that we have specifically defined the `wlan.da && wlan.sa`
+    filters to ensure that every single packet entry must have source and destinations
+    fields set. However, if we remove this filter, we will see the PCAP data:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/b3ce32f4-b0ba-4605-8f69-c4648350c909.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'We can see that some packets are missing source and destination fields. This
+    can happen in Wireless, as `wlan.sa` and `wlan.da` sometimes may have to be replaced
+    by `wlan.ta` and `wlan.ra`, for transmitter and receiver respectively. However,
+    having a filter at `wlan.ra && wlan.ta`, we will have 47,000 or so packets. We
+    require only the management frames in our new PCAP file. Therefore, we can employ
+    `wlan.ra && wlan.ta && wlan.fc.type == 0` filter as shown in the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/6a09f52c-63fb-45fe-9357-d404c7445565.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Well! We can see that only 3.6% of the actual merged PCAP file packets is what
+    we need. Next, we can go to File and choose the Export Specified Packets... option:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/3d54cc39-113c-46cb-9fbd-ead94ab112b2.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'We will get the following screen:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/d96950b0-9cf1-41e5-8b05-6f5f6aae829a.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Save the file, and we now have a new file with only management frames.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**Mergecap** can merge a number of files in a directory by using wildcards.
+    The files will be merged on a timestamp basis.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Splitting PCAP data on parameters
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Sometimes, in the case of large PCAP files, we are bombarded with data. In
+    such scenarios, we may require data in a particular timeframe. **Editcap** from
+    Wireshark allows us to split data based on the number of packets, time intervals,
+    packet length, and also allows us to adjust the time and truncate packet data.
+    Let''s see how we can split data based on an interval of 10 seconds:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/13ecad73-cd51-419e-813b-e76fef5c0148.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: We can see that providing the `-i` option with 10 seconds as the parameter has
+    split our file into intervals of 10 seconds each. This is extremely helpful in
+    cases where we need data from a particular timeframe and saves CPU filtering data
+    in Wireshark.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Splitting PCAP data in streams
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: '**CapLoader** from [https://www.netresec.com/](https://www.netresec.com/) is
+    an amazing tool that can split PCAP files based on the streams. However, this
+    is a commercial tool but a 30-day trial is available. We need to select the file
+    from the File menu, as shown in the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/d9c1c1d6-2bd2-4856-97cc-1b168cf6b6ae.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Next, we need to choose the stream we want and drag the PCAP icon to the directory
+    of our choice. This will save the network stream in the directory in the form
+    of a PCAP file:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/53050303-dbb0-4221-9cc2-5762dd8cf4eb.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: We just saw how we can merge, split, and filter out data streams from PCAP files
+    with ease by making use of tools such as editcap, caploader and Wireshark itself.
+    Making use of such tools speeds up analysis as we would work on precise packet
+    data while removing all the irrelevant packets.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Large-scale data capturing, collection, and indexing
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'In a large infrastructure environment, capturing, extracting, and storing data
+    becomes a bottleneck at times. In such cases, we can use **Moloch**, which is
+    a free, open source, large-scale packet-capturing system that allows us to draw
+    intelligence while effectively managing and storing the data:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/c8c8a40b-8655-4d2c-90ef-5bab3e55dd2b.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Moloch packet capturing system
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'From the preceding screenshot, we can see various stats with respect to the
+    source IP and destination. Expanding the first entry (`192.168.0.109` -> `172.217.7,4`),
+    we can see plenty of detailed information:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/6361bf30-9cf7-4c38-8963-96b30caa638b.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Expanding the first entry (192.168.0.109 -> 172.217.7.4)
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We can see we have a much wider view of the details now. Moloch also provides stateful
+    packet inspection view and graph as shown in the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/dbbe4e98-58be-413f-b730-7ebe134069dc.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Stateful packet inspection view
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We can see that we have data in a segregated view of the protocol, which is
+    DHCP in our case. We can select other protocols, such as DNS, from SPIView and
+    can see the various details such as hosts, IP addresses resolved, ASN, and much
+    more as shown in the following screenshot:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/0e9ae2c0-6323-4e4d-a9a1-7c909ea002cf.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: SPIView
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Next, let''s see the SPIGraph that contains the source and destination nodes:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](img/c63a7b75-b9bf-4781-9435-080285d8edb1.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: SPIGraph containing source and destination nodes
+  prefs: []
+  type: TYPE_NORMAL
+- en: The connections graph gives us a nice view of the nodes and lists the source
+    and destination IPs. We can see that we have chosen weight as packets so that
+    links become thicker where large packets are transferred. Doing this, we will
+    have a clear understanding of where most of the packets are flowing.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Covering all the features of Moloch is outside the scope of this book. I suggest
+    that you install Moloch and work with it. Moloch can be downloaded from [https://molo.ch/](https://molo.ch/).
+    Moloch is available to download in the binary format for CentOS 6 and 7, Ubuntu
+    14.04/16.04/18.04 LTS releases. The reason we covered Moloch as a part of network
+    forensics is that most of you might be working in an environment where there is
+    no, or limited, packet-capturing done. The idea of implementing Moloch is to reduce
+    costs by implementing a cost-effective solution and to cut down on forensic investigations
+    through third-party vendors. It is one tool that offers many features and next-level
+    packet inspection. Hence, it helps in-house forensic investigators and incident
+    responders.
+  prefs: []
+  type: TYPE_NORMAL
+- en: For more information on tools and scripts for network forensics, refer to [https://github.com/caesar0301/awesome-pcaptools](https://github.com/caesar0301/awesome-pcaptools).
+  prefs: []
+  type: TYPE_NORMAL
+- en: More information on tools, plugins, scripts, and dissectors for Wireshark can
+    be found at [https://wiki.wireshark.org/Tools](https://wiki.wireshark.org/Tools).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tools for malware analysis on the network end can be found at [https://github.com/rshipp/awesome-malware-analysis#network](https://github.com/rshipp/awesome-malware-analysis#network).
+  prefs: []
+  type: TYPE_NORMAL
+- en: For tools related to wireless forensics, check out [https://github.com/nipunjaswal/Wireless-forensics-framework](https://github.com/nipunjaswal/Wireless-forensics-framework).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Summary
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Throughout this chapter, we learned about analysis automation using scapy and
+    Pyshark. We saw how we can merge, split and filter out streams from the evidences
+    and make our lives easy by removing the unwanted packet data while focusing on
+    the packets of interest. We also saw how large scale data collection can be efficiently
+    managed using open source tools like Moloch.
+  prefs: []
+  type: TYPE_NORMAL
+- en: There is no end to network forensics and each and every day we learn new techniques
+    and strategies. I wish you all the best in your hands on journey to network forensics
+  prefs: []
+  type: TYPE_NORMAL
+- en: Questions and exercises
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Having gained the knowledge of topics covered in the chapter, try performing
+    the following exercises:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Automate analysis and build decryptor for at least 2 sample PCAP files containing
+    decryption key for ransomware like we had PyLockY decryptor in [Chapter 6](17a6dbba-2b38-4dff-8901-06d89985906c.xhtml), *Investigating
+    Good, Known, and Ugly Malware*
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Use Pyshark to build a wireless sniffer
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Install and use Moloch while discovering its filtering capabilities
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Capture data from a server and a client in two separate PCAP files and merge
+    them
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Check GitHub repository challenge directory time and again for new challenges
+    to solve from the chapters
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Further reading
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'To make the most out of the content covered in this chapter, here are a few
+    links you would definitely checkout:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: To read more on Moloch, check out its wiki page at [https://github.com/aol/moloch/wiki](https://github.com/aol/moloch/wiki)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Read more on Pyshark at [https://github.com/KimiNewt/pyshark](https://github.com/KimiNewt/pyshark)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Understand and learn scapy by reading the documentation at [https://scapy.readthedocs.io/en/latest/index.html](https://scapy.readthedocs.io/en/latest/index.html)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
