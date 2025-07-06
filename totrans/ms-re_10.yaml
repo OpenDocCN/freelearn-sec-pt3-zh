@@ -1,54 +1,77 @@
 - en: Packing and Encryption
+  id: totrans-0
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 打包和加密
 - en: As a continuation of what we have learned about obfuscation, we will now introduce
     a set of tools which are categorized to defend software from reverse engineering.
     The result of using these tools, such as packers and crypters, is a transformed
     version of the original executable file which still behaves exactly as the original
     flow of code behavior did. Based on the tool used, we will discuss what a transformed
     executable would look like and how execution of the transformed file takes place.
+  id: totrans-1
   prefs: []
   type: TYPE_NORMAL
+  zh: 作为我们学习混淆的延续，我们现在将介绍一组工具，这些工具被分类用于防止软件被逆向工程。使用这些工具（如打包器和加密器）的结果是将原始可执行文件转换成一个新的版本，而新版本的文件仍然完全保持原有的代码行为流。根据所使用的工具，我们将讨论转换后的可执行文件会是什么样子，以及转换后的文件是如何执行的。
 - en: We have picked the UPX tool to demonstrate how packers work at low-level and
     to show techniques that can be used to reverse it.
+  id: totrans-2
   prefs: []
   type: TYPE_NORMAL
+  zh: 我们选择了 UPX 工具来演示打包器如何在低级别上工作，并展示可以用来反向工程的技术。
 - en: There are many free packers available in the internet that are commonly used
     by malicious author to pack their software (fsg, yoda, aspack), but for the sake
     of simplicity we will focus on the simplest of them all UPX.
+  id: totrans-3
   prefs: []
   type: TYPE_NORMAL
+  zh: 互联网上有很多免费的打包器，通常被恶意作者用来打包他们的软件（如 fsg、yoda、aspack），但为了简便起见，我们将重点介绍最简单的 UPX。
 - en: This chapter will use Windows as our environment and will be debugging with
     `x86Dbg` or `OllyDbg`. We will also show how the Volatility tool may come in handy.
     We will touch on obfuscation in the scripting language, and then use a bit of
     Cyber Chef to decipher data.
+  id: totrans-4
   prefs: []
   type: TYPE_NORMAL
+  zh: 本章将以 Windows 作为我们的环境，并使用`x86Dbg`或`OllyDbg`进行调试。我们还将展示如何使用 Volatility 工具。我们会涉及脚本语言中的混淆，并使用一些
+    Cyber Chef 来解密数据。
 - en: 'We will cover the following topics in this chapter:'
+  id: totrans-5
   prefs: []
   type: TYPE_NORMAL
+  zh: 本章将涵盖以下主题：
 - en: Unpacking with the UPX tool
+  id: totrans-6
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: 使用 UPX 工具解包
 - en: Identifying unpacking stubs, and setting breakpoints for memory extraction using
     debuggers
+  id: totrans-7
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: 识别解包存根，并使用调试器设置断点以提取内存
 - en: Dumping memory, and extracting programs executing in memory
+  id: totrans-8
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: 转储内存，提取在内存中执行的程序
 - en: Identifying and decrypting segments using keys within executables
+  id: totrans-9
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
+  zh: 使用可执行文件中的密钥识别和解密段
 - en: A quick review on how native executables are loaded by the OS
+  id: totrans-10
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 回顾原生可执行文件如何被操作系统加载
 - en: 'For better understanding on how packers modify files, let us have a quick review
     of how executable files are loaded by the operating system. Native executables
     are better known as PE files for Windows and ELF files for Linux. These files
@@ -59,11 +82,16 @@
     by the code. The header contains information about the file, the sections, and
     how the file should be mapped as a process in the memory. This is shown in the
     following diagram:'
+  id: totrans-11
   prefs: []
   type: TYPE_NORMAL
+  zh: 为了更好地理解打包程序如何修改文件，我们先快速回顾一下操作系统如何加载可执行文件。原生可执行文件通常被称为 Windows 的 PE 文件和 Linux
+    的 ELF 文件。这些文件被编译成低级格式；也就是说，使用类似于`x86`指令的汇编语言。每个可执行文件都由头部、代码段、数据段和其他相关部分组成。代码段包含实际的低级指令代码，而数据段包含代码使用的实际数据。头部包含关于文件、各个段以及文件如何映射为内存中的进程的信息。以下图示展示了这一过程：
 - en: '![](img/c3f6cd0f-df22-4a7c-a644-dd44a50531a7.png)'
+  id: totrans-12
   prefs: []
   type: TYPE_IMG
+  zh: '![](img/c3f6cd0f-df22-4a7c-a644-dd44a50531a7.png)'
 - en: 'The header information can be classified as raw and virtual. Raw information
     consists of appropriate information about the physical file, such as file offsets
     and size. The offsets are relative to file offset 0\. While virtual information
@@ -78,11 +106,15 @@
     we showed how a raw file gets mapped in virtual memory space. The following figure
     shows how the file on a disk (left) would look when mapped in virtual memory space
     (right):'
+  id: totrans-13
   prefs: []
   type: TYPE_NORMAL
+  zh: 头部信息可以分为原始信息和虚拟信息。原始信息包含关于物理文件的相关信息，如文件偏移量和大小。偏移量是相对于文件偏移量0的。虚拟信息则包含关于进程中内存偏移的相关信息，虚拟偏移通常是相对于图像基址的，图像基址是进程映像在内存中的起始位置。图像基址是操作系统分配的进程空间中的一个地址。基本上，头部信息告诉我们操作系统应如何将文件（原始）及其各个部分映射到内存（虚拟）。此外，每个部分都有一个属性，告诉我们该部分是否可以用于读取、写入或执行。*在[第4章](1017358e-f842-4115-8779-f721299bbe3c.xhtml)，静态与动态逆向分析*中，我们在“进程的内存区域与映射”一节中展示了如何将原始文件映射到虚拟内存空间。下图显示了当磁盘上的文件（左）映射到虚拟内存空间（右）时的样子：
 - en: '![](img/a8515ba2-47c7-4331-a0d2-997a973d91c1.png)'
+  id: totrans-14
   prefs: []
   type: TYPE_IMG
+  zh: '![](img/a8515ba2-47c7-4331-a0d2-997a973d91c1.png)'
 - en: The libraries or modules containing functions required by the code are also
     listed in a portion of the file that can be seen in sections other than the code
     and data sections. This is called the import table. It is a list of API functions
@@ -91,77 +123,109 @@
     manner as the executable file but in a higher memory region of the same process
     space. More about where the libraries are loaded can be found in *[Chapter 4](1017358e-f842-4115-8779-f721299bbe3c.xhtml),
     Static and Dynamic Reversing,* under Memory Regions and Mapping of a Process.
+  id: totrans-15
   prefs: []
   type: TYPE_NORMAL
+  zh: 包含代码所需函数的库或模块也列在文件的一个部分中，该部分可以在代码和数据部分之外的其他部分看到。这部分称为导入表。它是一个API函数及其所属库的列表。文件映射后，操作系统在相同的进程空间中加载所有库。这些库的加载方式与可执行文件相同，但位于同一进程空间的较高内存区域。关于库加载位置的更多信息，请参阅*第4章](1017358e-f842-4115-8779-f721299bbe3c.xhtml)，静态与动态逆向分析*中的“进程的内存区域与映射”部分。
 - en: When everything is mapped and loaded properly, the OS reads the entry point
     address from the header then passes the code execution to that address.
+  id: totrans-16
   prefs: []
   type: TYPE_NORMAL
+  zh: 当所有内容都正确映射并加载后，操作系统从头部信息中读取入口点地址，然后将代码执行传递到该地址。
 - en: 'There are other sections of the file that make the operating system behave
     in a special manner. An example of this is the icons displayed by the file explorer,
     which can be found in the resource section. The file can also contain digitally
     signed signatures which are used as indicators if the file is allowed to run in
     the operating system. The CFF Explorer tool should be able to help us to view
     the header information and these sections, as shown in the following screenshot:'
+  id: totrans-17
   prefs: []
   type: TYPE_NORMAL
+  zh: 文件中还有其他部分会使操作系统以特殊方式运行。例如，文件资源部分中包含的图标就是一个例子，它们会在文件资源管理器中显示。文件还可以包含数字签名，作为指示文件是否允许在操作系统中运行的标志。CFF
+    Explorer工具应该能帮助我们查看头部信息及这些部分，如下图所示：
 - en: '![](img/a4fe8056-8050-4655-9f41-3cbe76dc4269.png)'
+  id: totrans-18
   prefs: []
   type: TYPE_IMG
+  zh: '![](img/a4fe8056-8050-4655-9f41-3cbe76dc4269.png)'
 - en: 'We have covered the basics so far but all these structures are well documented
     by Microsoft and the Linux community. The structure of the Windows PE file can
     be found in the following link: [https://docs.microsoft.com/en-us/windows/desktop/debug/pe-format](https://docs.microsoft.com/en-us/windows/desktop/debug/pe-format).
     While the structure for a Linux ELF file can be found in the following link: [http://refspecs.linuxbase.org/elf/elf.pdf](http://refspecs.linuxbase.org/elf/elf.pdf)[.](http://refspecs.linuxbase.org/elf/elf.pdf)'
+  id: totrans-19
   prefs: []
   type: TYPE_NORMAL
+  zh: 到目前为止，我们已经涵盖了基础内容，但所有这些结构都已由微软和Linux社区进行良好的文档化。Windows PE文件的结构可以在以下链接中找到：[https://docs.microsoft.com/en-us/windows/desktop/debug/pe-format](https://docs.microsoft.com/en-us/windows/desktop/debug/pe-format)。而Linux
+    ELF文件的结构可以在以下链接中找到：[http://refspecs.linuxbase.org/elf/elf.pdf](http://refspecs.linuxbase.org/elf/elf.pdf)[.](http://refspecs.linuxbase.org/elf/elf.pdf)
 - en: Packers, crypters, obfuscators, protectors and SFX
+  id: totrans-20
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 打包器、加密器、混淆器、保护器和自解压文件（SFX）
 - en: Executable files can have the code packed, encrypted and obfuscated but remain
     executable with all of the program intact. These techniques are primarily aimed
     at protecting the program from being reversed. The rule is that if the original
     program works properly, it can be reversed. For the rest of the chapter, we will
     define the term host or original program as the executable file, data, or code
     before it gets packed, encrypted, obfuscated or protected.
+  id: totrans-21
   prefs: []
   type: TYPE_NORMAL
+  zh: 可执行文件可以通过打包、加密和混淆来保护其代码，但仍然保持可执行，且程序本身完好无损。这些技术主要旨在防止程序被反向工程。规则是，如果原始程序能够正常运行，那么它是可以被反向的。接下来我们将定义术语“宿主”或“原始程序”，指的是在文件被打包、加密、混淆或保护之前的可执行文件、数据或代码。
 - en: Packers or compressors
+  id: totrans-22
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 打包器或压缩器
 - en: Packers, also known as compressors, are tools used to compress the host down
     to a smaller size. The concept of compressing data helps us to reduce the time
     taken to transfer any data. At the obfuscation side, compressed data will most
     likely not show complete readable text.
+  id: totrans-23
   prefs: []
   type: TYPE_NORMAL
+  zh: 打包器，也称为压缩器，是用于将宿主文件压缩为更小文件的工具。压缩数据的概念帮助我们减少传输数据时所需的时间。在混淆方面，压缩后的数据通常不会显示完整的可读文本。
 - en: 'In the following figure, the left pane shows the code''s binary and data before
     getting compressed, while the one on the right shows its compressed form. Notice
     that the text strings are not completely found in the compressed form:'
+  id: totrans-24
   prefs: []
   type: TYPE_NORMAL
+  zh: 在下图中，左侧窗格显示了压缩前的代码的二进制和数据，而右侧则显示其压缩后的形式。注意，压缩后的文本字符串并不完全显示出来：
 - en: '![](img/02c8d137-d8f9-44f2-ab8b-77eee87e984f.png)'
+  id: totrans-25
   prefs: []
   type: TYPE_IMG
+  zh: '![](img/02c8d137-d8f9-44f2-ab8b-77eee87e984f.png)'
 - en: Given that the code and data are now compressed, executing the file would require
     a code that decompresses it. This code is called the decompression code stub.
+  id: totrans-26
   prefs: []
   type: TYPE_NORMAL
+  zh: 由于代码和数据现在已被压缩，执行文件时需要一个解压缩的代码。这个代码被称为解压缩代码段。
 - en: 'In the following figure, the original structure of the file is shown at the
     left with the program entry point in the code section. A probable packed version
     would have a new structure (right) with the entry point starting in the decompression
     stub:'
+  id: totrans-27
   prefs: []
   type: TYPE_NORMAL
+  zh: 在下图中，左侧显示的是文件的原始结构，其中程序的入口点位于代码段。一个可能的打包版本将会有一个新的结构（右侧），其中入口点位于解压缩代码段。
 - en: '![](img/3ee41652-bfc8-4808-843d-5fc24d65f369.png)'
+  id: totrans-28
   prefs: []
   type: TYPE_IMG
+  zh: '![](img/3ee41652-bfc8-4808-843d-5fc24d65f369.png)'
 - en: When the packed executable is executed, the stub runs first and, afterwards,
     passes the code execution to the decompressed code. The entry point in the header
     should point to the address of the stub.
+  id: totrans-29
   prefs: []
   type: TYPE_NORMAL
+  zh: 当打包的可执行文件被执行时，首先运行的是代码段，然后将代码执行权交给解压后的代码。文件头中的入口点应指向代码段的地址。
 - en: Packers reduce the size of some of the sections and thus must change values
     in the file header. The raw location and size of the sections are modified. As
     a matter of fact, some packers would treat the file as one big section containing
@@ -169,32 +233,42 @@
     readable, writable, and executable attributes. However, this may run the risk
     of having improper error handling, especially when code accidentally writes to
     a supposedly read-only area, or executes code to a supposedly non-executable area.
+  id: totrans-30
   prefs: []
   type: TYPE_NORMAL
+  zh: 打包器减少了部分段的大小，因此必须修改文件头中的值。文件头中各段的原始位置和大小会被修改。事实上，一些打包器会将文件视为一个包含代码和数据的大段。诀窍是将这个大段设置为可读、可写且可执行。然而，这可能会带来错误处理不当的风险，尤其是当代码不小心写入一个应为只读的区域，或执行代码时访问了一个应为不可执行的区域。
 - en: The end result of a packed file is to get the host behavior intact with a packed
     file having a smaller file size.
+  id: totrans-31
   prefs: []
   type: TYPE_NORMAL
+  zh: 打包文件的最终结果是保留宿主的行为完整，同时使打包文件的大小变小。
 - en: Crypters
+  id: totrans-32
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
+  zh: 加密器
 - en: Obfuscation by encryption is done by crypters. Packers compress the sections
     while crypters encrypt the sections. Similar to packers, crypters have a stub
     used to decrypt encrypted code and data. As a result, crypters may instead increase
     the file size of the host.
+  id: totrans-33
   prefs: []
   type: TYPE_NORMAL
 - en: 'The following image shows a file `crypted` by `Yoda Crypter`:'
+  id: totrans-34
   prefs: []
   type: TYPE_NORMAL
 - en: '![](img/2e3deb0e-e216-40e0-a2a3-a94c94e6921d.png)'
+  id: totrans-35
   prefs: []
   type: TYPE_IMG
 - en: The section offsets and sizes have been retained but encrypted. The stub was
     placed in a newly added section named `*yC*`. If we compare how the original opcode
     bytes look with the encrypted bytes, we'll notice that opcode bytes have zero
     bytes spread out. This is a trait that can be used to identify encrypted bytes.
+  id: totrans-36
   prefs: []
   type: TYPE_NORMAL
 - en: 'Another trait for packers and crypters is about how they import API functions.
@@ -202,35 +276,45 @@
     APIs: `LoadLibrary` and `GetProcAddress`. Both functions are from `Kernel32.DLL`,
     and notice that it has its name in mixed character casing: `KeRnEl32.Dll`, as
     shown in the following example:'
+  id: totrans-37
   prefs: []
   type: TYPE_NORMAL
 - en: '![](img/ae22180c-68cc-4a2c-84c8-293e9b53f055.png)'
+  id: totrans-38
   prefs: []
   type: TYPE_IMG
 - en: With only these two API functions, every function it requires can be dynamically
     loaded.
+  id: totrans-39
   prefs: []
   type: TYPE_NORMAL
 - en: 'The following image shows the `GetProcAddress` API:'
+  id: totrans-40
   prefs: []
   type: TYPE_NORMAL
 - en: '![](img/1f2e11de-2cf2-464f-b3ea-bd1004f0bb7f.png)'
+  id: totrans-41
   prefs: []
   type: TYPE_IMG
 - en: 'While the following image shows the `LoadLibrary` API:'
+  id: totrans-42
   prefs: []
   type: TYPE_NORMAL
 - en: '![](img/a3f62daa-9d13-4845-aee1-43dca870c8bc.png)'
+  id: totrans-43
   prefs: []
   type: TYPE_IMG
 - en: 'Looking at the stub, we expected it to have a loop code that contains the decryption
     algorithm. The following image shows the decryption algorithm used by `Yoda Crypter`:'
+  id: totrans-44
   prefs: []
   type: TYPE_NORMAL
 - en: '![](img/79b7a8d7-418e-4385-aa6c-9462e3b6f9ab.png)'
+  id: totrans-45
   prefs: []
   type: TYPE_IMG
 - en: Obfuscators
+  id: totrans-46
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
@@ -241,31 +325,38 @@
     obfuscation is not limited to the CFF technique. The compiled file structure can
     also be modified, especially for a psuedocode based execution, like Visual Basic 
     and .NET compiled programs.
+  id: totrans-47
   prefs: []
   type: TYPE_NORMAL
 - en: One of the main techniques to obfuscate is to garble, or encrypt, the name of
     functions so that decompilers wouldn't be able to recognize the function correctly.
     Examples of these high-level obfuscating tools are `Obfuscar`, `CryptoObfuscator`
     and `Dotfuscator`.
+  id: totrans-48
   prefs: []
   type: TYPE_NORMAL
 - en: The renaming of variable names with random generated text strings, converting
     the code text to hexadecimal text, and splitting text for the code to concatenate
     the text are some obfuscation techniques used for scripts such as JavaScript and
     visual basic scripts.
+  id: totrans-49
   prefs: []
   type: TYPE_NORMAL
 - en: 'The following screenshot gives an example of an obfuscated JavaScript code
     using an online obfuscation tool:'
+  id: totrans-50
   prefs: []
   type: TYPE_NORMAL
 - en: '![](img/bb99bd91-6156-48c5-96f5-962b4d062135.png)'
+  id: totrans-51
   prefs: []
   type: TYPE_IMG
 - en: The original code is at the left while its obfuscated version is at the right.
+  id: totrans-52
   prefs: []
   type: TYPE_NORMAL
 - en: Protectors
+  id: totrans-53
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
@@ -275,13 +366,16 @@
     Some sophisticated protectors even use their own code virtualization which is
     similar to the pseudocode concept. Protectors are usually sold commercially and
     used for anti-piracy.
+  id: totrans-54
   prefs: []
   type: TYPE_NORMAL
 - en: Examples of Windows executable protectors are `Themida`, `VMProtect`, `Enigma`,
     and `Asprotect`.
+  id: totrans-55
   prefs: []
   type: TYPE_NORMAL
 - en: SFX  Self-extracting archives
+  id: totrans-56
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
@@ -292,47 +386,59 @@
     the SFX archive is an SFX script. This script is responsible for instructing which
     directories the files are destined to be extracted to. This can be seen in the
     following diagram:'
+  id: totrans-57
   prefs: []
   type: TYPE_NORMAL
 - en: '![](img/34e695d6-380e-4829-aead-208370444121.png)'
+  id: totrans-58
   prefs: []
   type: TYPE_IMG
 - en: 'Usually, SFX have scripting features that can:'
+  id: totrans-59
   prefs: []
   type: TYPE_NORMAL
 - en: Extract archived files
+  id: totrans-60
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
 - en: Run a file from the extracted files
+  id: totrans-61
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
 - en: Run any file from the system
+  id: totrans-62
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
 - en: Delete files
+  id: totrans-63
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
 - en: Make registry entries
+  id: totrans-64
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
 - en: Visit sites from the internet
+  id: totrans-65
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
 - en: Create files
+  id: totrans-66
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
 - en: Basically, it can pretty much do what a regular program can do to the system. 
     Examples of SFX tools are `Winzip SFX`, `RARSFX` and `NSIS`.
+  id: totrans-67
   prefs: []
   type: TYPE_NORMAL
 - en: Unpacking
+  id: totrans-68
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
@@ -340,9 +446,11 @@
     this debugging session, we will be unpacking a UPX packed file. Our target will
     be to reach the original host's entry point. Besides this UPX packed file, we
     have provided packed samples in our GitHub page that can be used for practice.
+  id: totrans-69
   prefs: []
   type: TYPE_NORMAL
 - en: The UPX tool
+  id: totrans-70
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
@@ -351,15 +459,19 @@
     Windows executables. It is also able to restore or unpack UPX packed files. To
     see it in action, we used the tool on the file `original.exe`. This is shown in
     the following example:'
+  id: totrans-71
   prefs: []
   type: TYPE_NORMAL
 - en: '![](img/1243d625-3205-433a-b970-f6da7804e079.png)'
+  id: totrans-72
   prefs: []
   type: TYPE_IMG
 - en: Notice that the original file size reduced after being packed.
+  id: totrans-73
   prefs: []
   type: TYPE_NORMAL
 - en: Debugging though the packer
+  id: totrans-74
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
@@ -367,152 +479,192 @@
     made by the packer.  To better understand how packers work, let us compare the
     host and the packed version of the executable file. Using the CFF tool, let us
     inspect the header differences.
+  id: totrans-75
   prefs: []
   type: TYPE_NORMAL
 - en: 'The figure above shows the NT header difference between the original and the
     UPX packed version:'
+  id: totrans-76
   prefs: []
   type: TYPE_NORMAL
 - en: '![](img/6a76527a-ff15-48a6-8899-12d0314adb9c.png)'
+  id: totrans-77
   prefs: []
   type: TYPE_IMG
 - en: 'The only difference here is the number of sections, which was reduced from
     four down to three, as demonstrated by the following example:'
+  id: totrans-78
   prefs: []
   type: TYPE_NORMAL
 - en: '![](img/ebdcd8a3-15fd-494c-9d0d-70711802c495.png)'
+  id: totrans-79
   prefs: []
   type: TYPE_IMG
 - en: 'In the optional header comparison in the preceding example, the changes are:'
+  id: totrans-80
   prefs: []
   type: TYPE_NORMAL
 - en: 'SizeOfCode: `0x0C00 to 0x1000`'
+  id: totrans-81
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
 - en: 'SizeOfInitializedData: `0x0e00 to 0x5000`'
+  id: totrans-82
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
 - en: 'AddressOfEntryPoint: `0x157e to 0x6b90`'
+  id: totrans-83
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
 - en: 'BaseOfCode: `0x1000 to 0x6000`'
+  id: totrans-84
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
 - en: 'BaseOfData: `0x2000 to 0x7000`'
+  id: totrans-85
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
 - en: 'SizeOfImage: `0x5000 to 0x8000`'
+  id: totrans-86
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
 - en: 'SizeOfHeaders: `0x0400 to 0x1000`'
+  id: totrans-87
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
 - en: 'CheckSum: `0x4a92` to `0`'
+  id: totrans-88
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
 - en: The image below shows a comparison between the data directory table of the original
     and UPXed version of the program.
+  id: totrans-89
   prefs: []
   type: TYPE_NORMAL
 - en: '![](img/15625b6d-22e6-47d1-83b9-0df8a48da825.png)'
+  id: totrans-90
   prefs: []
   type: TYPE_IMG
 - en: 'The previous example shows that the changes in the data directory are:'
+  id: totrans-91
   prefs: []
   type: TYPE_NORMAL
 - en: 'Import Directory RVA: `0x234c to 0x71b4`'
+  id: totrans-92
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
 - en: 'Import Directory Size: `0x0078 to 0x017c`'
+  id: totrans-93
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
 - en: 'Resource Directory RVA: `0x4000` to `0x7000`'
+  id: totrans-94
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
 - en: 'Resource Directory Size: `0x01b0` to `0x01b4`'
+  id: totrans-95
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
 - en: 'Debug Directory RVA: `0x2110` to `0`'
+  id: totrans-96
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
 - en: 'Debug Directory Size: `0x001c` to `0`'
+  id: totrans-97
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
 - en: 'Configuration Directory RVA: `0x2240` to `0x6d20`'
+  id: totrans-98
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
 - en: 'Configuration Directory Size: `0x40` t0 `0x48`'
+  id: totrans-99
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
 - en: 'Import Address Directory RVA: `0x2000` to `0`'
+  id: totrans-100
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
 - en: 'Import Address Directory Size: `0xf4` t0 `0`'
+  id: totrans-101
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
 - en: The image below shows a comparison between the header sections between the original
     and the UPXed version of the program.
+  id: totrans-102
   prefs: []
   type: TYPE_NORMAL
 - en: '![](img/dd3f387d-8b4e-4cae-a8d0-f43d49803da5.png)'
+  id: totrans-103
   prefs: []
   type: TYPE_IMG
 - en: The previous example shows that almost all of the information in the original
     section header has changed in the UPXed version. The raw and virtual offsets,
     sizes, and characteristics have changed.
+  id: totrans-104
   prefs: []
   type: TYPE_NORMAL
 - en: 'For the `UPX0` section, the meaning of the bit flags in the Characteristics
     field are listed in the following example:'
+  id: totrans-105
   prefs: []
   type: TYPE_NORMAL
 - en: '![](img/1b3ef49a-2408-4680-9ce0-2c0f0f04e783.png)'
+  id: totrans-106
   prefs: []
   type: TYPE_IMG
 - en: 'The following example shows that the number of imported API functions has been
     reduced, but the original static import library files are still the same:'
+  id: totrans-107
   prefs: []
   type: TYPE_NORMAL
 - en: '![](img/067b898a-afc5-4376-948f-b22bd7e26264.png)'
+  id: totrans-108
   prefs: []
   type: TYPE_IMG
 - en: 'The following figure shows the API functions that will be imported for `KERNEL32.dll`.
     They have totally different API functions:'
+  id: totrans-109
   prefs: []
   type: TYPE_NORMAL
 - en: '![](img/b677cb7b-916c-4426-a6ae-16898b2cb3cc.png)'
+  id: totrans-110
   prefs: []
   type: TYPE_IMG
 - en: 'As for the resource directory contents, it looks like the size did not change
     except for the offset, as can be seen in the following example:'
+  id: totrans-111
   prefs: []
   type: TYPE_NORMAL
 - en: '![](img/9c33933a-f6b7-43b6-9238-3926b7faecf5.png)'
+  id: totrans-112
   prefs: []
   type: TYPE_IMG
 - en: 'The following list shows the changes on which the traits are based in the packed
     file:'
+  id: totrans-113
   prefs: []
   type: TYPE_NORMAL
 - en: 'There are three sections, namely `UPX0`, `UPx1` and `.rsrc`:'
+  id: totrans-114
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
@@ -520,12 +672,14 @@
     only means that the section will be allocated by the operating system but no data
     will be mapped to it from the file. This section is set with read, write, and
     execute flags.'
+  id: totrans-115
   prefs:
   - PREF_IND
   - PREF_UL
   type: TYPE_NORMAL
 - en: The entry point address is within the `UPX1` section. The stub should be located
     in this section, along with the compressed code and data.
+  id: totrans-116
   prefs:
   - PREF_IND
   - PREF_UL
@@ -533,22 +687,26 @@
 - en: The `.rsrc` section seems to retain its contents. Retaining the resource section
     should still give out the proper icons and program details read by the operating
     system's file explorer.
+  id: totrans-117
   prefs:
   - PREF_IND
   - PREF_UL
   type: TYPE_NORMAL
 - en: With the packer having its own structure causing major changes in the sections,
     some header fields, like the `BaseOfCode` and `BaseOfData`, were totally modified.
+  id: totrans-118
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
 - en: Virtual sizes were aligned based on the `SectionAlignment`. For example, the
     `.rsrc's` virtual size was originally `0x1b0`, aligning it with the `SectionAlignment`,
     which should make it `0x1000`.
+  id: totrans-119
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
 - en: The ImageSize has increased since a stub was inserted by the packer.
+  id: totrans-120
   prefs:
   - PREF_UL
   type: TYPE_NORMAL
@@ -561,13 +719,16 @@
     point. To hasten our debugging, what we should be looking for is an instruction,
     or a set of instructions, that will pass execution to `0x0040157e`, which is the
     original entry point.
+  id: totrans-121
   prefs: []
   type: TYPE_NORMAL
 - en: 'Let us see this in action by opening `upxed.exe` in `x86dbg`. We start off
     at the entry point at `0x00406b90`, as shown in the following screenshot:'
+  id: totrans-122
   prefs: []
   type: TYPE_NORMAL
 - en: '![](img/6c6f2f87-a06c-46ce-bf7f-d417842a3b8a.png)'
+  id: totrans-123
   prefs: []
   type: TYPE_IMG
 - en: The operating system maps the file to the memory, and we have all the virtual
@@ -579,71 +740,88 @@
     to register edi. It is easy to tell that the compressed data will be decompressed
     from `esi` to `edi`. With debugging on, the decompression codes are from `0x00406b91`
     to `0x00406c5d`.
+  id: totrans-124
   prefs: []
   type: TYPE_NORMAL
 - en: 'Before placing a breakpoint at `0x00406c62`, set a dump window with the address
     `0x00401000`.  This should help us view a decompressed portion of the host. Running
     through the code until `0x00406c62` should complete the decompression. This is
     shown in the following screenshot:'
+  id: totrans-125
   prefs: []
   type: TYPE_NORMAL
 - en: '![](img/793dcfef-c8fc-4822-9a1b-fba54d8439cf.png)'
+  id: totrans-126
   prefs: []
   type: TYPE_IMG
 - en: The next set of instructions fixes call instructions using relative jump addresses.
     This code runs from `0x00406c65` to `0x00406c94`. Just place another breakpoint,
     or instead use a Run until selection at the `0x00406c96` line, to run through
     the loop of this call fixing code.
+  id: totrans-127
   prefs: []
   type: TYPE_NORMAL
 - en: The next lines are the portion of the packer that dynamically load the API functions
     used by the host. The code stores `0x00405000` to register edi. This address contains
     data where it can locate the list of names of the original modules and API function
     names associated with each module.
+  id: totrans-128
   prefs: []
   type: TYPE_NORMAL
 - en: 'For every module name, it uses `LoadLibraryA` to load the libraries that the
     host will use later. This is shown in the following screenshot:'
+  id: totrans-129
   prefs: []
   type: TYPE_NORMAL
 - en: '![](img/551f9041-3358-4832-a14d-2c131ec6fb89.png)'
+  id: totrans-130
   prefs: []
   type: TYPE_IMG
 - en: 'Right after loading a module, it uses `GetProcAddress` to retrieve the addresses
     of the APIs the host will use, as shown in the following screenshot:'
+  id: totrans-131
   prefs: []
   type: TYPE_NORMAL
 - en: '![](img/1e125dac-f447-4748-a176-8a6d0e3471a0.png)'
+  id: totrans-132
   prefs: []
   type: TYPE_IMG
 - en: Every retrieved API address is stored at the host import table which is located
     at `0x00402000`. Restoring the function addresses to the same import table address
     should make the host call the APIs without any issues. Placing a breakpoint at
     `0x00406cde` should execute the dynamic import routine.
+  id: totrans-133
   prefs: []
   type: TYPE_NORMAL
 - en: 'The next routine is about to set the mapped header''s access permission to
     read-only, preventing it from being written to or code executed, as shown in the
     following screenshot:'
+  id: totrans-134
   prefs: []
   type: TYPE_NORMAL
 - en: '![](img/5cccd84a-3b6d-4639-a27c-278a3a2cf00e.png)'
+  id: totrans-135
   prefs: []
   type: TYPE_IMG
 - en: 'VirtualProtect is used to set memory access flags and also takes four parameters. 
     The following code shows the parameters according to MSDN:'
+  id: totrans-136
   prefs: []
   type: TYPE_NORMAL
 - en: '[PRE0]'
+  id: totrans-137
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE0]'
 - en: 'The first call to VirtualProtect is set with an `lpAddress` equal to `0x00400000`, 
     dwSize with 0x1000 bytes, and the protect flags with a value of 4.  The value
     4 denotes the constant for PAGE_READWRITE. The succeeding calls to VirtualProtect
     are set with a protect flag `PAGE_READONLY`. This is shown in the following screenshot:'
+  id: totrans-138
   prefs: []
   type: TYPE_NORMAL
 - en: '![](img/602b8972-1555-4e58-8974-bb1257e51220.png)'
+  id: totrans-139
   prefs: []
   type: TYPE_IMG
 - en: Remember that, at the start of the code, we encountered a `pushad` instruction.
@@ -652,12 +830,15 @@
     the `jmp` instruction at `0x00406D1B`, the address jumps to an address in the
     `UPX0` section. Looking at our host-packed comparison, the original entry point
     is indeed located at `0x0040157e`.
+  id: totrans-140
   prefs: []
   type: TYPE_NORMAL
 - en: Reaching the original entry point should conclude debugging the packer code.
+  id: totrans-141
   prefs: []
   type: TYPE_NORMAL
 - en: Dumping processes from memory
+  id: totrans-142
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
@@ -665,59 +846,71 @@
     is expected to be unpacked in its process space. What we aim to do is to  produce
     a version of the file in its unpacked state. To do that, we need to dump the whole
     memory then extract the executable's process image to a file.
+  id: totrans-143
   prefs: []
   type: TYPE_NORMAL
 - en: Memory dumping with VirtualBox
+  id: totrans-144
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
 - en: 'We will be using Volatility to dump the process from a suspended VirtualBox
     image. First of all, we need to learn how to dump a VirtualBox image:'
+  id: totrans-145
   prefs: []
   type: TYPE_NORMAL
 - en: 'Enable the VirtualBox''s debug menu:'
+  id: totrans-146
   prefs:
   - PREF_OL
   type: TYPE_NORMAL
 - en: 'For Windows VirtualBox hosts:'
+  id: totrans-147
   prefs:
   - PREF_IND
   - PREF_UL
   type: TYPE_NORMAL
 - en: 'Enter a new environment variable named `VBOX_GUI_DBG_ENABLED` and set it to
     `true`. This is shown in the following screenshot:'
+  id: totrans-148
   prefs:
   - PREF_IND
   - PREF_IND
   - PREF_UL
   type: TYPE_NORMAL
 - en: '![](img/ccf3b225-dc8c-42fd-a412-fc7ae1849729.png)'
+  id: totrans-149
   prefs: []
   type: TYPE_IMG
 - en: 'For Linux hosts:'
+  id: totrans-150
   prefs:
   - PREF_OL
   - PREF_UL
   type: TYPE_NORMAL
 - en: Edit/etc/environment as a root user
+  id: totrans-151
   prefs:
   - PREF_IND
   - PREF_IND
   - PREF_UL
   type: TYPE_NORMAL
 - en: Add a new entry `VBOX_GUI_DBG_ENABLED=true`
+  id: totrans-152
   prefs:
   - PREF_IND
   - PREF_IND
   - PREF_UL
   type: TYPE_NORMAL
 - en: Execute the command: `source /etc/environment`
+  id: totrans-153
   prefs:
   - PREF_IND
   - PREF_IND
   - PREF_UL
   type: TYPE_NORMAL
 - en: Restart VirtualBox if already opened
+  id: totrans-154
   prefs:
   - PREF_IND
   - PREF_IND
@@ -725,92 +918,118 @@
   type: TYPE_NORMAL
 - en: Run the packed executable in the Windows guest. We are going to run `upxed.exe`
     from our GitHub page.
+  id: totrans-155
   prefs:
   - PREF_OL
   type: TYPE_NORMAL
 - en: 'From the VBoxDbg console, execute these lines to save the whole memory dump
     to a file. Note that there should be a dot before the `pgmphystofile` command,
     as shown in the following example:'
+  id: totrans-156
   prefs:
   - PREF_OL
   type: TYPE_NORMAL
 - en: '[PRE1]'
+  id: totrans-157
   prefs:
   - PREF_IND
   type: TYPE_PRE
+  zh: '[PRE1]'
 - en: memory.dmp is the filename and is stored at the logged-in user's home directory. 
     That is the `%userprofile%` folder in Windows and the `~/` folder in Linux.
+  id: totrans-158
   prefs:
   - PREF_OL
   type: TYPE_NORMAL
 - en: Next, we will be using Volatility to parse the memory dump and extract the data
     we need.
+  id: totrans-159
   prefs: []
   type: TYPE_NORMAL
 - en: Extracting the process to a file using Volatility
+  id: totrans-160
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
 - en: Volatility can be downloaded from [https://www.volatilityfoundation.org/releases](https://www.volatilityfoundation.org/releases).
     For this section, our VirtualBox host is in a Linux Ubuntu machine. The Volatility
     command parameters shown here should also be the same when used in Windows.
+  id: totrans-161
   prefs: []
   type: TYPE_NORMAL
 - en: 'First, we need to identify the exact operating system version using Volatility
     using the `imageinfo` parameter, as shown in the following examples:'
+  id: totrans-162
   prefs: []
   type: TYPE_NORMAL
 - en: '[PRE2]'
+  id: totrans-163
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE2]'
 - en: '![](img/1e74b79c-f4b7-4a24-9f6a-a4ced051a377.png)'
+  id: totrans-164
   prefs: []
   type: TYPE_IMG
 - en: Again, `~/memory.dmp` is the file path of the memory we just dumped. The result
     should show a list of the identified OS profile. For Windows 7 SP1 32-bit, we
     would be using `Win7SP1x86` as our profile for succeeding `Volatility` commands.
+  id: totrans-165
   prefs: []
   type: TYPE_NORMAL
 - en: 'Next, we will have to list down the running processes and identify which is
     our packed executable. To list down running processes, we will be using the `pslist`
     parameter, as shown in the following examples:'
+  id: totrans-166
   prefs: []
   type: TYPE_NORMAL
 - en: '[PRE3]'
+  id: totrans-167
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE3]'
 - en: '![](img/18117a63-4071-4796-8744-5ef99fd0d456.png)'
+  id: totrans-168
   prefs: []
   type: TYPE_IMG
 - en: 'Looking at the second column''s last line in the previous screenshot, we find
     `upxed.exe`. We need to note down the process ID (PID) which has a value of `2656`.
     Now that we have retrieved the PID of our packed executable, we can dump the process
     to file using the `procdump` parameter, as shown in the following code:'
+  id: totrans-169
   prefs: []
   type: TYPE_NORMAL
 - en: '[PRE4]'
+  id: totrans-170
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE4]'
 - en: '`procdump` will save the process executable in the `dump/` folder set by the
     `-D` parameter, as shown in the following screenshot:'
+  id: totrans-171
   prefs: []
   type: TYPE_NORMAL
 - en: '![](img/b6bb2c9b-fecf-451e-8455-204a21ac8c7d.png)'
+  id: totrans-172
   prefs: []
   type: TYPE_IMG
 - en: Volatility has a wide range of features to choose from. Feel free to explore
     these arguments as these may help in fitting analysis situations.
+  id: totrans-173
   prefs: []
   type: TYPE_NORMAL
 - en: How about an executable in its unpacked state?
+  id: totrans-174
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
 - en: 'Now that we have an executable file from Volatility, running this back in our
     Windows guest sandbox gives us the following message:'
+  id: totrans-175
   prefs: []
   type: TYPE_NORMAL
 - en: '![](img/54d1cf48-4267-4422-957f-c42b5ca3c349.png)'
+  id: totrans-176
   prefs: []
   type: TYPE_IMG
 - en: Remember that the packed executable has its own PE header and stub and not that
@@ -818,20 +1037,24 @@
     to the process space. Every API function was dynamically imported. Even with the
     code and data decompressed, the entry point set in the header is still of the
     packed executables and not of the original hosts.
+  id: totrans-177
   prefs: []
   type: TYPE_NORMAL
 - en: Fortunately, `x86dbg` has a plugin known as Scylla. After reaching the original
     entry point, which means we are in the unpacked state, we can rebuild the process
     being debugged into a brand new executable file. The new executable file is already
     unpacked and can be executed alone.
+  id: totrans-178
   prefs: []
   type: TYPE_NORMAL
 - en: 'This still requires us to debug the packed executable until we reach the original
     entry point (OEP). Once at the OEP, open up Scylla from the plugins'' drop-down
     menu. This should open up the Scylla window, as shown in the following example:'
+  id: totrans-179
   prefs: []
   type: TYPE_NORMAL
 - en: '![](img/c86e5f9d-594c-43b4-bfda-1e132d7de025.png)'
+  id: totrans-180
   prefs: []
   type: TYPE_IMG
 - en: 'The active process is already set to the `upxed.exe` process. The OEP is also
@@ -841,9 +1064,11 @@
     the probable import table location and size. Click on `Get Imports` to make Scylla
     scan for the imported library and API functions. This is shown in the following
     screenshot:'
+  id: totrans-181
   prefs: []
   type: TYPE_NORMAL
 - en: '![](img/07a1de67-a50b-41dd-92f0-302c20a24d93.png)'
+  id: totrans-182
   prefs: []
   type: TYPE_IMG
 - en: 'Expand one of the libraries and it will show the API functions it found. Now,
@@ -852,21 +1077,26 @@
     We still need to apply the IAT info and imports. Click on Fix Dump and open the
     dumped executable file. This produces a new file with the `_SCY` appended to the
     file name, as shown in the following screenshot:'
+  id: totrans-183
   prefs: []
   type: TYPE_NORMAL
 - en: '![](img/4c440597-7e46-4672-9ca4-fd983ffdc793.png)'
+  id: totrans-184
   prefs: []
   type: TYPE_IMG
 - en: Running this new executable file should give us the same result as the original
     host's behavior.
+  id: totrans-185
   prefs: []
   type: TYPE_NORMAL
 - en: In Volatility, we did not have enough information to reconstruct the executable
     file. Using `x86dbg` and Scylla, though requiring us to get past debugging the
     packer stub, we were able to have a reconstructed executable file.
+  id: totrans-186
   prefs: []
   type: TYPE_NORMAL
 - en: Other file-types
+  id: totrans-187
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
@@ -877,15 +1107,18 @@
     form. In *[Chapter 13 ](0aefc43b-86b5-4596-a467-c499a15d192d.xhtml)Reversing various
     File-types*, we will deal more with how to reverse other File-Types besides Windows
     and Linux executables. In the meantime, we will just decode obvious data.
+  id: totrans-188
   prefs: []
   type: TYPE_NORMAL
 - en: 'Let us head to our browsers and visit [www.google.com](http://www.google.com),
     at the time of writing (we stored a copy of the source at [https://github.com/PacktPublishing/Mastering-Reverse-Engineering/blob/master/ch10/google_page_source.txt](https://github.com/PacktPublishing/Mastering-Reverse-Engineering/blob/master/ch10/google_page_source.txt)),
     viewing the source would show us a portion that has a `b64` encoded text, as in
     the following screenshot:'
+  id: totrans-189
   prefs: []
   type: TYPE_NORMAL
 - en: '![](img/ce52a38e-2e88-42e5-bfb4-513d2cf6eae3.png)'
+  id: totrans-190
   prefs: []
   type: TYPE_IMG
 - en: 'Using Cyberchef, a tool which can help decode various types of encoded data
@@ -893,40 +1126,50 @@
     and paste the base-64 data into the input box then double-click *From Base64*.
     This should display the decoded binary content in the output box, as shown in
     the following screenshot:'
+  id: totrans-191
   prefs: []
   type: TYPE_NORMAL
 - en: '![](img/54e29fc8-9791-4041-b84f-2b421c999112.png)'
+  id: totrans-192
   prefs: []
   type: TYPE_IMG
 - en: 'Notice that the output has a `PNG` written at the beginning. This is most likely
     a PNG image file. In addition, if we carefully look at the source code, we can
     see that the type of data was also indicated before the base-64 encoded data,
     as shown in the following example:'
+  id: totrans-193
   prefs: []
   type: TYPE_NORMAL
 - en: '[PRE5]'
+  id: totrans-194
   prefs: []
   type: TYPE_PRE
+  zh: '[PRE5]'
 - en: 'If we click on the disk icon, we can save the output data to a file and name
     it with a `.png` extension. That should enable us to view the image, as shown
     in the following screenshot:'
+  id: totrans-195
   prefs: []
   type: TYPE_NORMAL
 - en: '![](img/f4a2eed5-75d1-4f0b-a267-c3f1debad7b6.png)'
+  id: totrans-196
   prefs: []
   type: TYPE_IMG
 - en: There are other supported encoded types from the Cyberchef tool. If we ever
     encounter similar encoded text, the internet has all the available tools to help
     us out.
+  id: totrans-197
   prefs: []
   type: TYPE_NORMAL
 - en: Summary
+  id: totrans-198
   prefs:
   - PREF_H1
   type: TYPE_NORMAL
 - en: Reverse engineering is about how we work with the tools in their proper situations.
     Even with packed, encrypted, and obfuscated executables, hidden information can
     still be extracted.
+  id: totrans-199
   prefs: []
   type: TYPE_NORMAL
 - en: In this chapter, we introduced various concepts of how data can be hidden using
@@ -936,21 +1179,25 @@
     if we are already at the original entry point. As a general rule, if the instruction
     pointer has jumped from a different section, we can say that we are already at
     the original entry point.
+  id: totrans-200
   prefs: []
   type: TYPE_NORMAL
 - en: Using another solution to viewing the unpacked state of a program, we used Volatility
     with a memory dump from a VirtualBox guest and extracted the process of the executable
     that we just ran. Using the Scylla tool, we were also able to rebuild an unpacked
     state of the packed executable.
+  id: totrans-201
   prefs: []
   type: TYPE_NORMAL
 - en: We ended this chapter by introducing the CyberChef tool, which is able to decode
     popular encoded data like base-64\. This tool might come in useful when we encounter
     encoded data not only in scripts found in websites but in every executable we
     encounter.
+  id: totrans-202
   prefs: []
   type: TYPE_NORMAL
 - en: In the next chapter, we will proceed further in our journey by identifying malicious
     behaviors executed by malware.
+  id: totrans-203
   prefs: []
   type: TYPE_NORMAL
