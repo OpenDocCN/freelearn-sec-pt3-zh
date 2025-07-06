@@ -1,0 +1,396 @@
+<html><head></head><body>
+        <section>
+
+                            <header>
+                    <h1 class="header-title">Technical Concepts and Acquiring Evidence</h1>
+                </header>
+            
+            <article>
+                
+<p>In the previous chapter, we learned about the various types of evidence sources. In this chapter, we will look at those sources in detail. We will familiarize ourselves with the basics of different types of log formats and look at the various technical key concepts required to conduct a network forensics exercise successfully.</p>
+<p>We will cover the following topics in this chapter:</p>
+<ul>
+<li>Inter-networking refresher</li>
+<li>Exposure to various types of logs</li>
+<li>Case studies on logs and packet structures</li>
+</ul>
+<p>So, let's get started with the basics of inter-networking and understand how communications take place with respect to the OSI networking model.</p>
+
+
+            </article>
+
+            
+        </section>
+    
+
+        <section>
+
+                            <header>
+                    <h1 class="header-title">Technical requirements</h1>
+                </header>
+            
+            <article>
+                
+<p>To complete the exercises illustrated in this chapter, you will require the following software:</p>
+<ul>
+<li>Apache Log Viewer (<a href="https://www.apacheviewer.com/">https://www.apacheviewer.com/</a>) installed on Windows 10</li>
+<li>Sawmill (<a href="http://www.sawmill.net/cgi-bin/download.pl">http://www.sawmill.net/cgi-bin/download.pl</a>) installed on Windows 10</li>
+<li>Kali Linux on VMware Workstation/Player or Virtual Box</li>
+<li>Wireshark (<a href="https://www.wireshark.org/download.html?aktime=1551312054">https://www.wireshark.org/download.html?aktime=1551312054</a>)</li>
+<li>Download files for this chapter from <a href="https://github.com/nipunjaswal/networkforensics/tree/master/Ch2">https://github.com/nipunjaswal/networkforensics/tree/master/Ch2</a></li>
+</ul>
+
+
+            </article>
+
+            
+        </section>
+    
+
+        <section>
+
+                            <header>
+                    <h1 class="header-title">The inter-networking refresher</h1>
+                </header>
+            
+            <article>
+                
+<p>The <strong>open systems interconnection</strong> (<strong>OSI</strong>), model is built for the network based digital communication and keeps flexibility and modularity in mind. The OSI model is a seven-layered design, starting from the physical layer and ending at the application layer. A high-level diagram of the OSI layers can be viewed as follows:</p>
+<div class="CDPAlignCenter CDPAlign"><img src="assets/17bee791-3350-484b-a16d-6d3709b38a11.png" style="width:9.33em;height:14.33em;"/></div>
+<p>The seven layers are responsible for a variety of different communication standards as:</p>
+<ul>
+<li>At the physical layer, we are generally speaking about the cables, hubs, optical fibers, coaxial cables, and connectors, which are the actual physical carriers of data, and the data is represented in bits.</li>
+<li>At the data-link layer, we have <strong>802.11</strong>, <strong>WI-MAX</strong>, <strong>ATM</strong>, <strong>Ethernet</strong>, <strong>Token Ring</strong>, <strong>PPTP</strong>, <strong>L2TP</strong>, and much more, which enables establishment and termination between the nodes. The data is represented in frames.</li>
+<li>At the network layer, we have the <strong>IPv4</strong>, <strong>IPv6</strong>, <strong>OSPF</strong>, <strong>ICMP</strong>, and <strong>IGMP</strong> sets of protocols, which manage logical, physical address mappings, routing, and frame fragmentations. The data is in the form of packets.</li>
+<li>At the transport layer, we have <strong>TCP</strong> and <strong>UDP</strong>, which allow message segmentation, message acknowledgment, host-to-host communication, and message-traffic control. The data is represented in segments.</li>
+<li>At the session layer, we have <strong>SAP</strong>, <strong>PPTP</strong>, <strong>RTP</strong>, and <strong>SOCKS</strong>. It is responsible for session establishment, maintenance, and termination.</li>
+<li>The presentation layer has <strong>SSL/TLS</strong>, <strong>WEP</strong>, <strong>WPA</strong>, <strong>Kerberos</strong>, <strong>MIME</strong>, and other implementations and is generally responsible for character-code translations, data conversation, compression, and encryption.</li>
+<li>At the application layer, we have <strong>DHCP</strong>, <strong>FTP</strong>, <strong>HTTP</strong>, <strong>IMAP</strong>, <strong>POP3</strong>, <strong>NTP</strong>, <strong>SSH</strong>, and <strong>TELNET</strong>, the end-user programs.</li>
+</ul>
+<p>The OSI model and the TCP/IP model can be collectively viewed as follows:</p>
+<div class="CDPAlignCenter CDPAlign"><img src="assets/0373936e-14ab-4252-9954-622c1fa0e2f4.png" style="width:23.50em;height:15.33em;"/></div>
+<p>The mapping of OSI model and TCP/IP model isn't perfect. SSL/TLS, for example, contains elements from both the presentation and session layers. From launching any of the application on your system which communicates with the outside world it all goes through the previously discussed layers. Consider a scenario where you want to browse to a particular website.</p>
+<ol>
+<li>In this case, when you type a website's address into your browser, which is a layer 7 application, the domain name gets resolved to the IP address.</li>
+<li>Once you have the IP address of the destination, the data is encapsulated within the TCP/UDP data structure consisting of TCP/UDP header and data is passed to the transport layer where the OS embeds the source and destination ports data into the packet structure.</li>
+<li>Next, the structure is passed to network layer, where the source and destination IP address are embedded to the structure and is encapsulated within an IP packet.</li>
+<li>The entire packet is changed into an Ethernet frame on layer 2 and then finally travels in the form of bits on the wire.</li>
+<li>On the receiving end, the bits are first transformed into an Ethernet frame, and layer 2 information is removed and is sent to the network layer.</li>
+<li>At the network layer, the packet is checked that if it is meant for the system and if it is, the system removes the layer 3 information, which is the IP packet header, and pushes it to layer 4 from where the OS identifies the port number it is meant to be delivered to.</li>
+<li>From here, the OS identifies the port, removes the TCP header information, checks which program is listening on that port, and delivers the payload to the application.</li>
+</ol>
+<p>However, when the information travels from one point to the other, it creates <strong>traces</strong> (logs) on various devices along the way. These devices can be firewalls, proxy servers, routers, switches, or application servers, and since we covered some basic packet-based network forensics in the previous chapter, let's look at the log-based evidence scenarios.</p>
+<div class="packt_infobox">For more information on the OSI model, refer to <a href="https://www.webopedia.com/quick_ref/OSI_Layers.asp"><span class="URLPACKT">https://www.webopedia.com/quick_ref/OSI_Layers.asp</span></a><span class="URLPACKT">.</span></div>
+
+
+            </article>
+
+            
+        </section>
+    
+
+        <section>
+
+                            <header>
+                    <h1 class="header-title">Log-based evidence</h1>
+                </header>
+            
+            <article>
+                
+<p>In the previous chapter, we looked at various network protocol captures that define evidence in motion or data captured while in action. However, it is crucial for a network forensic investigator to have a brief knowledge of the various types of logs generated at the endpoints while traveling. These logs prove to be extremely handy when the scenario doesn't contain network captures, and it is up to the investigator to deduce and conclude the forensic investigation and reach a definitive result. Consider a situation where a company named Acme Inc. has faced a massive breach of customer data through its website, and the company hasn't kept any packet-capture files for the incoming data. In such cases, the forensic investigation solely relies on the logs generated at various endpoints, such as application servers, databases, and firewalls, as shown in the following diagram:</p>
+<div class="CDPAlignCenter CDPAlign"><img src="assets/e2f02246-3cc9-4ad7-91a3-960a727e98f5.png" style="width:25.25em;height:17.25em;"/></div>
+<p>In the preceding scenario, we can see that the attacker has attacked an externally-hosted application server, which makes a connection to an internal network for database access that has limited connectivity to the external world, except for the application server.</p>
+<p>In such scenarios, the following set of questions needs an answer:</p>
+<ul>
+<li>How was the attacker able to penetrate the application server?</li>
+<li>Why did the firewall allow access to the external attacker?</li>
+<li>What set of queries did the attacker execute on the database?</li>
+<li>Did the attacker alter the database?</li>
+<li>Can we identify the origin of the attack?</li>
+</ul>
+<p>To answer the preceding questions, we will require access to the logs of the external application server, and since the firewall permitted access to the attacker, we will need access to the firewall logs. The attacker executed queries on the database. Therefore, we will expect access to the database logs as well.</p>
+
+
+            </article>
+
+            
+        </section>
+    
+
+        <section>
+
+                            <header>
+                    <h1 class="header-title">Application server logs</h1>
+                </header>
+            
+            <article>
+                
+<p>As we saw in the previous scenario, the first point of attack was the externally-hosted application server. Let's see what sort of logs are generated by common application servers, such as <strong>Apache</strong> and <strong>NGINX</strong>, and what we can deduce from those logs:</p>
+<div class="CDPAlignCenter CDPAlign"><img src="assets/1679418e-a0bb-4f02-b396-f964d886566f.png"/></div>
+<p>In the preceding screenshot, we can see the Apache access logs file that reside mostly on the <kbd>/var/log/apache2/access.log</kbd> path. We can see a variety of incoming requests to the application. However, we can see that the logs are kept in a particular format, which is the IP address followed by the date and time, request type, requested resource file, HTTP version, response code, response length, and user agent. Since the user agent of the previous request is <kbd>DirBuster</kbd>, this denotes that the attacker is using <kbd>DirBuster</kbd> to scan the directory for interesting paths and to find hidden directories on the web application. A similar set of logs is available in the <kbd>error.log</kbd> file:</p>
+<div class="CDPAlignCenter CDPAlign"><img src="assets/bdb3ec54-248d-447d-bce9-a71c4b66483d.png"/></div>
+<p>However, this log file contains entries that requests have generated errors. As we can see, the errors mostly contain permission-denied errors, which will result in a 403 response status, which means that the requested resource is forbidden. Looking at a raw log file doesn't make much sense to us, and it will be a pain to investigate logs even if the file is as small as 10 MB. Therefore, to further investigate and drill down to the conclusions, we will use automated tools, such as <span class="packt_screen">Apache Logs Viewer</span> (<a href="https://www.apacheviewer.com/features/"><span class="URLPACKT">https://www.apacheviewer.com/features/</span></a>):</p>
+<div class="CDPAlignCenter CDPAlign"><img src="assets/14f6fcbd-dfc7-4476-89ec-65b4db5954b0.png"/></div>
+<p>Let's analyze the logs by adding the access/error log files to the software:</p>
+<div class="CDPAlignCenter CDPAlign"><img src="assets/4fb9225d-f94c-4615-85da-a715d2508935.png"/></div>
+<p>We can see that as soon as we open the log file, the software asks us to define any additional options, such as <span class="packt_screen">LogFormat</span> and <span class="packt_screen">Date Range</span>. Choose <span class="packt_screen">Common (default)</span> for this analysis and press <span class="packt_screen">OK</span> to continue:</p>
+<div class="CDPAlignCenter CDPAlign"><img src="assets/91a0bcb9-f73b-4063-9ea1-ffae6e95d53b.png"/></div>
+<p>We can see that we have the log file parsed with ease and we can now apply various filters to it, such as only listing packets from a particular IP or the response status with a particular response code. We will make use of <span class="packt_screen">Apache Logs Viewer</span> more in the upcoming chapters and exercises.</p>
+<div class="packt_infobox">We can also add the file remotely using the credentials if you have a licensed copy of the log viewer, which can be purchased from Apache Logs Viewer website at <a href="https://www.apacheviewer.com/unlock/"><span class="URLPACKT">https://www.apacheviewer.com/unlock/</span></a><span class="URLPACKT">.</span></div>
+
+
+            </article>
+
+            
+        </section>
+    
+
+        <section>
+
+                            <header>
+                    <h1 class="header-title">Database logs</h1>
+                </header>
+            
+            <article>
+                
+<p>We just saw how we could process basic application server logs. Let's see how we can grab database logs and make the most of them in our forensic investigation. Database servers, such as MySQL and MS SQL, contain log files with information that helps a forensic investigator to understand the chain of events in a much better way. General query logs in MySQL present an investigator with all the queries that were executed during the time of the attack:</p>
+<div class="CDPAlignCenter CDPAlign"><img src="assets/5d211ff2-07b5-4026-8a47-e8df0c2064bd.png"/></div>
+<p>We can see that the general query log file allows us to view failed attempts by the attacker to log into the MySQL server. However, it also suggests that there are two successful attempts. Let's further investigate:</p>
+<div class="CDPAlignCenter CDPAlign"><img src="assets/c3ed5200-1710-4312-977a-436060037088.png"/></div>
+<p>We can see that after the failed attempts, the attacker logged in and ran the preceding queries on the database. Query log files are convenient for pinpointing the actual intent of the attacker. In the upcoming chapters, we will look at numerous case study examples on various databases.</p>
+<p>On XAMPP, general query logs can be enabled by running the following query:</p>
+<pre><strong>SET global general_log = 1;</strong></pre>
+<p>Here's a better way to log all queries in MySQL:</p>
+<pre><strong>SET global general_log_file='/tmp/mysql.log'; 
+SET global log_output = 'file';
+SET global general_log = on;  </strong></pre>
+
+
+            </article>
+
+            
+        </section>
+    
+
+        <section>
+
+                            <header>
+                    <h1 class="header-title">Firewall logs</h1>
+                </header>
+            
+            <article>
+                
+<p>There are plenty of firewalls you can encounter in a network infrastructure. Firewall logs can reveal a lot about an attack. I remember a case where a popular bank in Africa was siphoned off for $700,000, and the attackers were sitting inside the network for a long time before they executed the attack. After a thorough investigation to find the indicators of compromise and a root-cause analysis, firewall logs helped me out. I found that the checkpoint firewall logs had entries to a particular domain being contracted to by the planted backdoor. We ran a network-wide search on the firewall logs to find the first attempt to the domain and found out that the first attempt to the malicious attacker's site was at least three months before the date of the incident. However, since the computer making that connection was only connected to the internal network, we concluded that the attack was conducted by someone internally, which narrowed down the scope of our investigation to a handful of individuals.</p>
+<p>Parsing firewall logs and driving analytics is a tough task for an investigator. Most of the intelligent firewalls today have their analytics engine. However, if you need a third-party log parser for firewall logs, <strong>Sawmill</strong> (<a href="http://www.sawmill.net"><span class="URLPACKT">http://www.sawmill.net</span></a>) would be my choice, as it supports a variety of log formats. Here is an example of Palo Alto Network Firewall logs parsed by Sawmill:</p>
+<div class="CDPAlignCenter CDPAlign"><img src="assets/ac6eba7f-d311-4370-a50d-2f4da238416c.png"/></div>
+<p>We can see that we have a variety of options with the parsed logs:</p>
+<div class="CDPAlignCenter CDPAlign"><img src="assets/4d636c0d-db11-49b4-b192-22e9ead66907.png"/></div>
+<p>We have options that include <span class="packt_screen">User Summary</span>, <span class="packt_screen">Host Summary</span>, <span class="packt_screen">Source IPs</span>, <span class="packt_screen">Users</span>, and <span class="packt_screen">Content</span>. We can also view visited pages:</p>
+<div class="CDPAlignCenter CDPAlign"><img src="assets/0e627bb2-44d7-45e3-93bd-49c70e59388a.png"/></div>
+<p>Sawmill is a paid product. However, you can download and use the trial version free for 30 days. In the upcoming chapters, we will have a look at creating our parsers. However, to conduct a network forensic operation professionally, Sawmill is recommended.</p>
+<div class="packt_tip">The Sawmill installation guide can be found at <a href="http://www.sawmill.net/cgi-bin/sawmill8/docs/sawmill.cgi?dp+docs.technical_manual.installation+webvars.username+samples+webvars.password+sawmill"><span class="URLPACKT">http://www.sawmill.net/cgi-bin/sawmill8/docs/sawmill.cgi?dp+docs.technical_manual.installation+webvars.username+samples+webvars.password+sawmill</span></a><span class="URLPACKT">.</span></div>
+
+
+            </article>
+
+            
+        </section>
+    
+
+        <section>
+
+                            <header>
+                    <h1 class="header-title">Proxy logs</h1>
+                </header>
+            
+            <article>
+                
+<p>There can be various proxy servers in a network. One that stands out and is used widely is the <strong>Squid proxy server</strong>. According to the Squid website, it is a caching proxy that greatly reduces bandwidth and response timings in a network set up for services such as HTTP, HTTPS, and FTP. We will again use Sawmill to investigate proxy logs:</p>
+<div class="CDPAlignCenter CDPAlign"><img src="assets/0702c900-30d9-441b-8046-745cedcd3fa9.png"/></div>
+<ol>
+<li>We can see that we have a variety of data, demonstrating the <span class="packt_screen">User Summary</span>, <span class="packt_screen">Traffic</span>, <span class="packt_screen">Page views</span>, number of <span class="packt_screen">Sessions</span>, and a variety of other useful data, such as <span class="packt_screen">Top level domain</span>:</li>
+</ol>
+<div class="CDPAlignCenter CDPAlign"><img src="assets/3f44aa63-ded6-421d-90f3-7019a3ca0d9b.png" style="width:43.92em;height:50.75em;"/></div>
+<ol start="2">
+<li>We can also view the most frequently browsed URLs:</li>
+</ol>
+<div class="CDPAlignCenter CDPAlign"><img src="assets/4d3e35c1-3da2-4623-9dfc-e865a422af18.png"/></div>
+<ol start="3">
+<li>You can filter logs on by date by clicking on <span class="packt_screen">Date Picker</span>, selecting <span class="packt_screen">Relative date</span>, and choosing a time frame:</li>
+</ol>
+<div class="CDPAlignCenter CDPAlign"><img src="assets/f9115fb6-c105-42f9-94c6-ae47e2ec0121.png" style="width:31.75em;height:19.00em;"/></div>
+<p>Consider a scenario where you want to view the logs of a particular user on a particular URL. You can make use of the <span class="packt_screen">Zoom</span> feature by enabling the following highlighted filters:</p>
+<div class="CDPAlignCenter CDPAlign"><img src="assets/61fb2154-3cf7-4f59-b7ce-730045e6147a.png"/></div>
+<p>In the preceding screenshot, the blue circle with a black ring around it is the <span class="packt_screen">Zoom</span> button, and a leading blue dot generally denotes a zoomed item. In the preceding screen, we can see two blue dots: one at the <kbd>bbabatop</kbd> user and another at the <kbd>geospecies.org</kbd> website. All we need to do next is press the <span class="packt_screen">F</span><span class="packt_screen">ilter</span> button:</p>
+<div class="CDPAlignCenter CDPAlign"><img src="assets/6d2b9aae-e269-4b2f-9373-b595efcfecb5.png" style="width:38.50em;height:22.50em;"/></div>
+<p>We can see that the selected entries are now added as a filter and we need to save and apply to filter the entries out. An example filter on <kbd>babayomi</kbd> user for <kbd>yahoo.com</kbd> and while selecting <span class="packt_screen">Hours of day</span> yields the following set of results:</p>
+<div class="CDPAlignCenter CDPAlign"><img src="assets/fc2e10f4-ab80-48c5-889d-3bebc541aa86.png"/></div>
+<p>You can also view <span class="packt_screen">Date and time</span>, <span class="packt_screen">Years</span>, <span class="packt_screen">Months</span>, and <span class="packt_screen">Days</span> by building such filters, which becomes instrumental during an investigation. Consider a scenario where a malicious application is trying to download a payload from a website. In such cases, you will easily be able to track the first attempt for the download, thus finding the <strong>Indicators of Compromise</strong> (<strong>IOCs</strong>) and the first system that was compromised:</p>
+<div class="CDPAlignCenter CDPAlign"><img src="assets/6fe0efed-f396-46e9-8515-0218f0baa641.png"/></div>
+<ol>
+<li>The first and only attempt to <kbd>windowsupdate.com</kbd> was made on September 8, 2006. Clicking on <span class="packt_screen">Hours of day</span>, we get the following result:</li>
+</ol>
+<div class="CDPAlignCenter CDPAlign"><img src="assets/add4fe67-b2ce-4a3a-86f0-73a2d7b6b40b.png"/></div>
+<ol start="2">
+<li>Clicking on the <span class="packt_screen">Usernames</span>, we will be able to get the users who requested this website:</li>
+</ol>
+<div class="CDPAlignCenter CDPAlign"><img src="assets/ac2f55cf-83f4-4743-b299-cffecc8169da.png"/></div>
+<ol start="3">
+<li>We can see that the <kbd>nobody</kbd> and <kbd>femiadedeji</kbd> users made hits to the target domain. By building a filter on the <kbd>femiadedeji</kbd> user and the domain, we can select the <span class="packt_screen">Pages/directories</span> to reveal the following:</li>
+</ol>
+<div class="CDPAlignCenter CDPAlign"><img src="assets/694dfbf5-e12b-41d6-b83f-975cc1a5eadd.png"/></div>
+<ol start="4">
+<li>We can now confirm that the <kbd>femiadedeji</kbd> user accessed <kbd>windowsupdate.com</kbd> and downloaded files of the <kbd>.cab</kbd> and <kbd>.txt</kbd> types:</li>
+</ol>
+<p class="CDPAlignCenter CDPAlign"><img src="assets/c0c01380-a6cb-4294-a2ca-b40afeb33316.png"/></p>
+<ol start="5">
+<li>When we click on <span class="packt_screen">Usage Detail</span>, we get the following:</li>
+</ol>
+<div class="CDPAlignCenter CDPAlign"><img src="assets/2614aac6-b870-4317-952f-e69b3d29346f.png"/></div>
+<p style="padding-left: 60px">We can see that we now have plenty of detail related to the events.</p>
+
+
+            </article>
+
+            
+        </section>
+    
+
+        <section>
+
+                            <header>
+                    <h1 class="header-title">IDS logs</h1>
+                </header>
+            
+            <article>
+                
+<p>Let's make use of Sawmill again, this time to parse snort logs:</p>
+<div class="CDPAlignCenter CDPAlign"><img src="assets/8d67ccfc-27fb-4e16-99f7-021da20451a1.png" style="width:38.33em;height:27.25em;"/></div>
+<ol>
+<li>We will select<span> </span><span class="packt_screen">Create New Profile</span>, <span>which will result in the following:</span></li>
+</ol>
+<div class="CDPAlignCenter CDPAlign"><img src="assets/40d55218-88de-4616-91df-badcee8527df.png"/></div>
+<ol start="2">
+<li>Select <kbd>Snort logs</kbd> and then press <span class="packt_screen">Next</span>, which will show us the log-detection process:</li>
+</ol>
+<div class="CDPAlignCenter CDPAlign"><img src="assets/bba69d87-6f99-4e41-87ae-3f165436160e.png"/></div>
+<ol start="3">
+<li>On successfully detecting the log type, we will get the following options:</li>
+</ol>
+<div class="CDPAlignCenter CDPAlign"><img src="assets/32e6e489-5c44-4862-b454-4842a1d9a705.png"/></div>
+<ol start="4">
+<li>Select <span class="packt_screen">Sourcefire Snort 2</span> format and press <span class="packt_screen">Next</span>. On the next screen, we will be presented with a message that states that the logs are in Syslog format. Now choose a name for the profile:</li>
+</ol>
+<div class="CDPAlignCenter CDPAlign"><img src="assets/98993582-1409-4282-8bea-abea8c29b614.png"/></div>
+<ol start="5">
+<li>Click on the <span class="packt_screen">Finish</span> button to start to create a database for the logs:</li>
+</ol>
+<div class="CDPAlignCenter CDPAlign"><img src="assets/7e624288-90ec-4e5b-a0cb-97aa68387306.png" style="width:33.25em;height:27.25em;"/></div>
+<ol start="6">
+<li>On selecting <span class="packt_screen">Process Data &amp; View Reports</span>, the following process gets initiated:</li>
+</ol>
+<div class="CDPAlignCenter CDPAlign"><img src="assets/65bba61e-d36a-428d-9e89-d30a7779c003.png" style="width:30.08em;height:24.75em;"/></div>
+<p>Once the process is complete, we will be presented with the reports. Since we have worked extensively on the filters, I leave it as an exercise for you to perform on your own. However, before we move on, let's discuss the <span class="packt_screen">Single-page Summary</span>:</p>
+<div class="CDPAlignCenter CDPAlign"><img src="assets/f65c80ca-2f65-41ba-84a5-3a1021dc58aa.png"/></div>
+<p>A <span class="packt_screen">Single-page Summary</span> presenting most of the stats. We can see that we have the destination and source IP as the filter, and Sawmill has generated a summary for us to view. Interestingly, we have the following details in summary as well:</p>
+<div class="CDPAlignCenter CDPAlign"><img src="assets/8c63e0e8-76c4-4e23-bd39-44faa7c1550a.png"/></div>
+<p>We can see that we filtered out a <kbd>Network Trojan</kbd> alert with ease. Let's now look at a case study and make use of the knowledge learned from the preceding log-analysis exercises.</p>
+<p class="mce-root"/>
+
+
+            </article>
+
+            
+        </section>
+    
+
+        <section>
+
+                            <header>
+                    <h1 class="header-title">Case study – hack attempts</h1>
+                </header>
+            
+            <article>
+                
+<p>Consider a simple scenario where you are tasked with finding the origin of incoming attacks on a particular web application. The only thing you know about the network is that the application is internally hosted and is not connected to the outside world. There is a caching proxy running in the network as well. As the forensic investigator, the first thing you requested from the client is the logs of the application server, which you started to investigate in <span class="packt_screen">Apache Logs Viewer</span>:</p>
+<div class="CDPAlignCenter CDPAlign"><img src="assets/2e1405ef-ac52-4516-9404-f7f82c2fefe7.png"/></div>
+<div class="CDPAlignCenter CDPAlign packt_figref">Apache log viewer</div>
+<p>We quickly deduce that there are two IP addresses of supreme interest, <kbd>192.168.174.157</kbd> and <kbd>192.168.174.150</kbd>, and since the <span class="packt_screen">User-Agent</span> contains <kbd>sqlmap</kbd>, it's a SQL injection attempt. We can also see the requests that contain buzzwords, such as <kbd>WHERE</kbd> and <kbd>SELECT</kbd>, which are typically used in SQL injections on a vulnerable parameter. Upon further investigation and talking to the client, we see that the <kbd>192.168.174.150</kbd> IP is a caching proxy server. Therefore, we request the client for the proxy server logs, which can be investigated in the Sawmill software:</p>
+<div class="CDPAlignCenter CDPAlign"><img src="assets/f7c5104a-1d49-4ef8-a6aa-ed416636d05a.png"/></div>
+<p>The attacker has made use of the proxy server to forward all the traffic to the target application. Making use of the proxy logs, we will be able to pinpoint the original IP that made the requests. Keep the URL as <kbd>192.168.174.142</kbd> as the filter and browsing to the source, which gives us the following information:</p>
+<div class="CDPAlignCenter CDPAlign"><img src="assets/45343091-8ff3-48eb-9cbf-9a23d7b2900f.png"/></div>
+<p>Again, we get the <kbd>192.168.174.157</kbd> IP address as the culprit. At this point, we are sure that the attack originated internally from this IP, so let's investigate this IP address. Having gone through the server, we see the Apache server running on it and hosting a vulnerable app, which is <kbd>php-utility-belt</kbd>. We are pretty sure that someone obtained access to this machine through here. Let's manually investigate the logs from Apache:</p>
+<div class="CDPAlignCenter CDPAlign"><img src="assets/48899536-64f1-4f54-ac61-29cdee1c4772.png"/></div>
+<p>We can see that only one IP address accessed the application on this server's Apache, which is <kbd>192.168.174.152</kbd>. Let's open Wireshark to see whether there are still any packets traveling to and from this IP:</p>
+<div class="CDPAlignCenter CDPAlign"><img src="assets/e2681a90-953b-44fd-a04b-6910c83280e1.png"/></div>
+<p>Yes, there's plenty going around on port <kbd>4433</kbd> and <kbd>4444</kbd>. This confirms that the user of <kbd>192.168.174.152</kbd> is the culprit, as the system is not connected to the internet and has only internal access.</p>
+<p>Throughout this case study, we saw how logs could be very helpful during the investigation process and reveal a lot about the incoming attacks. Creating a root-cause analysis gives us the following:</p>
+<div class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-1075 image-border" src="assets/70217c38-cf76-497d-bdf4-ed20f1c2dbba.png" style="width:40.50em;height:21.67em;"/></div>
+<p>The attacker attacked the PHP utility belt application that was running on the <kbd>192.168.174.157</kbd> system and gained access to the machine. Since the compromised system used the Squid proxy as a system-wide proxy, all the attacks to the application at the <kbd>192.168.174.142</kbd> server came through the proxy server at <kbd>192.168.174.150</kbd>. The Apache logs at <kbd>192.168.174.142</kbd> revealed <kbd>192.168.174.150</kbd>, and the Squid logs at <kbd>192.168.174.150</kbd> revealed <kbd>192.168.174.157</kbd>. Investigating the Apache logs on <kbd>192.168.174.157</kbd> finally revealed the attacker at <kbd>192.168.174.152</kbd>.</p>
+
+
+            </article>
+
+            
+        </section>
+    
+
+        <section>
+
+                            <header>
+                    <h1 class="header-title">Summary</h1>
+                </header>
+            
+            <article>
+                
+<p>We kicked off this chapter with an OSI model refresher, and since we covered basic network forensics scenarios in the previous chapter, we shifted our focus toward log-based analysis. We looked at a variety of log structures and learned about how we can parse them by making use of various types of software analyzers. We explored application-server logs, database logs, firewall logs, proxy server logs, and IDS logs. We also made use of the strategies learned in this chapter to solve the case study. We are now prepped with the basics of network forensics, and soon we'll dive into the advanced concepts.</p>
+
+
+            </article>
+
+            
+        </section>
+    
+
+        <section>
+
+                            <header>
+                    <h1 class="header-title">Questions and exercises</h1>
+                </header>
+            
+            <article>
+                
+<p>To enhance your network forensics skills on log-based evidence, try answering/solving the following exercises and problems:</p>
+<ul>
+<li>Try replicating all the exercises for the chapter by downloading the network evidence from the chapter's GitHub page</li>
+<li>Try highlighter tool to extract relevant information from <a href="https://www.fireeye.com/services/freeware/highlighter.html">https://www.fireeye.com/services/freeware/highlighter.html</a></li>
+<li>Try developing a simple shell script to extract all the unique URLs from the Apache logs</li>
+</ul>
+
+
+            </article>
+
+            
+        </section>
+    
+
+        <section>
+
+                            <header>
+                    <h1 class="header-title">Further reading</h1>
+                </header>
+            
+            <article>
+                
+<p>Check out the following resources for more information on the topics covered in this chapter:</p>
+<ul>
+<li><strong>Creating parsers</strong>: <a href="https://codehangar.io/smiple-log-and-file-processing-in-python/"><span class="URLPACKT">https://codehangar.io/smiple-log-and-file-processing-in-python/</span></a></li>
+<li><strong>Log analysis</strong>: Refer to chapter <em>Log Analysis</em>, in the book <em>Cybersecurity - Attack and Defense Strategies</em> (<a href="https://www.amazon.in/Cybersecurity-Defense-Strategies-Infrastructure-security-ebook/dp/B0751FTY5B">https://www.amazon.in/Cybersecurity-Defense-Strategies-Infrastructure-security-ebook/dp/B0751FTY5B</a>)</li>
+</ul>
+
+
+            </article>
+
+            
+        </section>
+    </body></html>

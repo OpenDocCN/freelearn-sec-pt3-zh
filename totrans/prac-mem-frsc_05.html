@@ -1,0 +1,192 @@
+<html><head></head><body><div id="sbo-rt-content"><div id="_idContainer029">
+			<h1 id="_idParaDest-43"><a id="_idTextAnchor041"/>Chapter 3: Windows Memory Acquisition</h1>
+			<p>You already know some theory, but as you may know, in essence, there's no difference between <em class="italic">theory</em> and <em class="italic">practice</em>, but in reality <em class="italic">there is</em>. So, let's move on and dive into some practical tasks, starting with <strong class="bold">Windows memory acquisition</strong>, as Windows is the most widely used operating system. </p>
+			<p>What does it mean? It's the most common target for threat actors! It also means that you will face it very often during your incident response engagements (and some criminal cases, of course). Therefore it's a very good idea to start from learning how to acquire memory from a Windows host.</p>
+			<p>This chapter will introduce you to the four most common tools used for Windows memory acquisition, and—of course—you'll learn how to use them and obtain memory images for further analysis.</p>
+			<p>We'll cover the following topics:</p>
+			<ul>
+				<li><a id="_idTextAnchor042"/>Understanding Windows memory-acquisition issues</li>
+				<li>Preparing for Windows memory acquisition</li>
+				<li>Acquiring memory with <strong class="bold">FTK Imager</strong></li>
+				<li>Acquiring memory with <strong class="bold">WinPmem</strong></li>
+				<li>Acquiring memory with <strong class="bold">Belkasoft Live RAM Capturer</strong></li>
+				<li>Acquiring memory with <strong class="bold">Magnet RAM Capture</strong></li>
+			</ul>
+			<h1 id="_idParaDest-44"><a id="_idTextAnchor043"/>Understanding Windows memory-acquisition issues</h1>
+			<p>In the previous chapter, we <a id="_idIndexMarker041"/>covered the general concepts of memory dumping in detail and discussed possible issues. However, each operating system has its particular peculiarities. The main peculiarity related to memory extraction in Windows is <a id="_idIndexMarker042"/>the access to <strong class="bold">random-access memory</strong> (<strong class="bold">RAM</strong>), but first things first.</p>
+			<p>Remember that earlier, we talked about <strong class="bold">device memory</strong>, which is <a id="_idIndexMarker043"/>the area of physical memory that is reserved for devices? Such devices include video cards, audio cards, Peripheral Component Interconnect (<strong class="bold">PCI</strong>) cards, and so on. Their <a id="_idIndexMarker044"/>direct access to the physical memory is vital for their qualitative and effective operation. And do you remember what trying to access device memory can lead to? That's right—it can lead to <em class="italic">unpredictable consequences</em>. </p>
+			<p>The thing is, attempts to access or write to device memory are translated into requests sent to the corresponding device. However, different devices may react differently to an attempt to interact with a piece of physical memory reserved by them. In some cases, this can lead to changes in the critical data on which a device's functionality depends. From a forensic point of view, however, the consequence can be the loss of significant evidence, or, in the worst case, the freezing or shutting down of the system.</p>
+			<p>Access to physical memory in the Windows operating system is implemented through a <strong class="source-inline">\Device\PhysicalMemory</strong> kernel object. Previously, this file was easy to work with, since it was fully accessible to the user-space programs. However, if we consider all the preceding information, it is quite clear that this approach was not entirely safe. </p>
+			<p>This has all changed with the release of <strong class="bold">Windows Server 2003 Service Pack 2 (SP2)</strong>. Of course, user-space programs can still read this file, but write access is now possible exclusively from the kernel space. Now, acquisition tools must work at the kernel level or use special drivers to create memory dumps. </p>
+			<p>Another thing that has influenced the change in memory extraction tools is the widespread <a id="_idIndexMarker045"/>use of <em class="italic">virtualization</em>. This has resulted in a system crash when such tools are run on <a id="_idIndexMarker046"/>systems with <strong class="bold">Virtual Secure Mode</strong> (<strong class="bold">VSM</strong>) enabled. Nevertheless, the latest versions of the most used tools have already managed to deal with this issue.</p>
+			<p>Despite these changes, the number of tools for Windows memory acquisition is still large. </p>
+			<p>Let's look at <a id="_idIndexMarker047"/>some of the most commonly used tools in the next sections.</p>
+			<h1 id="_idParaDest-45"><a id="_idTextAnchor044"/>Preparing for Windows memory acquisition</h1>
+			<p>Before we start to <a id="_idIndexMarker048"/>work with the imaging tools, we need to prepare a couple of things. Firstly, you need to find a flash drive that you will use to store both the tool itself and the created memory dump, so make sure it has enough space. Secondly, you need to sanitize it. This means that you need to <em class="italic">forensically wipe</em> the drive. </p>
+			<p class="callout-heading">Important note</p>
+			<p class="callout">During the standard deletion process, metadata related to the <em class="italic">deleted</em> files is changed and the space where these files are located is marked as <em class="italic">available for reuse</em>. In other words, after deletion, the content of the files will reside on the drive and can be recovered. The formatting process is quite similar. A few certain master files are rewritten, but information can still be obtained from the drive. Thus, to delete files securely, you need to overwrite the content with zeros or random data. </p>
+			<p>To wipe drives, different tools and methods can be used, depending on the type of removable media. We already decided to use a flash drive; in this case, there are two quite effective and fast options, outlined as follows:</p>
+			<ul>
+				<li>Write a pre-prepared file proportional to the entire volume of the flash drive.</li>
+				<li>Use the <strong class="bold">Secure Erase</strong> option.</li>
+			</ul>
+			<p>Unfortunately, not all vendors have their own utilities that allow you to securely wipe their drives with the Secure Erase option. You can check this information on the official web page of the vendor of your flash drive.</p>
+			<p>When you have your flash drive sanitized, you can add some imaging tools there.</p>
+			<h1 id="_idParaDest-46"><a id="_idTextAnchor045"/>Acquiring memory with FTK imager</h1>
+			<p><strong class="bold">AccessData FTK Imager</strong> is one of the most popular free tools. It's commonly used both by forensic analysts and incident responders for disk image previews, or even live response, so it can be used not only for bit-by-bit imaging, but also for creating custom content images and, of course, memory images. Let's get a closer look! Follow these next steps:</p>
+			<ol>
+				<li>To get <strong class="bold">FTK Imager</strong>, go to the <em class="italic">AccessData</em> official web page at <a href="https://accessdata.com/products-services/forensic-toolkit-ftk/ftkimager">https://accessdata.com/products-services/forensic-toolkit-ftk/ftkimager</a>. </li>
+				<li>Choose <strong class="bold">Products &amp; Services</strong> | <strong class="bold">FTK® Imager</strong>. Follow the <strong class="bold">Download FTK Imager today!</strong> link and press <strong class="bold">Download now</strong>. You will be asked to fill in a short form with your contact information. After that, a link will be sent to the email address you specified.</li>
+			</ol>
+			<p>Now, you need to <a id="_idIndexMarker049"/>install FTK Imager on your flash drive. You <a id="_idIndexMarker050"/>can use the <strong class="bold">InstallShield Wizard</strong> tool, which <a id="_idIndexMarker051"/>provides step-by-step installation instructions.</p>
+			<p>To create memory dumps, FTK Imager loads a device driver into the kernel and starts to subsequently read memory through mapping the <strong class="source-inline">\Device\PhysicalMemory</strong> kernel object. From a user's point of view, the process of memory acquisition with FTK Imager is very simple and intuitive. Follow these instructions to create your memory image:</p>
+			<ol>
+				<li value="1">Connect the flash drive to the target system and run FTK Imager. The main window will appear, as shown here:</li>
+			</ol>
+			<div>
+				<div id="_idContainer017" class="IMG---Figure">
+					<img src="Images/Fig_3.1.jpg" alt="Figure 3.1 – FTK Imager main window&#13;&#10;" width="868" height="566"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 3.1 – FTK Imager main window</p>
+			<ol>
+				<li value="2">Go to <strong class="bold">File</strong> and click on <strong class="bold">Capture Memory…</strong>, or find the associated icon on the toolbar. The <a id="_idIndexMarker052"/>following <a id="_idIndexMarker053"/>screenshot illustrates the former option: </li>
+			</ol>
+			<div>
+				<div id="_idContainer018" class="IMG---Figure">
+					<img src="Images/Fig_3.2.jpg" alt="Figure 3.2 – FTK Imager File menu&#13;&#10;" width="1078" height="625"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 3.2 – FTK Imager File menu</p>
+			<ol>
+				<li value="3">In the <a id="_idIndexMarker054"/>dialog window, click <strong class="bold">Browse</strong> to choose the location where <a id="_idIndexMarker055"/>you want to store the memory dump. Also, you need to choose a name for the dump—by default, this is <strong class="source-inline">memdump.mem</strong>. We also recommend you check the <strong class="bold">Include pagefile</strong> checkbox, as shown here: </li>
+			</ol>
+			<div>
+				<div id="_idContainer019" class="IMG---Figure">
+					<img src="Images/Fig_3.3.jpg" alt="Figure 3.3 – Memory Capture dialog window&#13;&#10;" width="398" height="355"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 3.3 – Memory Capture dialog window</p>
+			<ol>
+				<li value="4">Press <a id="_idIndexMarker056"/>the <strong class="bold">Capture Memory</strong> button. As a result, you <a id="_idIndexMarker057"/>will see a dialog like the one in the following screenshot, illustrating the progress of dump creation: </li>
+			</ol>
+			<div>
+				<div id="_idContainer020" class="IMG---Figure">
+					<img src="Images/Fig_3.4.jpg" alt="Figure 3.4 – Imaging progress&#13;&#10;" width="482" height="233"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 3.4 – Imaging progress</p>
+			<p>After a few minutes of waiting, we get our memory dump, which is a file with a <strong class="source-inline">.mem</strong> extension. The image is ready to be analyzed with your <a id="_idIndexMarker058"/>tool of choice—for example, the <strong class="bold">Volatility Framework</strong>.</p>
+			<p>FTK Imager is a <a id="_idIndexMarker059"/>powerful tool with a wide range of functionality, but <a id="_idIndexMarker060"/>we want you to have a choice, so let's look at some other tools.</p>
+			<h1 id="_idParaDest-47"><a id="_idTextAnchor046"/>Acquiring memory with WinPmem</h1>
+			<p><strong class="bold">WinPmem</strong> was originally <a id="_idIndexMarker061"/>developed by Google and was a <a id="_idIndexMarker062"/>part of the <strong class="bold">Rekall Framework</strong>, but <a id="_idIndexMarker063"/>has now been released as a standalone memory acquisition tool. The tool supports a wide range of Windows versions—from <strong class="bold">XP</strong> to <strong class="bold">10</strong>—and has standalone executables both for 32- and 64-bit systems. </p>
+			<p>WinPmem utilizes three independent <a id="_idIndexMarker064"/>methods to create memory dumps, outlined as follows:</p>
+			<ul>
+				<li><strong class="bold">Page table entry</strong> (<strong class="bold">PTE</strong>) remapping</li>
+				<li>Use of <a id="_idIndexMarker065"/>the <strong class="source-inline">MMMapIoSpace</strong> kernel <strong class="bold">application programming interface</strong> (<strong class="bold">API</strong>)</li>
+				<li>Traditional <strong class="source-inline">\Device\PhysicalMemory</strong> mapping</li>
+			</ul>
+			<p>The first of the preceding methods is used by default as it is considered the most stable. However, users can choose any other method manually. </p>
+			<p>To download this tool, go to the <strong class="source-inline">WinPmem</strong> repository on the <em class="italic">Velocidex</em> GitHub page, at <a href="https://github.com/Velocidex/WinPmem">https://github.com/Velocidex/WinPmem</a>. </p>
+			<p>The page looks like this: </p>
+			<div>
+				<div id="_idContainer021" class="IMG---Figure">
+					<img src="Images/Fig_3.5.jpg" alt="Figure 3.5 – WinPmem GitHub repository&#13;&#10;" width="1592" height="779"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 3.5 – WinPmem GitHub repository</p>
+			<p>On the right side of the page, go to <strong class="bold">Releases</strong> and download <strong class="source-inline">winpmem_mini_x64.exe</strong>. Copy this executable to your flash drive. This program does not require any additional dependencies and is self-contained. Also, you don't need to worry about x64 and x86 differences. WinPmem will load the correct driver automatically.</p>
+			<p>The following <a id="_idIndexMarker066"/>instructions will help you to acquire memory <a id="_idIndexMarker067"/>with WinPmem:</p>
+			<ol>
+				<li value="1">Connect the flash drive to the target system. Run <strong class="source-inline">cmd</strong> or <strong class="source-inline">PowerShell</strong> as <strong class="source-inline">Administrator</strong>, which is shown in the following screenshot: </li>
+			</ol>
+			<div>
+				<div id="_idContainer022" class="IMG---Figure">
+					<img src="Images/Fig_3.6.jpg" alt="Figure 3.6 – Running PowerShell from the search box&#13;&#10;" width="982" height="850"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 3.6 – Running PowerShell from the search box</p>
+			<ol>
+				<li value="2">Move to your flash drive and run <strong class="source-inline">winpmem_mini_x64.exe</strong> with the name of the memory dump as the <em class="italic">argument</em>. As shown in the following screenshot, <strong class="source-inline">memdump.raw</strong> is the argument provided: </li>
+			</ol>
+			<div>
+				<div id="_idContainer023" class="IMG---Figure">
+					<img src="Images/Fig_3.7.jpg" alt="Figure 3.7 – WinPmem execution&#13;&#10;" width="708" height="241"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 3.7 – WinPmem execution</p>
+			<ol>
+				<li value="3">During the <a id="_idIndexMarker068"/>memory-dump process, you will <a id="_idIndexMarker069"/>be able to see all the related information, as shown in the following screenshot: </li>
+			</ol>
+			<div>
+				<div id="_idContainer024" class="IMG---Figure">
+					<img src="Images/Fig_3.8.jpg" alt="Figure 3.8 – Dump creation with WinPmem&#13;&#10;" width="850" height="600"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 3.8 – Dump creation with WinPmem</p>
+			<p>After a while, we will get a raw memory dump with the specified name. </p>
+			<p>This is how we can <a id="_idIndexMarker070"/>extract Windows memory using <a id="_idIndexMarker071"/>PowerShell and WinPmem, but there is more to this. Let's add a couple more tools to our collection.</p>
+			<h1 id="_idParaDest-48"><a id="_idTextAnchor047"/>Acquiring memory with Belkasoft RAM Capturer</h1>
+			<p><strong class="bold">Belkasoft RAM Capturer</strong> is another <a id="_idIndexMarker072"/>free tool for <a id="_idIndexMarker073"/>memory acquisition. As with the previous tools outlined, it uses kernel drivers to extract the physical memory and create dumps. This tool is compatible with all 32- and 64-bit versions of Windows, including Windows <strong class="bold">XP</strong>, Windows <strong class="bold">Vista</strong>, Windows <strong class="bold">7</strong> and <strong class="bold">8</strong>, Server 2003 and 2008, and Windows <strong class="bold">10</strong>.</p>
+			<p>You will need to take the following steps: </p>
+			<ol>
+				<li value="1">To get this tool, go to the <strong class="bold">Download</strong> tab on the official <em class="italic">Belkasoft</em> web page at https://belkasoft.com/. </li>
+				<li>Choose <strong class="bold">Belkasoft Live RAM Capturer</strong> and leave your email in the specified field. After confirmation, you will receive a download link. From this link, you will get an archive with two <strong class="source-inline">x64</strong> and <strong class="source-inline">x86</strong> folders, which should be extracted to a flash drive.</li>
+				<li>This time, you <a id="_idIndexMarker074"/>need to find out if you're <a id="_idIndexMarker075"/>dealing with an x64 or an x86 system. To do so, use the <strong class="bold">Search</strong> box on the taskbar. Type <strong class="source-inline">system</strong> and run the <strong class="bold">System Information</strong> application, as shown in the following screenshot: </li>
+			</ol>
+			<div>
+				<div id="_idContainer025" class="IMG---Figure">
+					<img src="Images/Fig_3.9.jpg" alt="Figure 3.9 – Running System Information from the search box&#13;&#10;" width="981" height="848"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 3.9 – Running System Information from the search box</p>
+			<p>In the opened window, search for <strong class="bold">System Type</strong> under <strong class="bold">System Summary</strong>, as shown in the following screenshot. The <strong class="bold">x64-based PC</strong> value identifies 64-bit systems:</p>
+			<div>
+				<div id="_idContainer026" class="IMG---Figure">
+					<img src="Images/Fig_3.10.jpg" alt="Figure 3.10 – System-type detection&#13;&#10;" width="801" height="421"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 3.10 – System-type detection</p>
+			<p>In the case of an <strong class="bold">x64-based PC</strong> system type, you need to use <strong class="bold">Ram Capturer</strong> from the <strong class="source-inline">x64</strong> folder; otherwise, choose <a id="_idIndexMarker076"/>another one <a id="_idIndexMarker077"/>from <strong class="source-inline">x86</strong>. You are ready to create a memory dump. Please take the following steps: </p>
+			<ol>
+				<li value="1">Connect the flash drive to the target system and run the <strong class="source-inline">RamCapture</strong> executable.</li>
+				<li>Type the output folder path in the specified field and press the <strong class="bold">Capture!</strong> button.</li>
+			</ol>
+			<p>The process of dump creation will look like this: </p>
+			<div>
+				<div id="_idContainer027" class="IMG---Figure">
+					<img src="Images/Fig_3.11.jpg" alt="Figure 3.11 – Imaging with Belkasoft RAM Capturer&#13;&#10;" width="668" height="340"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 3.11 – Imaging with Belkasoft RAM Capturer</p>
+			<p>Finally, we get the <a id="_idIndexMarker078"/>memory dump with a <strong class="source-inline">.mem</strong> extension. By default, the <a id="_idIndexMarker079"/>filename consists of the acquisition date, but you can always replace it with something more descriptive. </p>
+			<p>You can now create memory dumps using three different tools. Let's take a look at the last tool, but not the least one.</p>
+			<h1 id="_idParaDest-49"><a id="_idTextAnchor048"/>Acquiring memory with Magnet RAM Capture</h1>
+			<p><strong class="bold">Magnet Forensics</strong> also <a id="_idIndexMarker080"/>released its <a id="_idIndexMarker081"/>own free memory acquisition tool, called <strong class="bold">Magnet RAM Capture</strong>, which can be used to acquire <a id="_idIndexMarker082"/>memory from Windows systems. To extract the physical memory, Magnet RAM Capture uses a kernel-mode driver. It creates memory dumps in raw format, which is supported by both open source memory forensic tools and full-featured digital forensic suites. </p>
+			<p>To download Magnet RAM Capture, take the following steps: </p>
+			<ol>
+				<li value="1">Go to the <strong class="bold">RESOURCES</strong> tab and then the <strong class="bold">FREE TOOLS</strong> tab on the official <em class="italic">Magnet Forensics</em> web page at <a href="https://www.magnetforensics.com/">https://www.magnetforensics.com/</a>. </li>
+				<li>Choose <strong class="bold">MAGNET RAM CAPTURE</strong> and fill in a short form. After confirmation, you will receive a download link. After downloading, copy <strong class="source-inline">MRCv120.exe</strong> to your flash drive. </li>
+			</ol>
+			<p>Dumping memory with <a id="_idIndexMarker083"/>Magnet RAM Capture is <a id="_idIndexMarker084"/>very easy and straightforward, as the following instructions show: </p>
+			<ol>
+				<li value="1">Connect the flash drive to the target system and run <strong class="source-inline">MRCv120.exe</strong> as Administrator.</li>
+				<li>Choose a <strong class="bold">Segment size</strong> option in the drop-down menu (the default is <strong class="bold">Don't Split</strong>, and it's the recommended mode).</li>
+				<li>Click on the <strong class="bold">Browse…</strong> button and choose the memory image filename and location.</li>
+				<li>Click on the <strong class="bold">Start</strong> button.</li>
+			</ol>
+			<p>The imaging process will start; you should wait for the progress bar to get to <strong class="screen-inline">100%</strong>. Here is an example of an imaging process with Magnet RAM Capture:</p>
+			<div>
+				<div id="_idContainer028" class="IMG---Figure">
+					<img src="Images/Fig_3.12.jpg" alt="Figure 3.12 – Imaging process with Magnet RAM Capture&#13;&#10;" width="727" height="336"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 3.12 – Imaging process with Magnet RAM Capture</p>
+			<p>Once the process is finished, you'll find a raw memory image under the location you specified previously.</p>
+			<h1 id="_idParaDest-50"><a id="_idTextAnchor049"/>Summary</h1>
+			<p>When creating memory images, you must consider not only the general concept but also factors unique to each individual operating system. For the Windows operating system, such a factor is access to the <strong class="source-inline">/Devices/PhysicalMemory</strong> kernel object. </p>
+			<p>Most modern tools use kernel drivers to create dumps, but some tools have their own unique approach, manifested by using alternatives to the classic <strong class="source-inline">/Devices/PhysicalMemory</strong> mapping.</p>
+			<p>Despite the variety of tools for Windows memory extraction, it is worth remembering that the best tool is the one that has been successfully tested on systems identical—or at least, very similar—to the target.</p>
+			<p>In this chapter, we have learned how to create memory dumps using various free tools. Now, it's time to start looking inside them! In the next chapter, we will get to know the tools for Windows memory-dump analysis and learn how to search for traces of user activity.</p>
+		</div>
+	</div></body></html>

@@ -1,0 +1,480 @@
+<html><head></head><body><div id="sbo-rt-content"><div id="_idContainer182">
+			<h1 id="_idParaDest-102"><a id="_idTextAnchor105"/>Chapter 6: Alternative Sources of Volatile Memory</h1>
+			<p>In previous chapters, we have talked about the importance of memory dumps as a source of useful data for forensic investigations. We've looked at many different tools for analysis, discussed techniques for user activity examination, and discussed techniques for detecting traces of malicious software. However, the subject of Windows operating system memory forensics is not over yet. </p>
+			<p>We mentioned at the very beginning that there are alternative sources of memory that might contain similar information in addition to the main memory itself. If for some reason you were unable to create a full memory dump or its analysis failed, you can always turn to these sources: hibernation file, pagefile, swapfile, and crash dumps. This is what we will talk about in this chapter.</p>
+			<p>The chapter will explain how to access alternative sources of volatile data, which tools to use to analyze it, and, of course, which techniques to use to retrieve certain information.</p>
+			<p>The following topics will be covered in this chapter:</p>
+			<ul>
+				<li>Investigating hibernation files</li>
+				<li><a id="_idTextAnchor106"/>Examining pagefiles and swapfiles</li>
+				<li>Analyzing crash dumps</li>
+			</ul>
+			<h1 id="_idParaDest-103"><a id="_idTextAnchor107"/>Investigating hibernation files</h1>
+			<p>The first <a id="_idIndexMarker361"/>alternative source we will look at is a hibernation file. There <a id="_idIndexMarker362"/>is a reason we are starting here, as a hibernation file is a compressed copy of <strong class="bold">Random Access Memory</strong> (<strong class="bold">RAM</strong>). This copy is created when the computer goes into hibernation mode when it is enabled. It is a power-saving mode of the operating system that allows the contents of the memory to be saved to nonvolatile memory in a <strong class="source-inline">hiberfil.sys</strong> file before powering off. This is the main difference between sleep mode and hibernation mode because the power supply is completely cut off when hibernation is used.</p>
+			<p>Because a <a id="_idIndexMarker363"/>hibernation file is a copy of RAM at the time the computer goes into power-saving mode, it can contain files that the user was working with, even if those files are no longer present on disk at the time when the hibernation file is taken for analysis. This source may therefore play an important role in forensic investigation, so how do we obtain this file?</p>
+			<h2 id="_idParaDest-104"><a id="_idTextAnchor108"/>Acquiring a hibernation file</h2>
+			<p>A completed hibernation file is usually located under the root directory; however, this file is <a id="_idIndexMarker364"/>protected by the system and is hidden by default. If you are working with a live machine and a hibernation file has already been created, you can use imaging tools and copy the file to removable media. </p>
+			<p>You can <a id="_idIndexMarker365"/>use the well-known <strong class="bold">Forensic Toolkit Imager</strong> (<strong class="bold">FTK Imager</strong>) for this purpose. Run it on the target host and click <strong class="bold">File</strong> -&gt; <strong class="bold">Add Evidence Item…</strong>, as illustrated in the following screenshot:</p>
+			<div>
+				<div id="_idContainer133" class="IMG---Figure">
+					<img src="Images/Figure_6.1_B17056.jpg" alt="Figure 6.1 – FTK Imager's Add Evidence Item option" width="859" height="570"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 6.1 – FTK Imager's Add Evidence Item option</p>
+			<p>In the <a id="_idIndexMarker366"/>window that appears, select <strong class="bold">Logical Drive</strong>, as shown in the following screenshot, and click <strong class="bold">Next</strong>:</p>
+			<div>
+				<div id="_idContainer134" class="IMG---Figure">
+					<img src="Images/Figure_6.2_B17056.jpg" alt="Figure 6.2 – Select Source window&#13;&#10;" width="583" height="431"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 6.2 – Select Source window</p>
+			<p>From the <a id="_idIndexMarker367"/>drop-down menu, select root (<strong class="screen-inline">C:\</strong>) and click <strong class="bold">Finish</strong>, as illustrated in the following screenshot:</p>
+			<div>
+				<div id="_idContainer135" class="IMG---Figure">
+					<img src="Images/Figure_6.3_B17056.jpg" alt="Figure 6.3 – Select Drive window&#13;&#10;" width="583" height="431"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 6.3 – Select Drive window</p>
+			<p>You will then have the target host's filesystem on the left side of the main window. In the root, you <a id="_idIndexMarker368"/>can find the hibernation file. To copy it to removable media, right-click on it and select <strong class="bold">Export Files…</strong>, as illustrated in the following screenshot:</p>
+			<div>
+				<div id="_idContainer136" class="IMG---Figure">
+					<img src="Images/Figure_6.4_B17056.jpg" alt="Figure 6.4 – Export Files option&#13;&#10;" width="859" height="570"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 6.4 – Export Files option</p>
+			<p>In the dialog window, select your removable media where you want to save the hibernation file and click <strong class="bold">OK</strong>, as illustrated in the following screenshot:</p>
+			<div>
+				<div id="_idContainer137" class="IMG---Figure">
+					<img src="Images/Figure_6.5_B17056.jpg" alt="Figure 6.5 – Destination path&#13;&#10;" width="373" height="393"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 6.5 – Destination path</p>
+			<p>You should <a id="_idIndexMarker369"/>see a progress bar showing the copying process to removable media, as illustrated in the following screenshot:</p>
+			<div>
+				<div id="_idContainer138" class="IMG---Figure">
+					<img src="Images/Figure_6.6_B17056.jpg" alt="Figure 6.6 – Export process&#13;&#10;" width="518" height="171"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 6.6 – Export process</p>
+			<p>This will result in a <strong class="source-inline">hiberfil.sys</strong> file appearing on the removable media, ready for further processing.</p>
+			<p>If there is no hibernation file on the target host but you still want to create one, you will need to do the following:</p>
+			<ol>
+				<li>Make sure that hibernation mode is enabled.</li>
+			</ol>
+			<p>To do this, run PowerShell as administrator and execute the following command:</p>
+			<p class="source-code"><strong class="bold">PS C:\windows\system32&gt; .\powercfg.exe /availablesleepstates</strong></p>
+			<ol>
+				<li value="2">If hibernation is enabled, you will see <strong class="source-inline">Hibernate</strong> in the list that appears. Otherwise, you can enable it by issuing the following command:<p class="source-code"><strong class="bold">PS C:\windows\system32&gt; .\powercfg.exe /hibernate on </strong></p></li>
+			</ol>
+			<p>Examples <a id="_idIndexMarker370"/>of commands are shown in the following screenshot:</p>
+			<div>
+				<div id="_idContainer139" class="IMG---Figure">
+					<img src="Images/Figure_6.7_B17056.jpg" alt="Figure 6.7 – powercfg.exe&#13;&#10;" width="937" height="624"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 6.7 – powercfg.exe</p>
+			<ol>
+				<li value="3">Create a hibernation file.</li>
+			</ol>
+			<p>To do so, simply run the following command:</p>
+			<p class="source-code">PS C:\windows\system32&gt; .\shutdown.exe /h </p>
+			<p>This command will bring the target computer into hibernation mode, and you will get a <strong class="source-inline">hiberfil.sys</strong> file with timestamps corresponding to when the command was run. You can then use FTK Imager to export this file. </p>
+			<p>Note that in forensic investigations, you are more likely to work with forensic images rather than with live systems. To extract a hibernation file from a forensic image, simply open it with <a id="_idIndexMarker371"/>a special tool. You can use the same FTK Imager and the <strong class="bold">Add Evidence Item…</strong> menu option, but now, instead of the logical drive of the live system, you must select <strong class="bold">Image File</strong> and specify the path to the forensic copy on the drive. The rest of the process of exporting the hibernation file to disk will be similar to the process described previously.</p>
+			<p>Now that we have successfully obtained the hibernation file, let's look at how to analyze it.</p>
+			<h2 id="_idParaDest-105"><a id="_idTextAnchor109"/>Analyzing hiberfil.sys</h2>
+			<p>As the hibernation file is a compressed copy of RAM, we first need to uncompress it and get a raw copy. This can be done by using a Volatility plugin called <strong class="source-inline">imagecopy</strong>. This plugin allows <a id="_idIndexMarker372"/>us to convert memory dumps into different formats and to convert a hibernation file into a raw format. It looks like this:</p>
+			<div>
+				<div id="_idContainer140" class="IMG---Figure">
+					<img src="Images/Figure_6.8_B17056.jpg" alt="Figure 6.8 – Volatility imagecopy&#13;&#10;" width="1285" height="422"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 6.8 – Volatility imagecopy</p>
+			<p>We use the <strong class="source-inline">-f</strong> option to specify the path to our hibernation file and the <strong class="source-inline">-O</strong> or <strong class="source-inline">--output-image</strong> option to specify the path where we want to save the result, as well as the name and extension of the desired file. Don't forget the <strong class="source-inline">--profile</strong> option, where you need to specify the profile that corresponds to the operating system version of the target host. This will give you a file ready for analysis, which in this case is <strong class="source-inline">hiberfil.raw</strong>.</p>
+			<p>Another way to convert a hibernation file into a raw format is to use the <strong class="source-inline">Hibr2Bin</strong> utility included in the Comae Toolkit. To get this tool, you need to become a member of the beta program by registering on the official website at <a href="https://www.comae.com/">https://www.comae.com/</a>.</p>
+			<p>This tool <a id="_idIndexMarker373"/>can be run via the command line. Not only input and output files but also several options such as the platform and major and minor <a id="_idIndexMarker374"/>versions of the operating system must be specified, as shown next:</p>
+			<div>
+				<div id="_idContainer141" class="IMG---Figure">
+					<img src="Images/Figure_6.9_B17056.jpg" alt="Figure 6.9 – Comae Toolkit Hibr2Bin&#13;&#10;" width="1203" height="387"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 6.9 – Comae Toolkit Hibr2Bin</p>
+			<p><strong class="source-inline">Hibr2Bin</strong> supports the following versions:</p>
+			<ul>
+				<li><strong class="source-inline">/MAJOR 5</strong> <strong class="source-inline">/MINOR 1</strong> Windows XP</li>
+				<li><strong class="source-inline">/MAJOR 5</strong> <strong class="source-inline">/MINOR 2</strong> Windows XP x64; Windows 2003 R2</li>
+				<li><strong class="source-inline">/MAJOR 6</strong> <strong class="source-inline">/MINOR 0</strong> Windows Vista; Windows Server 2008</li>
+				<li><strong class="source-inline">/MAJOR 6</strong> <strong class="source-inline">/MINOR 1</strong> Windows 7; Windows Server 2008 R2</li>
+				<li><strong class="source-inline">/MAJOR 6</strong> <strong class="source-inline">/MINOR 2</strong> Windows 8; Windows Server 2012</li>
+				<li><strong class="source-inline">/MAJOR 6</strong> <strong class="source-inline">/MINOR 3</strong> Windows 8.1; Windows Server 2012 R2</li>
+				<li><strong class="source-inline">/MAJOR 10</strong> <strong class="source-inline">/MINOR 0</strong> Windows 10; Windows Server 2017</li>
+			</ul>
+			<p>This will also result in a raw file. Such files can be analyzed with the tools you are already familiar with. For example, you can use Volatility to get a list of active processes, search for files, or detect traces of malicious activity.</p>
+			<p class="callout-heading">Important note</p>
+			<p class="callout">Since a hibernation file has its own structure, some information will still be missing from there. For example, when you go into hibernation mode, information about active network connections is cleared, so you will not be able to retrieve full information about network connections from the <strong class="source-inline">hiberfil.sys</strong> file.</p>
+			<p>Let's see <a id="_idIndexMarker375"/>how we can get a list of active processes from the hibernation file using Volatility. To do this, we use the <strong class="source-inline">pslist</strong> plugin, as illustrated in the following screenshot:</p>
+			<div>
+				<div id="_idContainer142" class="IMG---Figure">
+					<img src="Images/Figure_6.10_B17056.jpg" alt="Figure 6.10 – List of active processes from hibernation file&#13;&#10;" width="1285" height="508"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 6.10 – List of active processes from hibernation file</p>
+			<p>Similarly, we can get details of the files encountered in the hibernation file, as illustrated in the following screenshot:</p>
+			<div>
+				<div id="_idContainer143" class="IMG---Figure">
+					<img src="Images/Figure_6.11_B17056.jpg" alt="Figure 6.11 – List of files from hibernation file&#13;&#10;" width="1172" height="332"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 6.11 – List of files from hibernation file</p>
+			<p>And we can even try to extract them, as shown next:</p>
+			<div>
+				<div id="_idContainer144" class="IMG---Figure">
+					<img src="Images/Figure_6.12_B17056.jpg" alt="Figure 6.12 – File extraction from hibernation file&#13;&#10;" width="1072" height="234"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 6.12 – File extraction from hibernation file</p>
+			<p>As you can see, this step of the analysis does not differ much from the analysis of full memory dumps. You can therefore apply the techniques we discussed in the previous chapters without any doubts.</p>
+			<p>For automated <a id="_idIndexMarker376"/>processing and analysis of a hibernation file, you can use paid tools such as Hibernation Recon from Arsenal Recon or complex solutions such as Magnet AXIOM or Belkasoft Evidence Center. </p>
+			<p>This is how we can analyze the hibernation file, but this is only one of the alternative sources we are considering. Let's move on.</p>
+			<h1 id="_idParaDest-106"><a id="_idTextAnchor110"/>Examining pagefiles and swapfiles</h1>
+			<p>We have already mentioned pagefiles and swapfiles in previous chapters. There, we talked about <a id="_idIndexMarker377"/>the mechanism used by our operating system to keep a <a id="_idIndexMarker378"/>large number of processes running at the same time. This mechanism operates by putting temporary process data into a specially reserved space on disk—the pagefile—when physical memory shortages occur.</p>
+			<p class="callout-heading">Important Note</p>
+			<p class="callout">Data is loaded into a pagefile page by page, in blocks of 4 <strong class="bold">kilobytes</strong> (<strong class="bold">KB</strong>), so the data can occupy a continuous area as well as different parts of the pagefile. Consequently, you can use both file carving and string searching during analysis. Additionally, Windows keeps track of pagefile entries and their relation to a particular process only in memory at runtime, so it is not possible to recover this relationship during pagefile analysis.</p>
+			<p>The main difference between swapfiles and pagefiles is that a swapfile stores data from Microsoft Store applications (previously known as Metro applications). It stores data that is not currently needed but may be needed when switching between applications or opening <a id="_idIndexMarker379"/>an application from a live tile in the <strong class="bold">Start</strong> menu. The way <a id="_idIndexMarker380"/>a swapfile works is also different. It represents a sort of <em class="italic">hibernation</em> mechanism for applications. Despite all the differences, most pagefile analysis methods will work for swapfiles as well, so we will focus on <strong class="source-inline">pagefile.sys</strong>.</p>
+			<h2 id="_idParaDest-107"><a id="_idTextAnchor111"/>Acquiring pagefiles </h2>
+			<p>A pagefile is enabled by default, so you don't need to create it manually. Furthermore, there may <a id="_idIndexMarker381"/>be several such files on the system and they will not always be located in the root. To find the paging files, you need to check the <strong class="source-inline">HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management</strong> registry key values of <strong class="source-inline">ExistingPageFiles</strong> and <strong class="source-inline">PagingFiles</strong>. This can be done using the registry editor on a live machine or by analysis of the <strong class="source-inline">SYSTEM</strong> registry file obtained from the forensic image, as illustrated in the following screenshot:</p>
+			<div>
+				<div id="_idContainer145" class="IMG---Figure">
+					<img src="Images/Figure_6.13_B17056.jpg" alt="Figure 6.13 – ExistingPageFiles and PagingFiles values in SYSTEM registry file&#13;&#10;" width="1213" height="594"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 6.13 – ExistingPageFiles and PagingFiles values in SYSTEM registry file</p>
+			<p>Once you have checked the number and location of the paging files, they can be extracted in the same way as a hibernation file, as shown next:</p>
+			<div>
+				<div id="_idContainer146" class="IMG---Figure">
+					<img src="Images/Figure_6.14_B17056.jpg" alt="Figure 6.14 – Pagefile extraction&#13;&#10;" width="1175" height="676"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 6.14 – Pagefile extraction</p>
+			<p>In addition, some tools <a id="_idIndexMarker382"/>allow you to create a copy of a pagefile along with the memory dump. Look back at the FTK Imager dump creation process; there, you can enable the capture of a pagefile using the <strong class="bold">Include pagefile</strong> checkbox, as illustrated in the following screenshot:</p>
+			<div>
+				<div id="_idContainer147" class="IMG---Figure">
+					<img src="Images/Figure_6.15_B17056.jpg" alt="Figure 6.15 – FTK Imager Include pagefile&#13;&#10;" width="398" height="355"/>
+				</div>
+			</div>
+			<p class="figure-caption"> </p>
+			<p class="figure-caption">Figure 6.15 – FTK Imager Include pagefile</p>
+			<p>This will <a id="_idIndexMarker383"/>create two files: a memory dump and a copy of the pagefile.</p>
+			<p>Once you have successfully extracted the pagefile, you can start analyzing it.</p>
+			<h2 id="_idParaDest-108"><a id="_idTextAnchor112"/>Analyzing pagefile.sys</h2>
+			<p>There are different ways of analyzing a pagefile. We will try to elaborate on the most essential <a id="_idIndexMarker384"/>ones so that you can choose the method that best suits your investigation objectives.</p>
+			<p class="callout-heading">Important Note</p>
+			<p class="callout">Starting with build <strong class="source-inline">10525</strong>, Windows 10 uses pagefile compression. This means that you will need to decompress the pagefile in order to analyze it. You can use the <strong class="source-inline">winmem_decompress</strong> utility developed by Maxim Sukhanov for this purpose (<a href="https://github.com/msuhanov/winmem_decompress">https://github.com/msuhanov/winmem_decompress</a>).</p>
+			<p>Some tools—for instance, MemProcFS—allow the joint analysis of memory dumps, pagefiles, and swapfiles. To do this, the <strong class="source-inline">-pagefile0...9</strong> option is added to the <strong class="source-inline">-device</strong> option. The default value for a pagefile is 0; for a swapfile, it is 9. An example of running MemProcFS is shown next:</p>
+			<div>
+				<div id="_idContainer148" class="IMG---Figure">
+					<img src="Images/Figure_6.16_B17056.jpg" alt="Figure 6.16 – Joint analysis of memory dump and corresponding pagefile&#13;&#10;" width="969" height="375"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 6.16 – Joint analysis of memory dump and corresponding pagefile</p>
+			<p>In this case, the data in the pagefile will complement the data in the memory dump, but it is easier to miss specific information in this situation. Therefore, it is better to analyze the pagefile with separate tools.</p>
+			<p>We have <a id="_idIndexMarker385"/>already mentioned that data in a pagefile is stored in blocks of 4 KB. Since these blocks can occupy different parts of the file and it is difficult to get a structured representation of the content, pagefile analysis will not be straightforward. So, one of the best ways to start analyzing a pagefile is to search for strings.</p>
+			<h3>String searching</h3>
+			<p>The easiest way <a id="_idIndexMarker386"/>to start analyzing a pagefile is to look for specific strings. You can use the <strong class="source-inline">Strings</strong> utility you are already familiar with to retrieve all ASCII and Unicode <a id="_idIndexMarker387"/>characters found in a given file. To run it, use PowerShell and the following command:</p>
+			<p class="source-code">PS D:\&gt; .\strings64.exe .\pagefile.sys &gt; D:\output.txt</p>
+			<p>The input is the path to our pagefile, and the output is redirected to a text file, which is <strong class="source-inline">output.txt</strong>. In the resulting file, as before, we can use a keyword search or simply examine the output to see if there are any strings related to the execution of any programs potentially used by attackers, as illustrated in the following screenshot:</p>
+			<div>
+				<div id="_idContainer149" class="IMG---Figure">
+					<img src="Images/Figure_6.17_B17056.jpg" alt="Figure 6.17 – Strings output&#13;&#10;" width="907" height="344"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 6.17 – Strings output</p>
+			<p>You can <a id="_idIndexMarker388"/>see in the preceding screenshot that analysis of <a id="_idIndexMarker389"/>the <strong class="source-inline">Strings</strong> output detected a <strong class="bold">HTTPS reverse shell</strong> run.</p>
+			<p>Since we <a id="_idIndexMarker390"/>are talking about searching strings, naturally, we <a id="_idIndexMarker391"/>should not forget about searching by <strong class="bold">regular expressions </strong>and<strong class="bold"> YARA </strong>rules. Here, we have the <strong class="source-inline">yara</strong> utility to help us. The principle of this utility is the same as the Volatility <strong class="source-inline">yarascan</strong> plugin. You can use the official GitHub repository to download this tool, at <a href="https://github.com/VirusTotal/yara/">https://github.com/VirusTotal/yara/</a>. You can see the GitHub page in the following screenshot:</p>
+			<div>
+				<div id="_idContainer150" class="IMG---Figure">
+					<img src="Images/Figure_6.18_B17056.jpg" alt="Figure 6.18 – yara GitHub repository&#13;&#10;" width="1374" height="811"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 6.18 – yara GitHub repository</p>
+			<p>On the <a id="_idIndexMarker392"/>right side of the page, there is a link to the latest releases, which is exactly what you need. On the <strong class="bold">Releases</strong> page, select the version you need, then download and extract the archive with the executable. You can use PowerShell to run it. To see all the options available, run the command shown in the following screenshot: </p>
+			<div>
+				<div id="_idContainer151" class="IMG---Figure">
+					<img src="Images/Figure_6.19_B17056.jpg" alt="Figure 6.19 – yara options&#13;&#10;" width="1203" height="698"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 6.19 – yara options</p>
+			<p>You can <a id="_idIndexMarker393"/>use YARA rules from public sources or write your own. Let's <a id="_idIndexMarker394"/>use a YARA rule to find the URLs in our file. The rule and its results are shown next:</p>
+			<div>
+				<div id="_idContainer152" class="IMG---Figure">
+					<img src="Images/Figure_6.20_B17056.jpg" alt="Figure 6.20 – yara scan results&#13;&#10;" width="1076" height="402"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 6.20 – yara scan results</p>
+			<p>We can also extend our search with domains, emails, SQL queries, and <a id="_idIndexMarker395"/>more with <strong class="source-inline">bulk_extractor</strong>, as illustrated in the following screenshot:</p>
+			<div>
+				<div id="_idContainer153" class="IMG---Figure">
+					<img src="Images/Figure_6.21_B17056.jpg" alt="Figure 6.21 – bulk_extractor execution&#13;&#10;" width="938" height="317"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 6.21 – bulk_extractor execution</p>
+			<p>Here, we <a id="_idIndexMarker396"/>can find not just IP addresses <a id="_idIndexMarker397"/>and domains, but also the full URLs, as shown next:</p>
+			<div>
+				<div id="_idContainer154" class="IMG---Figure">
+					<img src="Images/Figure_6.22_B17056.jpg" alt="Figure 6.22 – bulk_extractor URL histogram&#13;&#10;" width="1148" height="602"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 6.22 – bulk_extractor URL histogram</p>
+			<p>Pay attention to IP addresses. You can always check them on VirusTotal or any other resource you like. If you check one of the addresses we found, you will find the following results:</p>
+			<div>
+				<div id="_idContainer155" class="IMG---Figure">
+					<img src="Images/Figure_6.23_B17056.jpg" alt="Figure 6.23 – VirusTotal results&#13;&#10;" width="1259" height="777"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 6.23 – VirusTotal results</p>
+			<p>VirusTotal <a id="_idIndexMarker398"/>has detected several malicious files containing this IP address. It would be a good idea to check if our pagefile contains such files.</p>
+			<h3>File carving</h3>
+			<p>In addition <a id="_idIndexMarker399"/>to string searching, you can apply tools to carve files. You can use PhotoRec for this purpose. This tool enables signature-based searches <a id="_idIndexMarker400"/>and can recognize over 300 file families, including <a id="_idIndexMarker401"/>archives, images, Microsoft Office files, PDF files, and more. </p>
+			<p>PhotoRec can be <a id="_idIndexMarker402"/>downloaded along with the TestDisk tool from the official website at <a href="https://www.cgsecurity.org/wiki/PhotoRec">https://www.cgsecurity.org/wiki/PhotoRec</a>. To do this, find a link to the latest release on the right side of the page and click on it. In the window that opens, select the appropriate version, then download and unpack the archive. You need an executable called <strong class="source-inline">photorec</strong>. </p>
+			<p>Run the following command to analyze the paging file:</p>
+			<p class="source-code">PS D:\&gt; .\testdisk-7.2-WIP\photorec_win.exe D:\pagefile.sys</p>
+			<p>This will <a id="_idIndexMarker403"/>open a separate window, as shown next:</p>
+			<div>
+				<div id="_idContainer156" class="IMG---Figure">
+					<img src="Images/Figure_6.24_B17056.jpg" alt="Figure 6.24 – PhotoRec media selection&#13;&#10;" width="1109" height="654"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 6.24 – PhotoRec media selection</p>
+			<p>Press <em class="italic">Enter</em> to continue, and you will see the following:</p>
+			<div>
+				<div id="_idContainer157" class="IMG---Figure">
+					<img src="Images/Figure_6.25_B17056.jpg" alt="Figure 6.25 – PhotoRec filesystem type &#13;&#10;" width="1107" height="322"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 6.25 – PhotoRec filesystem type </p>
+			<p>As our filesystem is <strong class="bold">New Technology File System</strong> (<strong class="bold">NTFS</strong>), don't change anything, and press <em class="italic">Enter</em> again. In <a id="_idIndexMarker404"/>the next window, you need to select the directory to save the results, as illustrated in the following screenshot:</p>
+			<div>
+				<div id="_idContainer158" class="IMG---Figure">
+					<img src="Images/Figure_6.26_B17056.jpg" alt="Figure 6.26 – PhotoRec destination folder selection&#13;&#10;" width="1107" height="301"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 6.26 – PhotoRec destination folder selection</p>
+			<p>In our <a id="_idIndexMarker405"/>case, the <strong class="source-inline">output</strong> folder will be used to save the carving results. When the <strong class="source-inline">output</strong> directory is specified, the <em class="italic">C</em> key must be pressed to start. The file recovery process will look like this:</p>
+			<div>
+				<div id="_idContainer159" class="IMG---Figure">
+					<img src="Images/Figure_6.27_B17056.jpg" alt="Figure 6.27 – PhotoRec carving process&#13;&#10;" width="1107" height="301"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 6.27 – PhotoRec carving process</p>
+			<p>Carving will take some time, so be patient. Eventually, all files that have been recovered will appear in the directory of your choice, as illustrated in the following screenshot:</p>
+			<div>
+				<div id="_idContainer160" class="IMG---Figure">
+					<img src="Images/Figure_6.28_B17056.jpg" alt="Figure 6.28 – Carving results&#13;&#10;" width="1217" height="678"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 6.28 – Carving results</p>
+			<p>As you <a id="_idIndexMarker406"/>can see in the preceding screenshot, we were able to recover <a id="_idIndexMarker407"/>a large number of dynamic-link libraries (DLLs), as well as several text and executable files. We can now check to see if there is a file containing the IP address we checked earlier. Let's use PowerShell and the <strong class="source-inline">Select-String</strong> command, as illustrated in the following screenshot:</p>
+			<div>
+				<div id="_idContainer161" class="IMG---Figure">
+					<img src="Images/Figure_6.29_B17056.jpg" alt="Figure 6.29 – Select-String results&#13;&#10;" width="930" height="401"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 6.29 – Select-String results</p>
+			<p>Note the context and extension of the file in which our IP address is detected. The content resembles the signatures used by antivirus solutions to search for malware. This is a fairly common situation, so be careful. In this case, the file is more likely to be legitimate; however, there's nothing stopping us from checking the other files for malware. For <a id="_idIndexMarker408"/>example, here are the results of checking one of the recovered libraries:</p>
+			<div>
+				<div id="_idContainer162" class="IMG---Figure">
+					<img src="Images/Figure_6.30_B17056.jpg" alt="Figure 6.30 – Malicious DLL detection&#13;&#10;" width="1251" height="754"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 6.30 – Malicious DLL detection</p>
+			<p>Several vendors have identified our file as malicious. This cannot be left unattended, so a more in-depth analysis of the recovered DLL can be performed at this point.</p>
+			<p>As you can see, a pagefile is also a good source of data. You may find not only interesting IP addresses, domains, parts of emails, or shell commands, but also entire files. All of this data will help you to clarify the missing pieces of the puzzle and complete a picture of the incident. </p>
+			<p>Now, it's time to look at our latest alternative source, crash dumps.</p>
+			<h1 id="_idParaDest-109"><a id="_idTextAnchor113"/>Analyzing crash dumps</h1>
+			<p>When a system gets into an unstable state—for example, due to an exception that cannot be handled correctly—a Windows crash occurs. This happens because of bugs in kernel drivers <a id="_idIndexMarker409"/>or other code running at the kernel level. In this case, Windows attempts to save information that is relevant to the crash and can be used for debugging purposes. Since the system is in an unstable state during the crash, the data is first written to the paging file and then transferred to the appropriate dump file during the next boot. Depending on the system configuration, different crash dumps can be created. The following screenshot shows the dump formats offered by Windows 10:</p>
+			<div>
+				<div id="_idContainer163" class="IMG---Figure">
+					<img src="Images/Figure_6.31_B17056.jpg" alt="Figure 6.31 – Crash dump formats in Windows 10&#13;&#10;" width="544" height="739"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 6.31 – Crash dump formats in Windows 10</p>
+			<p>Let's take a closer look at these formats, as follows:</p>
+			<ul>
+				<li><strong class="bold">Small memory dump</strong>: These files have a size of 64 KB and 128 KB in 32-bit systems and 64-bit systems respectively. They contain information about running processes, loaded drivers, and bug check messages.</li>
+				<li><strong class="bold">Kernel memory dump</strong>: These files contain memory pages in kernel mode only. Consequently, they contain information about the memory used by the kernel. Usually, the size of such dump files will be around one-third of the size of the physical memory on the system.</li>
+				<li><strong class="bold">Complete memory dump</strong>: These are the largest kernel-mode dumps. They contain a complete dump of physical memory at the time of the crash. Unmapped memory is not included.</li>
+				<li><strong class="bold">Automatic memory dump</strong>: This dump is similar to the kernel memory dump. The main difference is in how the information is stored. For the automatic memory dump, Windows sets the size of the system paging file. Starting with Windows 8, this is the default method of creating crash dumps.</li>
+				<li><strong class="bold">Active memory dump</strong>: This dump was introduced in Windows 10, and it is similar to a complete memory dump and contains active memory from user and kernel modes. However, pages that are not likely to be relevant to troubleshooting problems on the host machine are filtered out.</li>
+			</ul>
+			<p>You may get <a id="_idIndexMarker410"/>varying information in different amounts depending on the dump being created. To check which crash dumps are created on a particular host, you can check the settings on a live system. To do this, go to <strong class="bold">My Computer</strong> -&gt; <strong class="bold">System and Security</strong> -&gt; <strong class="bold">System</strong> -&gt; <strong class="bold">Advanced Settings</strong> -&gt; <strong class="bold">Startup and Recovery</strong>. Similar information can be found in the <strong class="source-inline">HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\CrashControl</strong> registry key. To retrieve this data from the forensic image, you can refer to the <strong class="source-inline">SYSTEM</strong> registry file, as illustrated in the following screenshot:</p>
+			<div>
+				<div id="_idContainer164" class="IMG---Figure">
+					<img src="Images/Figure_6.32_B17056.jpg" alt="Figure 6.32 – CrashControl registry key&#13;&#10;" width="1213" height="594"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 6.32 – CrashControl registry key</p>
+			<p>The <strong class="source-inline">CrashDumpEnabled</strong> value <a id="_idIndexMarker411"/>defines the type of dump to be created. On Windows 10, the following values are possible:</p>
+			<ul>
+				<li><strong class="source-inline">0</strong>: None </li>
+				<li><strong class="source-inline">1</strong>: Complete or active memory dump</li>
+				<li><strong class="source-inline">2</strong>: Kernel memory dump</li>
+				<li><strong class="source-inline">3</strong>: Small memory dump </li>
+				<li><strong class="source-inline">7</strong>: Automatic memory dump </li>
+			</ul>
+			<p>Note that here, you can also find the path where the crash dump was created. By default, this is the <strong class="source-inline">%SystemRoot%\MEMORY.DMP</strong> file.</p>
+			<p>In addition to system crashes, there may be a situation whereby a problem occurs in a specific application and the system remains stable. In such situations, mini-crash dumps are created <a id="_idIndexMarker412"/>containing error code, application, and host details. These are generated by <strong class="bold">Windows error reporting</strong> and can be found at <strong class="source-inline">C:\ProgramData\Microsoft\Windows\WER</strong>. WER can also be configured to create complete memory dumps of user-mode processes. For this purpose, the <strong class="source-inline">LocalDumps</strong> key with a <strong class="source-inline">DumpType</strong> value of <strong class="source-inline">DWORD = 00000002</strong> is created in the <strong class="source-inline">HKLM\Software\Microsoft\Windows\Windows</strong> <strong class="source-inline">error</strong> <strong class="source-inline">reporting</strong> registry key. Herewith, created dumps of user processes will be stored in the <strong class="source-inline">%LocalAppData%\Crashdumps</strong> folder of the user who got the error, and dumps of system processes will be stored in the <strong class="source-inline">C:\Windows\System32\config\systemprofile\AppData\Local\CrashDumps\</strong> folder.</p>
+			<p>Analysis of <a id="_idIndexMarker413"/>process crash dumps is particularly important in incident response, as exploitation by malware of an application vulnerability is usually followed by a crash of that <a id="_idIndexMarker414"/>application. Analysis of application crash dumps can tell us which techniques the attackers used for the initial access.</p>
+			<p>All of the files described previously are created by the system during various crashes. You can search for such files in forensic images and retrieve them in the way described previously for hibernation files. </p>
+			<p>If you are working with a live system, you can create such files yourself if necessary. </p>
+			<h2 id="_idParaDest-110"><a id="_idTextAnchor114"/>Crash dump creation</h2>
+			<p>Before you <a id="_idIndexMarker415"/>start creating crash dumps, you need to make sure that their creation is enabled. Don't forget to select the type of dump you want. You can do this by going to <strong class="bold">My Computer</strong> -&gt; <strong class="bold">System and Security</strong> -&gt; <strong class="bold">System</strong> -&gt; <strong class="bold">Advanced Settings</strong> -&gt;<strong class="bold"> Startup and Recovery</strong>. Once you are ready, you can begin creating a crash dump.</p>
+			<p>There are <a id="_idIndexMarker416"/>different ways to simulate a system crash—for example, using standard Windows tools or the <strong class="bold">Windows Debugger</strong> (<strong class="bold">WinDbg</strong>). However, the <a id="_idIndexMarker417"/>easiest and most reliable way is still to use the <strong class="bold">NotMyFault</strong> tool from <strong class="bold">Sysinternals</strong>. To use this tool, simply download and unpack the <a id="_idIndexMarker418"/>archive from the official site at <a href="https://docs.microsoft.com/en-us/sysinternals/downloads/notmyfault">https://docs.microsoft.com/en-us/sysinternals/downloads/notmyfault</a>. In the archive, you will <a id="_idIndexMarker419"/>find executable files for 32- and 64-bit systems.</p>
+			<h3>Simulation of a system crash</h3>
+			<p>Run <strong class="source-inline">notmyfault.exe</strong> as administrator. In the window that opens, you will see options corresponding <a id="_idIndexMarker420"/>to the most common causes of system crashes, as illustrated in the following screenshot:</p>
+			<div>
+				<div id="_idContainer165" class="IMG---Figure">
+					<img src="Images/Figure_6.33_B17056.jpg" alt="Figure 6.33 – NotMyFault main window&#13;&#10;" width="438" height="562"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 6.33 – NotMyFault main window</p>
+			<p>Select the <a id="_idIndexMarker421"/>option that suits you and click <strong class="bold">Crash</strong>. We will use the <strong class="bold">High IRQL fault</strong> option. After you press <strong class="bold">Crash</strong>, you will see the notorious <strong class="bold">blue screen of death</strong> (<strong class="bold">BSoD</strong>). The next time you start the computer up, you <a id="_idIndexMarker422"/>will have a <strong class="source-inline">MEMORY.DMP</strong> file, which is a crash dump.</p>
+			<p>It's a different story with application dumps. The process for creating them is simpler and more flexible as you can use either standard Windows tools such as Task Manager, or third-party tools. Let's look at how to create process dumps.</p>
+			<h3>Process dump creation</h3>
+			<p>Let's start <a id="_idIndexMarker423"/>with the built-in tools—more specifically, Task Manager.</p>
+			<p>To dump a process, start Task Manager by pressing <em class="italic">Ctrl</em> + <em class="italic">Alt</em> + <em class="italic">Delete</em>. In the window that appears, find the suspicious process and right-click on its name. In the pop-up menu, select <strong class="bold">Create dump file</strong>, as shown in the following screenshot:</p>
+			<div>
+				<div id="_idContainer166" class="IMG---Figure">
+					<img src="Images/Figure_6.34_B17056.jpg" alt="Figure 6.34 – Creating process dump with Task Manager&#13;&#10;" width="958" height="669"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 6.34 – Creating process dump with Task Manager</p>
+			<p>If the dump was successfully created, you will see the following window:</p>
+			<div>
+				<div id="_idContainer167" class="IMG---Figure">
+					<img src="Images/Figure_6.35_B17056.jpg" alt="Figure 6.35 – Process dumping results &#13;&#10;" width="430" height="199"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 6.35 – Process dumping results </p>
+			<p>Here, you will find the name of the dump you have created and its location. As you can see, this method <a id="_idIndexMarker424"/>is easy to use but does not allow <a id="_idIndexMarker425"/>you to select the dump format. Another tool, Process Hacker (<a href="https://processhacker.sourceforge.io/downloads.php">https://processhacker.sourceforge.io/downloads.php</a>) can be used in a similar way. You can see this tool in action in the following screenshot:</p>
+			<div>
+				<div id="_idContainer168" class="IMG---Figure">
+					<img src="Images/Figure_6.36_B17056.jpg" alt="Figure 6.36 – Creating process dump with Process Hacker&#13;&#10;" width="1279" height="732"/>
+				</div>
+			</div>
+			<p class="figure-caption"> </p>
+			<p class="figure-caption">Figure 6.36 – Creating process dump with Process Hacker</p>
+			<p>If you want to be able to create different process dumps, there is another tool from Sysinternals, called ProcDump. As the name suggests, this tool is designed specifically for creating <a id="_idIndexMarker426"/>process dumps. As with NotMyFault, it can be downloaded from the official site at <a href="https://docs.microsoft.com/en-us/sysinternals/downloads/procdump">https://docs.microsoft.com/en-us/sysinternals/downloads/procdump</a>. This tool supports the types of dumps shown in the next screenshot:</p>
+			<div>
+				<div id="_idContainer169" class="IMG---Figure">
+					<img src="Images/Figure_6.37_B17056.jpg" alt="Figure 6.37 – ProcDump supported formats&#13;&#10;" width="1150" height="576"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 6.37 – ProcDump supported formats</p>
+			<p>As you may <a id="_idIndexMarker427"/>have noticed, you will need PowerShell to run the tool. You can use the PID from the <strong class="bold">Details</strong> tab of Task Manager to specify which process you want to dump, as illustrated in the following screenshot:</p>
+			<div>
+				<div id="_idContainer170" class="IMG---Figure">
+					<img src="Images/Figure_6.38_B17056.jpg" alt="Figure 6.38 – Identifying PID&#13;&#10;" width="958" height="455"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 6.38 – Identifying PID</p>
+			<p>To create a <a id="_idIndexMarker428"/>mini-dump containing process, thread, module, handle, address space, and stack information, you need to use the <strong class="source-inline">-mm</strong> option, and to create a full dump, use the <strong class="source-inline">-ma</strong> option. This is how it will look:</p>
+			<div>
+				<div id="_idContainer171" class="IMG---Figure">
+					<img src="Images/Figure_6.39_B17056.jpg" alt="Figure 6.39 – Mini-dump and full dump creation&#13;&#10;" width="853" height="486"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 6.39 – Mini-dump and full dump creation</p>
+			<p>These are the tools you can use to create various dumps. Now, it's time to talk about their analysis.</p>
+			<h2 id="_idParaDest-111"><a id="_idTextAnchor115"/>Analyzing crash dumps</h2>
+			<p>Since a system <a id="_idIndexMarker429"/>crash and an application crash create different dumps, some of the analysis methods will differ. Let's start with the analysis of dumps created during a system crash.</p>
+			<h3>System crash dumps</h3>
+			<p>The most obvious way to analyze system crash dumps is to use WinDbg. This tool is designed <a id="_idIndexMarker430"/>specifically for debugging and allows you to do more than just analysis of crash dumps in order to find out the cause of the crash. Use this link to download the tool: <a href="https://docs.microsoft.com/en-us/windows-hardware/drivers/debugger/debugger-download-tools">https://docs.microsoft.com/en-us/windows-hardware/drivers/debugger/debugger-download-tools</a>. Find <strong class="bold">Download WinDbg Preview from the Microsoft Store</strong> option and click the <strong class="bold">WinDbg Preview</strong> link. Click <strong class="bold">GET</strong>. You will be redirected to the Windows Store. Simply click <strong class="bold">GET</strong> again to install. </p>
+			<p>After installation, you can launch WinDbg. Go to the <strong class="bold">File</strong> menu and select <strong class="bold">Open dump file</strong>, as illustrated in the following screenshot:</p>
+			<div>
+				<div id="_idContainer172" class="IMG---Figure">
+					<img src="Images/Figure_6.40_B17056.jpg" alt="Figure 6.40 – WinDbg File menu&#13;&#10;" width="1015" height="508"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 6.40 – WinDbg File menu</p>
+			<p>Select your crash dump, and once it is loaded, use the command line to run the <strong class="source-inline">!analyze -v</strong> command, as illustrated in the following screenshot:</p>
+			<div>
+				<div id="_idContainer173" class="IMG---Figure">
+					<img src="Images/Figure_6.41_B17056.jpg" alt="Figure 6.41 – WinDbg !analyze -v command&#13;&#10;" width="1056" height="651"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 6.41 – WinDbg !analyze -v command</p>
+			<p>This command <a id="_idIndexMarker431"/>allows you to display detailed information about the cause of the crash, as we can see here:</p>
+			<div>
+				<div id="_idContainer174" class="IMG---Figure">
+					<img src="Images/Figure_6.42_B17056.jpg" alt="Figure 6.42 – WinDbg Bugcheck Analysis&#13;&#10;" width="988" height="643"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 6.42 – WinDbg Bugcheck Analysis</p>
+			<p>Here, you will <a id="_idIndexMarker432"/>be able to find data such as faulty driver information, exception errors and code, faulty IPs, failure ID hash strings, and so on.</p>
+			<p>Another <a id="_idIndexMarker433"/>tool that allows a similar analysis is <strong class="bold">BlueScreenView</strong> by <strong class="bold">NirSoft</strong> (<a href="https://www.nirsoft.net/utils/blue_screen_view.html">https://www.nirsoft.net/utils/blue_screen_view.html</a>), which is shown in the following screenshot:</p>
+			<div>
+				<div id="_idContainer175" class="IMG---Figure">
+					<img src="Images/Figure_6.43_B17056.jpg" alt="Figure 6.43 – NirSoft BlueScreenView&#13;&#10;" width="1451" height="527"/>
+				</div>
+			</div>
+			<p class="figure-caption"> </p>
+			<p class="figure-caption">Figure 6.43 – NirSoft BlueScreenView</p>
+			<p>Keep in mind <a id="_idIndexMarker434"/>that this tool works best with mini-dumps on a live system. It is therefore not practical for postmortem analysis.</p>
+			<p>There is another solution to help you with postmortem analysis: <strong class="bold">SuperDump</strong> (<a href="https://github.com/Dynatrace/superdump">https://github.com/Dynatrace/superdump</a>). Its main advantage is that it allows you to automate the analysis process and get all the data in a graphical report. The tool is shown in the following screenshot:</p>
+			<div>
+				<div id="_idContainer176" class="IMG---Figure">
+					<img src="Images/Figure_6.44_B17056.jpg" alt="Figure 6.44 – SuperDump&#13;&#10;" width="971" height="605"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 6.44 – SuperDump</p>
+			<p>SuperDump is a service for automated crash dump analysis that has a web as well as a <strong class="bold">REST </strong>(<strong class="bold">Representational State Transfer</strong>) interface to upload Windows crash dumps. Moreover, it <a id="_idIndexMarker435"/>allows you to analyze Linux core dumps as well. However, to run this tool, you will need to have Docker installed. </p>
+			<p>You now <a id="_idIndexMarker436"/>have several tools in your arsenal for system crash dump analysis. You can choose the tool you feel most comfortable working with. We now move on to something more interesting: process dump analysis.</p>
+			<h3>Process dump analysis</h3>
+			<p>Analysis of process dumps is an excellent way to investigate individual suspicious processes <a id="_idIndexMarker437"/>without creating full memory dumps. This technique is often used during incident response.</p>
+			<p>Debuggers can naturally be used to analyze process dumps, but more classic methods can be applied as well—for example, string search or search by YARA rules. Analysis with the help of <strong class="source-inline">bulk_extractor</strong> can be used here as well.</p>
+			<p>Let's consider an example with dump analysis of the suspicious process <strong class="source-inline">explorer.exe</strong>. Let's start with the <strong class="source-inline">Strings</strong> tool. We will use the standard command, as follows: </p>
+			<p class="source-code">PS D:\&gt; .\strings64.exe .\explorer.exe_210813_000718.dmp &gt; D:\explorer.txt</p>
+			<p>The resulting text file can be searched using keywords. In our case, a keyword search for <strong class="source-inline">cmd</strong> found a command executed by the malware, as illustrated in the following screenshot:</p>
+			<div>
+				<div id="_idContainer177" class="IMG---Figure">
+					<img src="Images/Figure_6.45_B17056.jpg" alt="Figure 6.45 – Malicious cmd command in the Strings output&#13;&#10;" width="975" height="473"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 6.45 – Malicious cmd command in the Strings output</p>
+			<p><strong class="source-inline">bulk_extractor</strong> will be <a id="_idIndexMarker438"/>useful as well. We can find IP addresses and domain names used by the malware with the following command:</p>
+			<p class="source-code">PS D:\&gt; .\bulk_extractor.exe -o D:\output\ .\explorer.exe_210813_000718.dmp</p>
+			<p>Results from scanning are shown next:</p>
+			<div>
+				<div id="_idContainer178" class="IMG---Figure">
+					<img src="Images/Figure_6.46_B17056.jpg" alt="Figure 6.46 – bulk_extractor domain histogram&#13;&#10;" width="975" height="473"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 6.46 – bulk_extractor domain histogram</p>
+			<p>Checking <a id="_idIndexMarker439"/>these IP addresses revealed that many of them are associated with malicious files, as we can see here:</p>
+			<div>
+				<div id="_idContainer179" class="IMG---Figure">
+					<img src="Images/Figure_6.47_B17056.jpg" alt="Figure 6.47 – IP address from bulk_extractor output&#13;&#10;" width="1421" height="776"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 6.47 – IP address from bulk_extractor output</p>
+			<p>Lastly, let's return to the results of the <strong class="source-inline">Strings</strong> utility. A keyword search for <strong class="source-inline">exe</strong> also yielded extremely useful information, as we can see here:</p>
+			<div>
+				<div id="_idContainer180" class="IMG---Figure">
+					<img src="Images/Figure_6.48_B17056.jpg" alt="Figure 6.48 – Detection of malicious files &#13;&#10;" width="992" height="503"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 6.48 – Detection of malicious files </p>
+			<p>In this case, we see the name of the directory used by the malware, as well as the names <a id="_idIndexMarker440"/>of the executable file and library. Using the new keyword allowed us to discover even more data related to the malicious activity, as we can see here:</p>
+			<div>
+				<div id="_idContainer181" class="IMG---Figure">
+					<img src="Images/Figure_6.49_B17056.jpg" alt="Figure 6.49 – yrpoykg keyword search&#13;&#10;" width="1220" height="732"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 6.49 – yrpoykg keyword search</p>
+			<p>As you <a id="_idIndexMarker441"/>can see, some analysis techniques are excellent for both full memory dumps and memory dumps of individual processes.</p>
+			<h1 id="_idParaDest-112"><a id="_idTextAnchor116"/>Summary</h1>
+			<p>Analyzing Windows memory dumps is a time-consuming process but can yield invaluable results. In addition to examining full dumps, you should not forget about alternative sources, which can also be of great help in forensic investigations and incident response. </p>
+			<p>Alternative sources include hibernation files, page files, and swap files, as well as crash dumps and process memory dumps. Some of these files, such as a pagefile and a swapfile, are enabled by default and are created automatically while the operating system is running. Others are created when the system goes into a specific state—for example, a hibernation file is created when the system enters the appropriate mode. The latter, crash dumps, are created when a system crash or application crash occurs, but you can also trigger these states artificially. Among other things, there are special tools that allow you to create individual process dumps, such as process memory dumps, without directly affecting their state.</p>
+			<p>For analysis of alternative sources, both special tools such as debuggers and more general tools that allow you to search through strings, regular expressions, YARA rules, and signatures can be used.</p>
+			<p>On that note, we're finishing our analysis of Windows memory. Although this system has been the leader on the desktop operating system market for many years, other systems such as macOS and Linux are becoming more and more popular year by year. It's now time to talk about their analysis. In the next part, we will start to walk through the process of creating Linux memory dumps in detail and then move on to their analysis. As always, we will cover the key techniques and tools used for Linux forensic investigation, accompanied by illustrative examples from our practice. See you in the next part!</p>
+		</div>
+	</div></body></html>

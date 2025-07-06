@@ -1,0 +1,166 @@
+<html><head></head><body><div id="sbo-rt-content"><div id="_idContainer291">
+			<h1 id="_idParaDest-138"><a id="_idTextAnchor148"/>Chapter <a id="_idTextAnchor149"/>10: MacOS Memory Acquisition</h1>
+			<p>The last part of our book is devoted to an important topic – the memory investigation of systems running <strong class="bold">macOS</strong>. In the international desktop operating system market, macOS comes in at a deserved second. Despite the fact that Apple devices were originally considered individual devices for personal use, more and more users adopt them for work purposes every year. Recently, the use of macOS for work has reached a new level, with this operating system beginning to be used enterprise-wide (although this practice is currently more common in the United States). By 2021, Macintosh achieved a 23% share in US enterprises: <a href="https://www.computerworld.com/article/3604601/macs-reach-23-share-in-us-enterprises-idc-confirms.html">https://www.computerworld.com/article/3604601/macs-reach-23-share-in-us-enterprises-idc-confirms.html</a>.</p>
+			<p>With the growing number of macOS users and adoption by enterprises, the interest from threat actors in this operating system has also increased. The number of attacks on macOS has grown significantly in recent years. New tools specializing in attacks on this operating system have appeared, which means that the time has come to expand our arsenal with techniques and tools for macOS investigation. But before we can analyze the data, we need to collect it. That is why, as always, we begin with an overview of macOS memory acquisition techniques. </p>
+			<p>The following topics will be covered:</p>
+			<ul>
+				<li>Understanding macOS memory acquisition issues</li>
+				<li><a id="_idTextAnchor150"/>Preparing for macOS memory acquisition</li>
+				<li>Acquiring memory with <strong class="source-inline">osxpmem</strong></li>
+				<li>Creating a Volatility profile </li>
+			</ul>
+			<h1 id="_idParaDest-139"><a id="_idTextAnchor151"/>Understanding macOS memory acquisition issues</h1>
+			<p>In the previous chapters, we discussed hardware and software methods of memory extraction. In the <a id="_idIndexMarker530"/>case of <strong class="bold">OS X</strong> and <strong class="bold">macOS</strong>, these <a id="_idIndexMarker531"/>methods will also be relevant, but there are a couple of extremely important things to consider. Let's start with the hardware-based solutions.</p>
+			<p>Recall that <a id="_idIndexMarker532"/>hardware-based acquisition tools rely on direct memory access and use technology such as FireWire or Thunderbolt. For now, almost every Macintosh offers a FireWire or Thunderbolt port, and acquiring memory content in this case does not require an administrator's password and unlocked computer. However, it obviously cannot be that simple. First, this technology only permits the acquisition of the first 4 GB of RAM, which will not be enough to thoroughly examine <a id="_idIndexMarker533"/>systems having more than 4 GB of RAM. Second, since 2013, <strong class="bold">Intel Virtualization Technology</strong> (<strong class="bold">VT-d</strong>) for directed input/output was enabled. This <a id="_idIndexMarker534"/>technology works as a remapper and effectively blocks Direct Memory Access requests. Another issue is that if <strong class="bold">FileVault</strong> is enabled, OS X and newer versions of macOS will automatically turn off Direct Memory Access when the computer is locked. The result is that using software solutions remains a priority.</p>
+			<p>Software acquisition tools, as with other operating systems, must be run from a user interface on an unlocked system. However, there are not many of these tools for OS X and macOS, especially those that work correctly on the latest versions of the operating system. Prior to OS X version 10.6, physical memory was accessible through the <strong class="source-inline">/dev/mem</strong> device file or through <strong class="source-inline">/dev/kmem</strong>, which points to the kernel's virtual address space. If these device files were available, the <strong class="source-inline">dd</strong> utility could be used to read the contents of memory through the device files. However, in recent versions of the operating system, this method is no longer available, and specialized acquisition tools are required. Since memory protection prevents a normal user from accessing memory directly, most memory acquisition tools rely on loading the BSD kernel extension or simply <strong class="source-inline">kext</strong>, which allows read-only access to physical memory. Once <strong class="source-inline">kext</strong> is loaded into the kernel, physical memory can be read from the <strong class="source-inline">/dev/pmem/</strong> device file. However, to load <strong class="source-inline">kext</strong> into the kernel, administrator privileges and minor security configuration changes are needed. Let's take a look at all the steps that need to be taken before running the tools.</p>
+			<h1 id="_idParaDest-140"><a id="_idTextAnchor152"/>Preparing for macOS memory acquisition </h1>
+			<p>There are not many macOS memory acquisition tools, and they all support only certain versions <a id="_idIndexMarker535"/>of the operating system. Therefore, before choosing and testing the right tool, we need to find out the version of the operating system we plan to work with. To see the macOS version installed, click the Apple menu icon in the top-left corner of your screen, and then select <strong class="bold">About This Mac</strong>:</p>
+			<div>
+				<div id="_idContainer280" class="IMG---Figure">
+					<img src="Images/Figure_10.1_B17056.jpg" alt="Figure 10.1 – About This Mac" width="1055" height="637"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 10.1 – About This Mac</p>
+			<p>In the window that appears, you will see the version of the operating system; in our case, it is macOS Big Sur version 11.6. Using the information about the OS version, you can find tools that support memory dumping from this OS.</p>
+			<p>At the time of writing, the following tools are publicly available:</p>
+			<ul>
+				<li><strong class="source-inline">osxpmem</strong> – supports 64-bit versions of <strong class="bold">OS X Mountain Lion</strong> (10.8), <strong class="bold">OS X Mavericks</strong> (10.9), <strong class="bold">OS X Yosemite</strong> (10.10), <strong class="bold">OS X El Capitan</strong> (10.11), <strong class="bold">macOS Sierra</strong> (10.11), <strong class="bold">macOS High Sierra</strong> (10.13), <strong class="bold">macOS Mojave</strong> (10.14), and <strong class="bold">macOS Catalina</strong> (10.15)</li>
+				<li><strong class="source-inline">MandiantMemoryzeforMac</strong> – supports <strong class="bold">Mac OS X Snow Leopard</strong> (10.6) 32/64-bit, <strong class="bold">Mac OS X Lion</strong> (10.7) 32/64-bit, and <strong class="bold">OS X Mountain Lion</strong> (10.8) 64-bit</li>
+			</ul>
+			<p>Although these tools cover a fairly wide range of OSes, they do not allow you to get memory <a id="_idIndexMarker536"/>dumps of the latest macOS versions. In addition to <a id="_idIndexMarker537"/>these tools, there are proprietary solutions, such as <strong class="bold">Cellebrite Digital Collector</strong>, <strong class="bold">SUMURI RECON ITR</strong>, or <strong class="bold">Volexity Surge Collect</strong>, which try <a id="_idIndexMarker538"/>to update their products and add support for newer versions of macOS. For example, SUMURI recently announced that RECON now supports macOS Monterey, while Volexity added support for new Macintoshes on the M1 to Surge. </p>
+			<p class="callout-heading">Important Note</p>
+			<p class="callout">Do not forget that to work with the target host, you need to prepare removable media or a network share where you will put all the necessary tools and files, as well as the resulting memory dump.</p>
+			<p>Once you <a id="_idIndexMarker539"/>have selected the appropriate tool, you can start testing it. To do this, you will need a virtual machine with configurations similar to those of the target host. Unlike Windows and Linux, macOS is not so easy to install as a guest system. The thing is to create a macOS virtual machine; you will have to do a little trick with the configuration files. Luckily, deployment guides are not too hard to find. Here, for example, is a pretty good guide on how to <a id="_idIndexMarker540"/>deploy macOS virtual machines on Windows using VirtualBox and VMware: <a href="https://www.makeuseof.com/tag/macos-windows-10-virtual-machine/">https://www.makeuseof.com/tag/macos-windows-10-virtual-machine/</a>. </p>
+			<p>After creating the virtual machine, you can move on to testing the tools. Since macOS has better protection against launching third-party files than Windows and Linux, we will have to use some tricks, which we will go over later.</p>
+			<h1 id="_idParaDest-141"><a id="_idTextAnchor153"/>Acquiring memory with osxpmem</h1>
+			<p>This time, we will <a id="_idIndexMarker541"/>look at just one tool for creating <a id="_idIndexMarker542"/>memory dumps – <strong class="source-inline">osxpmem</strong>. This tool was chosen because it is freely distributed and supports the largest number of OS X and macOS versions.</p>
+			<p>You can download this tool from the official GitHub repository: <a href="https://github.com/Velocidex/c-aff4/releases">https://github.com/Velocidex/c-aff4/releases</a>. In the <strong class="bold">Releases</strong> tab, find the latest release containing <strong class="source-inline">osxpmem</strong>. At the time of writing, this is <strong class="bold">Release 3.2</strong>:</p>
+			<div>
+				<div id="_idContainer281" class="IMG---Figure">
+					<img src="Images/Figure_10.2_B17056.jpg" alt="Figure 10.2 – The latest release with osxpmem" width="1650" height="820"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 10.2 – The latest release with osxpmem</p>
+			<p>Download the <strong class="source-inline">osxpmem</strong> archive and unzip it. Inside, you will find <strong class="source-inline">osxpmem.app</strong>, our tool for creating memory dumps. This is a command-line tool and is run through the terminal. First of all, we need to open the terminal and go to <strong class="source-inline">osxpmem.app</strong>. From this location, we need to load <strong class="source-inline">kext</strong> with <strong class="source-inline">kextutil</strong>, which looks like this:</p>
+			<div>
+				<div id="_idContainer282" class="IMG---Figure">
+					<img src="Images/Figure_10.3_B17056.jpg" alt="Figure 10.3 – MacPmem.kext loading&#13;&#10;" width="747" height="183"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 10.3 – MacPmem.kext loading</p>
+			<p>The main <a id="_idIndexMarker543"/>difficulty in using tools such as <strong class="source-inline">osxpmem</strong> is macOS security policies. So, if we try to run this tool without doing any extra steps, we first <a id="_idIndexMarker544"/>get a series of <strong class="source-inline">File owner/permissions are incorrect</strong> errors and, secondly, a message saying that the software has been blocked.</p>
+			<p>To solve the first problem, we need to change the owner and permissions of our files. To do that, run the <strong class="source-inline">chown</strong> and <strong class="source-inline">chmod</strong> commands in the terminal. To check the changes applied, you can use the <strong class="source-inline">ls -lah</strong> command, as shown next:</p>
+			<div>
+				<div id="_idContainer283" class="IMG---Figure">
+					<img src="Images/Figure_10.4_B17056.jpg" alt="Figure 10.4 – Owner and permissions change&#13;&#10;" width="747" height="273"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 10.4 – Owner and permissions change</p>
+			<p>To solve the second problem, open <strong class="bold">Settings</strong> and go to <strong class="bold">Security &amp; Privacy</strong>. Here, in the <strong class="bold">General</strong> tab, we will see information about blocking our program:</p>
+			<div>
+				<div id="_idContainer284" class="IMG---Figure">
+					<img src="Images/Figure_10.5_B17056.jpg" alt="Figure 10.5 – The Security &amp; Privacy General tab&#13;&#10;" width="1312" height="1144"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 10.5 – The Security &amp; Privacy General tab</p>
+			<p>To unlock <a id="_idIndexMarker545"/>our program, we need to click on the lock <a id="_idIndexMarker546"/>at the bottom and agree to unlock it. </p>
+			<p>In addition, you may need to disable system integrity protection. To do this, run the following command in the terminal: </p>
+			<p class="source-code">csrutil disable</p>
+			<p>In newer versions – for example, in macOS Catalina – you may need to do more global actions, as you can only disable system integrity protection in Recovery mode. </p>
+			<p class="callout-heading">Important Note</p>
+			<p class="callout">Naturally, when changing configurations in Recovery mode, we will need to reboot the host, which means that most data will be lost. Nevertheless, in cases where we are dealing with persistent malware or a reverse shell listening to a certain port and waiting for attackers to connect, the analysis of the memory dump obtained after a reboot can still give us useful information. </p>
+			<p>To disable <a id="_idIndexMarker547"/>system integrity protection, go to Recovery <a id="_idIndexMarker548"/>mode. To do this, reboot the system and press <em class="italic">command</em> + <em class="italic">R</em> (if you are using a virtual machine and use Windows as a host OS, press <em class="italic">Win</em> + <em class="italic">R</em>). This will put you in the correct mode. In the window that appears, select <strong class="bold">Utilities</strong> and <strong class="bold">Terminal</strong>:</p>
+			<div>
+				<div id="_idContainer285" class="IMG---Figure">
+					<img src="Images/Figure_10.6_B17056.jpg" alt="Figure 10.6 – Recovery mode&#13;&#10;" width="1023" height="619"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 10.6 – Recovery mode</p>
+			<p>In the terminal, we need to run the command mentioned earlier:</p>
+			<div>
+				<div id="_idContainer286" class="IMG---Figure">
+					<img src="Images/Figure_10.7_B17056.jpg" alt="Figure 10.7 – Disabling system integrity protection&#13;&#10;" width="1023" height="361"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 10.7 – Disabling system integrity protection</p>
+			<p>As you <a id="_idIndexMarker549"/>can see, you have to reboot the system again to <a id="_idIndexMarker550"/>apply the changes successfully. After the reboot, you can open the main terminal and load <strong class="source-inline">kext</strong> again. This should work without errors. </p>
+			<p>After loading <strong class="source-inline">kext</strong>, you need to run a command that will collect the memory dump. The command will look like this:</p>
+			<p class="source-code">sudo osxpmem.app/osxpmem --format raw -o mem.raw</p>
+			<p>The <strong class="source-inline">--format</strong> option is used to specify the format of the memory dump, and the <strong class="source-inline">-o</strong> option is needed to specify the path to the output file. </p>
+			<p>You will end up with a <strong class="source-inline">mem.raw</strong> file containing the raw memory dump. In our case, performing the preceding steps looks like this:</p>
+			<div>
+				<div id="_idContainer287" class="IMG---Figure">
+					<img src="Images/Figure_10.8_B17056.jpg" alt="Figure 10.8 – Memory acquisition&#13;&#10;" width="962" height="622"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 10.8 – Memory acquisition</p>
+			<p>If you <a id="_idIndexMarker551"/>run <strong class="source-inline">ls -lah</strong>, you will see the resulting file:</p>
+			<div>
+				<div id="_idContainer288" class="IMG---Figure">
+					<img src="Images/Figure_10.9_B17056.jpg" alt="Figure 10.9 – The created memory dump&#13;&#10;" width="774" height="116"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 10.9 – The created memory dump</p>
+			<p>After that, you <a id="_idIndexMarker552"/>can unload the kernel extension using the following command:</p>
+			<p class="source-code">$ sudo osxpmem.app/osxpmem -u</p>
+			<p>This way, we can get a memory dump, but this is only the beginning of the journey. To be able to work with this file using Volatility, we need to create an appropriate profile. This is what we will talk about in the next section.</p>
+			<h1 id="_idParaDest-142"><a id="_idTextAnchor154"/>Creating a Volatility profile</h1>
+			<p>To create a macOS profile, we will need to install a few additional tools. First of all, we will need <a id="_idIndexMarker553"/>the Brew package manager, which can be installed by <a id="_idIndexMarker554"/>following the instructions from the official website: <a href="https://docs.brew.sh/Installation">https://docs.brew.sh/Installation</a>. </p>
+			<p>Basically, the only thing you need to do is to run the command located on the home page:</p>
+			<p class="source-code">$ /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"</p>
+			<p>The Brew manager is needed to install the <strong class="source-inline">dwarfdump</strong> that we already know, so once <strong class="source-inline">brew</strong> is installed, feel free to run the following command in the terminal:</p>
+			<p class="source-code">$ brew install dwarf</p>
+			<p>The last <a id="_idIndexMarker555"/>thing to download is <strong class="source-inline">KernelDebugKit</strong>. To do this, use this link: <a href="https://developer.apple.com/download/all/?q=debug">https://developer.apple.com/download/all/?q=debug</a>. Note that in order to gain access, you will need an Apple ID, which you can create by clicking on the <strong class="source-inline">Create yours now</strong> link. After entering your ID, you will see the <strong class="bold">Downloads</strong> page:</p>
+			<div>
+				<div id="_idContainer289" class="IMG---Figure">
+					<img src="Images/Figure_10.10_B17056.jpg" alt="Figure 10.10 – Apple Developer Downloads page&#13;&#10;" width="1650" height="907"/>
+				</div>
+			</div>
+			<p class="figure-caption"> </p>
+			<p class="figure-caption">Figure 10.10 – Apple Developer Downloads page</p>
+			<p>On this page, you need to find the KDK that corresponds to the version of your OS. For example, <strong class="bold">KDK 12.1</strong> shown in the screenshot corresponds to the latest macOS Monterey. After downloading the KDK, you need to install it. This can be done in a standard way. A double-click will mount the file and open the installer, which will guide you through the installation process. </p>
+			<p>You can <a id="_idIndexMarker556"/>verify that everything is installed by using the <strong class="source-inline">ls</strong> command, as after installation, your version of the KDK should appear in <strong class="source-inline">/Library/Developer/KDKs</strong>.</p>
+			<p>If the KDK is there, you can start getting debug info from the kernel. To do this, we use <strong class="source-inline">dwarfdump</strong>, which should get the following parameters:</p>
+			<ul>
+				<li><strong class="source-inline">-arch</strong>: Architecture – we specify <strong class="source-inline">i386</strong> for 32-bit systems and <strong class="source-inline">x86_64</strong> for 64-bit systems</li>
+				<li><strong class="source-inline">-i</strong>: The path to the <strong class="source-inline">kernel.dSYM</strong> file, located in KDK</li>
+			</ul>
+			<p>We also need to redirect the output to a file with the <strong class="source-inline">dwarfdump</strong> extension. </p>
+			<p>Thus, if we work with the 64-bit macOS Mojave, the command will look like this:</p>
+			<p class="source-code">$ dwarfdump -arch x86_64 -i /Library/Developer/KDKs/KDK_10.14.6_18G2016.kdk/System/Library/Kernels/kernel.dSYM &gt; 10.14.6_x64.dwarfdump</p>
+			<p>In our case, the preceding steps look like this:</p>
+			<div>
+				<div id="_idContainer290" class="IMG---Figure">
+					<img src="Images/Figure_10.11_B17056.jpg" alt="Figure 10.11 – Getting the dwarf debug info from the kernel&#13;&#10;" width="752" height="206"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 10.11 – Getting the dwarf debug info from the kernel</p>
+			<p>As a result, we get the <strong class="source-inline">10.14.6_x64.dwarfdump</strong> file, which we place in the <strong class="source-inline">dwarf</strong> directory. Next, we will need Volatility. In the terminal, go to <strong class="source-inline">volatility/tools/mac</strong> and execute the <strong class="source-inline">convert.py</strong> script, passing it the path to the created <strong class="source-inline">dwarfdump</strong> and the path to the output file as arguments. In our case, the command will look like this:</p>
+			<p class="source-code">$ python convert.py 10.14.6_x64.dwarfdump converted_10.14.6_x64.dwarfdump</p>
+			<p>This will <a id="_idIndexMarker557"/>create a Linux-style output readable by Volatility. After that, we need to create the types from the converted file:</p>
+			<p class="source-code">$ python convert.py converted_10.14.6_x64.dwarfdump &gt; 10.14.6_x64.vtypes</p>
+			<p>Next, we need to generate symbol information using <strong class="source-inline">dsymutil</strong>:</p>
+			<p class="source-code">$ dsymutil -s -arch x86_64 /Library/Developer/KDKs/KDK_10.14.6_18G2016.kdk/System/Library/Kernels/kernel &gt; 10.14.6_x64.symbol.dsymutil</p>
+			<p>Once again, we pass the information about the architecture used and the path to the kernel file from the KDK as arguments. The output is redirected to a file with the <strong class="source-inline">.dsymutil</strong> extension.</p>
+			<p>Our last step is to create a ZIP file of the <strong class="source-inline">.dsymutil</strong> and <strong class="source-inline">.vtypes</strong> files. For this purpose, we can use the following command:</p>
+			<p class="source-code">$ zip 10.14.6_x64.zip 10.14.6_x64.symbol.dsymutil 10.14.6_x64.vtypes</p>
+			<p>Finally, you will get your profile. To use the newly created profile, simply put it in the <strong class="source-inline">volatility/plugins/overlays/mac</strong> directory.</p>
+			<p class="callout-heading">Important Note</p>
+			<p class="callout">The <strong class="source-inline">convert.py</strong> script works <a id="_idIndexMarker558"/>fine with versions prior to High Sierra. With newer versions, you may have some problems because the structure of <strong class="source-inline">dwarf</strong> has changed slightly. To solve this problem, you will need to modify the <strong class="source-inline">convert.py</strong> script. </p>
+			<p>Creating a <a id="_idIndexMarker559"/>macOS profile is not an easy task. However, if you need to analyze a version of macOS up to and including High Sierra, you can use a ready-to-use profile from GitHub: <a href="https://github.com/volatilityfoundation/profiles/tree/master/">https://github.com/volatilityfoundation/profiles/tree/master/</a><strong class="source-inline">Mac</strong>. In contrast, if you use proprietary solutions such as Volexity Surge Collect, you will have profiles ready for even the newest versions of macOS. If your target host runs on Intel, then profiles from Volexity can be used immediately for analysis with Volatility. With the M1, the situation is a bit different. Since this is an ARM architecture chip, there are <a id="_idIndexMarker560"/>additional arguments that should be passed in the Volatility command line. These arguments are the <strong class="bold">Kernel Address Space Layout Randomization</strong> (<strong class="bold">KASLR</strong>) shift and the <strong class="bold">Directory Table Base</strong> (<strong class="bold">DTB</strong>) address. The first one is for specifying the exact location of the variables in the memory <a id="_idIndexMarker561"/>dump, and the second one is for address translation. At the time of writing this book, the support for automatic extraction of these parameters for ARM is not implemented. So, you need to specify these values manually. Fortunately, you can find them in the <strong class="source-inline">meta.json</strong> file created by Surge Collect. In this case, when you run Volatility, in addition to the standard options and profile, you also add the following: </p>
+			<ul>
+				<li><strong class="source-inline">--shift – value</strong>, which corresponds to the <strong class="source-inline">KaslrSlide</strong> parameter in <strong class="source-inline">meta.json</strong></li>
+				<li><strong class="source-inline">--dtb – value</strong>, which corresponds to the <strong class="source-inline">dtb</strong> parameter in <strong class="source-inline">meta.json</strong></li>
+			</ul>
+			<p>Thus, running Volatility will look like this:</p>
+			<p class="source-code">$ ./vol.py -f &lt;path to memory dump&gt; --profile=&lt;profile&gt; </p>
+			<p class="source-code">--shift=&lt; KaslrSlide value&gt; --dtb=&lt;dtb value&gt; &lt;plugin&gt;  </p>
+			<p>Another <a id="_idIndexMarker562"/>important point is that to analyze memory dumps taken from Macintoshes on M1 in Volatility, you need ARM64 support. In this case, you can use the <strong class="source-inline">Volatility</strong> fork: <a href="https://github.com/tsahee/volatility/tree/arm64">https://github.com/tsahee/volatility/tree/arm64</a>.</p>
+			<h1 id="_idParaDest-143"><a id="_idTextAnchor155"/>Summary</h1>
+			<p>Compared to the OSes discussed earlier, macOS is the most difficult to work with. Most of the tools that support creating memory dumps on newer versions of macOS are paid, and the freeware tools support dumping only for macOS versions up to Catalina. </p>
+			<p>A further difficulty is launching the tools themselves. Due to macOS security features, it is necessary to change a number of settings in order to run programs from third-party sources. This is especially true for tools that use <strong class="source-inline">kext</strong> loading.</p>
+			<p>Another difficulty is the creation of Volatility profiles for newer versions of macOS. This is due to the fact that creating a profile requires converting a <strong class="source-inline">dwarf</strong> file into a format recognized by Volatility, and the scripts provided by Volatility developers and found in the official GitHub repository do not work with the latest versions of macOS. </p>
+			<p>Given all the difficulties that can be encountered when creating a macOS memory dump in a form suitable for analysis, before starting this process, we recommend that you assess the situation, consider the pros and cons, and weigh up the need to create a memory dump very carefully. </p>
+			<p>In this chapter, we have covered the process of creating memory dumps on macOS systems. The next topic to be covered is an equally fascinating one – examining the obtained memory dumps.</p>
+		</div>
+	</div></body></html>

@@ -1,0 +1,289 @@
+<html><head></head><body><div class="chapter" title="Chapter&#xA0;7.&#xA0;Registry Analysis"><div class="titlepage"><div><div><h1 class="title"><a id="ch07"/>Chapter 7. Registry Analysis</h1></div></div></div><p>Understanding system configuration and settings and user activities is always an important step in the forensics analysis process. This configuration used to be stored in INI files, which were text files with a simple format. However, starting from Windows 3.1, the concept of registry was introduced to store the com-based components only. <span class="strong"><strong>COM</strong></span> or <span class="strong"><strong>Component Object Model</strong></span> was introduced by Microsoft in 1993 to enable inter-process communication and dynamic object creation in a wide range of programming languages. Since then, it has been used on a larger scale to include most of the Windows settings.</p><p>The registry can be considered as the Windows-structured database. It contains the operating system's configurations and settings, and also contains the settings of running services and installed applications along with users' preferences. It is not mandatory for the installed applications to use the registry to store its configurations and settings. Some programs use XML or text files to store their configurations.</p><p>Portable applications usually keep their configuration data within files in the directory or folder from where the application executable runs. The registry also keeps track of users' activities, stores their settings, and supports the multi-profile structure, where each user has their configuration for their account. The registry of each user stores under that user's directory in a separate file called <code class="literal">NTUSER.DAT</code>, which will be discussed in detail later in this chapter.</p><p>Registry analysis in the digital forensics process is a valuable source of evidential information for investigators. Malicious programs are like any other program. They use the system resources while running, so they may leave some traces in the registry. These traces will help in understanding the circumstances of the incident under investigation.</p><p>In this chapter, we will discuss the structure of the registry and some tools that are used to perform analysis.</p><div class="section" title="The registry structure"><div class="titlepage"><div><div><h1 class="title"><a id="ch07lvl1sec42"/>The registry structure</h1></div></div></div><p>The registry has a specific structure, which is divided into key and value. Like the directory structure, main root keys represent the root directory, sub-keys represent the sub folders, and values represent the files. Figure 1 depicts the registry structure opened from Windows native tool "registry editor". This tool can be opened in editable mode by typing regedit.exe in Run.</p><p>The items in the round-edged rectangle are the root keys, while the items in the rectangle below it are the sub-keys. The items inside the oval are the values of the registry. Each value has these three entries:</p><div class="itemizedlist"><ul class="itemizedlist"><li class="listitem" style="list-style-type: disc">Name</li><li class="listitem" style="list-style-type: disc">Type</li><li class="listitem" style="list-style-type: disc">Data</li></ul></div><p>To access a specific value, the user needs to know the path to this value. The path can be found in the tail of the regedit window. In our example, the path is <code class="literal">Computer\HKEY_CURRENT_USER\Environment</code>:</p><div class="mediaobject"><img src="graphics/image_07_001.jpg" alt="The registry structure"/><div class="caption"><p>Figure1: The main components of the registry</p></div></div><div class="section" title="Root keys"><div class="titlepage"><div><div><h2 class="title"><a id="ch07lvl2sec67"/>Root keys</h2></div></div></div><p>The Windows system, in this case Windows 8.1, has five root keys. Each root key stores different information and settings about the running system and the system's users. Each root key shown in the registry editor is actually a file in the filesystem called <span class="strong"><strong>registry hive</strong></span>. The root keys are as follows:</p><div class="itemizedlist"><ul class="itemizedlist"><li class="listitem" style="list-style-type: disc"><code class="literal">HKEY_CLASSES_ROOT</code></li><li class="listitem" style="list-style-type: disc"><code class="literal">HKEY_LOCAL_MACHINE</code></li><li class="listitem" style="list-style-type: disc"><code class="literal">HKEY_USERS</code></li><li class="listitem" style="list-style-type: disc"><code class="literal">HKEY_CURRENT_USER</code></li><li class="listitem" style="list-style-type: disc"><code class="literal">HKEY_CURRENT_CONFIG</code></li></ul></div><p>In the following section, we will discuss each root key in brief and the registry hive structure, before discussing the analysis programs to explain how it could be useful in the analysis process.</p><div class="section" title="HKEY_CLASSES_ROOT or HKCR"><div class="titlepage"><div><div><h3 class="title"><a id="ch07lvl3sec10"/>HKEY_CLASSES_ROOT or HKCR</h3></div></div></div><p>This key contains subkeys. Each subkey is named after one extension that can be found in the system, such as <code class="literal">.exe</code> and <code class="literal">.jpeg</code>. This root key describes the default program that has to be used to open this extension to the system. Also, this key stores the right-click menu's details and the icon of the program.</p><p>Consider that during an analysis, we (the investigator) need to know which program is used to open a specific file type, such as the executable files with the flv extension. We would then use the following process:</p><div class="itemizedlist"><ul class="itemizedlist"><li class="listitem" style="list-style-type: disc">First, we need to search for the subkey named <code class="literal">.flv</code>, without quotes, under the root key and locate the associated value of this subkey.</li><li class="listitem" style="list-style-type: disc">Then, we need to search under the same root key for another subkey named after the associated value <code class="literal">VLC.flv</code>. This subkey contains some values about how the operating system deals with <code class="literal">.flv</code> media files:<div class="mediaobject"><img src="graphics/image_07_002.jpg" alt="HKEY_CLASSES_ROOT or HKCR"/><div class="caption"><p>Figure 2: The flv extension associated value in the registry</p></div></div></li><li class="listitem" style="list-style-type: disc">On searching for the <code class="literal">VLC.flv</code> value in the same registry key, we will locate the executable that was used to run the <code class="literal">.flv</code> file types. In this case, this is the VLC media player. It also mentions the location of the executable in the filesystem:<div class="mediaobject"><img src="graphics/image_07_003.jpg" alt="HKEY_CLASSES_ROOT or HKCR"/><div class="caption"><p>Figure 3: location of the VLC player used to run the .flv file type</p></div></div></li></ul></div><p>For example, in a multiuser Windows environment, if two different users have installed two different programs to open PDF files, then when one user logs in to the system, the operating system will load the profile of this specific user, including their selected program to open the PDF file.</p><p>However, the information in the HKCR comes from two different locations:</p><div class="itemizedlist"><ul class="itemizedlist"><li class="listitem" style="list-style-type: disc"><code class="literal">HKEY_LOCAL_MACHINE\SOFTWARE\Classes</code></li><li class="listitem" style="list-style-type: disc"><code class="literal">HKEY_CURRENT_USER\SOFTWARE\Classes</code></li></ul></div><p>Usually, this is an alias to only <code class="literal">HKEY_LOCAL_MACHINE\SOFTWARE\Classes</code>. When a user registers a different association to specific file type, it uses the per-user class registration feature to register the new association to this user only.</p><p>In this case, if the user opens one file of a specific type, and this file type has two different associations in <code class="literal">HKEY_LOCAL_MACHINE\SOFTWARE\Classes</code> and <code class="literal">HKEY_CURRENT_USER\SOFTWARE\Classes</code>, then the one in <code class="literal">HKEY_CURRENT_USER\SOFTWARE\Classes</code>, which relates to this specific user, will be used.</p></div><div class="section" title="HKEY_LOCAL_MACHINE"><div class="titlepage"><div><div><h3 class="title"><a id="ch07lvl3sec11"/>HKEY_LOCAL_MACHINE</h3></div></div></div><p>This key contains configuration and settings that are used by the system during start-up. It is independent from the user login. This root key contains the following five subkeys:</p><div class="itemizedlist"><ul class="itemizedlist"><li class="listitem" style="list-style-type: disc"><span class="strong"><strong>System</strong></span>: This contains system configuration, such as the computer name, system time zone, and network interfaces.</li><li class="listitem" style="list-style-type: disc"><span class="strong"><strong>Software</strong></span>: This contains settings and configuration about the installed applications on the system and the operating system services.</li><li class="listitem" style="list-style-type: disc"><span class="strong"><strong>SAM</strong></span>: This is the Security Account Manager, and it stores the user and group security information. It summarizes the total rights of the user that are granted by the administrator on the local system and domain. It contains the username, the unique SID of the user, and a hash message of the user's password. This file will be empty if opened from a running system by the <code class="literal">regedit.exe</code> tool because of Windows security. It can be extracted and opened in a different analysis machine to display all its contents.</li><li class="listitem" style="list-style-type: disc"><span class="strong"><strong>Security</strong></span>: This contains the security policy in the system, if any. This is the same as SAM, its contents can't be viewed from a live system.</li><li class="listitem" style="list-style-type: disc"><span class="strong"><strong>Hardware</strong></span>: This holds information about the hardware devices connected to the system. This information is stored during the system boot.</li></ul></div></div><div class="section" title="HKEY_USERS or HKU"><div class="titlepage"><div><div><h3 class="title"><a id="ch07lvl3sec12"/>HKEY_USERS or HKU</h3></div></div></div><p>The HKU registry root key contains a number of subkeys. We will use Windows 8.1 for this example:</p><div class="mediaobject"><img src="graphics/image_07_004.jpg" alt="HKEY_USERS or HKU"/><div class="caption"><p>Figure 4: HKEY_USERS</p></div></div><p>Its subkeys are as follows:</p><div class="itemizedlist"><ul class="itemizedlist"><li class="listitem" style="list-style-type: disc"><span class="strong"><strong>S-1-5-18</strong></span>: This is the system profile located at <code class="literal">%systemroot%\system32\config\systemprofile</code>.</li><li class="listitem" style="list-style-type: disc"><span class="strong"><strong>S-1-5-19</strong></span>: This is related to LocalService and located at <code class="literal">%systemroot%\C:\Windows\ServiceProfiles\LocalService</code>.</li><li class="listitem" style="list-style-type: disc"><span class="strong"><strong>S-1-5-20</strong></span>: This is related to the NetworkService and located under <code class="literal">%systemroot%\C:\Windows\ServiceProfiles\NetworkService</code>.</li><li class="listitem" style="list-style-type: disc"><span class="strong"><strong>S-1-5-21-4123892437-111928464-3716307427-1002</strong></span>: This is the currently signed in user with their full SID. Ours is located in the user directory <code class="literal">C:\Users\Forensics2</code>.</li><li class="listitem" style="list-style-type: disc"><span class="strong"><strong>Default user</strong></span>: This is the default profile for any new user. It is located at <code class="literal">%SystemDrive%\Users\Default</code>. When a new user was created, a copy of this profile is copied for this user, and all the changes in configuration made by this user are recorded under this profile. This process doesn't happen until the first login for this new user. The system starts building this user profile, as we can see in the following figure:<div class="mediaobject"><img src="graphics/image_07_005.jpg" alt="HKEY_USERS or HKU"/><div class="caption"><p>Figure 5: Creating a new user profile in Windows</p></div></div></li></ul></div><p>Only the logged on user can be found under HKU, not all the users. However, on a live system, we can find the location and more details about the system's users in the <code class="literal">HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList</code> key in the registry.</p><p>In this key, we can find basic information about all the system users' profiles, including the location of each profile, but not the configurations and settings of each user. In the following screenshot, we can find another user profile with SID ends with 1002, which we can't find under HKU:</p><div class="mediaobject"><img src="graphics/image_07_006.jpg" alt="HKEY_USERS or HKU"/><div class="caption"><p>Figure 6: The list of system profiles</p></div></div></div><div class="section" title="HKEY_CURRENT_USER or HKCU"><div class="titlepage"><div><div><h3 class="title"><a id="ch07lvl3sec13"/>HKEY_CURRENT_USER or HKCU</h3></div></div></div><p>HKCU is only a pointer to the current user under the HKU,  with the same configuration and settings:</p><div class="mediaobject"><img src="graphics/image_07_007.jpg" alt="HKEY_CURRENT_USER or HKCU"/><div class="caption"><p>Figure 7: HKCU VS HKU</p></div></div></div></div><div class="section" title="Mapping a hive to the filesystem"><div class="titlepage"><div><div><h2 class="title"><a id="ch07lvl2sec68"/>Mapping a hive to the filesystem</h2></div></div></div><p>Each root key in the registry is actually mapped to a single file in the filesystem, which differs from one Windows version to another. In the following table, we target Windows NT to Windows 10. These files have specific formats, which the operating system parses for either read or write data in the registry.</p><p>We can view the location of each hive in the filesystem in the following table:</p><div class="informaltable"><table border="1"><colgroup><col/><col/></colgroup><tbody><tr><td>
+<p><span class="strong"><strong>Hive name</strong></span></p>
+</td><td>
+<p><span class="strong"><strong>Location in the filesystem</strong></span></p>
+</td></tr><tr><td>
+<p><code class="literal">HKEY_LOCAL_MACHINE\System</code></p>
+</td><td>
+<p><code class="literal">%WINDIR%\system32\config\System</code></p>
+</td></tr><tr><td>
+<p><code class="literal">HKEY_LOCAL_MACHINE\SAM</code></p>
+</td><td>
+<p><code class="literal">%WINDIR%\system32\config\Sam</code></p>
+</td></tr><tr><td>
+<p><code class="literal">HKEY_LOCAL_MACHINE\Security</code></p>
+</td><td>
+<p><code class="literal">%WINDIR%\system32\config\Security</code></p>
+</td></tr><tr><td>
+<p><code class="literal">HKEY_LOCAL_MACHINE\Software</code></p>
+</td><td>
+<p><code class="literal">%WINDIR%\system32\config\Software</code></p>
+</td></tr><tr><td>
+<p><code class="literal">HKEY_USERS\User SID</code></p>
+</td><td>
+<p>This is the user profile (<code class="literal">NTUSER.DAT</code>); <code class="literal">Documents and Settings\User</code> (this was changed to <code class="literal">Users\User</code> in Vista). Each profile under HKU must be linked to one <code class="literal">NTUSER.DAT</code> file under the user profile directory. This directory can be determined, as in Figure 6, under:</p>
+<p><code class="literal">HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList</code></p>
+</td></tr><tr><td>
+<p><code class="literal">HKEY_CURRENT_USER</code></p>
+</td><td>
+<p>This acts as a pointer to the HKU of the currently logged in user.</p>
+</td></tr><tr><td>
+<p><code class="literal">HKEY_USERS\.Default</code></p>
+</td><td>
+<p><code class="literal">%WINDIR%\system32\config\default</code></p>
+</td></tr></tbody></table></div><div class="blockquote"><blockquote class="blockquote"><p>Table 1: Hive to filesystem mapping</p></blockquote></div></div></div></div>
+<div class="section" title="Backing up the registry files"><div class="titlepage"><div><div><h1 class="title"><a id="ch07lvl1sec43"/>Backing up the registry files</h1></div></div></div><p>Windows OS backs up the hive files by default every 10 days. The backup files are located at <code class="literal">%WINDIR%\repair</code> in Windows XP and at <code class="literal">%WINDIR%\System32\config\RegBack</code> starting from Windows Vista. The backup hives are useful in determining the changed configuration from the last update. They are also useful in case the normal hives are corrupted.</p><p>The backup is done by the local system in Windows tasks under <code class="literal">%WINDIR%\System32\Tasks\Microsoft\Windows\Registry</code>:</p><div class="mediaobject"><img src="graphics/image_07_008.jpg" alt="Backing up the registry files"/><div class="caption"><p>Figure 8: The registry backup task in Windows</p></div></div></div>
+<div class="section" title="Extracting registry hives"><div class="titlepage"><div><div><h1 class="title"><a id="ch07lvl1sec44"/>Extracting registry hives</h1></div></div></div><p>Performing a postmortem analysis on the system registry requires extracting the hives from the filesystem. In this section, we will look at extracting files from a live system and from a forensic image.</p><div class="section" title="Extracting registry files from a live system"><div class="titlepage"><div><div><h2 class="title"><a id="ch07lvl2sec69"/>Extracting registry files from a live system</h2></div></div></div><p>Copying the backup files on a live system is quite easy; simply copy and paste or type the following command in the administrator command prompt:</p><pre class="programlisting">
+<span class="strong"><strong>reg save HKLM\&lt;hive name&gt; &lt;savename&gt;</strong></span>
+</pre><p>As discussed earlier, these files could be 10 days old. This may not contain any traces of the incident under investigation. So, we need to extract the working hive files, which won't be allowed by the system because these files are in use in the live system:</p><div class="mediaobject"><img src="graphics/image_07_009.jpg" alt="Extracting registry files from a live system"/><div class="caption"><p>Figure 9: Error in copying registry files in live system</p></div></div><p>In order to copy registry files from the live system, we need to use a program, such as FTK imager. We will use the lite version in this exercise, which is better in case of live analysis because it does not leave large traces in the system as compared to the installation version:</p><div class="orderedlist"><ol class="orderedlist arabic"><li class="listitem">In the Windows live system, open the FTK imager lite program.</li><li class="listitem">Select <span class="strong"><strong>
+<span class="strong"><strong>add evidence item</strong></span>
+</strong></span> from <span class="strong"><strong>File</strong></span>.</li><li class="listitem">This will ask you to select a source. In this case, we can either select a physical or logical drive. It won't make a difference in our case here; we can anyway select a logical drive:<div class="mediaobject"><img src="graphics/image_07_010.jpg" alt="Extracting registry files from a live system"/><div class="caption"><p>Figure 10: FTK source type</p></div></div></li><li class="listitem">After this we need to select the source drive, and we need to select the Windows working partition, which in our case is partition C:<div class="mediaobject"><img src="graphics/image_07_011.jpg" alt="Extracting registry files from a live system"/><div class="caption"><p>Figure 11: Source partition</p></div></div><p>The contents of partition C will be in the left pane of the program.</p></li><li class="listitem">We need to browse to the registry files location. Select the hive file, and export these files to the external connected storage or shared folder over the network and not to the local machine. This avoids overwriting possible related evidential data, as shown in the following image:<div class="mediaobject"><img src="graphics/image_07_012.jpg" alt="Extracting registry files from a live system"/><div class="caption"><p>Figure 12: Exporting registry files by FTK imager</p></div></div></li></ol></div><p>After this, we can take the extracted files to our Linux machine for analysis.</p><p>It is worth mentioning here that FTK Imager has a built-in feature to acquire all the registry files and protected system files. It can be accessed by navigating to File à Obtain protected system files from a live system without adding any devices or partitions.</p></div><div class="section" title="Extracting registry files from a forensic image"><div class="titlepage"><div><div><h2 class="title"><a id="ch07lvl2sec70"/>Extracting registry files from a forensic image</h2></div></div></div><p>To extract files from a forensic image in Linux, we need to mount the system partition to the system first as read only and then perform a simple copy and paste operation of the registry files.</p><p>To mount one partition from a forensic image in Linux, we need to know the offset of this partition in the forensic image in the first place. This task can be done using the mmls command from the TSK or The Sleuth Kit. TSK will be discussed later in detail:</p><div class="mediaobject"><img src="graphics/image_07_013.jpg" alt="Extracting registry files from a forensic image"/><div class="caption"><p>Figure 13: Windows partition</p></div></div><p>The results show that the system partition starts at sector 2048. Using this piece of information, we can mount this partition as read only:</p><div class="orderedlist"><ol class="orderedlist arabic"><li class="listitem">First, we need to create a directory as the mount point at <code class="literal">&lt;/mnt/mountpoint&gt;</code>, and then we run the mount command, as follows:<div class="mediaobject"><img src="graphics/image_07_014.jpg" alt="Extracting registry files from a forensic image"/><div class="caption"><p>Figure 14: Creating a mount point and mounting the image</p></div></div><p>As we can see, the offset must be in bytes. So, we need to put it in this formula (512*2048), where 512 is the sector size and the 2048 is the sector number. In this command, we also selected to mount the image as read only, show system files, and ignore case, to make it easier to browse through the files without mistakes.</p></li><li class="listitem">So, we can see that all the filesystem structure can be accessed easily from the mount point:<div class="mediaobject"><img src="graphics/image_07_015.jpg" alt="Extracting registry files from a forensic image"/><div class="caption"><p>Figure 15: Mounted system partition</p></div></div></li><li class="listitem">As we know the location of the registry files in the system, we can start copying them:<div class="mediaobject"><img src="graphics/image_07_016.jpg" alt="Extracting registry files from a forensic image"/><div class="caption"><p>Figure 16: Copying registry files</p></div></div></li><li class="listitem">The same can be done with the users' profiles. Here, we have two users, forensics and forensics2:<div class="mediaobject"><img src="graphics/image_07_017.jpg" alt="Extracting registry files from a forensic image"/><div class="caption"><p>Figure 17: Copying users' profiles</p></div></div></li></ol></div></div></div>
+<div class="section" title="Parsing registry files"><div class="titlepage"><div><div><h1 class="title"><a id="ch07lvl1sec45"/>Parsing registry files</h1></div></div></div><p>Suppose that you have a corrupted registry file, or you need to recover some data, or you want to verify the results of a new analysis tool. All these reasons, besides your need to know how the analysis tools work to parse and recover registry files, make it important to understand the registry file structure.</p><p>The registry file consists of blocks with the same concept of clusters in the filesystem. The block size is 4Kb. The hive expands in the whole block, again like the clusters in the filesystem. The first cluster is called the <span class="strong"><strong>base block</strong></span>.</p><div class="section" title="The base block"><div class="titlepage"><div><div><h2 class="title"><a id="ch07lvl2sec71"/>The base block</h2></div></div></div><p>The base block is the first 4KB of the hive file. It contains the following:</p><div class="itemizedlist"><ul class="itemizedlist"><li class="listitem" style="list-style-type: disc">The hive signature, which identifies this file as a hive file.</li><li class="listitem" style="list-style-type: disc">A timestamp of the last write operation on this hive.</li><li class="listitem" style="list-style-type: disc">Checksum.</li><li class="listitem" style="list-style-type: disc">The hive format, which differs from one OS version to another. There are differences in how data treated in different versions.</li><li class="listitem" style="list-style-type: disc">The real name of the hive file and its full path in the system.</li><li class="listitem" style="list-style-type: disc">The offset to the root cell, which is relative to the beginning of the hbin. (Both will be explained shortly.)</li><li class="listitem" style="list-style-type: disc">The two sequence numbers. We can consider the sequence number as a way to preserve the integrity of the hive file.</li></ul></div><p>When one write operation needs to be performed in the registry hives, it is first done in memory. The operating system needs to write these changes to the nonvolatile on-disk file to keep it updated. The operating system keeps tracking all the sectors of the hive.</p><p>To write to the on-disk file, the operating system schedules what is called a lazy write operation or hive sync. The lazy write starts synchronizing the hive changes from memory to the on-disk file and updates the last write time. If something crashed during the synchronization process, the file will be corrupted.</p><p>In order to avoid this, the lazy write updates the first number of the sequence before it starts the synchronization process. After finishing the write process, it updates the second sequence number with the same value. If the operating system finds two different values in the sequence numbers, it knows that there was a crash during the last synchronization process. It then starts the recovery process following the log file of the hive to keep the file consistent.</p><p>In this section, we will consider an example of the <code class="literal">forensics2.dat</code> registry file. To view the registry file as raw data, we will use the hexdump utility or hd and start to interpret the registry file data.</p><p>From the forensic machine, run the following command to view only the first 200 bytes of the base block:</p><div class="mediaobject"><img src="graphics/image_07_018.jpg" alt="The base block"/><div class="caption"><p>Figure 18: First 200 bytes of the base block</p></div></div><p>Now, let's interpret the values in the previous image. Note that now that these values are little endian, we need to read them byte by byte from right to left:</p><div class="informaltable"><table border="1"><colgroup><col/><col/><col/><col/></colgroup><tbody><tr><td>
+<p><span class="strong"><strong>Offset</strong></span></p>
+</td><td>
+<p><span class="strong"><strong>Length (Bytes)</strong></span></p>
+</td><td>
+<p><span class="strong"><strong>Value</strong></span></p>
+</td><td>
+<p><span class="strong"><strong>Description</strong></span></p>
+</td></tr><tr><td>
+<p>0x0000</p>
+</td><td>
+<p>4</p>
+</td><td>
+<p>Regf</p>
+</td><td>
+<p>This is the registry file signature.</p>
+</td></tr><tr><td>
+<p>0x0004</p>
+</td><td>
+<p>4</p>
+</td><td>
+<p>0x00000055</p>
+</td><td>
+<p>This is the first sequence number that the OS writes before editing the registry.</p>
+</td></tr><tr><td>
+<p>0x0008</p>
+</td><td>
+<p>4</p>
+</td><td>
+<p>0x00000055</p>
+</td><td>
+<p>This is the second sequence number. The first and second sequence numbers are the same, which means that the last write operation was successful.</p>
+</td></tr><tr><td>
+<p>0x000C</p>
+</td><td>
+<p>8</p>
+</td><td>
+<p>0x01D048BC17BA58E0</p>
+</td><td>
+<p>This is the timestamp of the last write operation. This value can be decoded with the <code class="literal">dcode.exe</code> program, from <a class="ulink" href="http://digitaldetective.com/">http://digitaldetective.com/</a>:
+</p>
+<div class="mediaobject"><img src="graphics/image_07_019.jpg" alt="The base block"/></div>
+<p>From these results, we can see that the last write time was Sunday, February 15, 2015, at 01:09:48 UTC.</p>
+</td></tr><tr><td>
+<p>0x0014</p>
+</td><td>
+<p>4</p>
+</td><td>
+<p>0x00000001</p>
+</td><td>
+<p>This is the major version of the file. In this case, it is 1.</p>
+</td></tr><tr><td>
+<p>0x0018</p>
+</td><td>
+<p>4</p>
+</td><td>
+<p>0x00000003</p>
+</td><td>
+<p>This is the minor version of the file. In this case, it is 3. So, the file format version is 1.3.</p>
+</td></tr><tr><td>
+<p>0x0024</p>
+</td><td>
+<p>4</p>
+</td><td>
+<p>0x00000020</p>
+</td><td>
+<p>This is the offset of the first cell relative to the first hbin.</p>
+</td></tr><tr><td>
+<p>0x0030</p>
+</td><td>
+<p>64 maximum</p>
+</td><td>
+<p><code class="literal">C:\Users\Forensics2\ntuser.dat</code></p>
+</td><td>
+<p>This is the location and the name of the file. From this piece of information, we know that this file is the user's profile under <code class="literal">C:\Users\Forensics2</code>. Despite the name of the file under investigation, the file name is <code class="literal">ntuser.dat</code>.</p>
+</td></tr></tbody></table></div><div class="blockquote"><blockquote class="blockquote"><p><span class="emphasis"><em>Table 2 : Parsing base block</em></span></p></blockquote></div></div><div class="section" title="Hbin and CELL"><div class="titlepage"><div><div><h2 class="title"><a id="ch07lvl2sec72"/>Hbin and CELL</h2></div></div></div><p>The cell is the data container in the registry file; it contains a key, subkey, or value. Each type has a different signature and a different data structure within the cell. If the cell signature is kn or key node, then the following information will be interpreted as for a key. The operating system allocates these cells within another container called HBIN. The HBIN can contain more than one cell, and it has its own header in the signature file. For our example here, let's take the first cell within the first hbin.</p><p>The first hbin can be found directly after the base block, that is, 4,096 bytes from the beginning of the file. We will display the first 200 bytes after the first 4,096 bytes or 0x1000 in hex:</p><div class="mediaobject"><img src="graphics/image_07_020.jpg" alt="Hbin and CELL"/><div class="caption"><p>Figure 19: The first 200 bytes of the first HBIN</p></div></div><p>We can interpret the information in the header as follows:</p><div class="informaltable"><table border="1"><colgroup><col/><col/><col/><col/></colgroup><tbody><tr><td>
+<p><span class="strong"><strong>Offset</strong></span></p>
+</td><td>
+<p><span class="strong"><strong>Length (Bytes)</strong></span></p>
+</td><td>
+<p><span class="strong"><strong>Value</strong></span></p>
+</td><td>
+<p><span class="strong"><strong>Description</strong></span></p>
+</td></tr><tr><td>
+<p>0x1000</p>
+</td><td>
+<p>4</p>
+</td><td>
+<p>hbin</p>
+</td><td>
+<p>This is the beginning of the hbin signature.</p>
+</td></tr><tr><td>
+<p>0x1004</p>
+</td><td>
+<p>4</p>
+</td><td>
+<p>0x00000000</p>
+</td><td>
+<p>This is the offset, which is relative to the first hbin structure. The value here is 0, which means that this is the first hbin in the file.</p>
+</td></tr><tr><td>
+<p>0x1008</p>
+</td><td>
+<p>2</p>
+</td><td>
+<p>0x1000</p>
+</td><td>
+<p>This is the size of the current hbin. It is 4096 bytes. Usually, it is either equal to 4096 bytes or a multiple of this number.</p>
+</td></tr></tbody></table></div><div class="blockquote"><blockquote class="blockquote"><p><span class="emphasis"><em>Table 3: The header of hbin</em></span></p></blockquote></div><p>From parsing the base block at 0x0024, the offset to the first cell is 0x20 relative to the first hbin.</p><p>So, to find the header of the first cell, we need to go to offset 0x1020 at the current hbin:</p><div class="informaltable"><table border="1"><colgroup><col/><col/><col/><col/></colgroup><tbody><tr><td>
+<p><span class="strong"><strong>Offset</strong></span></p>
+</td><td>
+<p><span class="strong"><strong>Length (Bytes)</strong></span></p>
+</td><td>
+<p><span class="strong"><strong>Value</strong></span></p>
+</td><td>
+<p><span class="strong"><strong>Description</strong></span></p>
+</td></tr><tr><td>
+<p>0x1020</p>
+</td><td>
+<p>4</p>
+</td><td>
+<p>0xFFFFFF78</p>
+</td><td>
+<p>This is the size of the cell in negative implementation. The negative sign indicates that this cell is in use.</p>
+<p>The value here is (-136). This cell is used, and it has a size of 136.</p>
+</td></tr><tr><td>
+<p>0x1024</p>
+</td><td>
+<p>2</p>
+</td><td>
+<p>nk</p>
+</td><td>
+<p>This is the nk signature, which means that this cell contains a key node value.</p>
+</td></tr><tr><td>
+<p>0x1026</p>
+</td><td>
+<p>2</p>
+</td><td>
+<p>0x002C</p>
+</td><td>
+<p>This is the properties flag of the record; it has different values. The binary representation or the value here is 00101100, which indicates that the file is:</p>
+<p>CompressedName: (00100000)<sub>2</sub></p>
+<p>NoDelete: (00001000)<sub>2</sub></p>
+<p>HiveEntryRootKey: (00000100)<sub>2</sub></p>
+<p>As we expected before, this entry holds root key information.</p>
+</td></tr><tr><td>
+<p>0x1028</p>
+</td><td>
+<p>8</p>
+</td><td>
+<p>0x01D048B03FC412EF</p>
+</td><td>
+<p>This is the timestamp of the last write time of this entry. The value is Sat, 14 February 2015 23:45:01 UTC, according to the decode value from <code class="literal">Dcode.exe</code>
+</p>
+<div class="mediaobject"><img src="graphics/image_07_021.jpg" alt="Hbin and CELL"/></div>
+</td></tr><tr><td>
+<p>0x1034</p>
+</td><td>
+<p>2</p>
+</td><td>
+<p>0x0600</p>
+</td><td>
+<p>This value is the offset to the parent key record. As this is the parent kn record, this value can be ignored here as long as this is already the kn root key record.</p>
+</td></tr><tr><td>
+<p>0x1038</p>
+</td><td>
+<p>4</p>
+</td><td>
+<p>0x0000000B</p>
+</td><td>
+<p>This is the number or subkeys list under this root key. Here, the value is 11, so there are 11 subkey under this key.</p>
+</td></tr><tr><td>
+<p>0x1040</p>
+</td><td>
+<p>4</p>
+</td><td>
+<p>0x00011E28</p>
+</td><td>
+<p>This is a pointer to the list of the subkeys under this root key.</p>
+</td></tr><tr><td>
+<p>0x104C</p>
+</td><td>
+<p>4</p>
+</td><td>
+<p>0xFFFFFFFF</p>
+</td><td>
+<p>This is a pointer to the list of the values under this root key. The value here is 0xFFFFFFFF, which means that there are no values under this root key.</p>
+</td></tr><tr><td>
+<p>0x106C</p>
+</td><td>
+<p>2</p>
+</td><td>
+<p>0x0034</p>
+</td><td>
+<p>The size of the key name. In this case, it is 52 bytes.</p>
+</td></tr><tr><td>
+<p>0x1070</p>
+</td><td>
+<p>52</p>
+</td><td>
+<p>CMI-CreateHive{D43B12BB-09B5-40DB-B4F6-F6DFEB78DAEC}</p>
+</td><td>
+<p>This is the name of the root key. Its length is 52 bytes or character.</p>
+</td></tr></tbody></table></div><div class="blockquote"><blockquote class="blockquote"><p><span class="emphasis"><em>Table 4: Cell analysis</em></span></p></blockquote></div><p>Now, we can conclude that this is a root key named <code class="literal">CMI-CreateHive{D43B12BB-09B5-40DB-B4F6-F6DFEB78DAEC}</code> with a size of 136 bytes, and this contains 11 subkeys and no values. Now, we need to find the names of the subkeys under this root key.</p><p>From the previous analysis, the offset to the subkeys list is 0x11E28 relative to the beginning of the hbin. So, we need to add 0x1000 to get it from the beginning of the hive file itself. The offset will be 0x12E28:</p><div class="mediaobject"><img src="graphics/image_07_022.jpg" alt="Hbin and CELL"/><div class="caption"><p>Figure 20: The subkeys list</p></div></div><p>We can see that this is a new cell that needs to be parsed, as follows:</p><div class="informaltable"><table border="1"><colgroup><col/><col/><col/><col/></colgroup><tbody><tr><td>
+<p><span class="strong"><strong>Offset</strong></span></p>
+</td><td>
+<p><span class="strong"><strong>Length (Bytes)</strong></span></p>
+</td><td>
+<p><span class="strong"><strong>Value</strong></span></p>
+</td><td>
+<p><span class="strong"><strong>Description</strong></span></p>
+</td></tr><tr><td>
+<p>0x12E28</p>
+</td><td>
+<p>4</p>
+</td><td>
+<p>0xFFFFFFA0</p>
+</td><td>
+<p>This is the size of the cell in negative implementation. The negative sign indicates that this cell is in use.</p>
+<p>The value here is (-96). This cell is used, and it has a size of 96.</p>
+</td></tr><tr><td>
+<p>0x12E2C</p>
+</td><td>
+<p>2</p>
+</td><td>
+<p>lf</p>
+</td><td>
+<p>The lf signature indicates that this contains a list of subkeys.</p>
+</td></tr><tr><td>
+<p>0x12E2E</p>
+</td><td>
+<p>2</p>
+</td><td>
+<p>0x000B</p>
+</td><td>
+<p>This is the number of elements in the list. In this case, this is 11, which matches the value from the previous analysis.</p>
+</td></tr><tr><td>
+<p>0x12E30</p>
+</td><td>
+<p>---</p>
+</td><td>
+<p>----</p>
+</td><td>
+<p>Starting from this point, each 8 bytes represent one subkey. The first 4 bytes are the offset to the subkey location relative to the beginning of the hbin. The second 4 bytes are used as the checksum.</p>
+</td></tr></tbody></table></div><div class="blockquote"><blockquote class="blockquote"><p><span class="emphasis"><em>Table 5: The lf entry analysis</em></span></p></blockquote></div><p>From the previous analysis, we can determine the location of each subkey to be to the following offsets:</p><div class="itemizedlist"><ul class="itemizedlist"><li class="listitem" style="list-style-type: disc">0x00011DC8</li><li class="listitem" style="list-style-type: disc">0x00003C30</li><li class="listitem" style="list-style-type: disc">0x00000EB8</li><li class="listitem" style="list-style-type: disc">0x00000318</li><li class="listitem" style="list-style-type: disc">0x00018BF0</li><li class="listitem" style="list-style-type: disc">0x000499F0</li><li class="listitem" style="list-style-type: disc">0x0001E2F0</li><li class="listitem" style="list-style-type: disc">0x00006820</li><li class="listitem" style="list-style-type: disc">0x00006BD8</li><li class="listitem" style="list-style-type: disc">0x00000160</li><li class="listitem" style="list-style-type: disc">0x00000C60</li></ul></div><p>To see the contents that are related to the beginning of the hive file, we need to add 0x1000 to each offset, which represents the size of the base block, and then view the first 100 bytes. We will see that each offset will point to another entry with a different name, as shown in the following screenshot:</p><div class="mediaobject"><img src="graphics/image_07_023.jpg" alt="Hbin and CELL"/></div><p>We can see that in the new entries, the parent cell offset in the new entries is 0x0020, which is the offset of the first entry named <code class="literal">CMI-CreateHive{D43B12BB-09B5-40DB-B4F6-F6DFEB78DAEC}</code>.</p><p>The complete list of subkeys is as follows:</p><div class="itemizedlist"><ul class="itemizedlist"><li class="listitem" style="list-style-type: disc">AppEvents</li><li class="listitem" style="list-style-type: disc">Console</li><li class="listitem" style="list-style-type: disc">Control Panel</li><li class="listitem" style="list-style-type: disc">Environment</li><li class="listitem" style="list-style-type: disc">EUDC</li><li class="listitem" style="list-style-type: disc">Identities</li><li class="listitem" style="list-style-type: disc">Keyboard Layout</li><li class="listitem" style="list-style-type: disc">Network</li><li class="listitem" style="list-style-type: disc">Printers</li><li class="listitem" style="list-style-type: disc">Software</li><li class="listitem" style="list-style-type: disc">System</li></ul></div><p>To confirm these results with the actual case, we can display the registry in our test live machine using the native regedit tool. If the list matched the results, then the parsing went well, as we can see in the following screenshot:</p><div class="mediaobject"><img src="graphics/image_07_024.jpg" alt="Hbin and CELL"/><div class="caption"><p>Figure 21: Actual subkeys from the live machine</p></div></div></div></div>
+<div class="section" title="Auto-run keys"><div class="titlepage"><div><div><h1 class="title"><a id="ch07lvl1sec46"/>Auto-run keys</h1></div></div></div><p>Malware programs usually tend to preserve their existence in the system in case the system was rebooted or different users log on to the system. The following listing shows two important autorun keys that run when the system boots:</p><div class="itemizedlist"><ul class="itemizedlist"><li class="listitem" style="list-style-type: disc"><code class="literal">HKEY_LOCAL_MACHINE\System\CurrentControlSet\Services</code></li><li class="listitem" style="list-style-type: disc"><code class="literal">HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\ShellServiceObjectDelayLoad</code></li></ul></div><p>These locations can host malware that targets the machine itself, such as rootkit, botnet, or backdoor. Other malware executables target some users on the system and run when the specific user or any user logs on to the system.</p><p>They can be found in the following locations:</p><div class="itemizedlist"><ul class="itemizedlist"><li class="listitem" style="list-style-type: disc"><code class="literal">HKEY_LOCAL_MACHINE\Software\Microsoft\Windows\CurrentVersion\Runonce</code></li><li class="listitem" style="list-style-type: disc"><code class="literal">HKEY_LOCAL_MACHINE\Software\Microsoft\Windows\CurrentVersion\Run</code></li><li class="listitem" style="list-style-type: disc"><code class="literal">HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run</code></li><li class="listitem" style="list-style-type: disc"><code class="literal">HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\RunOnce</code></li><li class="listitem" style="list-style-type: disc"><code class="literal">HKEY_LOCAL_MACHINE\Software\Microsoft\WindowsNT\CurrentVersion\Winlogon\Userinit</code></li></ul></div><p>An example of these keys is the Zeus banking malware. It adds its executable in the Userinit key to run when anyone logs on to the system:</p><div class="mediaobject"><img src="graphics/image_07_025.jpg" alt="Auto-run keys"/><div class="caption"><p>Figure 22: The Zeus autorun technique</p></div></div></div>
+<div class="section" title="Registry analysis"><div class="titlepage"><div><div><h1 class="title"><a id="ch07lvl1sec47"/>Registry analysis</h1></div></div></div><p>After we have extracted the registry files from the live system or the forensic image, we need to analyze them.</p><p>We will use RegistryRipper, and sysinternals for registry parsing and analysis.</p><div class="section" title="RegistryRipper"><div class="titlepage"><div><div><h2 class="title"><a id="ch07lvl2sec73"/>RegistryRipper</h2></div></div></div><p>Regripper is a Perl open source and cross-platform tool by Harlan Carvey, which can be downloaded from <a class="ulink" href="https://code.google.com/p/regripper/">
+https://code.google.com/p/regripper/
+</a>. It parses the registry structure, searches for the forensically important areas, and lists the contents of these areas. The investigator needs to understand the results and extract the anomalies from the output.</p><p>The tool is a command line tool, and it also has a simple GUI to carve different types of hives. Through the GUI, the investigator will be able to select one hive file for analysis and the list of plugins to run against this hive file by selecting the type of the hive file from the Profile dropdown. The report will be created in the txt format, and a log file will be created through the analysis process in order to view the successful and failed plugins:</p><div class="mediaobject"><img src="graphics/image_07_026.jpg" alt="RegistryRipper"/><div class="caption"><p>Figure 23: The RegRipper GUI</p></div></div><p>RegRipper also has a command line interface, which can be used with other Linux tools, such as grep, to directly filter the analysis results. The command line is simple, as follows:</p><div class="itemizedlist"><ul class="itemizedlist"><li class="listitem" style="list-style-type: disc">Run the complete profile against the hive file, where the profile will provide you with a list of the plugins that run against this specific hive:<div class="mediaobject"><img src="graphics/image_07_027.jpg" alt="RegistryRipper"/><div class="caption"><p>Figure 24: Run a complete profile against the hive file</p></div></div></li><li class="listitem" style="list-style-type: disc">Alternatively, you can run only one plugin against a hive file to extract a single piece of information from this hive. In the following figure, only the appcompatcache plugin is running against the system hive:<div class="mediaobject"><img src="graphics/image_07_028.jpg" alt="RegistryRipper"/><div class="caption"><p>Figure 25: Extracting single information from a hive file.</p></div></div></li></ul></div><p>It is worth mentioning that appcompatcache parses the registry for the Application compatibility cache, which stores information about runnable programs in the system. It stores information about the path, size, the timestamp of the last modification, and the time of the most recent run of the executable file and also whether it was executed in the system.</p><p>One of the malicious results that can be an indication of malware installation on a system is the executable related to one of the banking malware in the following figure:</p><div class="mediaobject"><img src="graphics/image_07_029.jpg" alt="RegistryRipper"/><div class="caption"><p>Figure 26: Malware in the Application compatibility cache</p></div></div><p>Here, we can find an executable in the temp folder, which can be an indication of downloading this executable from the Internet during browsing. It had a malicious name and was executed in the system under investigation.</p></div><div class="section" title="Sysinternals"><div class="titlepage"><div><div><h2 class="title"><a id="ch07lvl2sec74"/>Sysinternals</h2></div></div></div><p>Sysinternals is a suite used to troubleshoot the Windows system. It was developed by Mark Russinovich and can be found at <a class="ulink" href="https://technet.microsoft.com/en-us/sysinternals/bb545021.aspx">https://technet.microsoft.com/en-us/sysinternals/bb545021.aspx</a>. It can be used in the forensic analysis to give an indication of infection. It usually runs and parses a live system, but it can also work on an offline system. We just need to point to the registry locations; these are Windows directory and username directory in the offline system.</p><p>In Linux, under the Wine environment, privilege escalation is not available, and this program needs to run as administrator. So, we need to run this tool on any Windows machine. It won't run if you provide the program with the read-only mounted image. From the forensics perspective, mounting an image as read/write is not acceptable.</p><p>In such cases, we only need to simulate the locations of the registry files:</p><div class="itemizedlist"><ul class="itemizedlist"><li class="listitem" style="list-style-type: disc"><code class="literal">Windows</code>: This should be a folder with the following subfolder:<div class="itemizedlist"><ul class="itemizedlist"><li class="listitem" style="list-style-type: disc"><code class="literal">System32</code>: This should be a folder with the following subfolder and files:<div class="itemizedlist"><ul class="itemizedlist"><li class="listitem" style="list-style-type: disc"><code class="literal">Config</code>: This should be a folder with the following files:<div class="itemizedlist"><ul class="itemizedlist"><li class="listitem" style="list-style-type: disc"><code class="literal">SYSTEM</code>: This is an extracted registry hive</li><li class="listitem" style="list-style-type: disc"><code class="literal">SOFTWARE</code>: This is an extracted registry hive</li><li class="listitem" style="list-style-type: disc"><code class="literal">SAM</code>: This is an extracted registry hive</li><li class="listitem" style="list-style-type: disc"><code class="literal">SECURITY</code>: This is an extracted registry hive</li><li class="listitem" style="list-style-type: disc"><code class="literal">ntdll.dll</code>: Copy this file from the mounted image as well (or just empty file with that name)</li></ul></div></li></ul></div></li></ul></div></li><li class="listitem" style="list-style-type: disc"><code class="literal">&lt;Username&gt;</code>: This should be a folder with the following files:<div class="itemizedlist"><ul class="itemizedlist"><li class="listitem" style="list-style-type: disc"><code class="literal">NTUSER.DAT</code>: This is an extracted registry hive:<div class="mediaobject"><img src="graphics/image_07_030.jpg" alt="Sysinternals"/><div class="caption"><p>Figure 27: Simulate Windows registry folders</p></div></div></li></ul></div></li></ul></div><div class="orderedlist"><ol class="orderedlist arabic"><li class="listitem">Then, we run the <code class="literal">autoruns.exe</code> within Wine. The <code class="literal">autoruns.exe</code> tool will display many autoruns registry keys and services along with much more useful information for analysis.</li><li class="listitem">Select <span class="strong"><strong>Analyze Offline System…</strong></span> from File and browse to the newly created folders:<div class="mediaobject"><img src="graphics/image_07_031.jpg" alt="Sysinternals"/><div class="caption"><p>Figure 28: Open the simulated directories</p></div></div></li></ol></div><p>The program has different tabs to filter the registry. For example, the Logon tab filters the entire registry, which runs while logging to the system. These keys are usually used by malware executables in order to preserve its existence in the system after a reboot, as discussed earlier:</p><div class="mediaobject"><img src="graphics/image_07_032.jpg" alt="Sysinternals"/><div class="caption"><p>Figure 29: An example of offline system registry analysis</p></div></div><p>As we can see in Figure 29, for all the entries thst are in yellow and under <code class="literal">Image Path</code> we will find File not found. This is normal because the related system isn't actually running.</p><div class="note" title="Note" style=""><div class="inner"><h3 class="title"><a id="tip10"/>Tip</h3><p>The Scheduled Tasks list is important; it needs to be checked. One technique for a malicious executable to preserve its existence is to add itself as a task to run every period of time.</p></div></div></div><div class="section" title="MiTeC Windows registry recovery"><div class="titlepage"><div><div><h2 class="title"><a id="ch07lvl2sec75"/>MiTeC Windows registry recovery</h2></div></div></div><p>MiTeC WRR is another registry analysis program worth mentioning. It opens one hive at a time, and you can open all the hives concurrently. Besides viewing the registry in its structured format, it filters the registry based on tasks, such as start-up programs and userdata. WRR can be run under Linux within the Wine environment:</p><div class="mediaobject"><img src="graphics/image_07_033.jpg" alt="MiTeC Windows registry recovery"/><div class="caption"><p>Figure 30: MiTeC WRR</p></div></div></div></div>
+<div class="section" title="Summary"><div class="titlepage"><div><div><h1 class="title"><a id="ch07lvl1sec48"/>Summary</h1></div></div></div><p>In this chapter, we got introduced to the registry as one of the most important Windows artifacts, which holds most of the operating system and the installed programs' configurations and settings. We explained the function of each registry hive and its location in the filesystem. Besides this, we parsed the structure of one registry file as an important process in case a corrupted registry file or a recovered fragment of the registry file needs to be analyzed. Then, we explained how malware programs use the registry to preserve their existence in the system and how to discover their presence. We used different tools to view and analyze the registry files.</p><p>In the next chapter, we will cover another important artifact of the Windows operating system, the Event Log files. We will explore how to use event files to track the activities of the users in the system and how to discover malicious activities within the system.</p></div></body></html>

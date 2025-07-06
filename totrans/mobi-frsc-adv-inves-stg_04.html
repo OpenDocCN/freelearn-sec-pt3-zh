@@ -1,0 +1,2229 @@
+<html><head></head><body>
+
+  <div class="chapter" title="Chapter 4. Practical Steps to Android Acquisition">
+
+    <div class="titlepage">
+
+      <div>
+
+        <div>
+
+          <h1 class="title"><a id="ch04"/>Chapter 4. Practical Steps to Android Acquisition</h1>
+
+        </div>
+
+      </div>
+
+    </div>
+
+    <p>When approaching an Android smartphone, there is no straightforward route to acquisition. Due to extremely high fragmentation of the Android platform, your approach to acquiring an Android smartphone will vary greatly between devices. Your approach will depend on who made the device and what chipset was used; what version of Android it is running and what version of Android it was originally released with; whether or not the device has an unlocked (or unlockable) bootloader, and whether it was or can be rooted. If that's not enough, you'll have different options depending on the encryption status of the device (which also depends on the device's make, model, and version of Android).</p>
+
+    <p>This chapter offers detailed discussion and demonstration of the various physical acquisition methods available for a wide range of Android devices. We'll discuss how to use manufacturer-specific low-level service modes (LG, Qualcomm, and Mediatek), how to use custom recoveries (<span class="strong"><strong>ClockworkMod</strong></span> (<span class="strong"><strong>CWM</strong></span>) and <span class="strong"><strong>Team Win Recovery Project</strong></span> (<span class="strong"><strong>TWRP</strong></span>)) for dumping the data partition, and how to make NANDroid backups and use command-line tools such as <span class="strong"><strong>dd</strong></span> for live-imaging the device. We'll talk about encryption and its effect on physical acquisition.</p>
+
+    <div class="section" title="Android physical acquisition">
+
+      <div class="titlepage">
+
+        <div>
+
+          <div>
+
+            <h1 class="title" id="toc_1"><a id="ch04lvl1sec21"/>Android physical acquisition</h1>
+
+          </div>
+
+        </div>
+
+      </div>
+
+      <p>When approaching an Android smartphone, there is no straightforward route to physical acquisition. Is the device encrypted? Do you happen to know the passcode? Do you have a bootloader that is unlocked (or at least semi-unlocked)? Does the device have root access installed, or do you have the means to root it? Is a service backdoor available on a particular model? Depending on these factors, you may be able to pursue one or another acquisition method.</p>
+
+      <div class="section" title="Encryption">
+
+        <div class="titlepage">
+
+          <div>
+
+            <div>
+
+              <h2 class="title" id="toc_2"><a id="ch04lvl2sec25"/>Encryption</h2>
+
+            </div>
+
+          </div>
+
+        </div>
+
+        <p>Before we go on discussing the various physical acquisition methods, let's make one thing clear: device encryption may affect your ability to access user data. There may be a possibility to extract decryption keys, which in turn, depends on the version of Android and whether or not the phone was made by Samsung.</p>
+
+        <p>Prior to Android 5.0 <span class="emphasis"><em>Lollipop</em></span>, Google used to utilize (and push to <span class="strong"><strong>Android Open Source Project</strong></span> (<span class="strong"><strong>AOSP</strong></span>)) a seriously flawed encryption method. This method was compromised as experts were able to extract decryption keys from the device and use it to decrypt user data. Decryption metadata was kept unencrypted, thus extracting the metadata made it possible to decrypt the data partition.</p>
+
+        <p>Samsung knew of this vulnerability and designed its own proprietary encryption scheme that encrypted the decryption metadata. As a result, encrypted Samsung smartphones are a tough call even if they are running an early version of Android (pre-Lollipop).</p>
+
+        <div class="note" title="Note" style="">
+
+          <div class="inner">
+
+            <h3 class="title" id="toc_3"><a id="note12"/>Note</h3>
+
+            <p>Samsung devices running Android 4.0 and earlier used open decryption metadata, and can be acquired even if encrypted. Samsung Galaxy Nexus running stock Android used Google's standard encryption implementation (with open decryption metadata) and can also be decrypted.</p>
+
+          </div>
+
+        </div>
+
+        <p>In Android 5.0, Google adopted a much more secure encryption scheme, similar to the one developed by Samsung. In Android 5.x and 6.x, decryption metadata is no longer stored in an open form. Instead, the decryption metadata is securely encrypted. While decryption metadata can be extracted via physical imaging, JTAG, or chip-off, it is impossible to use it to decrypt the data partition since the required metadata itself is encrypted. At this time, no method exists to decrypt the required metadata off-device. Samsung is now using this encryption standard in devices running Android 5.x and newer. When acquiring an encrypted Android device, the following compatibility matrix applies:</p>
+
+        <div class="itemizedlist">
+
+          <ul class="itemizedlist">
+
+            <li class="listitem" style="list-style-type: disc">For <span class="strong"><strong>encrypted non-Samsung devices running Android 4.4 KitKat</strong></span> or earlier, you may be able to recover the decryption key and use it to decrypt the user data.</li>
+
+            <li class="listitem" style="list-style-type: disc">For <span class="strong"><strong>encrypted Samsung smartphones running Android 4.0 through 4.4</strong></span>, you may be unable to extract or recover the decryption key. As a result, you may be unable to decrypt the user data. If this is the case, you can still try live imaging, logical acquisition, or cloud extraction.</li>
+
+            <li class="listitem" style="list-style-type: disc">For <span class="strong"><strong>encrypted devices running Android 5.x or newer</strong></span>, you are unlikely to discover the decryption key. Lower-level acquisition techniques (JTAG, ISP, or chip-off) will be equally useless. Attempt live imaging, logical acquisition, or cloud extraction.</li>
+
+          </ul>
+
+        </div>
+
+        <p>Now that we have this clear, let's move on to actual acquisition techniques.</p>
+
+      </div>
+
+    </div>
+
+  </div>
+
+
+
+
+  <div class="section" title="Approaching physical acquisition">
+
+    <div class="titlepage">
+
+      <div>
+
+        <div>
+
+          <h1 class="title"><a id="ch04lvl1sec22"/>Approaching physical acquisition</h1>
+
+        </div>
+
+      </div>
+
+    </div>
+
+    <p>When approaching a device, you may want to consider the following:</p>
+
+    <div class="itemizedlist">
+
+      <ul class="itemizedlist">
+
+        <li class="listitem" style="list-style-type: disc">Some manufacturers ship their devices with fully or partially unlocked bootloaders. Imaging such devices usually presents no problem (unless data is encrypted).</li>
+
+        <li class="listitem" style="list-style-type: disc">Some manufacturers ship their devices with locked bootloaders, officially allowing users to unlock them (for example, Samsung, Motorola, SONY, Nexus devices, and many others). If the user unlocked the bootloader, there is a high probability of successful imaging (unless an anti-forensic technique was employed).</li>
+
+        <li class="listitem" style="list-style-type: disc">In many cases, manufacturers and/or carriers restrict bootloader unlocks. In some cases, it is possible to bypass these restrictions in some models (the chipset and manufacturer of the device are important). Some chipset makers and device OEMs have backdoors (used for service-level access), while some can be exploited to bypass bootloader lock and boot into a custom recovery (which does not necessarily mean that you can permanently flash one). These devices are also relatively easy to acquire.</li>
+
+        <li class="listitem" style="list-style-type: disc">Finally, some devices are really tough. Locked bootloaders, no service mode, and no known exploits make them difficult to acquire. You can still try live imaging or alternative acquisition methods.</li>
+
+      </ul>
+
+    </div>
+
+    <p>If you are using Cellebrite UFED, you may find it useful to install their free mobile app (onto your own smartphone or tablet) to help you identify the extraction capabilities of a given mobile device. <span class="strong"><strong>UFED Phone Detective</strong></span> is available for iOS and Android devices, and offers an easy way to view forensic extraction and decoding capabilities, as well as connectivity methods, for mobile devices supported by Cellebrite UFED 4PC/Touch/Classic. While the app can be downloaded free of charge, you will need to provide your <span class="strong"><strong>My Cellebrite</strong></span> credentials to log in. If you don't have a My Cellebrite account, you will be able to register free of charge from within the app:</p>
+
+    <p> </p>
+
+    <div class="mediaobject">
+
+      <img src="0020.jpeg" alt="Approaching physical acquisition"/>
+
+    </div>
+
+    <p> </p>
+
+    <p>UFED Phone Detective mobile app complements Cellebrite's mobile extraction suite by enabling experts to look up mobile devices by vendor name, mobile device name, or model number. Once the device is identified, the app displays specific support information, including whether the extraction can bypass the device's lock.</p>
+
+    <div class="note" title="Note" style="">
+
+      <div class="inner">
+
+        <h3 class="title" id="toc_1"><a id="note13"/>Note</h3>
+
+        <p>More information about UFED Phone Detective and the download links is available at <a class="ulink" href="http://www.cellebrite.com/">http://www.cellebrite.com/</a>.</p>
+
+      </div>
+
+    </div>
+
+    <p>We compiled a short acquisition walkthrough for your convenience.</p>
+
+    <div class="section" title="Encryption status – Is the data partition encrypted?">
+
+      <div class="titlepage">
+
+        <div>
+
+          <div>
+
+            <h2 class="title" id="toc_2"><a id="ch04lvl2sec26"/>Encryption status – Is the data partition encrypted?</h2>
+
+          </div>
+
+        </div>
+
+      </div>
+
+      <p> <span class="strong"><strong>Yes</strong></span>: If you're imaging a Samsung device, and if that device runs Android 4.0 to 4.4, or if you're imaging a Samsung or non-Samsung device that runs Android 5 or newer, try live imaging. In order to perform live imaging, you will need to unlock the device with the correct passcode (plenty of solutions are available on the market). If you are imaging an older <span class="emphasis"><em>non-Samsung</em></span> device that runs a version of Android 4.4 or earlier, proceed to physical acquisition as you have a good chance of recovering the decryption key.</p>
+
+      <p> <span class="strong"><strong>No</strong></span>: Proceed to physical acquisition.</p>
+
+      <div class="section" title="Service mode available">
+
+        <div class="titlepage">
+
+          <div>
+
+            <div>
+
+              <h3 class="title" id="toc_3"><a id="ch04lvl3sec15"/>Service mode available</h3>
+
+            </div>
+
+          </div>
+
+        </div>
+
+        <p>Prior to trying other acquisition methods, let's discover whether a service backdoor is available for the device being imaged.</p>
+
+      </div>
+
+      <div class="section" title="LG smartphones">
+
+        <div class="titlepage">
+
+          <div>
+
+            <div>
+
+              <h3 class="title" id="toc_4"><a id="ch04lvl3sec16"/>LG smartphones</h3>
+
+            </div>
+
+          </div>
+
+        </div>
+
+        <p>LG smartphones ship with a proprietary service access mode called <span class="strong"><strong>LAF</strong></span>. In LG smartphones, this proprietary mode completely replaces similar low-level access modes provided by chipset makers, such as Qualcomm or MediaTek. This bears an important consequence. If you are imaging an LG smartphone, make sure that you use the LG service mode instead of attempting to boot the device into Qualcomm 9006 or MTK service mode.</p>
+
+        <p>LG service mode works both ways (for reading and writing data onto the raw physical storage). As a result, you can image the complete physical storage regardless of the bootloader lock status. LG uses a proprietary protocol, so your acquisition tool must support that in order to be able to read the data. You will need to install the latest LG drivers as well. Tools that support LAF include Cellebrite UFED and Oxygen Forensic Suite. More on this method will be discussed in the <span class="emphasis"><em>LG smartphones' LAF mode</em></span> section.</p>
+
+      </div>
+
+      <div class="section" title="Devices based on the Qualcomm reference platform">
+
+        <div class="titlepage">
+
+          <div>
+
+            <div>
+
+              <h3 class="title" id="toc_5"><a id="ch04lvl3sec17"/>Devices based on the Qualcomm reference platform</h3>
+
+            </div>
+
+          </div>
+
+        </div>
+
+        <p>A number of vendors build devices based on reference platforms supplied by chipset manufacturers. Using a reference platform greatly streamlines development. Manufacturers receive a ready-to-use PCB design complete with pre-selected components and drivers. In addition to this, some reference platforms expose service-access backdoors. The reference platform provided by Qualcomm, one of the largest chipset manufacturers, includes several service modes. One of these modes, <span class="strong"><strong>HS-USB 9006</strong></span> or <span class="strong"><strong>mode 9006</strong></span>, provides system-level access to device partitions regardless of whether the device ships with a locked or unlocked bootloader.</p>
+
+        <p>Generally speaking, switching into this mode is activated by turning the device off, connecting it to the computer via a USB cord while holding the volume up key, and powering on the device while still holding the volume up key (details on entering mode 9006 may vary slightly between devices). Once the device boots into the service mode, the Windows <span class="strong"><strong>Disk Management</strong></span> console will display a list of available partitions. Note that a dedicated Qualcomm Download Mode HS-USB 9006 driver must be installed on the expert's computer for the partitions to appear. Once you see the list of partitions, you'll be able to image these partitions with a mobile forensic tool of your choice. Some flash imaging tools are also available. More on this method will be discussed in <span class="emphasis"><em>The Qualcomm 9006 mode</em></span> section.</p>
+
+      </div>
+
+      <div class="section" title="Mediatek-based Chinese phones">
+
+        <div class="titlepage">
+
+          <div>
+
+            <div>
+
+              <h3 class="title" id="toc_6"><a id="ch04lvl3sec18"/>Mediatek-based Chinese phones</h3>
+
+            </div>
+
+          </div>
+
+        </div>
+
+        <p>Another chipset manufacturer providing a special service backdoor is <span class="strong"><strong>MediaTek</strong></span> (<span class="strong"><strong>MTK</strong></span>). MTK chipsets are used by most Chinese smartphone makers and include models built by Xiaomi, Meizu, Oppo, Vivo, OnePlus, Cubot, Zoppo, ZTE, No. 1, and hundreds of B-brands and C-brands. Unlike Qualcomm, MediaTek only allows accessing data via this service mode if the bootloader is unlocked. Many Chinese manufacturers ship their smartphones with unlocked bootloaders, presumably for easier servicing, which allows users of mobile forensic tools to easily image these devices by exploiting the MTK service mode. Later in this book, we'll discuss more about one of the tools, Oxygen Forensic Toolkit. More on this method is discussed in the <span class="emphasis"><em>MediaTek smartphones</em></span> section.</p>
+
+      </div>
+
+      <div class="section" title="Bootloaded status">
+
+        <div class="titlepage">
+
+          <div>
+
+            <div>
+
+              <h3 class="title" id="toc_7"><a id="ch04lvl3sec19"/>Bootloaded status</h3>
+
+            </div>
+
+          </div>
+
+        </div>
+
+        <p> <span class="emphasis"><em>Is the bootloader locked?</em></span> When it comes to acquiring Android devices, this is a major question. Major brands ship their Android devices with locked bootloaders. Some vendors allow users to unlock bootloaders on some models and carrier combinations, while other vendors (models and carriers) opt for permanently locked bootloaders.</p>
+
+        <p>The majority of Android devices sold in the US and Europe ship with locked bootloaders; in China, the opposite is true. Some devices come with semi-locked bootloaders, allowing to boot into (but not permanently flash) a custom boot image. If you are able to boot into a custom recovery, you may be able to create a Nandroid backup or image the data partition. However, note that booting into a custom bootloader on a semi-unlocked bootloader may (InFocus m810t) or may not (ASUS ZenPad S 8.0) trigger a security reset.</p>
+
+      </div>
+
+      <div class="section" title="Root status">
+
+        <div class="titlepage">
+
+          <div>
+
+            <div>
+
+              <h3 class="title" id="toc_8"><a id="ch04lvl3sec20"/>Root status</h3>
+
+            </div>
+
+          </div>
+
+        </div>
+
+        <p> <span class="emphasis"><em>Is the device rooted?</em></span> Unlike iOS jailbreak, rooting the device is not a necessary prerequisite for imaging many Android devices. Whether or not the device has been rooted only affects your ability to perform live imaging of the device. However, if the device has been already rooted, you will be able to perform live imaging without attempting to root the device first, which can be iffy.</p>
+
+      </div>
+
+    </div>
+
+    <div class="section" title="LG smartphones' LAF mode">
+
+      <div class="titlepage">
+
+        <div>
+
+          <div>
+
+            <h2 class="title" id="toc_9"><a id="ch04lvl2sec27"/>LG smartphones' LAF mode</h2>
+
+          </div>
+
+        </div>
+
+      </div>
+
+      <p>For service purposes, LG developed a low-level protocol enabling LG smartphones to accept firmware updates over a USB connection even if the device is not otherwise accessible (<span class="emphasis"><em>bricked</em></span>). Initially only available to authorized service centers, details of this protocol and the actual drivers and flashing tools soon became available to the general public, and made it into some mobile forensic tools such as Cellebrite UFED and Oxygen Forensic Suite (refer to the <span class="emphasis"><em>Live imaging using Oxygen Forensic Suite</em></span> section for more information).</p>
+
+      <p>This service mode (LAF mode) is generally activated by powering down the device, holding the volume up key and attaching it to the PC via a USB cable. The phone will automatically boot into the download mode, ready to accept firmware updates:</p>
+
+      <p> </p>
+
+      <div class="mediaobject">
+
+        <img src="0021.jpeg" alt="LG smartphones' LAF mode"/>
+
+      </div>
+
+      <p> </p>
+
+      <p>In this mode, an imaging tool can extract the complete physical image of the device's physical storage. This is one of the cleanest, easiest, and most forensically sound acquisition methods available.</p>
+
+      <p>When using this method, select <span class="strong"><strong>Physical data acquisition</strong></span> | <span class="strong"><strong>LG Android dump</strong></span>:</p>
+
+      <p> </p>
+
+      <div class="mediaobject">
+
+        <img src="0022.jpeg" alt="LG smartphones' LAF mode"/>
+
+      </div>
+
+      <p> </p>
+
+      <p>You will be prompted to download and install LG drivers, as shown in the following image:</p>
+
+      <p> </p>
+
+      <div class="mediaobject">
+
+        <img src="0023.jpeg" alt="LG smartphones' LAF mode"/>
+
+      </div>
+
+      <p> </p>
+
+      <p>Once the drivers are installed, carry out the instructions appearing in the following screenshot:</p>
+
+      <p> </p>
+
+      <div class="mediaobject">
+
+        <img src="0024.jpeg" alt="LG smartphones' LAF mode"/>
+
+      </div>
+
+      <p> </p>
+
+      <p>Once the LG device is connected, wait while Windows installs the corresponding driver:</p>
+
+      <p> </p>
+
+      <div class="mediaobject">
+
+        <img src="0025.jpeg" alt="LG smartphones' LAF mode"/>
+
+      </div>
+
+      <p> </p>
+
+      <p>Click on <span class="strong"><strong>Next</strong></span>:</p>
+
+      <p> </p>
+
+      <div class="mediaobject">
+
+        <img src="0026.jpeg" alt="LG smartphones' LAF mode"/>
+
+      </div>
+
+      <p> </p>
+
+      <p>Shortly after this, you'll be able to see that your device is connected:</p>
+
+      <p> </p>
+
+      <div class="mediaobject">
+
+        <img src="0027.jpeg" alt="LG smartphones' LAF mode"/>
+
+      </div>
+
+      <p> </p>
+
+      <p>Click on <span class="strong"><strong>Next</strong></span> to begin imaging:</p>
+
+      <p> </p>
+
+      <div class="mediaobject">
+
+        <img src="0028.jpeg" alt="LG smartphones' LAF mode"/>
+
+      </div>
+
+      <p> </p>
+
+      <p>Once the process is finished, you will get a single binary file (stored at the path you specified earlier) representing a dump of the device's entire physical storage. You'll be able to open and analyze the dump in Oxygen Forensic Suite or a mobile forensic tool of your choice.</p>
+
+    </div>
+
+    <div class="section" title="MediaTek smartphones">
+
+      <div class="titlepage">
+
+        <div>
+
+          <div>
+
+            <h2 class="title" id="toc_10"><a id="ch04lvl2sec28"/>MediaTek smartphones</h2>
+
+          </div>
+
+        </div>
+
+      </div>
+
+      <p>MediaTek is a Chinese manufacturer supplying a large number of phone makers with cost-effective mobile chipsets. Mostly used in low-end and mid-range devices, MTK chipsets can be found in smartphones and tablets produced by major manufacturers (LG, SONY, HTC, and so on), as well as a countless number of B-brand and C-brand manufacturers.</p>
+
+      <p>C-brand devices sold in Mainland China and available from numerous online outlets are almost always equipped with one or another chipset offered by MTK. Such devices rarely come with locked bootloaders, allowing for clean acquisition via the MTK firmware update mode. Note that only devices with unlocked bootloaders can be acquired via this method, so it won't work on bootloader-locked devices produced by, for example, SONY, HTC, or LG.</p>
+
+      <p>Technically, MTK service mode works by installing a virtual serial (COM) port into the system. While dedicated MTK drivers are available, in practice, these are generic Windows drivers for virtual COM ports with a custom <code class="literal">.inf</code> file. Once the driver is installed, an MTK-supplied DLL allows booting into a service bootloader, reading the device info, and extracting the storage content. This method can access both NAND and eMMC memory. New models require updated versions of the MTK service DLL and bootloader. Note that support is added for entire SoC (chipset) families as opposed to individual smartphone models.</p>
+
+      <p>In order to extract a device via MTK physical imaging, select the corresponding option in Oxygen Forensic Suite:</p>
+
+      <p> </p>
+
+      <div class="mediaobject">
+
+        <img src="0029.jpeg" alt="MediaTek smartphones"/>
+
+      </div>
+
+      <p> </p>
+
+      <p>You will be prompted to download the driver and turn off the device:</p>
+
+      <p> </p>
+
+      <div class="mediaobject">
+
+        <img src="0030.jpeg" alt="MediaTek smartphones"/>
+
+      </div>
+
+      <p> </p>
+
+      <p>After the drivers are installed, turn on the device and follow the instructions:</p>
+
+      <p> </p>
+
+      <div class="mediaobject">
+
+        <img src="0031.jpeg" alt="MediaTek smartphones"/>
+
+      </div>
+
+      <p> </p>
+
+      <p>Once the device is connected, you'll be able to proceed to extracting its storage.</p>
+
+    </div>
+
+    <div class="section" title="Qualcomm bootloader exploit">
+
+      <div class="titlepage">
+
+        <div>
+
+          <div>
+
+            <h2 class="title" id="toc_11"><a id="ch04lvl2sec29"/>Qualcomm bootloader exploit</h2>
+
+          </div>
+
+        </div>
+
+      </div>
+
+      <p>Physical acquisition options are limited for locked devices featuring the locked bootloader, no root, and disabled ADB Debugging option. A bootloader-level exploit exists for some Qualcomm devices, and can be used by tools such as Cellebrite UFED to boot the device with a patched boot image to allow the tool to extract device image.</p>
+
+      <p>The exploit is based on a critical security vulnerability discovered in certain versions of the kernel bootloader used in Qualcomm reference devices and implemented by multiple OEMs. When processing the boot command in the fastboot mode, the affected kernel bootloader will not verify the unlock status of the device or whether the kernel is properly signed. If the device is using an affected kernel, it can be booted with a patched kernel image without verification.</p>
+
+      <p>Experts can use this vulnerability to boot Android devices with arbitrary kernel images via fastboot even when the target uses a signed kernel and the bootloader is locked. (Source: <span class="emphasis"><em>Fastboot boot command bypasses signature verification (CVE-2014-4325)</em></span> at <a class="ulink" href="https://www.codeaurora.org/projects/security-advisories/fastboot-boot-command-bypasses-signature-verification-cve-2014-4325">https://www.codeaurora.org/projects/security-advisories/fastboot-boot-command-bypasses-signature-verification-cve-2014-4325</a>).</p>
+
+      <p>Bootloader exploits are device-specific and involve using a custom boot image, built specifically for target devices. Manually building a patched boot image for a particular device being investigated is not feasible as it would require a high level of skill and a lot of time. The Cellebrite acquisition kit implements bootloader runtime exploits for multiple devices.</p>
+
+      <p>Bootloader attacks are tethered. They don't write anything into the device while using a patched boot image that only modifies the content of the device volatile memory (RAM) but does not alter the content of the device storage. For this reason, bootloader-level acquisition is forensically sound.</p>
+
+      <p>Since bootloader exploits are device-specific, they are only available for some devices (Cellebrite claims support for most Motorola Android devices, selected Samsung, Qualcomm, and LG GSM and CDMA devices). No universal bootloader exploit exists. Bootloader exploits should be used with caution as some devices are known to wipe data partition when booting into a custom recovery. At the time of writing, bootloader acquisition is exclusive to Cellebrite UFED:</p>
+
+      <p> </p>
+
+      <div class="mediaobject">
+
+        <img src="0032.jpeg" alt="Qualcomm bootloader exploit"/>
+
+      </div>
+
+      <p> </p>
+
+      <p>In addition to bootloader exploits, a few Qualcomm-based devices are susceptible to some of the cleanest acquisition techniques via Qualcomm 9006 mode.</p>
+
+      <div class="section" title="Qualcomm-based smartphones – HS-USB 9006">
+
+        <div class="titlepage">
+
+          <div>
+
+            <div>
+
+              <h3 class="title" id="toc_12"><a id="ch04lvl3sec21"/>Qualcomm-based smartphones – HS-USB 9006</h3>
+
+            </div>
+
+          </div>
+
+        </div>
+
+        <p>This method is applicable to certain smartphones and tablets based on one of the recent Qualcomm SoC. Bootloader status is irrelevant; devices with locked bootloaders can be successfully imaged with this method. The limiting factors are as follows: the ability to switch the device into Qualcomm Download Mode 9006, and having the correct Qualcomm HS-USB 9006 drivers for a given device.</p>
+
+        <p>This method is considered to be physical acquisition. It returns the full dump of either the entire eMMC storage or just the data partition. The complete raw dump is captured, including unallocated space, which makes it possible to recover the deleted files. This method is clean, safe, forensically sound (it leaves no traces anywhere in the device), and requires no specific technical expertise.</p>
+
+      </div>
+
+      <div class="section" title="Encryption">
+
+        <div class="titlepage">
+
+          <div>
+
+            <div>
+
+              <h3 class="title" id="toc_13"><a id="ch04lvl3sec22"/>Encryption</h3>
+
+            </div>
+
+          </div>
+
+        </div>
+
+        <p>In this mode, you are capturing the raw image of either the entire eMMC card or selected partitions. If the data partition is encrypted, you will not be prompted for a passcode. The data will be captured encrypted. You may or may not be able to decrypt it afterwards, even if you know the correct passcode. The ability to decrypt encrypted data depends on many factors, such as the version of Android the device is running, the version of Android it was initially released with, and the manufacturer of the device. For example, Samsung used particularly strong versions of custom encryption in some versions of Android. Devices that were initially released with Android 5.x Lollipop use a similarly strong encryption scheme. Devices released with Android 4.2 Jellybean can often be decrypted.</p>
+
+      </div>
+
+    </div>
+
+    <div class="section" title="The Qualcomm 9006 mode">
+
+      <div class="titlepage">
+
+        <div>
+
+          <div>
+
+            <h2 class="title" id="toc_14"><a id="ch04lvl2sec30"/>The Qualcomm 9006 mode</h2>
+
+          </div>
+
+        </div>
+
+      </div>
+
+      <p>Qualcomm is known to provide OEMs with a number of reference platforms. Manufacturers can use these platforms, complete with low-level firmware and drivers, to quickly build smartphones and tables without spending much time on research and development.</p>
+
+      <p>Since Qualcomm reference platforms are implemented across a variety of devices made by dozens of different manufacturers, security exploits that are applicable to a certain reference platform can often be applied to other devices built on the same platform. Cellebrite, for one, developed bootloader-level exploits, allowing the company's acquisition tool, UFED, to successfully acquire information from smartphones with locked bootloaders. Importantly, this is applicable to devices across different platforms (Android, Windows Phone 8.x, and Windows 10 Mobile) and regardless of whether or not the device being acquired has its bootloader locked or unlocked.</p>
+
+      <p>Yet another low-level exploit exists, which allows downloading the entire content of the device internal storage (eMMC) by using Qualcomm Download Mode (firmware recovery mode 9006, Qualcomm MMC Storage (Diag 9006), Qualcomm HS-USB Diagnostics 9006, HS-USB QDLoader 9006, Qualcomm HS-USB 9006, or simply qhsusb 9006, depending on the device). This mode is engaged automatically if the device has a corrupt bootloader. On many devices, it can be possible to manually engage this mode by turning the device off and holding the volume down key while connecting it to a PC via a USB port. On some devices, a different sequence is required. For example, LG G Flex 2 requires holding the volume up button while connecting to the PC.</p>
+
+      <div class="note" title="Note" style="">
+
+        <div class="inner">
+
+          <h3 class="title" id="toc_15"><a id="tip14"/>Tip</h3>
+
+          <p>There is a notable difference between this 9006 diagnostic mode and Qualcomm HS-USB QDLoader 9008 mode. While it is easy to switch the device into the 9008 mode using Qualcomm QPST, additional files are required to boot into the 9006 mode. Imaging the device is not possible from the 9008 mode. More information is available at <a class="ulink" href="http://forum.xda-developers.com/general/help/how-to-enter-qualcomm-mmc-storage-diag-t3253478">http://forum.xda-developers.com/general/help/how-to-enter-qualcomm-mmc-storage-diag-t3253478</a>. Also note that sometimes using QPST's eMMC Software Download Tool can help get the device from 9008 to 9006 by using additional files.</p>
+
+        </div>
+
+      </div>
+
+      <p>By connecting compatible devices in Qualcomm Download Mode 9006 and using specific software, it may be possible to acquire the entire content of the phone's eMMC chip without rooting the device or unlocking its bootloader. Please note that this technique may not work for all manufacturers as some of them (HTC, LG, Motorola, Sony, and so on) may tweak the reference platform to remove user access to the 9006 mode.</p>
+
+      <p>In Qualcomm Download Mode 9006 (provided that the correct drivers are installed and assuming you're using a Windows PC), available partitions may appear in the <span class="strong"><strong>Windows Disk Management</strong></span> console. If this is the case, acquiring the content of the device is as simple as using an imaging tool, such as <span class="strong"><strong>HDD Raw Copy Tool</strong></span> (<a class="ulink" href="http://hddguru.com/software/HDD-Raw-Copy-Tool/">http://hddguru.com/software/HDD-Raw-Copy-Tool/</a>).</p>
+
+      <p>However, Qualcomm-specific software exists, allowing you to identify and acquire individual partitions.</p>
+
+      <div class="section" title="Tools for imaging via Qualcomm Download Mode 9006">
+
+        <div class="titlepage">
+
+          <div>
+
+            <div>
+
+              <h3 class="title" id="toc_16"><a id="ch04lvl3sec23"/>Tools for imaging via Qualcomm Download Mode 9006</h3>
+
+            </div>
+
+          </div>
+
+        </div>
+
+        <p>A variety of tools are available for programming/reading devices via the diagnostic port. One such tool is <span class="strong"><strong>eMMC RAW Tool</strong></span>. The tool is developed by Albie Cervice, and is available as a free download at <a class="ulink" href="http://www.na2nkhape.com/2015/02/download-emmc-raw-tool.html">http://www.na2nkhape.com/2015/02/download-emmc-raw-tool.html</a>.</p>
+
+        <div class="note" title="Note" style="">
+
+          <div class="inner">
+
+            <h3 class="title" id="toc_17"><a id="tip15"/>Tip</h3>
+
+            <p> <span class="strong"><strong>Video</strong></span>: A quick video tutorial on using eMMC RAW Tool is available at <a class="ulink" href="https://www.youtube.com/watch?v=0ESQqVqCODY">https://www.youtube.com/watch?v=0ESQqVqCODY</a> (video by <a class="ulink" href="http://www.unbrickandroid.com/">http://www.unbrickandroid.com/</a>).</p>
+
+          </div>
+
+        </div>
+
+        <p>The tool can read the content of the device's eMMC storage via low-level firmware recovery mode Qualcomm HS-USB 9006. Alternatively, it can mount an Android smartphone as a generic mass storage device.</p>
+
+        <p>eMMC RAW Tool features include the following:</p>
+
+        <div class="itemizedlist">
+
+          <ul class="itemizedlist">
+
+            <li class="listitem" style="list-style-type: disc">Read full image</li>
+
+            <li class="listitem" style="list-style-type: disc">Read partition structure from the device</li>
+
+            <li class="listitem" style="list-style-type: disc">Read partition structure from a file</li>
+
+            <li class="listitem" style="list-style-type: disc">Read selected partition from the device</li>
+
+            <li class="listitem" style="list-style-type: disc">Read by address</li>
+
+          </ul>
+
+        </div>
+
+        <p>Note that eMMC RAW Tool is a powerful tool that can also write to Android devices. This same tool is used to revive (unbrick) devices with corrupted bootloaders. It goes without saying that writing anything onto a phone being imaged is not our intention.</p>
+
+        <p>To use eMMC RAW Tool, perform the following steps:</p>
+
+        <div class="orderedlist">
+
+          <ol class="orderedlist arabic">
+
+            <li class="listitem">Download and unzip the tool from the developer's website (<a class="ulink" href="http://www.na2nkhape.com/2015/02/download-emmc-raw-tool.html">http://www.na2nkhape.com/2015/02/download-emmc-raw-tool.html</a>) or from <a class="ulink" href="http://4pda.ru/forum/index.php?showtopic=655617">http://4pda.ru/forum/index.php?showtopic=655617</a>.</li>
+
+            <li class="listitem">Download and unzip Qualcomm drivers (the correct drivers for Qualcomm 9006 mode must be installed).</li>
+
+            <li class="listitem">Install the correct driver for your version of Windows.</li>
+
+            <li class="listitem">Switch your device into Qualcomm Download Mode 9006. This is the iffy part. To do this, you may attempt the following sequence:<div class="orderedlist"><ol class="orderedlist arabic"><li class="listitem">Switch the device off (wait while it shuts down completely).</li><li class="listitem">Press and hold the hardware volume down key (on some devices, press and hold the volume up key).</li><li class="listitem">While holding the key, connect the device to your computer via a USB cable.</li><li class="listitem">Wait until the device displays <span class="strong"><strong>Download mode</strong></span> or <span class="strong"><strong>Updating firmware 0%</strong></span>.</li><li class="listitem">Release the key and wait while the drivers are installed.</li></ol></div><p> </p></li>
+
+            <li class="listitem">If the device is not switching to the 9006 mode, you can try researching the correct sequence.</li>
+
+            <li class="listitem">At this time, Windows will attempt to install the Qualcomm HS-USB 9006 driver. When prompted, choose the correct driver and wait until it finishes installing.</li>
+
+            <li class="listitem">Finally, run eMMC RAW Tool, as shown in the following screenshot:</li>
+
+          </ol>
+
+        </div>
+
+        <p> </p>
+
+        <div class="mediaobject">
+
+          <img src="0033.jpeg" alt="Tools for imaging via Qualcomm Download Mode 9006"/>
+
+        </div>
+
+        <p> </p>
+
+        <p>In order to image the device, perform the following steps:</p>
+
+        <div class="orderedlist">
+
+          <ol class="orderedlist arabic">
+
+            <li class="listitem">Click on <span class="strong"><strong>Refresh</strong></span>.</li>
+
+            <li class="listitem">The list of physical drives will appear. Select the appropriate device from the <span class="strong"><strong>Drive</strong></span> box.</li>
+
+            <li class="listitem">Click on <span class="strong"><strong>Read Partition Structure</strong></span>. The list of available partitions will appear in the main window.</li>
+
+            <li class="listitem">Select all partitions by clicking the check box on the top left-hand side of the window.</li>
+
+            <li class="listitem">Click on <span class="strong"><strong>Read Selected Partitions</strong></span>.</li>
+
+          </ol>
+
+        </div>
+
+        <p>Alternatively, you may only select the <span class="strong"><strong>USERDATA</strong></span>, <span class="strong"><strong>DATA</strong></span>, or <span class="strong"><strong>SDCARD</strong></span> partition during Step 4. This will only read the content of that single partition containing your user data:</p>
+
+        <p> </p>
+
+        <div class="mediaobject">
+
+          <img src="0034.jpeg" alt="Tools for imaging via Qualcomm Download Mode 9006"/>
+
+          <div class="caption">
+
+            <p>Imaging an Android Smartphone in the Qualcomm 9006 Mode</p>
+
+          </div>
+
+        </div>
+
+        <p> </p>
+
+        <p>For example, the <span class="strong"><strong>USERDATA</strong></span> partition in the preceding screenshot (partition number <span class="strong"><strong>20</strong></span>) would be the correct partition to image using the <span class="strong"><strong>Read Selected Partitions</strong></span> function. Alternatively, the complete device image can be read by using <span class="strong"><strong>Read Full Image</strong></span>.</p>
+
+        <p>That's it, you have successfully imaged the device. You can now proceed to the actual recovery. If, however, this technique did not work for you (for example, your phone does not support the Qualcomm HS-USB 9006 mode), you can try imaging the device using a different method.</p>
+
+      </div>
+
+    </div>
+
+    <div class="section" title="Using custom recoveries">
+
+      <div class="titlepage">
+
+        <div>
+
+          <div>
+
+            <h2 class="title" id="toc_18"><a id="ch04lvl2sec31"/>Using custom recoveries</h2>
+
+          </div>
+
+        </div>
+
+      </div>
+
+      <p>There is more than one way of using a custom recovery to image an Android device. The first method is the easiest and involves simply booting into a custom recovery (via <code class="literal">fastboot boot twrp.img</code> or <code class="literal">fastboot boot cwm.img</code>) and using on-screen controls to produce a Nandroid backup of the data partition. The second method (via the <code class="literal">dd</code> command) is more complex and requires opening two separate terminal windows; however, this method returns the full raw image of the data partition. The following is a quick comparison of the two methods:</p>
+
+      <div class="itemizedlist">
+
+        <ul class="itemizedlist">
+
+          <li class="listitem" style="list-style-type: disc"><span class="strong"><strong>Nandroid backup</strong></span>: This is quick, easy, and done via graphical user interface (touch-based or controlled with the phone's hardware keys). It only dumps filesystem; no access to unallocated space makes recovering deleted files impossible.</li>
+
+          <li class="listitem" style="list-style-type: disc"><span class="strong"><strong>Imaging via dd</strong></span>: This requires extra tools and two terminal windows. It requires a much higher level of expertise to use and returns the complete raw dump of the data partition with full access to unallocated space, making it possible to recover deleted files.</li>
+
+        </ul>
+
+      </div>
+
+      <p>This book is not about rooting Android or installing custom recoveries. Refer to the end of this book for recommended reading on Android forensics.</p>
+
+      <p>In this chapter, we'll give a brief overview of what a custom recovery can and cannot do for you and what are the limitations and dangers in imaging the device with a custom recovery.</p>
+
+      <div class="note" title="Note" style="">
+
+        <div class="inner">
+
+          <h3 class="title" id="toc_19"><a id="tip16"/>Tip</h3>
+
+          <p> <span class="strong"><strong>Warning</strong></span>: If the device bootloader is locked, unlocking it may (and probably will) cause a full factory reset, which results in complete loss of data. Only proceed if your bootloader is already unlocked or if you know for sure that your device can boot into a custom recovery without wiping data.</p>
+
+        </div>
+
+      </div>
+
+      <p>Using a custom recovery is risky. The Android platform is highly fragmented. Different manufacturers employ different security policies across the many devices they carry within their range. Booting into a custom recovery can succeed, fail, trigger a full factory reset, or succeed and then trigger a full factory reset. Therefore, using a custom recovery, in general, is not considered a forensically sound way of imaging the device.</p>
+
+      <p> <span class="strong"><strong>Encryption</strong></span> </p>
+
+      <p>Custom recoveries may or may not be able to deal with encrypted partitions, even if you know the correct passcode. In addition, if the data partition is captured encrypted, you may or may not be able to decrypt it afterwards—even if you know the passcode.</p>
+
+      <p>Just a few examples from some recent cases:</p>
+
+      <div class="itemizedlist">
+
+        <ul class="itemizedlist">
+
+          <li class="listitem" style="list-style-type: disc"><span class="strong"><strong>Motorola Nexus 6</strong></span> (and possibly other Nexus devices): Flashing or booting into a custom recovery is possible. However, unlocking bootloader causes factory reset.</li>
+
+          <li class="listitem" style="list-style-type: disc"><span class="strong"><strong>Motorola Moto X (2014)</strong></span>: Once the bootloader is unlocked, flashing or booting a custom recovery succeeds (all Android versions from 4.4 to 6.0). Unlocking bootloader causes factory reset.</li>
+
+          <li class="listitem" style="list-style-type: disc"><span class="strong"><strong>SONY Xperia Z series</strong></span>: Unlocking bootloader causes factory reset. After that, booting or flashing custom recovery succeeds.</li>
+
+          <li class="listitem" style="list-style-type: disc"><span class="strong"><strong>ASUS MeMo Pad 7</strong></span>: Unlocking is not possible. Attempts to boot into custom recovery fail.</li>
+
+          <li class="listitem" style="list-style-type: disc"><span class="strong"><strong>ASUS ZenPad S 8.0</strong></span> (all versions): Unlocking bootloader not possible. However, booting into a custom recovery is available via exploit (<a class="ulink" href="http://forum.xda-developers.com/android/development/zenpad-s-root-achieved-t3160422">http://forum.xda-developers.com/android/development/zenpad-s-root-achieved-t3160422</a>) and causes no untoward consequences (tested on all firmware versions up to, and including, the current 4.5.0).</li>
+
+          <li class="listitem" style="list-style-type: disc"><span class="strong"><strong>ASUS ZenPhone</strong></span>: Same exploit as for ZenPad S.</li>
+
+          <li class="listitem" style="list-style-type: disc"><span class="strong"><strong>InFocus M810t</strong></span>: Unlocking bootloader is possible via exploit; the exploit does not trigger a wipe per se. Booting into custom recovery is possible even while the bootloader is locked. However, booting into custom recovery triggers data wipe on the next reboot. Interestingly, once booted into custom recovery, one can dump partitions before the wipe occurs.</li>
+
+        </ul>
+
+      </div>
+
+      <p>When analyzing the device, you can attempt to install or boot into a custom recovery mode. The two popular custom recoveries are <span class="strong"><strong>ClockworkMod</strong></span> (<span class="strong"><strong>CWM</strong></span>) (<a class="ulink" href="http://www.clockworkmod.com/">http://www.clockworkmod.com/</a>) and <span class="strong"><strong>Team Win Recovery Project</strong></span> (<span class="strong"><strong>TWRP</strong></span>) (<a class="ulink" href="http://teamw.in/Devices/">http://teamw.in/Devices/</a>).</p>
+
+      <div class="note" title="Note" style="">
+
+        <div class="inner">
+
+          <h3 class="title" id="toc_20"><a id="tip17"/>Tip</h3>
+
+          <p> <span class="strong"><strong>Important</strong></span>: Installing or booting into a custom recovery requires the device bootloader to be fully or partially unlocked. Partially unlocked bootloader may allow booting into a custom recovery; however, the system may wipe data partition afterward. Proceed with extreme caution!</p>
+
+        </div>
+
+      </div>
+
+      <p>Custom recoveries are nothing but bootable, slimmed-down versions of the Linux OS. Custom recoveries are therefore device-specific, as they need to come with the necessary drivers for each particular device model. As such, custom recoveries can seamlessly bypass Android's standard security measures such as access restrictions (but not data encryption).</p>
+
+      <div class="section" title="Imaging via custom recovery – making a Nandroid backup">
+
+        <div class="titlepage">
+
+          <div>
+
+            <div>
+
+              <h3 class="title" id="toc_21"><a id="ch04lvl3sec24"/>Imaging via custom recovery – making a Nandroid backup</h3>
+
+            </div>
+
+          </div>
+
+        </div>
+
+        <p>Technically, there is nothing preventing custom recoveries from dumping a raw image of the data partition. At this time, neither TWRP nor CWM offer the ability to make raw dumps of the data partition from the user interface (however, boot and system partitions are captured as raw images). As a result, the UI of neither TWRP nor CWM can be used for accessing data stored in unallocated space.</p>
+
+        <div class="note" title="Note" style="">
+
+          <div class="inner">
+
+            <h3 class="title" id="toc_22"><a id="note18"/>Note</h3>
+
+            <p> <span class="strong"><strong>Important</strong></span>: Making a complete raw dump of the data partition is possible with custom recoveries. However, the process is significantly more complicated compared to making a Nandroid backup. The <span class="emphasis"><em>Imaging the device</em></span> section explains the process of physically imaging Android devices via custom recoveries.</p>
+
+          </div>
+
+        </div>
+
+        <p>Using a custom recovery UI, however, is a feasible way of making a full backup of the filesystem, including all application data.</p>
+
+        <p>If the device being examined has an unlocked bootloader, you can install (or, better yet, boot into) a custom recovery. From there, you can easily back up the entire data partition of the device:</p>
+
+        <div class="orderedlist">
+
+          <ol class="orderedlist arabic">
+
+            <li class="listitem">If no custom recovery is installed, download the custom recovery image specific to your device from either TWRP or CWM.</li>
+
+            <li class="listitem">Boot the device into bootloader (the fastboot mode):<div class="orderedlist"><ol class="orderedlist arabic"><li class="listitem">Switch the phone off.</li><li class="listitem">Hold down the volume down key and press the power button.</li><li class="listitem">The phone should boot into bootloader (the fastboot mode). If it does not, determine the correct way of booting into bootloader (fastboot) for your device and follow the instructions specific for that device.</li></ol></div><p> </p></li>
+
+            <li class="listitem">Obtain adb and fastboot executables.</li>
+
+            <li class="listitem">Place fastboot files and the custom recovery image into a single folder. Open the command line in this folder.</li>
+
+            <li class="listitem">Download and install fastboot drivers for the device being investigated (drivers can be manufacturer-specific, device-specific, or chipset-specific, depending on the model).</li>
+
+            <li class="listitem">Connect the phone to the PC via a USB cable.</li>
+
+            <li class="listitem">Run either the following command:<pre class="programlisting"> fastboot boot twrp.img</pre><p>Or run the following command:</p><pre class="programlisting"> fastboot boot cwm.img</pre><p>Here, <code class="literal">twrp.img</code> or <code class="literal">cwm.img</code> are the names of TWRP or CWM recoveries. Use the correct filename or simply rename the downloaded recovery image into a shorter filename.</p></li>
+
+            <li class="listitem">From the custom recovery, back up data partition (only the data partition is needed). Make sure that the destination is either an external SD card or in <span class="strong"><strong>on-the-go</strong></span> (<span class="strong"><strong>OTG</strong></span>) USB drive. Do not use the phone's internal storage to back up the data.</li>
+
+          </ol>
+
+        </div>
+
+        <p>At this time, you've successfully acquired the complete filesystem of the device in the form of a <span class="strong"><strong>Nandroid backup</strong></span>.</p>
+
+        <p>Nandroid backups files created via custom recoveries are usually saved in the form of EXT4, F2FS, or YAFFS TAR images. These are generally easy to extract with a free archive tool such as 7Zip:</p>
+
+        <p> </p>
+
+        <div class="mediaobject">
+
+          <img src="0035.jpeg" alt="Imaging via custom recovery – making a Nandroid backup"/>
+
+          <div class="caption">
+
+            <p>Files produced by TWRP Nandroid backup</p>
+
+          </div>
+
+        </div>
+
+        <p> </p>
+
+        <p>7Zip can open multi-volume backups without the need to rename or join files. Simply launch 7Zip and open the <code class="literal">data.f2fs.win000</code> file (or similar) to extract files from the data partition:</p>
+
+        <p> </p>
+
+        <div class="mediaobject">
+
+          <img src="0036.jpeg" alt="Imaging via custom recovery – making a Nandroid backup"/>
+
+          <div class="caption">
+
+            <p>The content of a TWRP backup</p>
+
+          </div>
+
+        </div>
+
+        <p> </p>
+
+        <p>TWRP can create YAFFS filesystem images. Extracting files from a TWRP Nandroid backup can be performed with one of the many forensic tools available on the market. There is also an open source utility called <span class="strong"><strong>unyaffs</strong></span>. Its source code is available at <a class="ulink" href="https://code.google.com/p/unyaffs/downloads/list">https://code.google.com/p/unyaffs/downloads/list</a>.</p>
+
+        <p>The compiled version of this tool can be used as follows:</p>
+
+        <pre class="programlisting">unyaffs data.img</pre>
+
+        <p>Here, <code class="literal">data.img</code> is the Nandroid backup file.</p>
+
+      </div>
+
+      <div class="section" title="Imaging via custom recovery – physical imaging via dd">
+
+        <div class="titlepage">
+
+          <div>
+
+            <div>
+
+              <h3 class="title" id="toc_23"><a id="ch04lvl3sec25"/>Imaging via custom recovery – physical imaging via dd</h3>
+
+            </div>
+
+          </div>
+
+        </div>
+
+        <p>Acquisition via the user interface of most popular custom recoveries (TWRP and CWM) does not allow for imaging the complete data partition in raw mode. In order to be able to investigate unallocated space, you may want to extract the entire user data partition to a raw image.</p>
+
+        <p>In unencrypted Android devices, extracting unallocated areas is only possible by accessing the storage directly. Android built-in security measures prevent such access from within the app framework, making it impossible to scan unallocated areas with any user-level application. Root access is required in order to be able to access storage in low level.</p>
+
+        <div class="note" title="Note" style="">
+
+          <div class="inner">
+
+            <h3 class="title" id="toc_24"><a id="tip19"/>Tip</h3>
+
+            <p> <span class="strong"><strong>Warning: </strong></span>Rooting the device is unsafe. It may render the device unstable or inaccessible. It may also wipe the device. However, the <code class="literal">dd</code> extraction method does not require a rooted device. All you need is a flashed or booted (recommended) custom recovery. A custom recovery is a slimmed down version of this OS that comes with root access by default.</p>
+
+          </div>
+
+        </div>
+
+        <p>This advanced physical acquisition method uses the <code class="literal">dd</code> command to image the device. The dd command allows dumping either the entire physical storage or any number of individual partitions. For the purpose of digital forensics, only the data partition is required.</p>
+
+        <p>In order to transfer the data from the Android device to the PC over the USB interface, we'll use the <code class="literal">netcat</code> command.</p>
+
+        <p>Prerequisites for this include the following:</p>
+
+        <div class="itemizedlist">
+
+          <ul class="itemizedlist">
+
+            <li class="listitem" style="list-style-type: disc"><span class="strong"><strong>Unlocked or semi-unlocked bootloader (to allow booting into a custom recovery)</strong></span>: Rooting the device is not required, as custom recoveries come with full root access built in.</li>
+
+            <li class="listitem" style="list-style-type: disc"><span class="strong"><strong>BusyBox</strong></span>: This comes pre-installed with custom recoveries (TWRP and CWM). To verify, type any BusyBox command, such as <code class="literal">busybox nc</code>, once you're booted into the custom recovery.</li>
+
+            <li class="listitem" style="list-style-type: disc"><span class="strong"><strong>Android Debug Bridge</strong></span> (<span class="strong"><strong>ADB</strong></span>): This is required to run shell commands on the Android device.</li>
+
+            <li class="listitem" style="list-style-type: disc"><span class="strong"><strong>Fastboot</strong></span>: This is part of the ADB package. It should be installed on your PC.</li>
+
+            <li class="listitem" style="list-style-type: disc"><span class="strong"><strong>ADB drivers</strong></span>: ADB drivers are device-specific. They must be installed for this acquisition method to work.</li>
+
+          </ul>
+
+        </div>
+
+        <p>Once you have all the required tools installed and configured, perform the following steps:</p>
+
+        <div class="orderedlist">
+
+          <ol class="orderedlist arabic">
+
+            <li class="listitem">Identify the name of the user data partition on your Android device. If you can't identify the data partition, you will be imaging the entire device (physical storage).</li>
+
+            <li class="listitem">Verify that the bootloader is unlocked or semi-unlocked (allowing you to boot into a custom recovery without wiping the data).</li>
+
+            <li class="listitem">Boot the phone into the recovery mode. If the device is turned off, do this by holding the volume down key while powering on the device. If the device is turned on, and you have an active ADB connection, use <code class="literal">adb -d reboot recovery</code> to reboot into recovery.</li>
+
+            <li class="listitem">Connect the device to the computer via a USB cable.</li>
+
+            <li class="listitem">Ensure that fastboot is operational by running <code class="literal">fastboot devices</code>. A list of devices should appear. An empty string means something is wrong.<div class="note" title="Note" style=""><div class="inner"><h3 class="title" id="toc_25"><a id="note20"/>Note</h3><p> <span class="strong"><strong>Note:</strong></span> Some devices require specifying the correct vendor ID in the command line. For example, for booting a Lenovo ZUK into a custom recovery, one would use <code class="literal">fastboot -i 0x2b4c boot recovery.img</code>. The correct vendor ID can usually be discovered online. In addition, in certain cases <code class="literal">fastboot devices</code> returns empty while actually booting into a custom recovery works.</p></div></div></li>
+
+            <li class="listitem">Boot the device into the custom recovery by using the following command:<pre class="programlisting"> fastboot boot recovery.img</pre><p>Here, <code class="literal">recovery.img</code> is your custom recovery image specific to the device being acquired.</p></li>
+
+            <li class="listitem">Ensure that Netcat is operational in your custom recovery by running the ADB shell (<code class="literal">adb shell</code>) and executing the <code class="literal">busybox nc</code> command. You may need to configure your computer's firewall to allow connecting to local ports.</li>
+
+          </ol>
+
+        </div>
+
+        <p>You are now ready to image the device. The following steps describe how to capture an image of the data partition using the <code class="literal">netcat</code> command. You'll be running two different shell sessions at the same time: one to the device and one to your computer.</p>
+
+      </div>
+
+      <div class="section" title="Imaging the device">
+
+        <div class="titlepage">
+
+          <div>
+
+            <div>
+
+              <h3 class="title" id="toc_26"><a id="ch04lvl3sec26"/>Imaging the device</h3>
+
+            </div>
+
+          </div>
+
+        </div>
+
+        <p>Run <code class="literal">cmd.exe</code> or use a different terminal (for example, Cygwin). This will be the first shell session that works with the Android device. Run <code class="literal">adb shell</code>. You will receive the root privileges by default, so running <code class="literal">su</code> is not needed.</p>
+
+        <p>Launch another instance of <code class="literal">cmd.exe</code> or your favorite terminal. This session opens as a shell on your computer, and will be used to receive the data from the Android device. Navigate to the folder that will receive the user partition (<code class="literal">cd c:\path</code>). Make sure that you're using an NTFS- or exFAT-formatted hard drive to receive the data; FAT32 volumes will be unable to save images of more than 4 GB, which is less than the typical storage of most phones today. In this shell, run <code class="literal">adb forward tcp:5555 tcp:5555</code> (you may use a different port number if needed). This command enables ADB to communicate via Netcat on port 5555.</p>
+
+        <p>Now, once the connection is established, go back to the first shell that goes to your phone. Type the following command:</p>
+
+        <pre class="programlisting">dd if=/dev/block/mmcblk0 | busybox nc -l -p 5555</pre>
+
+        <p>This command images the contents of <code class="literal">/dev/block/mmcblk0</code> and writes it via port 5555 across ADB using Netcat.</p>
+
+        <p>Alternatively, you may use the following syntax:</p>
+
+        <pre class="programlisting">busybox nc -l -p 5555 -e busybox dd if=/dev/block/mmcblk0p12</pre>
+
+        <p>This command acquires the <code class="literal">mmcblk0p12</code> data block. Note that you will need to figure out the name of the data block on the device being acquired.</p>
+
+        <p>Finally, go back to the second shell (that goes to your computer) and type the following command:</p>
+
+        <pre class="programlisting">nc 127.0.0.1 5555 &gt; image.raw</pre>
+
+        <p>The <code class="literal">nc</code> (Netcat) command saves the output of the first shell to your computer across port 5555. The file will be stored in the same folder where you launched the second shell from. You can change this folder by navigating to the correct place via <code class="literal">cd disk:\path</code>. Note that some Windows folders (for example, <code class="literal">C:\Program Files\</code> and its subfolders) are not write-accessible.</p>
+
+        <p>If all goes well, the window will freeze while it's capturing the image. Once the process is finished, you'll be able to mount the newly captured image in a forensic tool of your choice.</p>
+
+        <div class="note" title="Note" style="">
+
+          <div class="inner">
+
+            <h3 class="title" id="toc_27"><a id="note21"/>Note</h3>
+
+            <p> <span class="strong"><strong>Note:</strong></span> Custom recoveries do not decrypt encrypted devices. As a result, if the data partition was encrypted, you will receive an encrypted image that you may or may not be able to decrypt later on. If the device is encrypted, your only option is performing <span class="strong"><strong>live imaging</strong></span> of the device (refer to the <span class="emphasis"><em>Live imaging</em></span> section for more information), which requires the device to be rooted and have BusyBox installed.</p>
+
+          </div>
+
+        </div>
+
+        <p>More information on imaging Android devices via custom recoveries:</p>
+
+        <div class="itemizedlist">
+
+          <ul class="itemizedlist">
+
+            <li class="listitem" style="list-style-type: disc">Why not load ClockworkMod or TWRP to image a device? Alternate recovery modes are useful, but maybe not for imaging a device (<a class="ulink" href="http://freeandroidforensics.blogspot.com/2015/04/why-not-load-clockworkmod-or-twrp-to.html">http://freeandroidforensics.blogspot.com/2015/04/why-not-load-clockworkmod-or-twrp-to.html</a>).</li>
+
+          </ul>
+
+        </div>
+
+      </div>
+
+    </div>
+
+    <div class="section" title="NANDroid backups">
+
+      <div class="titlepage">
+
+        <div>
+
+          <div>
+
+            <h2 class="title" id="toc_28"><a id="ch04lvl2sec32"/>NANDroid backups</h2>
+
+          </div>
+
+        </div>
+
+      </div>
+
+      <p>This acquisition method is applicable to smartphones and tablets that are either rooted or have a custom recovery installed. It is also applicable to devices with fully or partially unlocked bootloaders (allowing the expert to boot the device into a custom recovery).</p>
+
+      <p>If a custom recovery is installed, or can be booted into, a different acquisition method (via the <code class="literal">dd</code> command) is available, allowing to capture the complete raw image of the data partition (refer to the <span class="emphasis"><em>Imaging via custom recovery – physical imaging via dd</em></span> section for more information). The <code class="literal">dd</code> method returns a full dump of either the entire eMMC storage or just the data partition. A Nandroid backup contains the full filesystem of the data partition; unallocated space is not included, which makes recovering deleted files impossible. This method is relatively easy to use, but requires some technical expertise. Nandroid backups are <span class="emphasis"><em>not</em></span> considered a forensically sound acquisition method; however, a Nandroid backup will still contain significantly more information than available via ADB.</p>
+
+      <p>Unlike pretty much every other smartphone OS, Android does not come with the ability to produce full backups of the device. The platform provides no stock tools for making or restoring such backups. Moreover, the platform in its stock state does not even allow third-party developers to make such backup tools as their use would require an elevated level of privileges (<span class="emphasis"><em>root</em></span> rights).</p>
+
+      <p>Individual manufacturers implement proprietary tools for making and restoring backups (for example, Sony PC Companion for Xperia phones and tablets). However, these tools are used by relatively few smartphone owners as (again, unlike iOS) they aren't required to perform other routine tasks such as transferring files to and from the device.</p>
+
+      <p>The need for creating and restoring full filesystem backups is there, especially among the more active Android users who like to experiment with their devices and want to be able to restore their device to its previous working state, should something go wrong. Full filesystem backup tools are available for these users, but only work on rooted devices, devices with custom recoveries, or devices that can be flashed via fastboot.</p>
+
+      <p>Examiners analyzing certain Android devices have yet another venue for extracting the full image of the filesystem (but generally <span class="emphasis"><em>not</em></span> a raw dump of the data partition) by generating a NANDroid backup. NANDroid backups contain the full image of the filesystem for all partitions selected at the time of making the backup. Nandroid backups can be produced by booting the device into a custom recovery, such as CWM or TWRP (by either issuing an ADB command or, if <span class="strong"><strong>USB debugging</strong></span> is not enabled, by holding the volume down and power keys on the device) and selecting the corresponding menu item from the menu.</p>
+
+      <div class="note" title="Note" style="">
+
+        <div class="inner">
+
+          <h3 class="title" id="toc_29"><a id="note22"/>Note</h3>
+
+          <p> <span class="strong"><strong>Note:</strong></span> The name <span class="emphasis"><em>NANDroid</em></span> is derived from the words <span class="emphasis"><em>NAND</em></span> and <span class="emphasis"><em>Android</em></span>. As such, the correct name is <span class="emphasis"><em>NANDroid</em></span>, which is often written as <span class="emphasis"><em>Nandroid</em></span> for simplicity.</p>
+
+        </div>
+
+      </div>
+
+      <div class="section" title="Is unlocked bootloader required?">
+
+        <div class="titlepage">
+
+          <div>
+
+            <div>
+
+              <h3 class="title" id="toc_30"><a id="ch04lvl3sec27"/>Is unlocked bootloader required?</h3>
+
+            </div>
+
+          </div>
+
+        </div>
+
+        <p>While most sources say that you need either root privileges or unlocked bootloader (or both) in order to make Nandroid backups, this is not completely true. Technically speaking, all you need to make a Nandroid backup is a custom recovery, such as CWM or TWRP. Granted, many devices require root access for the user to install custom recovery, and the bootloader must be unlocked in order to be able to install the custom recovery. However, the user may safely relock bootloader after installing custom recovery, which will not affect the ability to produce Nandroid backups. In addition, many devices can safely boot into a custom recovery (via <code class="literal">fastboot boot recovery.img</code>) as opposed to permanently installing one, even if the bootloader is officially locked. For the purpose of mobile forensics, booting into a custom recovery is a much cleaner and more forensically sound method of imaging the device.</p>
+
+      </div>
+
+      <div class="section" title="Is root access required?">
+
+        <div class="titlepage">
+
+          <div>
+
+            <div>
+
+              <h3 class="title" id="toc_31"><a id="ch04lvl3sec28"/>Is root access required?</h3>
+
+            </div>
+
+          </div>
+
+        </div>
+
+        <p>Contrary to popular belief, root access is not an absolute requirement for making Nandroid backups. In order to produce a Nandroid backup, you can either boot into a custom recovery (root status is irrelevant) or use an app (root privileges and BusyBox package required).</p>
+
+      </div>
+
+      <div class="section" title="Producing a Nandroid backup">
+
+        <div class="titlepage">
+
+          <div>
+
+            <div>
+
+              <h3 class="title" id="toc_32"><a id="ch04lvl3sec29"/>Producing a Nandroid backup</h3>
+
+            </div>
+
+          </div>
+
+        </div>
+
+        <p>The following two ways are available for making Nandroid backups:</p>
+
+        <div class="itemizedlist">
+
+          <ul class="itemizedlist">
+
+            <li class="listitem" style="list-style-type: disc">Unlocked or partially unlocked bootloader, custom recovery (for example, CWM or TWRP) specific to the device available: note that unlocked bootloader is normally required in order to install custom recovery. In addition to this, some devices must be rooted in order to install custom recovery. Unlocking bootloader during the investigation is not normally possible as this operation initiates a full wipe of the data partition. However, bootloader may be relocked after having the custom recovery installed, so technically speaking, unlocked bootloader is not required for making Nandroid backups via custom recovery. For the purpose of making Nandroid backups through custom recovery, root status of the device is irrelevant.</li>
+
+            <li class="listitem" style="list-style-type: disc">Rooted device, BusyBox installed, a Nandroid backup app is used: You may be able to make a Nandroid backup even if the bootloader is unlocked. For this, you will be using one of the many Nandroid backup apps. You can sideload an app like that onto the phone. Note that you may need to have BusyBox installed (unless the tool uses its own mechanism for imaging the data partition). Root is required to use such apps; however, root is not required if the operation is performed through a custom recovery.</li>
+
+          </ul>
+
+        </div>
+
+        <p>Having a custom recovery, which is basically a standalone version of the OS, helps tremendously in bypassing most security restrictions (except encryption). If you can boot into a custom recovery (or if you can manage to install it without wiping the device), you can easily dump the entire content of the eMMC storage, or just image the data partition onto an external SD card or OTG flash drive (if either device is supported by the phone).</p>
+
+        <p>In some situations, you may encounter relocked bootloaders (the user unlocks the bootloader, installs a custom recovery, and then relocks the bootloader). While this, in general, is not an issue, some users may protect access to custom recovery with a password. A combination of a locked bootloader and a password-protected custom recovery is extremely tough to break.</p>
+
+      </div>
+
+      <div class="section" title="Analyzing Nandroid backups">
+
+        <div class="titlepage">
+
+          <div>
+
+            <div>
+
+              <h3 class="title" id="toc_33"><a id="ch04lvl3sec30"/>Analyzing Nandroid backups</h3>
+
+            </div>
+
+          </div>
+
+        </div>
+
+        <p>NANDroid backups are standardized between different recoveries. NANDrpod is a de-facto standard format for storing Android system backups. Nandroid backups can be parsed and analyzed by forensic tools such as Oxygen Forensic Suite (<a class="ulink" href="http://www.oxygen-forensic.com/en/compare">http://www.oxygen-forensic.com/en/compare</a>) or Belkasoft Evidence Center (version 7.3 or newer).</p>
+
+        <p>In Oxygen Forensic Suite, a Nandroid backup can be imported via <span class="strong"><strong>Android backup/image</strong></span> | <span class="strong"><strong>Android backup</strong></span>:</p>
+
+        <p> </p>
+
+        <div class="mediaobject">
+
+          <img src="0037.jpeg" alt="Analyzing Nandroid backups"/>
+
+        </div>
+
+        <p> </p>
+
+        <p>Choose a backup type:</p>
+
+        <p> </p>
+
+        <div class="mediaobject">
+
+          <img src="0038.jpeg" alt="Analyzing Nandroid backups"/>
+
+        </div>
+
+        <p> </p>
+
+        <p>Specify a backup location:</p>
+
+        <p> </p>
+
+        <div class="mediaobject">
+
+          <img src="0039.jpeg" alt="Analyzing Nandroid backups"/>
+
+        </div>
+
+        <p> </p>
+
+        <p>Specify options and click on <span class="strong"><strong>Finish</strong></span>. The data will be processed and imported into the analytic suite:</p>
+
+        <p> </p>
+
+        <div class="mediaobject">
+
+          <img src="0040.jpeg" alt="Analyzing Nandroid backups"/>
+
+        </div>
+
+        <p> </p>
+
+        <p>After the process is finished, you'll be able to access information stored in the backup you have just imported:</p>
+
+        <p> </p>
+
+        <div class="mediaobject">
+
+          <img src="0041.jpeg" alt="Analyzing Nandroid backups"/>
+
+        </div>
+
+        <p> </p>
+
+      </div>
+
+    </div>
+
+  </div>
+
+
+
+
+  <div class="section" title="Live imaging">
+
+    <div class="titlepage">
+
+      <div>
+
+        <div>
+
+          <h1 class="title"><a id="ch04lvl1sec23"/>Live imaging</h1>
+
+        </div>
+
+      </div>
+
+    </div>
+
+    <p>Live imaging may be your last resort when acquiring an encrypted device. Since neither bootloader exploits nor custom recoveries can decrypt encrypted partitions, you may need to start and unlock the device with the correct PIN code in order to gain access to the encrypted data partition.</p>
+
+    <p>Live imaging of an Android device is similar to the process described in the <span class="emphasis"><em>Imaging via custom recovery – physical imaging via dd</em></span> section.</p>
+
+    <div class="section" title="Live imaging with root (via dd)">
+
+      <div class="titlepage">
+
+        <div>
+
+          <div>
+
+            <h2 class="title" id="toc_1"><a id="ch04lvl2sec33"/>Live imaging with root (via dd)</h2>
+
+          </div>
+
+        </div>
+
+      </div>
+
+      <p>Live imaging is considered to be a less forensically-sound method compared to using a custom recovery or other acquisition methods. This method requires a rooted device with BusyBox installed. Rooting an Android device in general is not always safe or possible. Depending on the version of Android and the method used to obtain root access, rooting may modify the device boot image and/or its system and data partitions. Installing BusyBox may or may not modify the system partition. Rooting and installing BusyBox may also alter the content of the user's data partition. With the recent development of <span class="emphasis"><em>systemless root</em></span>, it is now technically possible to achieve root access and install BusyBox without modifying the system partition.</p>
+
+      <p>Instructions on how to root and install BusyBox on Android devices are widely available, so we won't cover them here.</p>
+
+      <p>Prerequisites are as follows:</p>
+
+      <div class="itemizedlist">
+
+        <ul class="itemizedlist">
+
+          <li class="listitem" style="list-style-type: disc"><span class="strong"><strong>Root access</strong></span>: Your device must be rooted. Unlocked bootloader is not required for this acquisition method.</li>
+
+          <li class="listitem" style="list-style-type: disc"><span class="strong"><strong>BusyBox</strong></span>: This must be installed on your Android device.</li>
+
+          <li class="listitem" style="list-style-type: disc"><span class="strong"><strong>cmd.exe </strong></span>or another terminal (for example, Cygwin).</li>
+
+          <li class="listitem" style="list-style-type: disc"><span class="strong"><strong>ADB executable</strong></span>: Android Debug Bridge (<code class="literal">adb.exe</code>) will be required.</li>
+
+          <li class="listitem" style="list-style-type: disc"><span class="strong"><strong>ADB drivers</strong></span>: ADB drivers specific to the device being acquired must be installed.</li>
+
+          <li class="listitem" style="list-style-type: disc"><span class="strong"><strong>USB debugging</strong></span>: This must be enabled on the Android device in <span class="strong"><strong><span class="strong"><strong>Developer</strong></span> options</strong></span>.</li>
+
+        </ul>
+
+      </div>
+
+      <p>Once the device is rooted, you'll be using two shells—one that goes to the Android device and one that goes to your computer:</p>
+
+      <div class="orderedlist">
+
+        <ol class="orderedlist arabic">
+
+          <li class="listitem">Identify the name of the data partition being acquired. If you can't identify the data partition, you can image the entire device (physical storage).</li>
+
+          <li class="listitem">Turn on and unlock the device. If it is locked with a passcode, enter the passcode. If not known, use one of the many passcode recovery techniques to obtain it.</li>
+
+          <li class="listitem">In Android <span class="strong"><strong><span class="strong"><strong>Developer</strong></span> options</strong></span>, enable <span class="strong"><strong>USB debugging</strong></span>.</li>
+
+          <li class="listitem">Connect the device to your computer via a USB cable. Unlock the device.</li>
+
+          <li class="listitem">The device will prompt to authorize the debug interface. Tap <span class="strong"><strong>OK</strong></span>.</li>
+
+          <li class="listitem">On your computer, open the command line and type <code class="literal">adb devices</code>. Your device should appear in the list of connected devices. If the returned list is empty, or your phone is listed as offline, troubleshoot the ADB connection.</li>
+
+          <li class="listitem">Open the first of the two shells. This will be the connection to the device being imaged. Run <code class="literal">cmd.exe</code> or open a different shell (for example, Cygwin). Type <code class="literal">adb shell</code> followed by <code class="literal">su</code>. On the device, confirm superuser access if prompted.</li>
+
+          <li class="listitem">Check whether you successfully received root access by attempting to list <code class="literal">/data</code>. Type <code class="literal">ls /data</code>. If you can see the content of this directory, you successfully obtained root access. If not, troubleshoot the root access.</li>
+
+        </ol>
+
+      </div>
+
+      <p>If all goes well, you are ready to image the device.</p>
+
+      <p>Launch another instance of <code class="literal">cmd.exe</code> or your favorite terminal. This session opens as a shell to your computer, and will be used to receive the data from the Android device. Navigate to the folder that will receive the user partition (<code class="literal">cd c:\path</code>). Make sure that you're using an NTFS- or exFAT-formatted hard drive to receive the data; FAT32 volumes will be unable to save images of more than 4 GB, which is less than the typical storage of most today's phones. In this shell, run <code class="literal">adb forward tcp:5555 tcp:5555</code> (you may use a different port number if needed). This command enables ADB to communicate via Netcat on port 5555.</p>
+
+      <p>Now, once the connection is established, go back to the first shell that goes to your phone. Type the following command:</p>
+
+      <pre class="programlisting">dd if=/dev/block/mmcblk0 | busybox nc -l -p 5555</pre>
+
+      <p>This command images the contents of /dev/block/mmcblk0 and writes it via port 555 across ADB using Netcat.</p>
+
+      <p>Alternatively, you may use the following syntax:</p>
+
+      <pre class="programlisting">busybox nc -l -p 5555 -e busybox dd if=/dev/block/mmcblk0p12</pre>
+
+      <p>This command acquires the <code class="literal">mmcblk0p12</code> data block. Note that you will need to figure out the name of the data block on the device being acquired.</p>
+
+      <p>Finally, go back to the second shell (that goes to your computer) and type the following command:</p>
+
+      <pre class="programlisting">nc 127.0.0.1 5555 &gt; image.raw</pre>
+
+      <p>The <code class="literal">nc</code> (Netcat) command saves the output of the first shell to your computer across port 5555. The file will be stored in the same folder where you launched the second shell from. You can change this folder by navigating to the correct place via <code class="literal">cd disk:\path</code>. Note that some Windows folders (for example, <code class="literal">C:\Program Files\</code> and its subfolders) are not write-accessible.</p>
+
+      <p>If all goes well, the window will freeze while it's capturing the image. Once the process is finished, you'll be able to mount the newly captured image in a forensic tool of your choice.</p>
+
+      <div class="note" title="Note" style="">
+
+        <div class="inner">
+
+          <h3 class="title" id="toc_2"><a id="note23"/>Note</h3>
+
+          <p> <span class="strong"><strong>Note:</strong></span> Unlike the previous acquisition method operating via a custom recovery, live imaging of an Android device can successfully acquire encrypted partitions. Encrypted data will be decrypted on-the-fly.</p>
+
+        </div>
+
+      </div>
+
+      <p>More information on imaging Android devices is available as follows:</p>
+
+      <div class="itemizedlist">
+
+        <ul class="itemizedlist">
+
+          <li class="listitem" style="list-style-type: disc">Live imaging an Android device: Not as hard as it sounds if you break it down—<a class="ulink" href="http://freeandroidforensics.blogspot.com/2014/08/live-imaging-android-device.html">http://freeandroidforensics.blogspot.com/2014/08/live-imaging-android-device.html</a></li>
+
+        </ul>
+
+      </div>
+
+    </div>
+
+    <div class="section" title="Live imaging without root (via ADB backup)">
+
+      <div class="titlepage">
+
+        <div>
+
+          <div>
+
+            <h2 class="title" id="toc_3"><a id="ch04lvl2sec34"/>Live imaging without root (via ADB backup)</h2>
+
+          </div>
+
+        </div>
+
+      </div>
+
+      <p>On some devices, root access may not be available. If this is the case, the only remaining imaging option besides <span class="strong"><strong>Google Account</strong></span> acquisition is attempting to make an ADB backup. This method is 100% logical acquisition; we only discuss this here as it is the last acquisition method available if all other methods fail.</p>
+
+      <p>It is important to realize the limitations of this method. Unlike Apple iOS or BlackBerry 10, a non-rooted backup on Android devices only extracts a very limited amount of information. Application developers may disable backups in their app's Manifest file; ADB will not back up data from these apps. However, if no other acquisition options are available, an ADB backup may still be better than nothing.</p>
+
+      <p>The requirements for this are as follows:</p>
+
+      <div class="itemizedlist">
+
+        <ul class="itemizedlist">
+
+          <li class="listitem" style="list-style-type: disc"><span class="strong"><strong>USB debugging</strong></span> enabled, or device unlocked/lock screen bypassed in order to enable <span class="strong"><strong>USB debugging</strong></span></li>
+
+          <li class="listitem" style="list-style-type: disc">If data partition is encrypted, the device must be unlocked (bypassing the lock screen is not enough)</li>
+
+          <li class="listitem" style="list-style-type: disc">ADB installed and working</li>
+
+        </ul>
+
+      </div>
+
+      <p>To start imaging the device, turn it on and wait until it is fully booted. Unlock the device (or bypass the screen lock) and make sure that <span class="strong"><strong>USB debugging</strong></span> is enabled in <span class="strong"><strong>Developer options</strong></span>:</p>
+
+      <p> </p>
+
+      <div class="mediaobject">
+
+        <img src="0042.jpeg" alt="Live imaging without root (via ADB backup)"/>
+
+      </div>
+
+      <p> </p>
+
+      <p> </p>
+
+      <div class="mediaobject">
+
+        <img src="0043.jpeg" alt="Live imaging without root (via ADB backup)"/>
+
+      </div>
+
+      <p> </p>
+
+      <p>Next, connect the device to the PC via a USB cable. Launch <code class="literal">cmd.exe</code> in the folder where ADB is installed. Type <code class="literal">adb devices</code> to verify connectivity. On the phone, you should be prompted to authorize debugging from the connected PC; tap to confirm the prompt. If all goes well, you should see the device listed under the <span class="strong"><strong>adb devices</strong></span> prompt:</p>
+
+      <p> </p>
+
+      <div class="mediaobject">
+
+        <img src="0044.jpeg" alt="Live imaging without root (via ADB backup)"/>
+
+      </div>
+
+      <p> </p>
+
+      <p>Next, you'll be using the ADB backup command. The command has the following syntax:</p>
+
+      <pre class="programlisting">adb backup [-f <file>] [-apk|-noapk] [-shared|-noshared] [-all] [-system|nosystem] [<packages...>]</packages...></file></pre>
+
+      <p>If you want to back up the entire content of the device, use the following syntax:</p>
+
+      <pre class="programlisting">adb backup -all -f c:\android\backup.ab</pre>
+
+      <p>On the Android device being imaged, you will see the following prompt:</p>
+
+      <p> </p>
+
+      <div class="mediaobject">
+
+        <img src="0045.jpeg" alt="Live imaging without root (via ADB backup)"/>
+
+      </div>
+
+      <p> </p>
+
+      <p>Tap <span class="strong"><strong>Back up my data</strong></span> and wait till the process completes.</p>
+
+      <div class="note" title="Note" style="">
+
+        <div class="inner">
+
+          <h3 class="title" id="toc_4"><a id="note24"/>Note</h3>
+
+          <p> <span class="strong"><strong>Note</strong></span>: On some devices, ADB backup may not work if the data partition is encrypted—even if you unlock the device with the correct passcode. Currently, there is no known workaround.</p>
+
+        </div>
+
+      </div>
+
+      <p>You can also use Oxygen Forensic Extractor to automatically produce an ADB backup:</p>
+
+      <p> </p>
+
+      <div class="mediaobject">
+
+        <img src="0046.jpeg" alt="Live imaging without root (via ADB backup)"/>
+
+      </div>
+
+      <p> </p>
+
+      <p>The resulting <code class="literal">backup.ab</code> file may be opened in one of the many mobile forensic suites on the market. For example, in Oxygen Forensic Suite, use the following sequence to import this backup: <span class="strong"><strong>Import File</strong></span> | <span class="strong"><strong>Import Android backup/image</strong></span> | <span class="strong"><strong>Import Android backup...</strong></span> </p>
+
+      <p> </p>
+
+      <div class="mediaobject">
+
+        <img src="0047.jpeg" alt="Live imaging without root (via ADB backup)"/>
+
+      </div>
+
+      <p> </p>
+
+      <p>After the import completes, you will see something similar to the following screenshot:</p>
+
+      <p> </p>
+
+      <div class="mediaobject">
+
+        <img src="0048.jpeg" alt="Live imaging without root (via ADB backup)"/>
+
+      </div>
+
+      <p> </p>
+
+    </div>
+
+    <div class="section" title="Live imaging using Oxygen Forensic Suite">
+
+      <div class="titlepage">
+
+        <div>
+
+          <div>
+
+            <h2 class="title" id="toc_5"><a id="ch04lvl2sec35"/>Live imaging using Oxygen Forensic Suite</h2>
+
+          </div>
+
+        </div>
+
+      </div>
+
+      <p>Oxygen Forensic Suite comes with the ability to live-image many types of Android devices. Its acquisition methods range from manufacturer-specific raw dumps to the physical acquisition of rooted devices and the logical acquisition of Android devices that have no root access available. For many models, Oxygen Forensic Suite can bypass bootloader lock and screen lock completely. For certain devices, the tool can automatically acquire root access.</p>
+
+      <p>For live imaging Android devices, you'll be using Oxygen Forensic Extractor:</p>
+
+      <p> </p>
+
+      <div class="mediaobject">
+
+        <img src="0049.jpeg" alt="Live imaging using Oxygen Forensic Suite"/>
+
+      </div>
+
+      <p> </p>
+
+      <p>Connect the device via a USB cable. Unlock and ensure that <span class="strong"><strong>ADB Debugging</strong></span> is enabled:</p>
+
+      <p> </p>
+
+      <div class="mediaobject">
+
+        <img src="0050.jpeg" alt="Live imaging using Oxygen Forensic Suite"/>
+
+      </div>
+
+      <p> </p>
+
+      <p>If it is not, enable <span class="strong"><strong>USB debugging</strong></span> in the device's <span class="strong"><strong>Developer options</strong></span>:</p>
+
+      <p> </p>
+
+      <div class="mediaobject">
+
+        <img src="0051.jpeg" alt="Live imaging using Oxygen Forensic Suite"/>
+
+      </div>
+
+      <p> </p>
+
+      <p>Make sure to authorize <span class="strong"><strong>USB debugging</strong></span> on the device's screen once it's connected to your computer.</p>
+
+      <p>If everything goes well, you will see the following screen:</p>
+
+      <p> </p>
+
+      <div class="mediaobject">
+
+        <img src="0052.jpeg" alt="Live imaging using Oxygen Forensic Suite"/>
+
+      </div>
+
+      <p> </p>
+
+      <p> <span class="strong"><strong>Troubleshooting connectivity</strong></span>: On some occasions, USB debugging will not be available after the device is connected to the PC:</p>
+
+      <p> </p>
+
+      <div class="mediaobject">
+
+        <img src="0053.jpeg" alt="Live imaging using Oxygen Forensic Suite"/>
+
+      </div>
+
+      <p> </p>
+
+      <p>If that's the case, check whether USB connectivity is set to something other than <span class="strong"><strong>Charging</strong></span> by pulling the notification panel from the top of the screen. We recommend that you choose the <span class="strong"><strong>Photo transfer (PTP)</strong></span> option:</p>
+
+      <p> </p>
+
+      <div class="mediaobject">
+
+        <img src="0054.jpeg" alt="Live imaging using Oxygen Forensic Suite"/>
+
+      </div>
+
+      <p> </p>
+
+      <p>Click on <span class="strong"><strong>Reconnect</strong></span> in Oxygen Forensic Extractor to make another attempt.</p>
+
+      <p>After connecting the device, Oxygen Forensic Extractor will probe it for root access. If the Android device is already rooted, the device will prompt you to allow root access. Confirm the prompt:</p>
+
+      <p> </p>
+
+      <div class="mediaobject">
+
+        <img src="0055.jpeg" alt="Live imaging using Oxygen Forensic Suite"/>
+
+      </div>
+
+      <p> </p>
+
+      <p>If root was not available on the Android device, Oxygen Forensic Extractor will attempt a range of different exploits to obtain root access:</p>
+
+      <p> </p>
+
+      <div class="mediaobject">
+
+        <img src="0056.jpeg" alt="Live imaging using Oxygen Forensic Suite"/>
+
+      </div>
+
+      <p> </p>
+
+      <p>If root access is successfully obtained, the imaging process will begin automatically:</p>
+
+      <p> </p>
+
+      <div class="mediaobject">
+
+        <img src="0057.jpeg" alt="Live imaging using Oxygen Forensic Suite"/>
+
+      </div>
+
+      <p> </p>
+
+      <p>If Oxygen Forensic Extractor is unable to obtain root access, physical extraction will fail. You can attempt a different extraction method, such as over-the-air (refer to the <span class="emphasis"><em>Google Account acquisition – over-the-air</em></span> section for more information) or via ADB backup (refer to the <span class="emphasis"><em>Live imaging without root (via ADB backup)</em></span> section for more information):</p>
+
+      <p> </p>
+
+      <div class="mediaobject">
+
+        <img src="0058.jpeg" alt="Live imaging using Oxygen Forensic Suite"/>
+
+      </div>
+
+      <p> </p>
+
+    </div>
+
+  </div>
+
+
+
+
+  <div class="section" title="Google Account acquisition &#x2013; over-the-air">
+
+    <div class="titlepage">
+
+      <div>
+
+        <div>
+
+          <h1 class="title"><a id="ch04lvl1sec24"/>Google Account acquisition – over-the-air</h1>
+
+        </div>
+
+      </div>
+
+    </div>
+
+    <p>Android is a Google OS. Relying heavily on cloud services, most of which are provided by Google, Android devices inevitably leave traces on Google's servers. Extracting information from Google's servers is a great way to complement information available in the device itself. While over-the-air acquisition can be used when all other acquisition methods fail, it is not limited to acquiring Android devices. Instead, acquisition of Google Accounts can provide a much deeper insight into user activities than what's available in a single Android smartphone.</p>
+
+    <p>Note that not all Android devices come with Google Mobile Services; we'll discuss this in detail later on. In particular, Amazon devices (Fire tablets and Amazon Fire Phone) do not come with any Google services preinstalled. However, end users may add Google services later on.</p>
+
+    <div class="section" title="Why Google Account?">
+
+      <div class="titlepage">
+
+        <div>
+
+          <div>
+
+            <h2 class="title" id="toc_1"><a id="ch04lvl2sec36"/>Why Google Account?</h2>
+
+          </div>
+
+        </div>
+
+      </div>
+
+      <p>Android backups are limited at best. In the world of Android, cloud backups are still new and (as of Android 6.0) incomplete. However, a lot of interesting data can be obtained directly from the user's Google Account as opposed to Android backups.</p>
+
+      <p>Google is known to collect massive amounts of information about everyone who has a Google Account. If you are able to log in with the user's Google credentials, you will be able to acquire that data regardless of whether you have the actual Android device available. Knowing what Google knows about the suspect can be essential for an investigation.</p>
+
+      <p>Google offers the ability to extract some of this data via its own service, called Google Takeout. Unfortunately, Google Takeout lacks transparency and does not offer full access to available information. The data is stored in a number of different formats, and Google is known for declining requests to help investigators analyze the data.</p>
+
+    </div>
+
+    <div class="section" title="Google Account – what's inside?">
+
+      <div class="titlepage">
+
+        <div>
+
+          <div>
+
+            <h2 class="title" id="toc_2"><a id="ch04lvl2sec37"/>Google Account – what's inside?</h2>
+
+          </div>
+
+        </div>
+
+      </div>
+
+      <p>Google provides a diverse range of services, most of which are free of charge. The company offers Google Mail (Gmail), Google Drive, the ubiquitous Google Search, Google Chrome (with cloud sync), Google Maps, and dozens of other services that automatically sync across devices with the help of a single Google Account.</p>
+
+      <p>Google Account is a single-stop aggregation of information about the user's online behavior and offline activities. Google analyzes search queries and communications, and recommends places to visit and things to read. Google collects and maintains a comprehensive location history; stores all Google searches performed on registered desktop and mobile devices; syncs Chrome tabs, bookmarks, passwords, and history; keeps notes; annotates pictures; syncs contacts; and does a lot more.</p>
+
+      <p>All this data is collected by different services and is stored in different places across Google servers. The data is available in a range of different formats, and requires using vastly different protocols to access. However, the entirety of this data is accessible with a single authentication via Google Account.</p>
+
+      <p>What can you expect when extracting data from a Google Account? Nearly everyone has a Gmail account, which means messages and contacts. Google Chrome accounts for nearly half of all Web requests, which means tabs, bookmarks, and search history, as well as Web forms and logins. Google Maps is a major player, and Google Drive offers cloud storage for pretty much everything. Here's what you can expect to see when acquiring data from a Google Account:</p>
+
+      <div class="itemizedlist">
+
+        <ul class="itemizedlist">
+
+          <li class="listitem" style="list-style-type: disc">User profile</li>
+
+          <li class="listitem" style="list-style-type: disc">Location history (very comprehensive)</li>
+
+          <li class="listitem" style="list-style-type: disc">Gmail messages and settings</li>
+
+          <li class="listitem" style="list-style-type: disc">Contacts and calendars</li>
+
+          <li class="listitem" style="list-style-type: disc">Information about connected devices</li>
+
+          <li class="listitem" style="list-style-type: disc">Information about devices, apps, and browsers that requested access</li>
+
+          <li class="listitem" style="list-style-type: disc">Google Advertising settings (including age, gender, interests, and so on)</li>
+
+          <li class="listitem" style="list-style-type: disc">Google Keep notes</li>
+
+          <li class="listitem" style="list-style-type: disc">Google Photos (albums, detected people, EXIF, location data, and so on)</li>
+
+          <li class="listitem" style="list-style-type: disc">Hangouts messages</li>
+
+          <li class="listitem" style="list-style-type: disc">Google Fit data</li>
+
+        </ul>
+
+      </div>
+
+      <p>The following bits are additionally available from Google Chrome synced data (Google Chrome data may be additionally protected with a password):</p>
+
+      <div class="itemizedlist">
+
+        <ul class="itemizedlist">
+
+          <li class="listitem" style="list-style-type: disc">Bookmarks</li>
+
+          <li class="listitem" style="list-style-type: disc">Browsing history</li>
+
+          <li class="listitem" style="list-style-type: disc">Chrome synced passwords</li>
+
+          <li class="listitem" style="list-style-type: disc">Autofill data for Web forms</li>
+
+          <li class="listitem" style="list-style-type: disc">Google search queries</li>
+
+          <li class="listitem" style="list-style-type: disc">YouTube search queries</li>
+
+        </ul>
+
+      </div>
+
+      <p>Each entry from the search and browsing history contains the following additional information:</p>
+
+      <div class="itemizedlist">
+
+        <ul class="itemizedlist">
+
+          <li class="listitem" style="list-style-type: disc">Original IP address</li>
+
+          <li class="listitem" style="list-style-type: disc">Browser data</li>
+
+          <li class="listitem" style="list-style-type: disc">Page transitions (search results that were opened)</li>
+
+          <li class="listitem" style="list-style-type: disc">Actions on ads (tracks clicks and purchases)</li>
+
+        </ul>
+
+      </div>
+
+      <p>Google Takeout does not export the search and browsing history.</p>
+
+    </div>
+
+    <div class="section" title="A word on Android backups">
+
+      <div class="titlepage">
+
+        <div>
+
+          <div>
+
+            <h2 class="title" id="toc_3"><a id="ch04lvl2sec38"/>A word on Android backups</h2>
+
+          </div>
+
+        </div>
+
+      </div>
+
+      <p>Cloud backups are new to Android. Automatic backup of third-party application data was only made available in Android 6.0. However, even in earlier versions of Android, some bits of data were still exported into the cloud and restored when the user initialized a new device with their Google credentials. Particularly, we've seen the following data:</p>
+
+      <div class="itemizedlist">
+
+        <ul class="itemizedlist">
+
+          <li class="listitem" style="list-style-type: disc">Installed apps (from Google Play only, no data on sideloaded apps)</li>
+
+          <li class="listitem" style="list-style-type: disc">Home settings, including wallpaper, folders, and icons</li>
+
+          <li class="listitem" style="list-style-type: disc">Google Calendar settings</li>
+
+          <li class="listitem" style="list-style-type: disc">List of Wi-Fi networks</li>
+
+          <li class="listitem" style="list-style-type: disc">Wi-Fi passwords</li>
+
+          <li class="listitem" style="list-style-type: disc">Gmail settings</li>
+
+          <li class="listitem" style="list-style-type: disc">Display settings</li>
+
+          <li class="listitem" style="list-style-type: disc">Language and input settings, including custom dictionaries for Google Keyboard</li>
+
+          <li class="listitem" style="list-style-type: disc">Date and time settings (for example, 12/24 hr, time zone, and so on)</li>
+
+        </ul>
+
+      </div>
+
+      <p>Android 6.0 introduced support for cloud backups, allowing third-party apps to have automatic backup and restore:</p>
+
+      <p> </p>
+
+      <div class="mediaobject">
+
+        <img src="0059.jpeg" alt="A word on Android backups"/>
+
+      </div>
+
+      <p> </p>
+
+      <p>However, Android cloud backups are still severely limited compared to iOS and Windows Phone counterparts. While prerelease versions of Android 6.0 allowed third-party apps to <span class="emphasis"><em>opt-out</em></span> from data backups (the default behavior was <span class="emphasis"><em>backups enabled for all apps that did not opt out via manifest</em></span>), the release version of Android 6.0 did not retain this change.</p>
+
+      <p>The final version of Android 6.0 uses the <span class="emphasis"><em>opt-in</em></span> method, allowing application developers to explicitly allow backups for their apps through the manifest file. The default behavior is <span class="emphasis"><em>no data backups</em></span>. As of today, very few apps have made use of this feature. This includes Google's own apps, which don't use the new backup feature of Android 6.0. Instead, they use Google Drive to back up their data.</p>
+
+      <div class="note" title="Note" style="">
+
+        <div class="inner">
+
+          <h3 class="title" id="toc_4"><a id="note25"/>Note</h3>
+
+          <p> <span class="strong"><strong>Note</strong></span>: At this time, WhatsApp messenger does not use the default backup mechanism provided by Android 6.0. Instead, WhatsApp offers the ability to back up its content directly to Google Drive. WhatsApp backups can be acquired from Google Drive; however, in order to decrypt the backup, one will need to extract the decryption key, which is only accessible if the device is rooted. Oxygen Forensic Suite can accomplish this goal.</p>
+
+        </div>
+
+      </div>
+
+      <p>More information on this subject is available in the Ars Technica's excellent write-up: <span class="emphasis"><em>Android 6.0 has a great auto-backup system that no one is using (yet)</em></span> (<a class="ulink" href="http://arstechnica.com/gadgets/2015/10/android-6-0s-auto-backup-for-apps-perfect-data-backup-for-the-1-5/">http://arstechnica.com/gadgets/2015/10/android-6-0s-auto-backup-for-apps-perfect-data-backup-for-the-1-5/</a>).</p>
+
+      <p>Pictures available in the user's Google Photos space are also stored in the cloud. The Google Photos service contains much more information compared to Google Drive:</p>
+
+      <div class="itemizedlist">
+
+        <ul class="itemizedlist">
+
+          <li class="listitem" style="list-style-type: disc">Albums</li>
+
+          <li class="listitem" style="list-style-type: disc">Events</li>
+
+          <li class="listitem" style="list-style-type: disc">Comments</li>
+
+          <li class="listitem" style="list-style-type: disc">Geolocation tags</li>
+
+          <li class="listitem" style="list-style-type: disc">Subscriptions</li>
+
+          <li class="listitem" style="list-style-type: disc">View counters</li>
+
+          <li class="listitem" style="list-style-type: disc">People (faces) tagged on the photos</li>
+
+        </ul>
+
+      </div>
+
+      <p>Certain bits of data (for example, location history, dashboard items, and Hangout conversations) can be acquired without making Google alert the user by e-mail.</p>
+
+    </div>
+
+    <div class="section" title="Google Takeout">
+
+      <div class="titlepage">
+
+        <div>
+
+          <div>
+
+            <h2 class="title" id="toc_5"><a id="ch04lvl2sec39"/>Google Takeout</h2>
+
+          </div>
+
+        </div>
+
+      </div>
+
+      <p>When acquiring information from Google, the first and obvious choice is using Google's own data exporting service, Google Takeout. This service is available at <a class="ulink" href="https://takeout.google.com/settings/takeout">https://takeout.google.com/settings/takeout</a>.</p>
+
+      <p>Google Takeout allows users to download their data. However, Takeout is not a good forensic solution for several reasons. Takeout uses a plethora of formats such as OPML (RSS), CSV, plain text, JSON (GeoJSON for map data), vCard, PDF, and HTML, as well as several others:</p>
+
+      <p> </p>
+
+      <div class="mediaobject">
+
+        <img src="0060.jpeg" alt="Google Takeout"/>
+
+      </div>
+
+      <p> </p>
+
+      <p>While Google Takeout exports a lot of data, it fails to provide some important bits. Google Takeout leaves traces in the user's account and notifies the user via an e-mail alert that their data was accessed. The resulting file produced by Google Takeout is not immediately usable, as the data is stored in numerous formats and cannot be used for searching and analyzing as-is.</p>
+
+    </div>
+
+    <div class="section" title="Google Account acquisition and analysis using Elcomsoft Cloud Explorer">
+
+      <div class="titlepage">
+
+        <div>
+
+          <div>
+
+            <h2 class="title" id="toc_6"><a id="ch04lvl2sec40"/>Google Account acquisition and analysis using Elcomsoft Cloud Explorer</h2>
+
+          </div>
+
+        </div>
+
+      </div>
+
+      <p>Google Takeout does not provide full access to some bits of data, which includes stored passwords, search queries on connected devices, Chrome page transitions, and the browsing history. This data remains available elsewhere in Google and can be extracted manually. However, manual extraction can be labor-intensive and time-consuming.</p>
+
+      <p>In order to automate the extraction, you can use Elcomsoft Cloud Explorer. The tool authenticates into the Google Account and automatically downloads all available information from Google servers. The built-in viewer displays information in human-readable form and enables fast searching and filtering. Elcomsoft Cloud Explorer attempts to minimize the traces it leaves in the account being acquired. In particular, it does not cause an e-mail alert during the acquisition. As an example, the tool can display links the user clicked on after firing up a search:</p>
+
+      <p> </p>
+
+      <div class="mediaobject">
+
+        <img src="0061.jpeg" alt="Google Account acquisition and analysis using Elcomsoft Cloud Explorer"/>
+
+      </div>
+
+      <p> </p>
+
+      <p>Elcomsoft Cloud Explorer offers investigators access to Google Accounts and allows downloading all available information. The tool leaves fewer traces compared to Google Takeout while pulling more data than the Google's service:</p>
+
+      <p> </p>
+
+      <div class="mediaobject">
+
+        <img src="0062.jpeg" alt="Google Account acquisition and analysis using Elcomsoft Cloud Explorer"/>
+
+      </div>
+
+      <p> </p>
+
+      <p>Note that Google may alert the user once someone accesses the user's Google Account from a different device or IP address. While using Google Takeout is a certain way to trigger such an alert, using Elcomsoft Cloud Explorer reduces (but does not completely eliminate) such probability. At this time, we don't know what types of data might trigger such alerts. Just be aware of the possibility.</p>
+
+      <p>You can extract the following:</p>
+
+      <div class="itemizedlist">
+
+        <ul class="itemizedlist">
+
+          <li class="listitem" style="list-style-type: disc">User profile</li>
+
+          <li class="listitem" style="list-style-type: disc">Dashboard</li>
+
+          <li class="listitem" style="list-style-type: disc">Location history</li>
+
+          <li class="listitem" style="list-style-type: disc">Hangouts messages</li>
+
+          <li class="listitem" style="list-style-type: disc">Contacts (including synced contacts from other devices)</li>
+
+          <li class="listitem" style="list-style-type: disc">Google Photos, including EXIF data</li>
+
+          <li class="listitem" style="list-style-type: disc">Google Keep notes</li>
+
+          <li class="listitem" style="list-style-type: disc">Search history and transitions</li>
+
+          <li class="listitem" style="list-style-type: disc">Google Chrome data (bookmarks, forms, stored credentials, and page transitions from all synced devices)</li>
+
+        </ul>
+
+      </div>
+
+      <div class="note" title="Note" style="">
+
+        <div class="inner">
+
+          <h3 class="title" id="toc_7"><a id="tip26"/>Tip</h3>
+
+          <p>Chrome synced data may be protected with an additional password. Elcomsoft Cloud Explorer can decrypt the data if you enter the correct password.</p>
+
+        </div>
+
+      </div>
+
+      <div class="itemizedlist">
+
+        <ul class="itemizedlist">
+
+          <li class="listitem" style="list-style-type: disc">Calendars</li>
+
+        </ul>
+
+      </div>
+
+      <p>Elcomsoft Cloud Explorer includes a built-in viewer for all of the data formats available in the Google Account, including a built-in viewer for synced passwords:</p>
+
+      <p> </p>
+
+      <div class="mediaobject">
+
+        <img src="0063.jpeg" alt="Google Account acquisition and analysis using Elcomsoft Cloud Explorer"/>
+
+        <div class="caption">
+
+          <p>Elcomsoft Phone Viewer: viewing stored passwords</p>
+
+        </div>
+
+      </div>
+
+      <p> </p>
+
+    </div>
+
+    <div class="section" title="Two-factor authentication">
+
+      <div class="titlepage">
+
+        <div>
+
+          <div>
+
+            <h2 class="title" id="toc_8"><a id="ch04lvl2sec41"/>Two-factor authentication</h2>
+
+          </div>
+
+        </div>
+
+      </div>
+
+      <p>Some Google accounts may be protected with two-factor authentication, requiring experts to provide an extra code in addition to the user's Google ID and password. If you are using Google Takeout or Elcomsoft Cloud Explorer, you will be prompted to enter the additional six-digit code if two-factor authentication is enabled on a given account.</p>
+
+    </div>
+
+    <div class="section" title="User alerts">
+
+      <div class="titlepage">
+
+        <div>
+
+          <div>
+
+            <h2 class="title" id="toc_9"><a id="ch04lvl2sec42"/>User alerts</h2>
+
+          </div>
+
+        </div>
+
+      </div>
+
+      <p>It is essential to realize that Google alerts users on Takeout acquisition by sending them an e-mail to their registered address. This only happens when Google Takeout is used. If you use Elcomsoft Cloud Explorer, you will not trigger an alert and will leave traces in the user's Google Account (this may change in the future, but currently this is the case). Note that, in some rare cases, accessing certain types of data may still trigger a notification from Google. At this time, we don't know what exactly triggers this notification. Consider this being the risk associated with cloud acquisition.</p>
+
+    </div>
+
+    <div class="section" title="Viewing, searching, and analyzing data">
+
+      <div class="titlepage">
+
+        <div>
+
+          <div>
+
+            <h2 class="title" id="toc_10"><a id="ch04lvl2sec43"/>Viewing, searching, and analyzing data</h2>
+
+          </div>
+
+        </div>
+
+      </div>
+
+      <p>When using Google Takeout, prepare to face many cumbersome data formats. On the other hand, Elcomsoft Cloud Explorer automatically decodes these data formats. The tool displays the data in human-readable form, allowing viewing and analyzing information obtained from the suspect's Google Account:</p>
+
+      <p> </p>
+
+      <div class="mediaobject">
+
+        <img src="0064.jpeg" alt="Viewing, searching, and analyzing data"/>
+
+        <div class="caption">
+
+          <p>Elcomsoft Phone Viewer: viewing and analyzing information</p>
+
+        </div>
+
+      </div>
+
+      <p> </p>
+
+      <p>The built-in viewer recognizes data formats used by Google and is available in the Google Account. The data is parsed and displayed automatically. The viewer offers instant filtering and quick search. Locating contacts, messages, or authentication credentials (login and password) requires typing a part of the word you are looking for into the search box.</p>
+
+    </div>
+
+  </div>
+
+
+
+
+  <div class="section" title="Summary">
+
+    <div class="titlepage">
+
+      <div>
+
+        <div>
+
+          <h1 class="title"><a id="ch04lvl1sec25"/>Summary</h1>
+
+        </div>
+
+      </div>
+
+    </div>
+
+    <p>In this chapter, we reviewed the tools, methods, and practical steps to perform the acquisition of various Android devices. We covered low-level acquisition techniques via device service modes, and talked about physical acquisition via root exploits and bootloader-level exploits. We also covered logical acquisition and discussed its limitations on the Android platform. In the next chapter, we'll move over to the other mobile platform, and learn about acquisition techniques applicable to Apple iOS.</p>
+
+  </div>
+
+</body></html>

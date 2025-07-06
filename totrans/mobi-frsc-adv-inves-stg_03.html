@@ -1,0 +1,763 @@
+<html><head></head><body>
+
+  <div class="chapter" title="Chapter 3. Acquisition &#x2013; Approaching Android Devices">
+
+    <div class="titlepage">
+
+      <div>
+
+        <div>
+
+          <h1 class="title"><a id="ch03"/>Chapter 3. Acquisition – Approaching Android Devices</h1>
+
+        </div>
+
+      </div>
+
+    </div>
+
+    <p>Approximately, 82% of mobile devices (Q1, 2016) run the Android OS. The total number of active Android devices is about 1.4 billion (although not all of these are Google devices).</p>
+
+    <p>Similar to iOS, the data is not stored exclusively on mobile devices. In Android 6, Google officially introduced a cloud backup option, allowing users to maintain limited automatic backups for Android devices on Google Drive. Learning what Google knows about the user can be essential for an investigation.</p>
+
+    <p>An excellent resource with lots of detailed (but not too technical) information exists to help forensic experts get a better understanding of Android forensics. The <span class="strong"><strong>Free Android Forensics</strong></span> blog at <a class="ulink" href="http://freeandroidforensics.blogspot.com">http://freeandroidforensics.blogspot.com</a> offers excellent insight into the Android platform, imaging tools, and techniques. The blog mostly talks about using free forensic tools and acquisition techniques, which in our opinion can limit the available acquisition options and require more time and effort than an examiner may have at their disposal. However, the information presented in the blog is an excellent read for understanding what exactly the acquisition tools do on your behalf when acquiring information from mobile devices.</p>
+
+    <p>In the following sections, we will discuss the options available for acquiring information from Android devices, as well as for pulling associated data from Google servers. In this chapter, we will cover the following topics:</p>
+
+    <div class="itemizedlist">
+
+      <ul class="itemizedlist">
+
+        <li class="listitem" style="list-style-type: disc">Android platform fragmentation and why it matters</li>
+
+        <li class="listitem" style="list-style-type: disc">AOSP and GMS demystified</li>
+
+        <li class="listitem" style="list-style-type: disc">Logical acquisition via ADB backup</li>
+
+        <li class="listitem" style="list-style-type: disc">Dealing with unallocated space</li>
+
+        <li class="listitem" style="list-style-type: disc">Overview of advanced acquisition methods</li>
+
+      </ul>
+
+    </div>
+
+    <div class="section" title="Android platform fragmentation">
+
+      <div class="titlepage">
+
+        <div>
+
+          <div>
+
+            <h1 class="title" id="toc_1"><a id="ch03lvl1sec18"/>Android platform fragmentation</h1>
+
+          </div>
+
+        </div>
+
+      </div>
+
+      <p>Android is a heavily fragmented platform. Nearly 1,300 manufacturers and over 24,000 device models introduce a huge degree of variance:</p>
+
+      <p> </p>
+
+      <div class="mediaobject">
+
+        <img src="0007.jpeg" alt="Android platform fragmentation"/>
+
+        <div class="caption">
+
+          <p>Source: http://opensignal.com/reports/2015/08/android-fragmentation/</p>
+
+        </div>
+
+      </div>
+
+      <p> </p>
+
+      <p>Hardware specifications demonstrate wild variations in screen size, resolution, and display ratio, CPU, SoC, and even architectures (ARMv7, ARMv8, and Intel's x86/x64 are among the most popular Android platforms). Android devices also vary in the version of the core OS and available API's. Compare this to Apple's iOS:</p>
+
+      <p> </p>
+
+      <div class="mediaobject">
+
+        <img src="0008.jpeg" alt="Android platform fragmentation"/>
+
+        <div class="caption">
+
+          <p>iOS and Android distribution charts (April 2016)</p>
+
+        </div>
+
+      </div>
+
+      <p> </p>
+
+      <p>Android devices come with many different versions of Android and many different API levels that are available at any given time. For the purpose of mobile forensics, this means that one must either become familiar with the acquisition and protection specifics of all versions of Android or revert to using a dedicated Android acquisition product.</p>
+
+      <p>More information on Android fragmentation is available at the following:</p>
+
+      <div class="itemizedlist">
+
+        <ul class="itemizedlist">
+
+          <li class="listitem" style="list-style-type: disc"><span class="strong"><strong>The genius of Google Play Services: Tackling Android fragmentation, malware and forking in one fell swoop</strong></span> at <a class="ulink" href="http://www.androidcentral.com/genius-google-play-services">http://www.androidcentral.com/genius-google-play-services</a></li>
+
+          <li class="listitem" style="list-style-type: disc">OpenSignal Android Fragmentation Report at <a class="ulink" href="http://opensignal.com/reports/2015/08/android-fragmentation/">http://opensignal.com/reports/2015/08/android-fragmentation/</a></li>
+
+          <li class="listitem" style="list-style-type: disc"><span class="strong"><strong>Another Android 'fragmentation' report misses the point</strong></span> at <a class="ulink" href="http://www.androidcentral.com/another-android-fragmentation-report-misses-point">http://www.androidcentral.com/another-android-fragmentation-report-misses-point</a></li>
+
+        </ul>
+
+      </div>
+
+    </div>
+
+  </div>
+
+
+
+
+  <div class="section" title="AOSP, GMS, and their forensic implications">
+
+    <div class="titlepage">
+
+      <div>
+
+        <div>
+
+          <h1 class="title"><a id="ch03lvl1sec19"/>AOSP, GMS, and their forensic implications</h1>
+
+        </div>
+
+      </div>
+
+    </div>
+
+    <p>Android and Google are not synonymous. The core Android OS is developed and maintained by Google and published open source via <span class="strong"><strong>Android Open Source Project</strong></span> (<span class="strong"><strong>AOSP</strong></span>). AOSP Android is freely available for everyone to take with no contracts to sign and no restrictions on how manufacturers can use and modify it. Manufacturers have the ability (both technical and legal) to create so-called Android forks, which are heavily modified versions of Android that may or may not be compatible with all Android apps. AOSP Android does not include any proprietary Google services (we will discuss more on that later).</p>
+
+    <p>Majority of Chinese smartphones sold in mainland China are based on AOSP Android, while some are running customized versions of the OS (for example, Xiaomi MIUI or Meizu FlyMe).</p>
+
+    <p>What makes Android devices so popular in the Western hemisphere is the Google-provided ecosystem. Google Play Store offers access to millions of games and applications. Google Maps offers convenient mapping services with free navigation and live traffic. Gmail (Google mail), Google Drive, Google Photos, Google Keep (notes), Google Chrome (browser), and a lot of other things Google comprise a closed-source ecosystem working under the <span class="strong"><strong>Google Mobile Services</strong></span> (<span class="strong"><strong>GMS</strong></span>) umbrella.</p>
+
+    <p>In order to preinstall GMS on their devices, manufacturers must join the <span class="strong"><strong>Open Handset Alliance</strong></span> (<span class="strong"><strong>OHA</strong></span>) and sign a very restrictive agreement. The agreement does not allow OHA members to manufacture devices based on Android forks, which makes manufacturers choose between making AOSP-based devices without Google services or shipping GMS-enabled devices. It's an either/or condition.</p>
+
+    <p>Google Mobile Services are included with virtually all Android smartphones sold in the Western hemisphere. Google uses its services to collect large amounts of information from GMS-enabled devices. Location reporting, Google Account details, notes, search and browsing history, stored forms and passwords, synced application data, and a lot of other information is automatically transmitted to Google services by GMS-enabled devices.</p>
+
+    <p>Most of this data can be acquired or requested from Google. AOSP-based devices without Google Mobile Services do not report their usage to Google servers, and therefore, are much less susceptible to over-the-air acquisition techniques.</p>
+
+    <p>In the U.S., Amazon is the biggest company making devices based on an Android fork. Amazon's custom Android-based OS-dubbed Fire OS empowers the company's Fire tablets, including the original Amazon Kindle Fire, Kindle Fire HD, Kindle Fire HDX 7, Kindle Fire HDX 8.9 (2013), Fire HDX 8.9 (2014), as well as the entire 2015 range. The only Amazon smartphone, Amazon Fire Phone, is also based on the Fire OS. Amazon Fire OS replaces Google Mobile Services with Amazon's in-house alternatives, offering alternative Maps, push and sync services, as well as its own app store. Older versions of Fire OS differed greatly from stock Android to the extent that Google Play Store would not run on the platform. The latest versions (Fire OS 5) are much closer to stock Android in look and feel, and offer much greater compatibility with Google services.</p>
+
+    <p>Google Play Services help overcome platform fragmentation by providing timely background updates to users of all versions of Android since 2.3 Gingerbread.</p>
+
+    <div class="note" title="Note" style="">
+
+      <div class="inner">
+
+        <h3 class="title" id="toc_1"><a id="note8"/>Note</h3>
+
+        <p> <span class="strong"><strong>The genius of Google Play Services: Tackling Android fragmentation, malware and forking in one fell swoop</strong></span> at <a class="ulink" href="http://www.androidcentral.com/genius-google-play-services">http://www.androidcentral.com/genius-google-play-services</a>.</p>
+
+      </div>
+
+    </div>
+
+    <div class="section" title="Android logical acquisition">
+
+      <div class="titlepage">
+
+        <div>
+
+          <div>
+
+            <h2 class="title" id="toc_2"><a id="ch03lvl2sec23"/>Android logical acquisition</h2>
+
+          </div>
+
+        </div>
+
+      </div>
+
+      <p>The pure Android OS offers limited support for offline backups via ADB. Google implemented the ADB backup functionality in Android 4.0 Ice Cream Sandwich. The ADB backup functionality allows examiners to extract application data to a local PC over ADB. This process does not require root and works without custom recoveries or unlocking the bootloader; however, it extracts a very limited amount of information, and should only be used as the last resort. Additionally, using the ADB backup requires having the phone unlocked and the <span class="strong"><strong>ADB Debugging</strong></span> option enabled.</p>
+
+      <p>XDA developers published a complete guide for backing up the phone via ADB:</p>
+
+      <p><a class="ulink" href="http://forum.xda-developers.com/galaxy-nexus/general/guide-phone-backup-unlock-root-t1420351">http://forum.xda-developers.com/galaxy-nexus/general/guide-phone-backup-unlock-root-t1420351</a></p>
+
+      <p>Additional information is available at:</p>
+
+      <p><a class="ulink" href="http://android.stackexchange.com/questions/28481/how-do-you-extract-an-apps-data-from-a-full-backup-made-through-adb-backup">http://android.stackexchange.com/questions/28481/how-do-you-extract-an-apps-data-from-a-full-backup-made-through-adb-backup</a></p>
+
+      <p>The following command should produce a full backup of the device, complete with all APK files, including system apps and the content of the shared (<code class="literal">/sdcard</code>) storage:</p>
+
+      <pre class="programlisting">adb backup -apk -shared -system -all -f C:\fullpath\backup.ab </pre>
+
+      <p>The complete syntax is as follows:</p>
+
+      <pre class="programlisting">adb backup [-f <file>] [-apk|-noapk] [-shared|-noshared] [-all][-system|-nosystem] [<packages...>]</packages...></file></pre>
+
+      <p>The options are explained as follows:</p>
+
+      <div class="itemizedlist">
+
+        <ul class="itemizedlist">
+
+          <li class="listitem" style="list-style-type: disc">Write an archive of the device's data to <code class="literal"><file/></code>. If no <code class="literal">-f</code> option is supplied, then the data is written to <code class="literal">backup.ab</code> in the current directory.</li>
+
+          <li class="listitem" style="list-style-type: disc"><code class="literal">-apk|-noapk</code> will enable/disable backup of the <code class="literal">.apks</code> itself in the archive; the default is <code class="literal">noapk</code>.</li>
+
+          <li class="listitem" style="list-style-type: disc"><code class="literal">-shared|-noshared</code> will enable/disable backup of the device's shared storage / SD card contents; the default is <code class="literal">noshared</code>.</li>
+
+          <li class="listitem" style="list-style-type: disc"><code class="literal">-all</code> means to back up all installed applications.</li>
+
+          <li class="listitem" style="list-style-type: disc"><code class="literal">-system|-nosystem</code> toggles whether <code class="literal">-all</code> automatically includes system applications; the default is to include system apps.</li>
+
+          <li class="listitem" style="list-style-type: disc"><code class="literal"><packages.../></code> is the list of applications to be backed up. If the <code class="literal">-all</code> or <code class="literal">-shared</code> flags are passed, then the package list is optional. Applications explicitly given on the command line will be included even if <code class="literal">-nosystem</code> would ordinarily cause them to be omitted.</li>
+
+        </ul>
+
+      </div>
+
+      <p>For this to work, the phone must have <span class="strong"><strong>ADB Debugging</strong></span> enabled and unlocked. The phone may display a prompt asking you to confirm the action.</p>
+
+      <div class="note" title="Note" style="">
+
+        <div class="inner">
+
+          <h3 class="title" id="toc_3"><a id="note9"/>Note</h3>
+
+          <p>In real life, specifying certain keys may cause the backup to fail. For example, when we attempted to back up a Motorola Nexus 6 with the <code class="literal">-noapk</code> option, the backup failed. However, using the <code class="literal">adb backup –all –f c:\temp\nexus6.ab</code> command completed correctly.</p>
+
+        </div>
+
+      </div>
+
+      <p>Without root access, extraction via ADB backup is limited. ADB backup cannot acquire every application installed on the device. Developers can choose whether their apps allow backups or not. While the default setting is set to <code class="literal">on</code>, some developers choose to disable backups. It's worth noting that ADB backup does not capture the content of application cache. The ADB backup functionality is separate from the new cloud backups introduced with Android 6.0 Marshmallow.</p>
+
+      <p>While performing logical acquisition of an Android device is possible without the use of any specific mobile forensic tools by using the manufacturer-specific drivers and <span class="strong"><strong>Android Debug Bridge</strong></span> (<span class="strong"><strong>ADB</strong></span>), you may want to use a commercial mobile forensic tool if you already own one. For example, the following is how you perform logical acquisition of an Android device with Oxygen Forensic Suite:</p>
+
+      <div class="orderedlist">
+
+        <ol class="orderedlist arabic">
+
+          <li class="listitem">Turn on and unlock the device.</li>
+
+          <li class="listitem">Ensure that <span class="strong"><strong>USB debugging</strong></span> is enabled in the <span class="strong"><strong>Developer</strong></span> options, as shown in the following screenshot:<p> </p><div class="mediaobject"><img src="0009.jpeg" alt="Android logical acquisition"/></div><p> </p></li>
+
+          <li class="listitem">Connect the device to your computer via a USB cable. On some devices, you may need to switch the USB connection mode from <span class="strong"><strong>Charging only</strong></span> to <span class="strong"><strong>PTP</strong></span> or <span class="strong"><strong>MTP</strong></span>.<div class="note" title="Note" style=""><div class="inner"><h3 class="title" id="toc_4"><a id="note10"/>Note</h3><p>Android offers a choice of connectivity options. You may see <span class="strong"><strong>Charging</strong></span>, <span class="strong"><strong>File transfers (MTP)</strong></span>, <span class="strong"><strong>Photo transfer (PTP)</strong></span>, and other options. An ADB connection can only be established once you choose either <span class="strong"><strong>MTP</strong></span> (Media Transfer Protocol for transferring files between your Android device and a Windows or Mac) or <span class="strong"><strong>PTP</strong></span> (Photo Transfer Protocol, generally employed by devices such as printers and cameras for transferring photos). In our tests, we had a better success rate on selecting the <span class="strong"><strong>PTP</strong></span> option.</p></div></div><p> </p><div class="mediaobject"><img src="0010.jpeg" alt="Android logical acquisition"/></div><p> </p></li>
+
+          <li class="listitem">Select <span class="strong"><strong>Connect device</strong></span> | <span class="strong"><strong>Fast backup/image extraction...</strong></span>, as shown in the following screenshot:<p> </p><div class="mediaobject"><img src="0011.jpeg" alt="Android logical acquisition"/></div><p> </p></li>
+
+          <li class="listitem">Select <span class="strong"><strong>Android backup</strong></span> and click on <span class="strong"><strong>Next</strong></span>:<p> </p><div class="mediaobject"><img src="0012.jpeg" alt="Android logical acquisition"/></div><p> </p></li>
+
+          <li class="listitem">Connect the device and follow the instructions:<p> </p><div class="mediaobject"><img src="0013.jpeg" alt="Android logical acquisition"/></div><p> </p></li>
+
+          <li class="listitem">On the Android device, you may need to authorize your PC as a debug bridge:<p> </p><div class="mediaobject"><img src="0014.jpeg" alt="Android logical acquisition"/></div><p> </p></li>
+
+          <li class="listitem">Oxygen Forensic Extractor will automatically establish a connection with the device and begin extracting the backup.</li>
+
+        </ol>
+
+      </div>
+
+      <p>Additional information on ADB backups is available in <a class="link" href="ch04.html" title="Chapter 4. Practical Steps to Android Acquisition">Chapter 4</a>, <span class="emphasis"><em>Practical Steps to Android Acquisition</em></span>.</p>
+
+      <div class="section" title="OEM software">
+
+        <div class="titlepage">
+
+          <div>
+
+            <div>
+
+              <h3 class="title" id="toc_5"><a id="ch03lvl3sec10"/>OEM software</h3>
+
+            </div>
+
+          </div>
+
+        </div>
+
+        <p>Some manufacturers offer companion software to enable communication between the phone and the PC. The most common example is Apple iTunes, which is commonly used by forensic experts during logical acquisition. As an example, SONY PC Companion provides full backup and restore functionality for Xperia devices without the need to root or unlock bootloader. While using SONY PC Companion requires the user to unlock the device with the correct method (PIN, pattern, and so on), we've seen evidence of such lock measures being bypassed:</p>
+
+        <p> </p>
+
+        <div class="mediaobject">
+
+          <img src="0015.jpeg" alt="OEM software"/>
+
+          <div class="caption">
+
+            <p>Sony PC Companion backup</p>
+
+          </div>
+
+        </div>
+
+        <p> </p>
+
+        <p>In addition, some OEMs (LG, ASUS, and many others) include their own proprietary software to allow backing up and restoring the entire contents of the device. Using these tools, however, requires that the device is unlocked, in which case other acquisition methods may be available.</p>
+
+        <p>A backup extracted from an ASUS ZenPad S 8.0 tablet contains all of the following files:</p>
+
+        <p> </p>
+
+        <div class="mediaobject">
+
+          <img src="0016.jpeg" alt="OEM software"/>
+
+          <div class="caption">
+
+            <p>The content of ASUS ZenPad S 8.0 backup</p>
+
+          </div>
+
+        </div>
+
+        <p> </p>
+
+        <p>Backups made with proprietary tools generally contain device settings, passwords (or, in certain cases, authentication tokens that may or may not have expired by the time they are restored), the list of installed applications, as well as application data (and often application binaries). These backups do not have provision for accessing unallocated space.</p>
+
+      </div>
+
+    </div>
+
+    <div class="section" title="Android acquisition – special considerations">
+
+      <div class="titlepage">
+
+        <div>
+
+          <div>
+
+            <h2 class="title" id="toc_6"><a id="ch03lvl2sec24"/>Android acquisition – special considerations</h2>
+
+          </div>
+
+        </div>
+
+      </div>
+
+      <p>What happens to information that the user attempts to destroy? Deleted evidence may still be recovered—at least in Android smartphones. Rarely encrypted, Android devices are susceptible to various acquisition techniques, many of which enable access to deleted data. Let's look at how Android deletes information and what can be done to recover deleted data.</p>
+
+      <div class="section" title="Unallocated space">
+
+        <div class="titlepage">
+
+          <div>
+
+            <div>
+
+              <h3 class="title" id="toc_7"><a id="ch03lvl3sec11"/>Unallocated space</h3>
+
+            </div>
+
+          </div>
+
+        </div>
+
+        <p>In Android, unallocated space can usually be extracted along with the filesystem (which is not the case with Apple devices due to iOS full-disk encryption). However, it is important to realize that Android devices employ trim support, erasing the content of unallocated disk space every time the device is shut down. This is one of the reasons why standard acquisition techniques don't recommend turning the phone off at any time; instead, they advice putting the device on a charger and placing it into a Faraday bag.</p>
+
+        <p>So what happens to unallocated (or released) space inside an Android phone?</p>
+
+        <div class="section" title="eMMC storage">
+
+          <div class="titlepage">
+
+            <div>
+
+              <div>
+
+                <h4 class="title" id="toc_8"><a id="ch03lvl4sec0"/>eMMC storage</h4>
+
+              </div>
+
+            </div>
+
+          </div>
+
+          <p>Let's take a look at how recent smartphones and tablets store information. Since 2011, most Android smartphones use eMMC flash chips for non-volatile storage. Unlike the <span class="emphasis"><em>plain</em></span> flash chips, eMMC storage integrates flash memory and controller onto a single chip planted into the phone's main board. The built-in controller is responsible for flash-specific operations to maintain data integrity while ensuring the optimum performance and lifespan of the NAND cells. The controller performs, among other things, operations such as trimming unused data blocks, remapping logical addresses to physical chips. The controller is also responsible for performing secure data erasure when requested.</p>
+
+        </div>
+
+        <div class="section" title="Remapping and overprovisioning">
+
+          <div class="titlepage">
+
+            <div>
+
+              <div>
+
+                <h4 class="title" id="toc_9"><a id="ch03lvl4sec1"/>Remapping and overprovisioning</h4>
+
+              </div>
+
+            </div>
+
+          </div>
+
+          <p>Internally, the built-in controller is responsible for establishing a link between addressable (logical) storage space and physical blocks in the flash chip. In other words, each logical block is mapped to a corresponding physical block by the eMMC controller. The reverse, however, is not true—we cannot say that each physical block has a corresponding addressable logical block assigned.</p>
+
+          <p>eMMC chips have more actual storage capacity than they advertise to the outside world. The extra physical data blocks are therefore non-addressable until called into service by the integral eMMC controller. This feature is called overprovisioning. Overprovisioned data blocks have no logical addresses. Any <span class="emphasis"><em>bad sectors</em></span> (unstable or unreadable data blocks) will be permanently placed into the overprovisioned area. They'll never be assigned a logical address or be visible to the operating system, or anything at all, except the built-in eMMC controller.</p>
+
+          <div class="note" title="Note" style="">
+
+            <div class="inner">
+
+              <h3 class="title" id="toc_10"><a id="note11"/>Note</h3>
+
+              <p> <span class="strong"><strong>Important</strong></span>: There is no feasible way of extracting information contained in the overprovisioned area. The entire area is invisible to logical or physical acquisition tools as these data blocks are not mapped onto available address space. These data blocks are only accessible to the internal controller, there is no interface available to intentionally access their contents from the outside the eMMC chip. As a result, even performing chip-off extraction will not give you access to physical blocks from the overprovisioned area, as chip-off extraction of eMMC chips is still based on sending commands to the eMMC controller.</p>
+
+            </div>
+
+          </div>
+
+        </div>
+
+        <div class="section" title="Wear leveling">
+
+          <div class="titlepage">
+
+            <div>
+
+              <div>
+
+                <h4 class="title" id="toc_11"><a id="ch03lvl4sec2"/>Wear leveling</h4>
+
+              </div>
+
+            </div>
+
+          </div>
+
+          <p>Flash memory has several qualities unique to this type of storage. NAND flash chips have a limited lifespan by only supporting a finite number of write-erase cycles. After reaching the end of its effective lifespan, the flash chip may continue functioning, yet the data retention period may be severely affected (the data will get corrupted or disappear completely after the flash storage is powered off for a certain amount of time). As a result, the embedded eMMC controller will attempt to evenly distribute write cycles among available data blocks. This is called wear leveling.</p>
+
+        </div>
+
+        <div class="section" title="Trimming">
+
+          <div class="titlepage">
+
+            <div>
+
+              <div>
+
+                <h4 class="title" id="toc_12"><a id="ch03lvl4sec3"/>Trimming</h4>
+
+              </div>
+
+            </div>
+
+          </div>
+
+          <p>Another quality unique to flash storage is how they write information. Blocks must be erased before they can be written to. Erasing a <span class="emphasis"><em>dirty</em></span> flash cell takes significantly more time than writing into an already empty block. In order to work around this issue, the eMMC controller will perform background garbage collection by trimming (erasing) released blocks when the controller is idle. In order to make a certain logical address immediately writeable after its content was deleted (and the block was advertised as available, but not yet erased), the controller may perform address remapping by pointing this logical block to an already empty physical cell. Unlike erasing, remapping happens instantly, making the block that used to contain deleted data writeable without the wait associated with erasing its content.</p>
+
+          <p>Due to Android platform fragmentation, trim support in Android varies between versions and among the different OEMs. Full-trim support only came to Android in version 4.3 Jelly Bean. Moreover, full-trim support is only guaranteed in devices that originally shipped with Android 4.3 or newer, which excludes devices upgrading from earlier versions of Android. While some manufacturers implemented trim support during the course of updating devices to newer versions of Android, some other OEMs never bothered. As a result, a large number of devices that originally shipped with Android 4.2 and were updated to Android Kit Kat or even Lollipop never received proper trim support.</p>
+
+          <p>Earlier versions of Android without full-trim support used to include a basic form of trimming. With no <span class="emphasis"><em>live</em></span> trimming available in older Android builds, the cleanup (trimming) was performed every time the device was shut down. This is one of the reasons for the ACPO requirements to keep devices powered on instead of shutting them down. On a side note, simply removing the battery would not trigger the cleanup stage.</p>
+
+          <p>If you are handling an Android device, and it's one of the older ones, you may be able to dump a physical image of its eMMC chip and access information about its unallocated space.</p>
+
+        </div>
+
+        <div class="section" title="What happens to the deleted data?">
+
+          <div class="titlepage">
+
+            <div>
+
+              <div>
+
+                <h4 class="title" id="toc_13"><a id="ch03lvl4sec4"/>What happens to the deleted data?</h4>
+
+              </div>
+
+            </div>
+
+          </div>
+
+          <p>So what happens to information stored in the blocks released by the operating system? The Android OS (depending on the version) will pass a <code class="literal">trim</code> command to the eMMC controller, telling it that a certain logical block is no longer used. The controller assigns a special status of <span class="emphasis"><em>do not care</em></span> to the physical block corresponding to this logical address, adding the physical block to the <span class="emphasis"><em>to be erased</em></span> list and remapping the logical address to a clean physical block (either from an existing address space or from the overprovisioned area).</p>
+
+          <p>Notably, the controller may or may not decide to push a newly released physical block out of the addressable space and into the overprovisioned area. As a result, the content of a deleted logical block may remain available in the addressable space for a while. This phenomenon enables forensic specialists to carve information from unallocated areas.</p>
+
+          <p>If you need more information about what happens to information deleted from Android devices, refer to the <span class="emphasis"><em>Security Analysis of Android Factory Resets</em></span> publication by <span class="emphasis"><em>Laurent Simon</em></span> and <span class="emphasis"><em>Ross Anderson</em></span> (<span class="emphasis"><em>University of Cambridge</em></span>) at <a class="ulink" href="http://www.cl.cam.ac.uk/~rja14/Papers/fr_most15.pdf">http://www.cl.cam.ac.uk/~rja14/Papers/fr_most15.pdf</a> . In this paper, the scientists studied the implementation of factory reset on multiple Android smartphones running Android versions 2.3.x to 4.3, reviewed how Android smartphones handle deleted files, and discovered that, in many cases, user data is still available after a factory reset due to improper implementations of the function by many device manufacturers.</p>
+
+        </div>
+
+      </div>
+
+      <div class="section" title="JTAG forensics">
+
+        <div class="titlepage">
+
+          <div>
+
+            <div>
+
+              <h3 class="title" id="toc_14"><a id="ch03lvl3sec12"/>JTAG forensics</h3>
+
+            </div>
+
+          </div>
+
+        </div>
+
+        <p>JTAG forensics is an advanced acquisition procedure that uses <span class="strong"><strong>test access ports</strong></span> (<span class="strong"><strong>TAP</strong></span>) standardized by the <span class="strong"><strong>Joint Test Action Group</strong></span> (<span class="strong"><strong>JTAG</strong></span>) association. These ports, among other things, can be utilized to access raw data stored in the connected device. The acquisition process involves using existing solder points on the device's circuit board. By using specialized equipment and a matching device-specific JTAG cable, one can retrieve the entire flash memory contents (less the eMMC overprovisioned area, but including addressable unallocated space) from compatible devices. Notably, JTAG acquisition is often available even for locked, damaged, or otherwise inaccessible devices. JTAG acquisition is available for many Android devices, as well as some feature phones and Windows Phone 7 and 8 devices.</p>
+
+        <p>JTAG forensics is a labor-intensive and time-consuming process requiring an expert to use a well-equipped lab. As such, forensic experts tend to try JTAG acquisition after other methods prove unsuccessful.</p>
+
+        <div class="section" title="When to JTAG a device">
+
+          <div class="titlepage">
+
+            <div>
+
+              <div>
+
+                <h4 class="title" id="toc_15"><a id="ch03lvl4sec5"/>When to JTAG a device</h4>
+
+              </div>
+
+            </div>
+
+          </div>
+
+          <p>JTAG is an invasive acquisition method since it requires disassembling the device to a certain level and soldering wires to the contacts of the test port. While being invasive, JTAG is not considered a destructive method by many experts. If JTAG is performed carefully, the device, if it was in working order prior to the JTAG procedure, will continue to work post JTAG—which is exactly what the test port is designed for. From time to time, JTAG can still result in the device being rendered inoperable. For this reason, JTAG forensics is normally used when commercial forensic tools fail to image the device, or when the device is soft-bricked or unbootable. This includes devices locked with an unknown passcode and the <span class="strong"><strong>USB debugging</strong></span> option not enabled if no exploit is available to bypass protection.</p>
+
+          <p>JTAG acquisition produces a full image of the device's memory complete with unallocated space. This is how JTAG acquisition may look in a lab:</p>
+
+          <p> </p>
+
+          <div class="mediaobject">
+
+            <img src="0017.jpeg" alt="When to JTAG a device"/>
+
+            <div class="caption">
+
+              <p>JTAG acquisition of Nokia Lumia 920. Image source: SYTECH Digital Forensics, http://sytech-consultants.com/.</p>
+
+            </div>
+
+          </div>
+
+          <p> </p>
+
+        </div>
+
+        <div class="section" title="Limitations of JTAG forensics">
+
+          <div class="titlepage">
+
+            <div>
+
+              <div>
+
+                <h4 class="title" id="toc_16"><a id="ch03lvl4sec6"/>Limitations of JTAG forensics</h4>
+
+              </div>
+
+            </div>
+
+          </div>
+
+          <p>JTAG extraction is a low-level acquisition method that returns raw content of the device storage. If full-disk encryption is enabled, JTAG will extract a raw encrypted image. Breaking the encryption may or may not be an option, depending on the manufacturer (Samsung is renowned for <span class="emphasis"><em>making things different</em></span>), phone model, and Android version.</p>
+
+          <p>In order to extract a decrypted image, a higher level API must be used. This, however, may require unlocking the device with the correct passcode (or an alternative method, such as pattern or knock code). Full-disk encryption is active out-of-the-box on some Samsung devices, Google-manufactured devices running Android 5 (such as Nexus 6 and Nexus 9), as well as some other flagship phones sold by leading manufacturers.</p>
+
+          <p>JTAG processes are minimally documented and require an expert examiner. Some manufacturers disable TAP on their devices after they leave the factory, so JTAG acquisition may not be available even if a TAP port is visibly present.</p>
+
+          <p>The full image extracted via JTAG does not include the overprovisioned area. JTAG will not bypass the controller and can only obtain access to the device memory area allowed by the controller of the device being acquired, unless the examiner is using an advanced form of JTAG called <span class="strong"><strong>Boundary Scan</strong></span>. In other words, without using the Boundary Scan technique, the overprovisioned area is inaccessible with standard JTAG method. Yet, even using the Boundary Scan technique, examiners can only access as much information as can be obtained from the embedded storage. If the device uses eMMC memory, all extraction requests are still routed through the embedded controller integrated into the eMMC chip, which in turn will not allow accessing the content of flash chip(s) directly. As a result, the Boundary Scan technique is only effective if the device is equipped with plain flash chips, which is not the case for up-to-date devices (for example, majority of Android smartphones has been using eMMC chips since Android 2.3). Notably, some entry-level no-name Chinese smartphones are still equipped with plain flash chips instead of eMMC.</p>
+
+          <p>Despite the limitations, JTAG remains a viable acquisition method for compatible devices. Google decided to back away from encrypting new Android 5.0 devices (<a class="ulink" href="http://arstechnica.com/gadgets/2015/03/google-quietly-backs-away-from-encrypting-new-lollipop-devices-by-default/">http://arstechnica.com/gadgets/2015/03/google-quietly-backs-away-from-encrypting-new-lollipop-devices-by-default/</a>), removing the requirement to enforce full-disk encryption in existing devices receiving an upgrade to Android 5.0/5.1, as well as newly released phones running Lollipop out-of-the-box. You can use JTAG forensics on compatible phones only if they are not using whole-disk encryption.</p>
+
+        </div>
+
+        <div class="section" title="Step-by-step JTAG acquisition">
+
+          <div class="titlepage">
+
+            <div>
+
+              <div>
+
+                <h4 class="title" id="toc_17"><a id="ch03lvl4sec7"/>Step-by-step JTAG acquisition</h4>
+
+              </div>
+
+            </div>
+
+          </div>
+
+          <p>This book targets mobile forensic experts in general, so we don't discuss JTAG extraction in detail. Sending the phone to a lab specializing in low-level extractions is probably your best option. In the lab, they'll perform the following steps:</p>
+
+          <div class="orderedlist">
+
+            <ol class="orderedlist arabic">
+
+              <li class="listitem">The expert will attempt to identify TAP by researching available service documentation for the particular device model. If no service documentation is available, the examiner will open the device and inspect its PCB for potential TAPs, and then manually probe to identify TAP connector pins.</li>
+
+              <li class="listitem">The expert will then attach wire leads to the correct connector pins by either soldering the connectors or utilizing a solderless jig.</li>
+
+              <li class="listitem">The wire leads will be connected to an appropriate JTAG emulator supporting the device being analyzed.</li>
+
+              <li class="listitem">By sending appropriate commands to the exhibit device via the TAP, the expert will make the device dump its flash memory contents. The raw dump will be captured by the JTAG emulator and will be saved into a binary file.</li>
+
+              <li class="listitem">The binary file with raw contents of the memory chips will be presented to you for analysis. The dump may or may not be encrypted, and it may or may not be possible to decrypt its content at that time even if the lock screen passcode is known.</li>
+
+              <li class="listitem">At this time, you can use a mobile forensic tool of your choice to load the content of the JTAG dump and parse and analyze its content.</li>
+
+            </ol>
+
+          </div>
+
+        </div>
+
+      </div>
+
+      <div class="section" title="Chip-off acquisition">
+
+        <div class="titlepage">
+
+          <div>
+
+            <div>
+
+              <h3 class="title" id="toc_18"><a id="ch03lvl3sec13"/>Chip-off acquisition</h3>
+
+            </div>
+
+          </div>
+
+        </div>
+
+        <p>Chip-off acquisition is a highly advanced, destructive extraction technique that requires attaching wire leads to the PCB contacts or physically removing (desoldering) the phone's flash memory chip. Chip-off is considered more difficult compared to JTAG; however, the amount of information acquired via chip-off acquisition is similar to the amount of data acquired by JTAGging the device. Since most smartphones use standard eMMC flash modules, the process is standardized and typically presents no surprises to the examiner.</p>
+
+        <p>In the world of mobile forensics, the lowest-level access is not always the best. While reading the chips directly produces a complete raw dump of the memory chips, the investigator may be faced with an encrypted partition with no decryption keys stored anywhere around. In the case of Apple devices, many Samsung phones, and some other devices (for example, the Android 5 Nexus line), encryption is enforced out-of-the-box and may not be bypassed during or after the chip-off acquisition even if the correct passcode is known. Сhip-off acquisition delivers the best result when used on unencrypted devices.</p>
+
+        <div class="section" title="Chip-off and encryption">
+
+          <div class="titlepage">
+
+            <div>
+
+              <div>
+
+                <h4 class="title" id="toc_19"><a id="ch03lvl4sec8"/>Chip-off and encryption</h4>
+
+              </div>
+
+            </div>
+
+          </div>
+
+          <p>Chip-off often involves removing the memory chip from the circuit board and using special eMMC adapters to make a raw dump of the memory chip. If full-disk encryption was enabled on the device, on many Android versions prior to Android 5.0 Lollipop (with the default encryption scheme), it is then possible to attempt carving the raw data dump in order to locate and extract the encryption metadata. If the encryption metadata is successfully extracted, the analyst can then attempt to brute-force the passcode and decrypt the image.</p>
+
+          <p>Chip-off extraction is the lowest-level acquisition method available. Chip-off is often used as a last resort if both physical acquisition and JTAG extraction fail. If full-disk encryption has been used, chip-off acquisition will result in an encrypted image that may or may not be possible to decrypt.</p>
+
+          <p>Note that this technique does not work on many Samsung phones with fairly recent firmware, as well as on most devices running Android 5.0 and later versions of Android. Recent Samsung devices (as well as all Android 5.x smartphones) encrypt metadata with a master key, while the master key itself is stored in a protected area that cannot be accessed via chip-off.</p>
+
+        </div>
+
+      </div>
+
+      <div class="section" title="In-system programming forensics">
+
+        <div class="titlepage">
+
+          <div>
+
+            <div>
+
+              <h3 class="title" id="toc_20"><a id="ch03lvl3sec14"/>In-system programming forensics</h3>
+
+            </div>
+
+          </div>
+
+        </div>
+
+        <p>In-system programming forensics is a non-destructive variation of the chip-off acquisition. ISP is an advanced acquisition process that is in between JTAG and chip-off. During the acquisition process, examiners can attempt to dump the content of the eMMC memory without removing the chip. ISP acquisition is only available for devices utilizing eMMC or eMCP-style BGA chips. Access to the memory is obtained through access points around the BGA chip. This acquisition process is considered non-destructive in that, if all stars align, the device can be reassembled and booted after the extraction. This is how ISP acquisition may look in a lab:</p>
+
+        <p> </p>
+
+        <div class="mediaobject">
+
+          <img src="0018.jpeg" alt="In-system programming forensics"/>
+
+          <div class="caption">
+
+            <p>eMMC adapter attached to a smartphone PCB. Source: http://easy-jtag.com/.</p>
+
+          </div>
+
+        </div>
+
+        <p> </p>
+
+        <p>The following is a schematic image of JTAG eMMC pinout (courtesy of Easy Jtag):</p>
+
+        <p> </p>
+
+        <div class="mediaobject">
+
+          <img src="0019.jpeg" alt="In-system programming forensics"/>
+
+          <div class="caption">
+
+            <p>Easy JTAG eMMC box. Source: http://easy-jtag.com/.</p>
+
+          </div>
+
+        </div>
+
+        <p> </p>
+
+        <p>Teel Technologies (<a class="ulink" href="http://www.teeltech.com/mobile-device-forensics-training/in-system-programming-for-mobile-device-forensics/">http://www.teeltech.com/mobile-device-forensics-training/in-system-programming-for-mobile-device-forensics/</a>) lists the following benefits for ISP acquisition:</p>
+
+        <div class="itemizedlist">
+
+          <ul class="itemizedlist">
+
+            <li class="listitem" style="list-style-type: disc">Enables examiners to bypass lock codes and recover the complete dataset from phones that are not supported by JTAG or commercial tools</li>
+
+            <li class="listitem" style="list-style-type: disc">Non-destructive practice that achieves the same results as a chip-off, while leaving the original evidence intact</li>
+
+            <li class="listitem" style="list-style-type: disc">Acquires data much faster than JTAG, enabling examiners to process more phones faster</li>
+
+            <li class="listitem" style="list-style-type: disc">Fewer resources and tools are required to perform an ISP download compared to chip-off</li>
+
+          </ul>
+
+        </div>
+
+      </div>
+
+    </div>
+
+  </div>
+
+
+
+
+  <div class="section" title="Summary">
+
+    <div class="titlepage">
+
+      <div>
+
+        <div>
+
+          <h1 class="title"><a id="ch03lvl1sec20"/>Summary</h1>
+
+        </div>
+
+      </div>
+
+    </div>
+
+    <p>In this chapter, we looked at the Android OS from the forensic standpoint. We reviewed the various acquisition options and discussed how to perform logical acquisition of an Android device. We also took a look at the issue of deleted evidence, and discussed when and how deleted data can be recovered. In the next chapter, we'll continue working with Android devices, learning about some of the most commonly used forensic techniques—physical acquisition.</p>
+
+  </div>
+
+</body></html>

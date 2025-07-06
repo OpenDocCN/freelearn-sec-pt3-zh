@@ -1,0 +1,650 @@
+<html><head></head><body><div id="sbo-rt-content"><div id="_idContainer132">
+			<h1 id="_idParaDest-78"><a id="_idTextAnchor078"/>Chapter 5: Malware Detection and Analysis with Windows Memory Forensics</h1>
+			<p>The forensic analysis of memory dumps is not limited to analyzing the actions of the user, especially when it comes to a victim's computer. In this scenario, often, specialists need to conduct analyses to find traces of malicious activity. These might be rogue processes, network connections, code injections, or anything else related to the actions of malware or attacker tools. Since modern malware tends to leave as few traces as possible on disk and threat actors try to remain stealthy using PowerShell and batch scripts, memory analysis is becoming a critical element of forensic investigation. </p>
+			<p>In this chapter, we will explain how to search for traces of malicious activity within network connections and active processes along with the Windows Registry, event logs, and filesystem artifacts in memory.</p>
+			<p>In this chapter, we will cover the following topics:</p>
+			<ul>
+				<li>Searching for malicious processes</li>
+				<li>Analyzing command-line arguments</li>
+				<li>Examining network connections</li>
+				<li>Detecting injections in process memory</li>
+				<li>Looking for evidence of persistence</li>
+				<li><a id="_idTextAnchor079"/>Creating timelines</li>
+			</ul>
+			<h1 id="_idParaDest-79"><a id="_idTextAnchor080"/>Searching for malicious processes</h1>
+			<p>We have already learned how to analyze the processes that are active at the time of dumping to identify<a id="_idIndexMarker217"/> user activity. Similar techniques can be used when searching for traces left behind by attackers; however, here, our focus will shift to detect specific markers that help identify malicious activity. User programs, such as browsers or MS Office components, will be less a source of information about the user and their recent activities than a potential source of traces of initial access, and processes related to cloud storage will be considered under the lens of a possible data exfiltration technique. The main goal of our investigation is to look for markers<a id="_idIndexMarker218"/> of potentially malicious activity and different kinds of anomalies – processes with strange names or unusual arguments, their atypical behavior, and more. However, first things first, let's start with the simplest one – the names of the processes.</p>
+			<h2 id="_idParaDest-80"><a id="_idTextAnchor081"/>Process names</h2>
+			<p>In the previous chapter, we discussed how to get a list of active processes<a id="_idIndexMarker219"/> and a plugin called <strong class="source-inline">pslist</strong>. So, we will not repeat this; we will just discuss the main points that you need to pay attention to.</p>
+			<p>First of all, you need to learn<a id="_idIndexMarker220"/> about system processes. Windows has a lot of such processes that are responsible for running individual services and the system itself. Often, such processes become a target for malware, which will try to find a way to masquerade as a system process or, in the worst-case scenario, take advantage of a legitimate process. But we will cover that in more detail later. Let's take a look at the following example:</p>
+			<div>
+				<div id="_idContainer076" class="IMG---Figure">
+					<img src="Images/Figure_5.1_B17056.jpg" alt="Figure 5.1 – The Volatility pslist plugin&#13;&#10;" width="1362" height="466"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 5.1 – The Volatility pslist plugin</p>
+			<p><em class="italic">Figure 5.1</em> shows the list of processes collected by the <strong class="source-inline">pslist</strong> plugin. We have intentionally added a regular expression that selects those process names that contain host with <strong class="source-inline">host</strong>. Notice the <strong class="source-inline">svchost</strong> processes. These are the standard processes for services loaded from dynamic libraries. Now, take a look at the name of the process with <strong class="source-inline">ID 1664</strong>. Can you see the difference? This dump was taken from a host infected with <strong class="source-inline">IcedID</strong>, which is a very common piece of commodity malware, distributed via phishing emails and tied to notorious ransomware operators such as REvil, Conti, and Egregor. During execution, this malware drops an executable file, named <strong class="source-inline">svhost.exe</strong>, into a temporary directory and runs it as a child process.</p>
+			<p>To find such <em class="italic">masqueraded</em> processes quickly, it is necessary to not only know the names of key<a id="_idIndexMarker221"/> system processes and their specifics but also take the context into account, as system processes can differ in various versions of Windows. Such differences are often insignificant, but knowing them will allow you to navigate through the process list and analyze them more efficiently. </p>
+			<p>While some malicious programs hide behind the mask of legitimate processes, others operate quite openly. This is the case with dual-use tools and some programs used by attackers. Let's take a look at the list of processes, as shown in <em class="italic">Figure 5.2</em>:</p>
+			<div>
+				<div id="_idContainer077" class="IMG---Figure">
+					<img src="Images/Figure_5.2_B17056.jpg" alt="Figure 5.2 – The list of running processes&#13;&#10;" width="1530" height="469"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 5.2 – The list of running processes</p>
+			<p>Here, we can see a large number of seemingly legitimate processes: <strong class="source-inline">whoami.exe</strong>, <strong class="source-inline">ipconfig.exe</strong>, <strong class="source-inline">netstat.exe</strong>, and more. These utilities can be used by system administrators or advanced users to check the settings and configure the network. However, these same tools can also be used by attackers to gather information about the system, as was done in our scenario.</p>
+			<p>Processes such as <strong class="source-inline">cmd.exe</strong>, <strong class="source-inline">powershell.exe</strong>, <strong class="source-inline">wscript.exe</strong>, <strong class="source-inline">cscript.exe</strong>, and <strong class="source-inline">rundll32.exe</strong> require special attention, as they are frequently used by attackers and modern malware as part of the techniques for execution, persistence, defense evasion, discovery, collection, and other tactics. It is not only the appearance of these processes in the list but also the related parent processes that are important here. An atypical combination of parent and child processes is one of the markers of potentially malicious behavior. </p>
+			<h2 id="_idParaDest-81"><a id="_idTextAnchor082"/>Detecting abnormal behavior</h2>
+			<p>Abnormal behavior<a id="_idIndexMarker222"/> can result in many things. For some processes, it will be atypical<a id="_idIndexMarker223"/> to make network connections, and for others, it will be atypical to spawn new processes or access certain filesystem objects. </p>
+			<p>Let's consider the following example:</p>
+			<div>
+				<div id="_idContainer078" class="IMG---Figure">
+					<img src="Images/Figure_5.3_B17056.jpg" alt="Figure 5.3 – The process tree&#13;&#10;" width="1201" height="479"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 5.3 – The process tree</p>
+			<p>Here, the <strong class="source-inline">WINWORD.EXE</strong> process spawns a child process, <strong class="source-inline">rundll32.exe</strong>, which is completely atypical. This behavior could be the result of macros embedded inside a document that has been opened by a user. Often, MS Office documents become attachments in phishing emails, which, for years, has been one of the most used techniques for initial access. Trickbot, Qakbot, Dridex, and IcedID are all spread in this way. For example, during Trickbot, IcedID, and Qakbot phishing campaigns, users receive a phishing email with a document that includes the following content as an attachment:</p>
+			<div>
+				<div id="_idContainer079" class="IMG---Figure">
+					<img src="Images/Figure_5.4_B17056.jpg" alt="Figure 5.4 – A decoy document&#13;&#10;" width="851" height="233"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 5.4 – A decoy document</p>
+			<p>You might ask the following: <em class="italic">why do different threat actors use the same decoy?</em> Well, the thing is that they used the services<a id="_idIndexMarker224"/> of another threat actor called Shathak (also known as TA551), which focuses on malware<a id="_idIndexMarker225"/> distribution.</p>
+			<p>In our case, to test the hypothesis<a id="_idIndexMarker226"/> of a malicious document, we need to find<a id="_idIndexMarker227"/> out which file was opened in MS Word and try to export it for further analysis. To do this, we can use the <strong class="source-inline">handles</strong>, <strong class="source-inline">filescan</strong>, and <strong class="source-inline">dumpfiles</strong> plugins. Let's recall the sequence of actions, as follows:</p>
+			<ol>
+				<li>Use the <strong class="source-inline">handles</strong> plugin with the <strong class="source-inline">-t</strong> <strong class="source-inline">file</strong> and <strong class="source-inline">--silent</strong> options to get information about the files used by our process and look for a document opened by a user.</li>
+				<li>Use the <strong class="source-inline">filescan</strong> plugin to search for information about the physical offset where the required document is located.</li>
+				<li>Use the <strong class="source-inline">dumpfiles</strong> plugin with the <strong class="source-inline">-Q</strong> option and the physical offset obtained in the previous step, along with the <strong class="source-inline">-D</strong> option and the path where we want to save the file.</li>
+			</ol>
+			<p>In the previous chapter, we already dumped the <strong class="source-inline">GOT-7_HR (00000007).docm</strong> file from the memory of <strong class="source-inline">WINWORD.EXE</strong>. Let's discover<a id="_idIndexMarker228"/> how to analyze this document for malicious content. To do this, you can use the <strong class="bold">olevba</strong> tool that is included in <strong class="bold">oletools</strong> (<strong class="source-inline">https://github.com/decalage2/oletools</strong>). Oletools is a package<a id="_idIndexMarker229"/> of Python tools used to analyze Microsoft OLE2 files such as MS Office documents or Outlook messages. The only thing that you need to install these tools is to have Python 3 installed and to run the following command in the PowerShell:</p>
+			<p class="source-code">pip3.exe install -U oletools</p>
+			<p>The necessary dependencies will be installed automatically. As a result, you<a id="_idIndexMarker230"/> will be able to use any of the <strong class="source-inline">oletools</strong> package tools via PowerShell to analyze<a id="_idIndexMarker231"/> suspicious documents. Let's check the exported document:</p>
+			<div>
+				<div id="_idContainer080" class="IMG---Figure">
+					<img src="Images/Figure_5.5_B17056.jpg" alt="Figure 5.5 – The olevba output&#13;&#10;" width="961" height="520"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 5.5 – The olevba output</p>
+			<p>In the output of this tool, you can also find more detailed information about the macros, arguments, imported libraries, and more:</p>
+			<div>
+				<div id="_idContainer081" class="IMG---Figure">
+					<img src="Images/Figure_5.6_B17056.jpg" alt="Figure 5.6 – A detailed macro description&#13;&#10;" width="961" height="520"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 5.6 – A detailed macro description</p>
+			<p>As you can see in the preceding screenshot, our document has built-in macros with obfuscated strings<a id="_idIndexMarker232"/> and the functionality required to inject<a id="_idIndexMarker233"/> code into processes.</p>
+			<p>So, what do we have here? Well, the user opened the document in MS Word's unprotected mode, then the embedded script was executed to create the <strong class="source-inline">rundll32.exe</strong> process, which spawned several child processes of the same name. </p>
+			<p>Let's take a look at another example, as shown in <em class="italic">Figure 5.7</em>:</p>
+			<div>
+				<div id="_idContainer082" class="IMG---Figure">
+					<img src="Images/Figure_5.7_B17056.jpg" alt="Figure 5.7 – The process tree&#13;&#10;" width="1218" height="482"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 5.7 – The process tree</p>
+			<p>Do you recall the <strong class="source-inline">svhost.exe</strong> process masquerading as the legitimate <strong class="source-inline">svchost.exe</strong>? Let's consider its parent process – <strong class="source-inline">nwe.exe</strong> with <strong class="source-inline">PID 1744</strong>. Even if we hadn't noticed the absence of <em class="italic">c</em> in svhost's name during the initial analysis, the parent process would have revealed<a id="_idIndexMarker234"/> its secret to us. Because the <strong class="source-inline">svchost</strong> processes<a id="_idIndexMarker235"/> are system processes, they have their own predefined parent process called <strong class="source-inline">services.exe</strong>. </p>
+			<p class="callout-heading">Note</p>
+			<p class="callout">In addition to certain parents, all system processes have a fixed number of instances, predefined user, start time, and location of the executable file on disk. Any deviations from the defined parameters will be suspicious and will require additional checking.</p>
+			<p>Going back to our <strong class="source-inline">nwe.exe</strong> process, note that aside from the evil <strong class="source-inline">svhost.exe</strong>, it also creates several <strong class="source-inline">cmd.exe</strong> processes. Embedded tools such as <strong class="source-inline">cmd.exe</strong>, <strong class="source-inline">powershell.exe</strong>, and more are commonly used by attackers to conduct fileless attacks. In doing so, threat actors use approved applications to execute malicious commands and scripts. Unlike traditional methods, this approach does not require any code to be installed on the target's system and makes detection more challenging.</p>
+			<p>Let's consider the fileless ransomware example. In the first stage, a phishing email is sent to the user with a document containing a malicious macro, as previously discussed. Running the macro launches a command line that executes a PowerShell script. The script downloads encryption keys and extra modules – the execution of which results in data encryption and a ransom note demonstration.</p>
+			<p>Such attack scenarios are already becoming a classic. That is why we need to find out what arguments were used to start these processes and what was executed. </p>
+			<h1 id="_idParaDest-82"><a id="_idTextAnchor083"/>Analyzing command-line arguments</h1>
+			<p>Analyzing command-line arguments<a id="_idIndexMarker236"/> is very important because it allows you to check the location from which the executable was run and the arguments passed to it. These arguments can include IP addresses or hostnames of other compromised<a id="_idIndexMarker237"/> hosts, stolen credentials, malicious filenames, and entire scripts, as shown in the following screenshot: </p>
+			<div>
+				<div id="_idContainer083" class="IMG---Figure">
+					<img src="Images/Figure_5.8_B17056.jpg" alt="Figure 5.8 – The command-line arguments used by the Emotet operators&#13;&#10;" width="1019" height="561"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 5.8 – The command-line arguments used by the Emotet operators</p>
+			<p>Let's explore a few ways to get the data of interest.</p>
+			<h2 id="_idParaDest-83"><a id="_idTextAnchor084"/>Command line arguments of the processes</h2>
+			<p>First of all, we can use the <strong class="source-inline">pstree</strong> plugin that we are already<a id="_idIndexMarker238"/> familiar with and add the <strong class="source-inline">-v</strong> option to it. This will allow us to output the process tree together with detailed information about the command line used to start a particular program. This is how the output, as shown in <em class="italic">Figure 5.7</em>, will change with the addition of the <strong class="source-inline">-v</strong> option:</p>
+			<div>
+				<div id="_idContainer084" class="IMG---Figure">
+					<img src="Images/Figure_5.9_B17056.jpg" alt="Figure 5.9 – The verbose pstree output&#13;&#10;" width="1218" height="482"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 5.9 – The verbose pstree output</p>
+			<p>As you can see, we have new lines: <strong class="source-inline">audit</strong>, <strong class="source-inline">cmd</strong>, and <strong class="source-inline">path</strong>. Here, we can find information about the location<a id="_idIndexMarker239"/> of the executable and the arguments used to start it. You can get the same information with a separate plugin – <strong class="source-inline">cmdline</strong>. Its output will look like this:</p>
+			<div>
+				<div id="_idContainer085" class="IMG---Figure">
+					<img src="Images/Figure_5.10_B17056.jpg" alt="Figure 5.10 – The cmdline output&#13;&#10;" width="995" height="400"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 5.10 – The cmdline output</p>
+			<p>For clarity, <strong class="source-inline">cmdline</strong> was run with the <strong class="source-inline">-p</strong> option and the process IDs, as shown in the preceding example. From the output of both commands, we can see that our <strong class="source-inline">svhost.exe</strong> file was executable from the <strong class="source-inline">C:\Users\lesly\AppData\Local\Temp</strong> directory, which is also not standard for legitimate <strong class="source-inline">svchost</strong> processes. This is another marker, claiming<a id="_idIndexMarker240"/> that the process is malicious. </p>
+			<p>Let's take a look at another example that demonstrates the role of arguments:</p>
+			<div>
+				<div id="_idContainer086" class="IMG---Figure">
+					<img src="Images/Figure_5.11_B17056.jpg" alt="Figure 5.11 – The cmdline output for processes chosen by a regular expression&#13;&#10;" width="1222" height="404"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 5.11 – The cmdline output for processes chosen by a regular expression</p>
+			<p>In this scenario, we can observe the arguments used to run PsExec, which is a tool that is often used in attacks to remotely execute<a id="_idIndexMarker241"/> commands and run scripts on hosts. So, what does this tell the investigator? First, it tells us that the attackers are using <strong class="source-inline">PsExec</strong> for execution and lateral movement. Second, it reveals the name of the host they are interacting with. Third, it identifies the user credentials that have been compromised.</p>
+			<p>Aside from the information about the arguments used to start a program, it would be nice to know the commands executed by attackers<a id="_idIndexMarker242"/> via the command line. Let's discuss this next.</p>
+			<h2 id="_idParaDest-84"><a id="_idTextAnchor085"/>Command history </h2>
+			<p>Naturally, information about the commands executed through the command line is also stored in memory. To get this data, you can use the Volatility <strong class="source-inline">cmdscan</strong> plugin, which allows you to find command history<a id="_idIndexMarker243"/> objects in memory. The output of this plugin is shown in <em class="italic">Figure 5.12</em>:</p>
+			<div>
+				<div id="_idContainer087" class="IMG---Figure">
+					<img src="Images/Figure_5.12_B17056.jpg" alt="Figure 5.12 – The cmdscan output&#13;&#10;" width="1113" height="397"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 5.12 – The cmdscan output</p>
+			<p>Note that the capabilities of this plugin are quite limited. For example, it only searches for instances of the default history size. If you wish to, you can use the <strong class="source-inline">-M</strong> option and set any other value; however, if the history size has been changed, finding that value will be problematic.</p>
+			<p>An alternative<a id="_idIndexMarker244"/> to this plugin is to use <strong class="source-inline">yarascan</strong>, which we discussed in the <strong class="bold">User Activity Reconstruction</strong>. The advantage here is that you will not be limited to <strong class="source-inline">cmd</strong> commands, as you can write rules to look for PowerShell and other tools of interest:</p>
+			<div>
+				<div id="_idContainer088" class="IMG---Figure">
+					<img src="Images/Figure_5.13_B17056.jpg" alt="Figure 5.13 – The use of YARA rules for malicious PowerShell detection&#13;&#10;" width="1128" height="686"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 5.13 – The use of YARA rules for malicious PowerShell detection</p>
+			<p><em class="italic">Figure 5.13</em> shows an example of a simple <strong class="source-inline">YARA rule</strong> for searching PowerShell with the typical <strong class="source-inline">-nop</strong>, <strong class="source-inline">-w hidden</strong>, and <strong class="source-inline">-enc</strong> options for malicious scripts. Using the <strong class="source-inline">yarascan</strong> plugin with this rule, you can find not only the malicious scripts themselves but also information<a id="_idIndexMarker245"/> about the processes in the context of which they were found.</p>
+			<p>Being able to understand what was executed on the command line is good, and knowing the result of the execution is even better. The <strong class="source-inline">consoles</strong> plugin allows you to get data regarding the commands executed by different command-line interpreters: <strong class="source-inline">cmd</strong>, <strong class="source-inline">PowerShell</strong>, the Python shell, and the Perl shell. The main advantage of <strong class="source-inline">consoles</strong> is that this plugin also allows you to output information from the input and output buffers, so you can look at the results of the command execution. Running <strong class="source-inline">consoles</strong> is similar to running <strong class="source-inline">cmdline</strong>. Let's take a look at an example of the output obtained using this plugin:</p>
+			<div>
+				<div id="_idContainer089" class="IMG---Figure">
+					<img src="Images/Figure_5.14_B17056.jpg" alt="Figure 5.14 – The Volatility consoles plugin&#13;&#10;" width="1245" height="710"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 5.14 – The Volatility consoles plugin</p>
+			<p>In <em class="italic">Figure 5.14</em>, first, we view information about the <strong class="source-inline">conhost.exe</strong> process and the attached processes, which is accompanied by details<a id="_idIndexMarker246"/> about the settings that are being used. The most interesting part is <strong class="source-inline">dump</strong>. Here, we can observe what was actually executed. Note that, at the top, we can see information about the <strong class="source-inline">cmd.exe</strong> process and the <strong class="source-inline">updater.bat</strong> file, and in the dump, we have PowerShell. So, what happened here? Let's make it a little clearer and add to this the output of the <strong class="source-inline">cmdline</strong> plugin for the <strong class="source-inline">3008</strong> and <strong class="source-inline">3672</strong> processes:</p>
+			<div>
+				<div id="_idContainer090" class="IMG---Figure">
+					<img src="Images/Figure_5.15_B17056.jpg" alt="Figure 5.15 – The cmdline output for the chosen processes&#13;&#10;" width="1130" height="325"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 5.15 – The cmdline output for the chosen processes</p>
+			<p>In <em class="italic">Figure 5.15</em>, we can observe that the process with an ID of <strong class="source-inline">3008</strong> was started with <strong class="source-inline">cmd.exe /c</strong>. In our case, this means that the <strong class="source-inline">Updater.bat</strong> file, whose path is specified after the <strong class="source-inline">/c</strong> option, must be run through <strong class="source-inline">cmd</strong>. In the dump from the <strong class="source-inline">consoles</strong> plugin, we saw that PowerShell<a id="_idIndexMarker247"/> was running, so we can conclude that PowerShell, with all of its options, in the content of the same <strong class="source-inline">Updater.bat</strong> file, which is executed through <strong class="source-inline">cmd</strong>. </p>
+			<p>Pay attention to the <strong class="source-inline">-enc</strong> option that PowerShell runs with. This option tells us that it is followed by a Base64-encoded command. This is not uncommon in forensic investigations. You can use the online CyberChef tool (<strong class="source-inline">https://gchq.github.io/CyberChef/</strong>) to decode such code. All you need to do is copy the encoded part from PowerShell and paste it into the <strong class="bold">Input</strong> window. Next, select the recipes that you need to apply, and voila, everything is ready:</p>
+			<div>
+				<div id="_idContainer091" class="IMG---Figure">
+					<img src="Images/Figure_5.16_B17056.jpg" alt="Figure 5.16 – The Base64 code decoded with CyberChef&#13;&#10;" width="1590" height="933"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 5.16 – The Base64 code decoded with CyberChef</p>
+			<p>Note that one of the functions of this script is to create a <strong class="source-inline">WebClient</strong> object. Such objects are often used to perform network<a id="_idIndexMarker248"/> communications. </p>
+			<p>The network can be used<a id="_idIndexMarker249"/> by malware to communicate with <strong class="bold">Command and Control</strong> (<strong class="bold">C2</strong>) servers and download malicious payloads. In addition to this, if the attackers interactively connect to a remote host, network connections are also established. Therefore, analyzing network connections and looking for anomalies within them is another essential part of searching for traces of malicious activity.</p>
+			<h1 id="_idParaDest-85"><a id="_idTextAnchor086"/>Examining network connections</h1>
+			<p>The Volatility <strong class="source-inline">netscan</strong> plugin is used to analyze<a id="_idIndexMarker250"/> network connections. This allows you to collect information about all active and recent connections, as well as open sockets. Let's consider an example:</p>
+			<div>
+				<div id="_idContainer092" class="IMG---Figure">
+					<img src="Images/Figure_5.17_B17056.jpg" alt="Figure 5.17 – The Volatility netscan output&#13;&#10;" width="1649" height="657"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 5.17 – The Volatility netscan output</p>
+			<p>In <em class="italic">Figure 5.17</em>, we can view the standard <strong class="source-inline">netscan</strong> output. This gives us information about the OSI transport layer protocol and its version, the IP addresses and ports involved, the PID, and the name of the process that initiated the network activity and when it was created. For the TCP protocols, which, in contrast to UDP, create a connection to transfer data, the status is also specified. For example, if a process is listening on a port and waiting for an incoming connection, the state will be <strong class="source-inline">LISTENING</strong>. Additionally, if the connection to the remote host is established, it will be <strong class="source-inline">ESTABLISHED</strong>, and if the connection is already terminated, it will be <strong class="source-inline">CLOSED</strong>. So, what do we do with this information? What do we look for?</p>
+			<h2 id="_idParaDest-86"><a id="_idTextAnchor087"/>Process – initiator</h2>
+			<p>Let's start with a simple one. As in the case of processes, where we analyze the parent-child relationship<a id="_idIndexMarker251"/> to find atypical combinations, we can start with the data about the process that initiated the connection. Evidently, for some processes, it is normal to create network connections. We can refer to such processes as browsers, mail agents, or messengers. Additionally, some programs might establish network connections to check for updates and downloads, which is also normal behavior. Now, let's imagine a situation where a network connection is established by the explorer process. This process is needed to give the user access to files and directories through a graphical user interface or to display the start menu. It is not 100% typical for it to create network connections. Although, of course, there are situations where <strong class="source-inline">explorer.exe</strong> will create network connections; for example, when transmitting Windows telemetry data, as related to changes in the start menu settings. However, bear in mind that these connections will be established using specific IP addresses, so foreign addresses will be a marker of malicious activity. However, we will discuss this in more detail later. </p>
+			<p>Aside from atypical initiators, there are some processes that we have to keep an eye on. These include <strong class="source-inline">cmd.exe</strong> and <strong class="source-inline">powershell.exe</strong>. If you have detected connections established by these processes, be sure to check the IP addresses specified in the <strong class="source-inline">Foreign Address</strong> field:</p>
+			<div>
+				<div id="_idContainer093" class="IMG---Figure">
+					<img src="Images/Figure_5.18_B17056.jpg" alt="Figure 5.18 – The cmd.exe process connecting to a remote IP address &#13;&#10;" width="1650" height="657"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 5.18 – The cmd.exe process connecting to a remote IP address </p>
+			<p>Take a look at the preceding example. Here, the <strong class="source-inline">cmd.exe</strong> process with PID <strong class="source-inline">2860</strong> creates a network<a id="_idIndexMarker252"/> connection with an IP address of <strong class="source-inline">216.58.207.206</strong>. Let's check this address. To do this, you can use various online resources, for example, VirusTotal (<a href="https://www.virustotal.com/gui/home/search">https://www.virustotal.com/gui/home/search</a>). This resource allows you to search for<a id="_idIndexMarker253"/> information on IP addresses, URLs, file hashes, or the files themselves:</p>
+			<div>
+				<div id="_idContainer094" class="IMG---Figure">
+					<img src="Images/Figure_5.19_B17056.jpg" alt=" Figure 5.19 – A suspicious IP address in VirusTotal &#13;&#10;" width="1412" height="760"/>
+				</div>
+			</div>
+			<p class="figure-caption"> Figure 5.19 – A suspicious IP address in VirusTotal </p>
+			<p>In <em class="italic">Figure 5.19</em>, you can view the search results for our IP address. At first glance, everything looks good – there are zero detections. However, pay attention to the <strong class="source-inline">10+ detected files communicating with this IP address</strong> message. In order to view more information regarding the files communicating with this IP address, you can switch to the <strong class="bold">RELATIONS</strong> tab and find the <strong class="bold">Communicating Files</strong> field, as shown in the following screenshot. If you have an account on VirusTotal, you can also click on the graph icon on the right-hand side and view all of the communications in a graphical view:</p>
+			<div>
+				<div id="_idContainer095" class="IMG---Figure">
+					<img src="Images/Figure_5.20_B17056.jpg" alt="Figure 5.20 – The VirusTotal communicating files&#13;&#10;" width="1367" height="626"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 5.20 – The VirusTotal communicating files</p>
+			<p>In <em class="italic">Figure 5.20</em>, we can see that although the IP address was not recognized as malicious, it is associated<a id="_idIndexMarker254"/> with a lot of malicious files, which means that it is not so good. </p>
+			<p>As you can see, IP addresses themselves play a big role in forensic investigations. </p>
+			<h2 id="_idParaDest-87"><a id="_idTextAnchor088"/>IP addresses and ports</h2>
+			<p>Not only can the IP addresses and ports being used tell you whether a particular network connection<a id="_idIndexMarker255"/> is malicious, but sometimes, they can also tell you what<a id="_idIndexMarker256"/> tools the attackers were using. Let's take a look at the following screenshot:</p>
+			<div>
+				<div id="_idContainer096" class="IMG---Figure">
+					<img src="Images/Figure_5.21_B17056.jpg" alt="Figure 5.21 – Volatility netscan&#13;&#10;" width="1637" height="449"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 5.21 – Volatility netscan</p>
+			<p>There is not much information displayed; however, even here, you can see that RDP can be used to connect to this host. How about the following connection? Do you see anything suspicious? Take a look:</p>
+			<div>
+				<div id="_idContainer097" class="IMG---Figure">
+					<img src="Images/Figure_5.22_B17056.jpg" alt="Figure 5.22 – Another suspicious connection&#13;&#10;" width="1352" height="429"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 5.22 – Another suspicious connection</p>
+			<p>Bingo! You can see the <strong class="source-inline">UWkpjFjDzM.exe</strong> process, and behind this strange name is a <strong class="source-inline">meterpreter</strong>.</p>
+			<p class="callout-heading">Important Note</p>
+			<p class="callout"><strong class="source-inline">Meterpreter</strong> is a Metasploit payload that provides an interactive shell with which an attacker can perform various actions on the target machine.</p>
+			<p>So, how did we know that<a id="_idIndexMarker257"/> from just one line of network connection information? In fact, the port played an important role here. We have already mentioned the transport layer protocols used to establish the connection. When two hosts establish connections using these protocols, they are identified according to the port numbers. Often, the ports used<a id="_idIndexMarker258"/> for specific purposes are allocated and registered by the <strong class="bold">Internet Assigned Numbers Authority</strong> (<strong class="bold">IANA</strong>), although, in practice, there are often<a id="_idIndexMarker259"/> cases of unofficial use. However, there is a list of standard ports used by default for a specific purpose. Sometimes, the use of these <em class="italic">default</em> ports can give away a particular service or tool used by attackers. The following is a list of the most commonly used TCP ports and their purpose:</p>
+			<div>
+				<div id="_idContainer098" class="IMG---Figure">
+					<img src="Images/Figure_5.23_B17056.jpg" alt="Figure 5.23 – Common ports and their usage&#13;&#10;" width="1098" height="589"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 5.23 – Common ports and their usage</p>
+			<p>As you can see, some of the ports listed in the preceding table can be used by attackers. For example, <strong class="source-inline">80</strong>, <strong class="source-inline">443</strong>, <strong class="source-inline">445</strong>, or <strong class="source-inline">3389</strong>. </p>
+			<p>Aside from the common<a id="_idIndexMarker260"/> ports used by standard services, there are also default protocols used in tools such as port scanners or post-exploitation frameworks. The following table gives examples of such tools and their default ports:</p>
+			<div>
+				<div id="_idContainer099" class="IMG---Figure">
+					<img src="Images/Figure_5.24_B17056.jpg" alt="Figure 5.24 – Default ports used by specific tools&#13;&#10;" width="1086" height="608"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 5.24 – Default ports used by specific tools</p>
+			<p>So, that solves one of the mysteries of the Meterpreter payload. But it's a tricky one, isn't it? Usually, Meterpreter is deployed by injection into the process' memory. It is completely in memory, so nothing is written to disk. Additionally, no new processes are created. This is because Meterpreter is injected<a id="_idIndexMarker261"/> into a compromised process from which it<a id="_idIndexMarker262"/> can migrate to other running processes. As a result, the forensic footprint of the attack is very limited. You understand what this means, right? It's time to talk about injections and how to detect them.</p>
+			<h1 id="_idParaDest-88"><a id="_idTextAnchor089"/>Detecting injections in process memory</h1>
+			<p>There are different types of injections within process memory. Some are similar to each other, while others differ<a id="_idIndexMarker263"/> considerably. Depending on the technique used, the methods<a id="_idIndexMarker264"/> for detecting injections might vary. We will attempt to discuss the most relevant types of injections and the methods for their detection.</p>
+			<h2 id="_idParaDest-89"><a id="_idTextAnchor090"/>Dynamic-link library injections</h2>
+			<p>Adversaries can use<a id="_idIndexMarker265"/> this technique for defense evasion or privilege escalation tactics. In general, the injection of <strong class="bold">Dynamic link Libraries</strong> (<strong class="bold">DLLs</strong>) is one of the methods used to execute<a id="_idIndexMarker266"/> arbitrary code in the address space of a legitimate process. There are two main types of DLL injections: <em class="italic">remote</em> and <em class="italic">reflective</em>.</p>
+			<h3>Remote DLL injections</h3>
+			<p>The malicious process gets <strong class="source-inline">SeDebugPrivilege</strong>, which allows it to act as a debugger and gain read and write access<a id="_idIndexMarker267"/> to the address space of other processes. Using these privileges, the malicious process opens a handle for the<a id="_idIndexMarker268"/> target process, accesses its address space, and writes the full path to the malicious library inside it. The library itself should already exist on disk. Then, the malicious process uses Windows API functions to create a new thread in the context of the target process. The new thread is needed to load the malicious library into the target process' address space. When this happens, the malicious process clears the memory location where the path to the library is written to disk and closes the descriptor for the target process. If we put all of this into a single algorithm, we get the following:</p>
+			<ol>
+				<li value="1">Get privileges and open a handle to the target process.</li>
+				<li>Write the full path to the malicious DLL to the target process' address space.</li>
+				<li>Create a new thread to load the DLL from the disk using Windows API functions.</li>
+				<li>Delete the path to the malicious DLL from the target process' memory.</li>
+				<li>Close the handle to the target process.</li>
+			</ol>
+			<p>Since remote DLL injection has a library written to disk, we can use Volatility plugins such as <strong class="source-inline">dlllist</strong> and <strong class="source-inline">ldrmodules</strong> to detect this.</p>
+			<p>Interestingly, <strong class="source-inline">dlllist</strong> is a plugin that allows you to get a list of the libraries loaded into the process:</p>
+			<div>
+				<div id="_idContainer100" class="IMG---Figure">
+					<img src="Images/Figure_5.25_B17056.jpg" alt="Figure 5.25 – The Volatility dlllist plugin&#13;&#10;" width="1133" height="375"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 5.25 – The Volatility dlllist plugin</p>
+			<p>Note that the information about the libraries<a id="_idIndexMarker269"/> used by the process is stored in three different lists: </p>
+			<ul>
+				<li><strong class="source-inline">LoadOrderList</strong> organizes the order in which modules are loaded into a process.</li>
+				<li><strong class="source-inline">MemoryOrderList</strong> organizes the order in which modules appear in the process' virtual memory.</li>
+				<li><strong class="source-inline">InitOrderList</strong> organizes the order in which the <strong class="source-inline">DllMain</strong> function is executed.</li>
+			</ul>
+			<p>The <strong class="source-inline">dlllist</strong> plugin only<a id="_idIndexMarker270"/> works with <strong class="source-inline">LoadOrderList</strong>. The problem is that sometimes, malicious libraries can be unlinked from this list to hide their presence. This will also affect the output of the <strong class="source-inline">dlllist</strong> plugin since information about the unlinked libraries will not be displayed. In this scenario, the <strong class="source-inline">ldrmodules</strong> plugin comes to the rescue, as it not only outputs information from all three lists but also provides data regarding the presence of this or that library in each of the lists:</p>
+			<div>
+				<div id="_idContainer101" class="IMG---Figure">
+					<img src="Images/Figure_5.26_B17056.jpg" alt="Figure 5.26 – The Volatility ldrmodules plugin&#13;&#10;" width="1409" height="509"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 5.26 – The Volatility ldrmodules plugin</p>
+			<p>In this way, you can detect the libraries that have been unlinked. These libraries will show <strong class="source-inline">False</strong> in the <strong class="source-inline">InLoad</strong> column and <strong class="source-inline">True</strong> in the other columns. </p>
+			<p class="callout-heading">Important Note </p>
+			<p class="callout">The executable itself is also present in the output of both plugins. In the output of <strong class="source-inline">ldrmodules</strong>, in the <strong class="source-inline">InInit</strong> column, it will always show <strong class="source-inline">False</strong>. This is because it initializes differently, not like other modules.</p>
+			<p>So, how can we tell whether the libraries extracted by these plugins include malicious ones? You can start<a id="_idIndexMarker271"/> by analyzing the library<a id="_idIndexMarker272"/> names and locations. Pay attention to atypical names and directories where the libraries are located on disk. Keep a special eye on the user directories and the temporary ones. If you have difficulties with the visual identification of anomalies, you can always use the <strong class="source-inline">dlldump</strong> and <strong class="source-inline">dumpfiles</strong> plugins and try to extract the DLLs to disk for an additional checkup. Running the <strong class="source-inline">dlldump</strong> plugin is similar to the <strong class="source-inline">dumpfiles</strong> plugin. You only need to use the <strong class="source-inline">-p</strong> option to specify the ID of the process you are interested in and the <strong class="source-inline">-D</strong> option for the path to the directory where you want to save the result. Files with the standard <strong class="source-inline">.dll</strong> extension will appear in the directory you have specified. At this point, you can count the hashes of the libraries and check them on <strong class="source-inline">VirusTotal</strong>.</p>
+			<p>Let's say we have run the following command for a process with ID <strong class="source-inline">1072</strong>, which we think is suspicious:</p>
+			<p class="source-code">PS D:\&gt; .\volatility_2.6_win64_standalone.exe -f .\dll.bin </p>
+			<p class="source-code">--profile=Win7SP1x64 dlldump -p 1072 -D .\output\</p>
+			<p>As a result, our libraries are saved inside the output directory. To quickly calculate the hash of the DLLs, you can use the following PowerShell command:</p>
+			<div>
+				<div id="_idContainer102" class="IMG---Figure">
+					<img src="Images/Figure_5.27_B17056.jpg" alt="Figure 5.27 – Calculating the hash of DLLs with PowerShell &#13;&#10;" width="1454" height="462"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 5.27 – Calculating the hash of DLLs with PowerShell </p>
+			<p>This command calls the <strong class="source-inline">Get-FileHash</strong> function for every file in the directory. </p>
+			<p>Let's check our hashes with VirusTotal:</p>
+			<div>
+				<div id="_idContainer103" class="IMG---Figure">
+					<img src="Images/Figure_5.28_B17056.jpg" alt="Figure 5.28 – The malicious DLL detected with VirusTotal&#13;&#10;" width="1472" height="835"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 5.28 – The malicious DLL detected with VirusTotal</p>
+			<p>Here is our malicious DLL. Now, we can analyze how it made its way onto the system and explore its functionality in more detail.</p>
+			<p>Another important point to bear in mind<a id="_idIndexMarker273"/> is that malicious DLLs can be packed using packers. If during<a id="_idIndexMarker274"/> the unpacking phase the DLL code is written to a new memory region, we can use <strong class="source-inline">malfind</strong> plugin to detect it, which will be discussed later.</p>
+			<h3>Reflective DLL injections</h3>
+			<p>Another way to inject libraries<a id="_idIndexMarker275"/> is via reflective DLL injection. This method is more popular because it does not<a id="_idIndexMarker276"/> require the library to be present on disk and, therefore, leaves fewer traces. Such a library can be downloaded over the network and immediately injected into process memory. Another feature of this method is the use of a reflective loader, which is embedded in the library itself, instead of the standard Windows loader. This loader will take care of the execution environment and run the <strong class="source-inline">DllMain</strong> function.</p>
+			<p>The step-by-step algorithm<a id="_idIndexMarker277"/> for reflective DLL injection is as follows:</p>
+			<ol>
+				<li value="1">Get privileges and open a handle to the target process.</li>
+				<li>Allocate memory in the target process and write the malicious DLL there.</li>
+				<li>Create a new thread to invoke the reflective loader.</li>
+				<li>Close the handle to the target process.</li>
+			</ol>
+			<p>This technique is actively used by commodity malware. For example, <strong class="source-inline">SDBbot</strong> downloads the malicious library from C2 and injects it into the newly created <strong class="source-inline">rundll32.exe</strong> process. The same can be said about <strong class="source-inline">Netwalker</strong> ransomware, which reflectively injects the library into the <strong class="source-inline">explorer.exe</strong> process. Among other things, many post-exploitation<a id="_idIndexMarker278"/> frameworks have functionality for reflectively injecting DLLs, shellcodes, or executables into processes. Metasploit, CobaltStrike, and PowerShell Empire, as we all know, have this functionality.</p>
+			<p>You can use the <strong class="source-inline">malfind</strong> plugin to detect reflective DLL injection. The point is that when using this technique (just as with packers), a page with the <strong class="source-inline">EXECUTE_READWRITE</strong> protection is created in the target process memory. This is necessary in order to write malicious code there as well as execute it. The <strong class="source-inline">malfind</strong> plugin allows you to find such pages in process memory and check them for executable file headers or correct CPU instructions.</p>
+			<p class="callout-heading">Important Note</p>
+			<p class="callout">Some programs can inject libraries or code as a part of their legitimate activity. For example, anti-virus solutions have such functionality.</p>
+			<p>The <strong class="source-inline">malfind</strong> plugin<a id="_idIndexMarker279"/> has several useful options, which you can use individually or in combination depending on the required result:</p>
+			<ul>
+				<li><strong class="source-inline">-p &lt;PID&gt;</strong> allows you to search for injections in a process with a specific ID.</li>
+				<li><strong class="source-inline">-n &lt;regular expression&gt;</strong> allows you to search for injections in all processes whose names match a regular expression.</li>
+				<li><strong class="source-inline">-D</strong> allows you to dump the injected code sections. </li>
+			</ul>
+			<p>Let's take a look at the following example:</p>
+			<div>
+				<div id="_idContainer104" class="IMG---Figure">
+					<img src="Images/Figure_5.29_B17056.jpg" alt="Figure 5.29 – The Volatility malfind plugin&#13;&#10;" width="1339" height="482"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 5.29 – The Volatility malfind plugin</p>
+			<p>Here, we ran <strong class="source-inline">malfind</strong> with the process ID of <strong class="source-inline">rundll32.exe</strong> and the <strong class="source-inline">-D</strong> option to save the injected code dumps to the output directory. As you can see, in this scenario, our plugin found the <strong class="source-inline">PAGE_EXECUTE_READWRITE</strong> page with valid CPU instructions. </p>
+			<p>Continuing to examine<a id="_idIndexMarker280"/> the plugin's output, you can also observe<a id="_idIndexMarker281"/> pages with executable file magic numbers, as shown in the following screenshot:</p>
+			<div>
+				<div id="_idContainer105" class="IMG---Figure">
+					<img src="Images/Figure_5.30_B17056.jpg" alt="Figure 5.30 – The malfind output with the MZ magic number&#13;&#10;" width="1339" height="482"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 5.30 – The malfind output with the MZ magic number</p>
+			<p>You will not always be able to find such magic numbers. This is because attackers often use various concealment techniques, including header removal. Therefore, you should not focus on their presence; it is better to check everything that seems suspicious to you. </p>
+			<p>Since we have extracted the <strong class="source-inline">malfind</strong> output to disk, we can check<a id="_idIndexMarker282"/> what they are. To do that, you can use specialized utilities such as CFF Explorer (<strong class="source-inline">https://ntcore.com/?page_id=388</strong>). Alternatively, you can<a id="_idIndexMarker283"/> return to the already familiar VirusTotal, which can give insights not only about the maliciousness of the extracted code but also its nature. </p>
+			<p>In our case, one of the interesting results would be the following:</p>
+			<div>
+				<div id="_idContainer106" class="IMG---Figure">
+					<img src="Images/Figure_5.31_B17056.jpg" alt="Figure 5.31 – A malicious DLL detected by malfind&#13;&#10;" width="1436" height="713"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 5.31 – A malicious DLL detected by malfind</p>
+			<p>Here, one of the injections that we dumped was recognized as malicious. On the right-hand side, note that the contents of the dump were a DLL.</p>
+			<p>As mentioned previously, an executable file can be injected into a process in a similar way. Let's take a look at an example next.</p>
+			<h2 id="_idParaDest-90"><a id="_idTextAnchor091"/>Portable executable injections</h2>
+			<p>The idea behind this type of injection is extremely simple. As in the previous cases, it starts with obtaining<a id="_idIndexMarker284"/> debugger privileges and opening a handle for the target<a id="_idIndexMarker285"/> process. Next, a memory region is allocated in the target process' address space, which is then used to write the malicious code. When the code is written, a new thread is created whose purpose is to execute the injected piece of malware. In this way, we get the malicious code running in the context of a legitimate process. </p>
+			<p>In this scenario, the step-by-step algorithm looks<a id="_idIndexMarker286"/> like this:</p>
+			<ol>
+				<li value="1">Get privileges and open a handle to the target process.</li>
+				<li>Allocate memory in the target process and write malicious code there.</li>
+				<li>Create a new thread to run the injected code.</li>
+				<li>Close the handle to the target process.</li>
+			</ol>
+			<p>As you can see, everything is as simple as possible, and most importantly, no traces are left on disk. The allocated pages in the second step usually have <strong class="source-inline">EXECUTE_READWRITE PROTECTION</strong>. This means that the Volatility <strong class="source-inline">malfind</strong> plugin will also help us to detect this type of injection. However, please note that <strong class="source-inline">malfind</strong> only analyzes<a id="_idIndexMarker287"/> private memory regions with read, write, and execute access. This means that the detectability of this plugin can be bypassed. Imagine a situation where attackers initially allocate a page with read and write access; then, after writing malicious code, they change it to read and execute. From a malicious activity point of view, everything will work as before, but <strong class="source-inline">malfind</strong> will not detect it. In this case, we can use manual analysis. </p>
+			<p>A handy tool for this kind of analysis is Redline by <strong class="source-inline">Fireeye</strong>, which can be downloaded from the official site (<a href="https://www.fireeye.com/services/freeware/redline.html">https://www.fireeye.com/services/freeware/redline.html</a>) by filling in a short form. This tool has a graphical interface and allows you to view the memory sections with their contents and protection flags:</p>
+			<div>
+				<div id="_idContainer107" class="IMG---Figure">
+					<img src="Images/Figure_5.32_B17056.jpg" alt="Figure 5.32 – Memory analysis with Redline&#13;&#10;" width="1605" height="818"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 5.32 – Memory analysis with Redline</p>
+			<p>As you can see in the preceding screenshot, we can examine the information of interest in the table view. If we require<a id="_idIndexMarker288"/> more details about the contents<a id="_idIndexMarker289"/> of a particular section, we can double-click on it to open it:</p>
+			<div>
+				<div id="_idContainer108" class="IMG---Figure">
+					<img src="Images/Figure_5.33_B17056.jpg" alt="Figure 5.33 – Redline full detailed information&#13;&#10;" width="1099" height="651"/>
+				</div>
+			</div>
+			<p class="figure-caption"> </p>
+			<p class="figure-caption">Figure 5.33 – Redline full detailed information</p>
+			<p>In addition to <strong class="source-inline">malfind</strong>, there are other plugins that<a id="_idIndexMarker290"/> allow you to search for specific injections. For example, <strong class="source-inline">cobaltstrikescan</strong> was developed by Japanese CERT specialists. It is specifically used for searching by <strong class="source-inline">YARA rules</strong> for Cobalt Strike beacons injected into processes.</p>
+			<p class="callout-heading">Important Note</p>
+			<p class="callout">Besides the built-in Volatility plugins, you can also use plugins developed by the community. To do this, you need to create a plugins folder in the same directory as your version of Volatility and put the code of the plugin that you want to use inside it. To start a new plugin, just add <strong class="source-inline">--plugins=&lt;path to plugins folder&gt;</strong> to the Volatility command line, and don't forget to specify the name of the plugin.</p>
+			<p>To use this plugin, we create a plugins folder in the same directory as Volatility itself and, inside it, save a file<a id="_idIndexMarker291"/> with the <strong class="source-inline">.py</strong> extension downloaded from the GitHub repository (<a href="https://github.com/JPCERTCC/aa-tools/blob/master/cobaltstrikescan.py">https://github.com/JPCERTCC/aa-tools/blob/master/cobaltstrikescan.py</a>). When starting Volatility, we specify <strong class="source-inline">--plugins=./plugins</strong>. To check whether the plugin has loaded successfully, we can use the <strong class="source-inline">--</strong> <strong class="source-inline">info</strong> command, where<a id="_idIndexMarker292"/> a new name should appear in the list<a id="_idIndexMarker293"/> of plugins:</p>
+			<div>
+				<div id="_idContainer109" class="IMG---Figure">
+					<img src="Images/Figure_5.34_B17056.jpg" alt="Figure 5.34 – Checking for the added community plugin &#13;&#10;" width="1070" height="372"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 5.34 – Checking for the added community plugin </p>
+			<p>Now we can test it. Let's examine how <strong class="source-inline">cobaltstrikescan</strong> handles the search for an injected beacon:</p>
+			<div>
+				<div id="_idContainer110" class="IMG---Figure">
+					<img src="Images/Figure_5.35_B17056.jpg" alt="Figure 5.35 – The results of cobaltstrikescan&#13;&#10;" width="859" height="238"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 5.35 – The results of cobaltstrikescan</p>
+			<p>As you can see in the preceding screenshot, the Cobalt Strike beacon was detected in the <strong class="source-inline">Outlook.exe</strong> and <strong class="source-inline">rundll32.exe</strong> processes. This means that in the memory of these processes, you can find its configurations, where useful parameters such as the C2 IP addresses are located. </p>
+			<p>Techniques such as DLL injection and code/executable injection have been around for quite some time, so there are already, more or less, reliable ways in which to detect them. Things become more<a id="_idIndexMarker294"/> complicated when detecting newer techniques, but they<a id="_idIndexMarker295"/> are used quite often by attackers. One of the most current techniques is Process Hollowing.</p>
+			<h2 id="_idParaDest-91"><a id="_idTextAnchor092"/>Process Hollowing</h2>
+			<p>The basic idea behind hollow process injection is to create a new instance of a legitimate process in the <strong class="source-inline">SUSPEND</strong> state and overwrite<a id="_idIndexMarker296"/> the address space occupied by its executable<a id="_idIndexMarker297"/> code with malicious code. Therefore, unlike previous techniques, after process hollowing, the executable code of the legitimate process<a id="_idIndexMarker298"/> stops existing. Meanwhile, the process data in the <strong class="bold">Process Environment Block</strong> (<strong class="bold">PEB</strong>) remains the same. As a result, we end up with a container containing the data of the legitimate process (the DLLs, heaps, stacks, and handles), inside which the malicious code is executed.</p>
+			<p class="callout-heading">Important Note</p>
+			<p class="callout">PEB is a structure that stores information about the location of the DLLs, heaps, and environment variables along with the process' command-line arguments, current working directory, and standard handles.</p>
+			<p>For ease of understanding, let's take another look<a id="_idIndexMarker299"/> at the algorithm of actions:</p>
+			<ol>
+				<li value="1">Start a new instance of a legitimate process with the first thread suspended.</li>
+				<li>Free or unmap the memory section with the code of the legitimate process.</li>
+				<li>Allocate a new memory segment with read, write, and execute access.</li>
+				<li>Copy any malicious code obtained from the disk or over the network into the newly allocated memory segment.</li>
+				<li>Set the start address of the suspended thread to the entry point of the malicious code.</li>
+				<li>Resume the<a id="_idIndexMarker300"/> thread.</li>
+			</ol>
+			<p>As a result of these actions, the malicious code is executed in a container created by a legitimate process. The use of process hollowing<a id="_idIndexMarker301"/> is not uncommon. For example, Trickbot uses this technique to inject its payload inside the <strong class="source-inline">wermgr.exe</strong> process.</p>
+			<p>Two methods can be used to detect process hollowing. The first one<a id="_idIndexMarker302"/> involves comparing PEB and <strong class="bold">Virtual Address Descriptor</strong> (<strong class="bold">VAD</strong>) structures and searching for inconsistencies. </p>
+			<p class="callout-heading">Important Note</p>
+			<p class="callout">VAD is another important structure that is used to track reserved or committed, virtually contiguous sets of pages. These descriptors contain the names of the memory-mapped files, the initial protection, and some other flags related to the pages and their content. </p>
+			<p>This can be done with the <strong class="source-inline">psinfo</strong> plugin, written by Monnappa K. A. This plugin collects information from VAD and PEB and outputs<a id="_idIndexMarker303"/> it in an easy-to-compare format. In addition, <strong class="source-inline">psinfo</strong> tries to detect suspicious memory regions with the possibility of execution:</p>
+			<div>
+				<div id="_idContainer111" class="IMG---Figure">
+					<img src="Images/Figure_5.36_B17056.jpg" alt="Figure 5.36 – The psinfo output&#13;&#10;" width="1309" height="640"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 5.36 – The psinfo output</p>
+			<p>In <em class="italic">Figure 5.36</em>, you can see that the <strong class="source-inline">psinfo</strong> output shows the base address, process path, and protection from VAD and PEB along with the command line and other process-related details. So, what will we see with process hollowing? Well, the information taken from the PEB will match the process used as a container, but the VAD structure will no longer have a file mapped to this memory region.</p>
+			<p>Another way to detect a hollowed process is to use the <strong class="source-inline">ldrmodules</strong> plugin, which we already know. Do you remember what an executable file looks like there? That's right; in all lists except <strong class="source-inline">InInit</strong>, it is set to <strong class="source-inline">True</strong>, followed by information about the full path to the file on disk. In the case of process hollowing, the flags (<strong class="source-inline">True False True</strong>) will remain, but the path to the executable file will be missing.</p>
+			<p>In addition<a id="_idIndexMarker304"/> to process hollowing, there is another<a id="_idIndexMarker305"/> type of injection that is often used by attac<a id="_idTextAnchor093"/>kers: Process D<a id="_idTextAnchor094"/>oppelgänging.</p>
+			<h2 id="_idParaDest-92"><a id="_idTextAnchor095"/>Process Doppelgänging </h2>
+			<p>This technique was first introduced in 2017 at the BlackHat<a id="_idIndexMarker306"/> conference, and it has been actively used by attackers<a id="_idIndexMarker307"/> ever since. For example, Bazar Loader uses Process Doppelgänging to inject<a id="_idIndexMarker308"/> its payload. </p>
+			<p>This technique is based on the use of NTFS transactions. Transactional NTFS was introduced in Windows Vista to make changes to the filesystem safer and more efficient. When using transactions, special transaction files are created, and any expected changes are written into them. Once the changes have been made, the transaction can be committed in order to apply all of the changes at once or rolled back by deleting the transaction file along with the changes. This technology is very useful when installing new programs; this is because if there is a crash when the changes are being made, the transaction will be rolled back, and the system will be in its original, stable state. Let's examine how this technology<a id="_idIndexMarker309"/> is used in the Process Doppelgänging algorithm:</p>
+			<ol>
+				<li value="1">Create a transaction and open a clean transacted file.</li>
+				<li>Overwrite the transacted file with malicious code.</li>
+				<li>Create a memory section that points to the transacted file.</li>
+				<li>Roll back the transaction (this will remove all the traces of the transacted file from the filesystem but not the memory section where the malicious code was mapped).</li>
+				<li>Create objects, process and thread objects; set the start address of the thread to the entry point of the malicious code.</li>
+				<li>Create process parameters and copy them to the newly created process' address space.</li>
+				<li>Run the doppelgänged process.</li>
+			</ol>
+			<p>The use of this technique is quite difficult to detect. For systems older than Windows 10, you can check the <strong class="source-inline">File_Object</strong> associated with the suspicious process. If write access for this file is enabled, that could potentially be Process Doppelgänging. For Windows 10 systems, it's a bit easier<a id="_idIndexMarker310"/> because of the new members of the <strong class="source-inline">_EPROCESS</strong> structure. The point here is that for the doppelgänged process <strong class="source-inline">_EPROCESS</strong>. <strong class="source-inline">ImageFilePointer</strong> is set to <strong class="source-inline">NULL</strong>. To check this information for a suspicious process, you can use Volatility's <strong class="source-inline">volshell</strong>.</p>
+			<p>First of all, run <strong class="source-inline">ps()</strong> inside <strong class="source-inline">volshell</strong> to identify the offset of the suspicious process:</p>
+			<div>
+				<div id="_idContainer112" class="IMG---Figure">
+					<img src="Images/Figure_5.37_B17056.jpg" alt="Figure 5.37 – Executing volshell ps()&#13;&#10;" width="1090" height="400"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 5.37 – Executing volshell ps()</p>
+			<p>Then, use <strong class="source-inline">dt('_EPROCESS',&lt;offset&gt;)</strong> to get information related to your target process:</p>
+			<div>
+				<div id="_idContainer113" class="IMG---Figure">
+					<img src="Images/Figure_5.38_B17056.jpg" alt="Figure 5.38 – Obtaining process-related data&#13;&#10;" width="782" height="234"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 5.38 – Obtaining process-related data</p>
+			<p>Search for <strong class="source-inline">0x448</strong> <strong class="source-inline">ImageFilePointer</strong>. If there is <strong class="source-inline">NULL</strong> instead<a id="_idIndexMarker311"/> of a normal value (as shown in <em class="italic">Figure 5.39</em>), congratulations! It appears<a id="_idIndexMarker312"/> you just found the doppelgänged process:</p>
+			<div>
+				<div id="_idContainer114" class="IMG---Figure">
+					<img src="Images/Figure_5.39_B17056.jpg" alt="Figure 5.39 – The normal ImageFilePointer value&#13;&#10;" width="782" height="234"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 5.39 – The normal ImageFilePointer value</p>
+			<p>It is worth mentioning here that even if attackers use covert injection techniques, such as Process Doppelgänging, it is possible that widely used tools, such as <strong class="source-inline">mimikatz</strong> or payloads from post-exploitation frameworks, are executed in the context of legitimate processes. This opens the possibility of searching the memory of processes using keywords, regular expressions, and <strong class="source-inline">YARA rules</strong>. Let's take a look at the following example. We have a process named <strong class="source-inline">wscript.exe</strong>. As mentioned earlier, this is one of the processes we have to watch out for because threat actors can use <strong class="source-inline">wscript.exe</strong> to execute their malicious scripts.</p>
+			<p class="callout-heading">Important Note </p>
+			<p class="callout">WScript is an MS Windows component designed to run scripts written in script languages, such as Visual Basic.</p>
+			<p>In our scenario, the investigation of the command-line arguments and the handles of files used by the process have given<a id="_idIndexMarker313"/> us nothing but the name of the script in use. So, we dump the process memory<a id="_idIndexMarker314"/> and use the <strong class="source-inline">strings</strong> utility to get the ASCII and UNICODE characters:</p>
+			<div>
+				<div id="_idContainer115" class="IMG---Figure">
+					<img src="Images/Figure_5.40_B17056.jpg" alt="Figure 5.40 – Dumping the memory of wscript and parsing it with strings64&#13;&#10;" width="1029" height="244"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 5.40 – Dumping the memory of wscript and parsing it with strings64</p>
+			<p>In the resulting text file, you can search for any information of interest using the <strong class="source-inline">powershell</strong>, <strong class="source-inline">cmd</strong>, <strong class="source-inline">vbs</strong>, and <strong class="source-inline">base64</strong> keywords:</p>
+			<div>
+				<div id="_idContainer116" class="IMG---Figure">
+					<img src="Images/Figure_5.41_B17056.jpg" alt="Figure 5.41 – The Base64 keyword search results&#13;&#10;" width="1290" height="583"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 5.41 – The Base64 keyword search results</p>
+			<p>In <em class="italic">Figure 5.41</em>, you can view<a id="_idIndexMarker315"/> the Base64-encoded code found with the <strong class="source-inline">base64</strong> keyword. To better<a id="_idIndexMarker316"/> understand the nature of this code, you can use <strong class="source-inline">CyberChef</strong> to decode it:</p>
+			<div>
+				<div id="_idContainer117" class="IMG---Figure">
+					<img src="Images/Figure_5.42_B17056.jpg" alt="Figure 5.42 – Decoded Base64&#13;&#10;" width="1204" height="758"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 5.42 – Decoded Base64</p>
+			<p>CyberChef has automatically detected that our Base64-encoded code is a PE file. At this point, we can save the resulting PE file for further analysis. By continuing to analyze the lines, we discover that this file was downloaded over the network and then injected into a new process.</p>
+			<p>That is how we can detect<a id="_idIndexMarker317"/> malicious processes and find various injections<a id="_idIndexMarker318"/> in memory dumps. However, that's not all. Often, attackers require persistence on the system to maintain access to the infected hosts. This can be achieved in a variety of ways. Let's discuss them next.</p>
+			<h1 id="_idParaDest-93"><a id="_idTextAnchor096"/>Looking for evidence of persistence</h1>
+			<p>There are quite a few techniques<a id="_idIndexMarker319"/> used by malware and attackers to get a foothold into a system. These include classic techniques that have been actively used for many years. Additionally, there are relatively new ones that are only just gaining popularity. We are not here to tell you about every technique that exists, but rather to give you some tools that we believe will most likely help you to spot a piece of malware persistence on the system. And, of course, there's no shortage of examples.</p>
+			<h2 id="_idParaDest-94"><a id="_idTextAnchor097"/>Boot or Logon Autostart Execution</h2>
+			<p>In this technique, the attackers<a id="_idIndexMarker320"/> change the system settings to automatically<a id="_idIndexMarker321"/> execute a program during a system boot or logon. For instance, they can add a path to a malicious executable as data for some value to the following keys:</p>
+			<ul>
+				<li><strong class="source-inline">HKLM \SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon</strong></li>
+				<li><strong class="source-inline">HKLM\Software\Microsoft\Windows\CurrentVersion\Run</strong></li>
+				<li><strong class="source-inline">HKLM\Software\Microsoft\Windows\CurrentVersion\RunOnce</strong></li>
+				<li><strong class="source-inline">HKCU\Software\Microsoft\Windows\CurrentVersion\Run</strong></li>
+				<li><strong class="source-inline">HKCU\Software\Microsoft\Windows\CurrentVersion\RunOnce</strong></li>
+			</ul>
+			<p>In the previous chapter, we looked at several approaches of how to extract the registry from memory. You can use the most appropriate way for you to export the <strong class="source-inline">SOFTWARE</strong> and <strong class="source-inline">NTUSER.DAT</strong> registry files corresponding to the preceding keys. To work with these files, you can use <strong class="source-inline">Registry Explorer</strong> or <strong class="source-inline">RegRipper</strong> just as we did earlier:</p>
+			<div>
+				<div id="_idContainer118" class="IMG---Figure">
+					<img src="Images/Figure_5.43_B17056.jpg" alt="Figure 5.43 – Run keys analysis&#13;&#10;" width="1106" height="594"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 5.43 – Run keys analysis</p>
+			<p>In the preceding screenshot, it is easy to see the <strong class="source-inline">Temp</strong> value with the <strong class="bold">Data</strong> field, containing the path to <strong class="source-inline">temp.bat</strong>. You can also use the Volatility <strong class="source-inline">prinkey</strong> plugin with the <strong class="source-inline">-K</strong> option to examine the contents of this key in the virtual registry. </p>
+			<p>If you want to structure<a id="_idIndexMarker322"/> your search for the key used for persistence<a id="_idIndexMarker323"/> in a more logical way, you can start by examining the output of the <strong class="source-inline">handles</strong> plugin with the <strong class="source-inline">-t Key</strong> option, which shows all of the registry keys used by this process:</p>
+			<div>
+				<div id="_idContainer119" class="IMG---Figure">
+					<img src="Images/Figure_5.44_B17056.jpg" alt="Figure 5.44 – Volatility handles&#13;&#10;" width="1280" height="451"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 5.44 – Volatility handles</p>
+			<p>Such an approach not only speeds up the search for the key used for persistence but also provides information about the registry keys that the malware was interested in and how it might have used<a id="_idIndexMarker324"/> them. It is important to note that<a id="_idIndexMarker325"/> if you do not see the key you are looking for in the output of the <strong class="source-inline">handles</strong> plugin, there is no guarantee that it has not been used. Therefore, if the results are unsatisfactory, it is recommended that you check the registry anyway. If you can still find the key, you can check its content with <strong class="source-inline">prinkey</strong> <strong class="source-inline">-K &lt;key&gt;</strong>, as shown in <em class="italic">Figure 5.45</em>:</p>
+			<div>
+				<div id="_idContainer120" class="IMG---Figure">
+					<img src="Images/Figure_5.45_B17056.jpg" alt="Figure 5.45 – Checking the Load value with Volatility printkey&#13;&#10;" width="1378" height="554"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 5.45 – Checking the Load value with Volatility printkey</p>
+			<p>Of course, gaining persistence by abusing the <em class="italic">run</em> keys isn't the only technique leveraged by threat actors, which includes Windows registry manipulation. Here are a few other examples:</p>
+			<ul>
+				<li>Winlogon Helper DLL (T1547.004 according to MITRE ATT&amp;CK): The threat actors modify the <strong class="source-inline">Software\Microsoft\Windows NT\CurrentVersion\Winlogon</strong> registry key to achieve persistence.</li>
+				<li>Image File Execution Options Injection (T1546.012 according to MITRE ATT&amp;CK): The threat actors modify the <strong class="source-inline">HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options and HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\SilentProcessExit</strong> registry keys to achieve persistence.</li>
+				<li>Logon Script (T1037.001 according to MITRE ATT&amp;CK): The threat actors modify the <strong class="source-inline">HKCU\Environment\UserInitMprLogonScript</strong> registry key to achieve persistence.</li>
+			</ul>
+			<p>Let's move on to look<a id="_idIndexMarker326"/> at other popular persistence<a id="_idIndexMarker327"/> techniques. For example, creating new accounts.</p>
+			<h2 id="_idParaDest-95"><a id="_idTextAnchor098"/>Create Account</h2>
+			<p>This technique is often used by ransomware operators, as it is excellent for maintaining access to compromised<a id="_idIndexMarker328"/> systems. The registry can be used again to find traces of new accounts. Remember, in the previous chapter, we talked about the SAM registry file and how it contains information about users, including their creation date. For the easy analysis of user creation data, it is best to use the <strong class="source-inline">Registry Explorer</strong> tool and the bookmarks tab. To do this, simply drag the exported SAM file into Registry Explorer and click on <strong class="bold">Bookmarks</strong> and then <strong class="bold">Users</strong>. This should bring up a table with all of the users:</p>
+			<div>
+				<div id="_idContainer121" class="IMG---Figure">
+					<img src="Images/Figure_5.46_B17056.jpg" alt="Figure 5.46 – The Users bookmark&#13;&#10;" width="1434" height="594"/>
+				</div>
+			</div>
+			<p class="figure-caption"> </p>
+			<p class="figure-caption">Figure 5.46 – The Users bookmark</p>
+			<p>As you can see, in the preceding screenshot, the <strong class="bold">Created On</strong> column shows the date and time that each user was created. You can use a comparison of these timestamps to identify the users created during the attack.</p>
+			<p>Of course, this method has a significant limitation – the relevant information about domain users might be missing. Therefore, another<a id="_idIndexMarker329"/> method we will consider is to export the event logs.</p>
+			<p class="callout-heading">Important Note</p>
+			<p class="callout">Windows event logs are <strong class="source-inline">.evtx</strong> files located in the <strong class="source-inline">C:\Windows\System32\winevt\Logs</strong> directory. They contain various events related to system operations, user activities, and more.</p>
+			<p>This method is no different from the exportation of regular files. The sequence of actions will be as follows:</p>
+			<ol>
+				<li value="1">Run the <strong class="source-inline">filescan</strong> plugin and redirect its output to a text file.</li>
+				<li>Open the text file with the <strong class="source-inline">filescan</strong> results and find the log you are interested in.</li>
+				<li>Copy the offset of the log that you need from the text file.</li>
+				<li>Run <strong class="source-inline">dumpfiles</strong> <strong class="source-inline">-Q &lt;offset&gt;</strong>.</li>
+				<li>Rename the resulting file, including the extension.</li>
+			</ol>
+			<p>Events related to the creation of new users are stored in the <strong class="source-inline">Security.evtx</strong> log. Note that on the computers of regular users, this log will record information about the creation of local users, while for domain users, you need the log located on the domain controller.</p>
+			<p>To open the exported event log on Windows, you can use the built-in <strong class="source-inline">event viewer</strong>. Additional information regarding creating and enabling a user can be found in the <strong class="source-inline">4720</strong> and <strong class="source-inline">4722</strong> events. You can use these event IDs to create a filter. You should end up with the following:</p>
+			<p class="figure-caption"> </p>
+			<div>
+				<div id="_idContainer122" class="IMG---Figure">
+					<img src="Images/Figure_5.47_B17056.jpg" alt="Figure 5.47 – Security.evtx opened via Event Viewer&#13;&#10;" width="1187" height="805"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 5.47 – Security.evtx opened via Event Viewer</p>
+			<p>Here, we have information about the creation of the <strong class="source-inline">honka</strong> user in the <strong class="source-inline">seriouscats</strong> domain. There is also a timestamp<a id="_idIndexMarker330"/> that refers to the time when this event occurred, and, hence, the time when the user was created.</p>
+			<p class="callout-heading">Important Note</p>
+			<p class="callout">Sometimes, the event logs get corrupted when they are exported from the memory dumps. To try to recover events from a corrupted log, you can use the excellent <strong class="source-inline">CQEvtxRecovery</strong> tool from CQURE.</p>
+			<p>As a result, depending on the circumstances, you can look for traces of new user creation either in the registry or the event logs. </p>
+			<p>The event logs themselves are a great source of data regarding what is going on in the system: remote connections, creating users and changing their attributes, launching PowerShell scripts, Windows Defender<a id="_idIndexMarker331"/> crashes, and much more. Let's explore what else we can use event logs exported from memory for.</p>
+			<h2 id="_idParaDest-96"><a id="_idTextAnchor099"/>Create or Modify System Process</h2>
+			<p>When using this persistence technique, attackers<a id="_idIndexMarker332"/> install a new service that should run an executable file on disk<a id="_idIndexMarker333"/> or execute scripts. Often, trojans such as <strong class="source-inline">Emotet</strong> and <strong class="source-inline">Trickbot</strong> use the installation of new services.</p>
+			<p>Additional information about the installation of services is recorded in the <strong class="source-inline">System.evtx</strong> event log, which can also be exported from a memory dump. We will be interested in the event ID of <strong class="source-inline">7045</strong>: <strong class="bold">A service was installed in the system</strong>. When analyzing such events, you should pay attention to the name and location of the executable and, in the case of scripts, the arguments used:</p>
+			<div>
+				<div id="_idContainer123" class="IMG---Figure">
+					<img src="Images/Figure_5.48_B17056.jpg" alt="Figure 5.48 – System.evtx&#13;&#10;" width="1635" height="537"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 5.48 – System.evtx</p>
+			<p>In <em class="italic">Figure 5.48</em>, you can see an example of a malicious service. Note that the executable file is located in the user's temporary folder.</p>
+			<p>Another way to analyze services is to use special Volatility plugins. For example, you can use the <strong class="source-inline">svcscan</strong> plugin to get information about the running services, service names, types, states, binary paths, and more, as shown in <em class="italic">Figure 5.49</em>:</p>
+			<div>
+				<div id="_idContainer124" class="IMG---Figure">
+					<img src="Images/Figure_5.49_B17056.jpg" alt="Figure 5.49 – The svcscan output&#13;&#10;" width="1150" height="423"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 5.49 – The svcscan output</p>
+			<p>There is another plugin developed by the community called <strong class="source-inline">autoruns</strong> (<a href="https://github.com/tomchop/volatility-autoruns/blob/master/autoruns.py">https://github.com/tomchop/volatility-autoruns/blob/master/autoruns.py</a>):</p>
+			<div>
+				<div id="_idContainer125" class="IMG---Figure">
+					<img src="Images/Figure_5.50_B17056.jpg" alt="Figure 5.50 – The autoruns output&#13;&#10;" width="1285" height="650"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 5.50 – The autoruns output</p>
+			<p>This plugin collects<a id="_idIndexMarker334"/> information not only<a id="_idIndexMarker335"/> about the services but also the various registry keys that could potentially be used for persistence. On the one hand, the plugin provides fairly easy access to various information; on the other hand, the set of data collected is limited. Therefore, before using the plugin, we recommend<a id="_idIndexMarker336"/> that you read the list of collected data, which<a id="_idIndexMarker337"/> can be found in the same repository on GitHub.</p>
+			<p>In addition to installing new services, attackers can also create tasks through the scheduler. Let's take a look at this technique and how to detect it.</p>
+			<h2 id="_idParaDest-97"><a id="_idTextAnchor100"/>Scheduled task</h2>
+			<p>The creation of scheduled tasks<a id="_idIndexMarker338"/> is one of the most common techniques. It is widely used by commodity<a id="_idIndexMarker339"/> malware to get persistence on the infected systems. Information about scheduled tasks is stored in several<a id="_idIndexMarker340"/> locations:</p>
+			<ul>
+				<li><strong class="source-inline">C:\Windows\System32\Tasks</strong>: Here, you can find XML files with task descriptions.</li>
+				<li><strong class="source-inline">Microsoft-Windows-TaskScheduler%4Operational.evtx</strong>: You can analyze event ID 106, which is related to the creation of a new task.</li>
+				<li><strong class="source-inline">SOFTWARE</strong>: Information about task cache is also stored in the registry.</li>
+			</ul>
+			<p>We will proceed with the registry analysis. So, we need to export the <strong class="source-inline">SOFTWARE</strong> file just as we did before. This time, we will use <strong class="source-inline">RegRipper</strong> to parse our registry file:</p>
+			<div>
+				<div id="_idContainer126" class="IMG---Figure">
+					<img src="Images/Figure_5.51_B17056.jpg" alt="Figure 5.51 – Parsing SOFTWARE with RegRipper&#13;&#10;" width="607" height="516"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 5.51 – Parsing SOFTWARE with RegRipper</p>
+			<p>We can use the <strong class="source-inline">taskcache</strong> keyword<a id="_idIndexMarker341"/> to search for the necessary information. There are two plugins<a id="_idIndexMarker342"/> that show task-related data: <strong class="source-inline">tasks</strong> and <strong class="source-inline">taskcache</strong>. Both plugins show information about the path and the creation time of the task, but the second one also displays the task ID, as follows:</p>
+			<div>
+				<div id="_idContainer127" class="IMG---Figure">
+					<img src="Images/Figure_5.52_B17056.jpg" alt="Figure 5.52 – The taskcache and tasks plugins&#13;&#10;" width="985" height="539"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 5.52 – The taskcache and tasks plugins</p>
+			<p>As you can see, there are various persistence techniques, and this is only a small part of them. However, using the methods<a id="_idIndexMarker343"/> of analysis that we have reviewed, you will be able to analyze a far greater number of techniques.</p>
+			<p>Another important step<a id="_idIndexMarker344"/> in forensic investigation is timeline creation. Its application largely depends on your goals because you can look not only for information related to malicious activity but also collect data about the user's files. Let's take a closer look at this topic.</p>
+			<h1 id="_idParaDest-98"><a id="_idTextAnchor101"/>Creating timelines</h1>
+			<p>Timelines are extremely useful. They can play<a id="_idIndexMarker345"/> an important role in your investigation because not only can you find out details about what happened to the target system during a certain period of time, but you can also reconstruct the actions of the attackers step by step. Here are a few approaches of how to use timelines:</p>
+			<ul>
+				<li><strong class="bold">Analysis of system changes during the incident</strong>: If you already have data regarding the time<a id="_idIndexMarker346"/> of the incident, you can use the timeline to analyze the changes that occurred in the target system during this period.</li>
+				<li><strong class="bold">Analysis of the file's timestamps</strong>: Using the filesystem-based timeline, you can search for entries that correspond to specific files and analyze timestamps of their appearance or the actions performed on them.</li>
+				<li><strong class="bold">Search for malicious program execution</strong>: In the memory-based timeline, you will be able to observe the creation of processes corresponding to various programs, including malware, and in the filesystem-based timeline, you can search for the creation<a id="_idIndexMarker347"/> of prefetch files, which will also be an indicator that a particular program was running.<p class="callout-heading">Important Note</p><p class="callout">Prefetch is a mechanism used by Windows to start programs more efficiently. During the first seconds of startup, a file with a <strong class="source-inline">.pf</strong> extension is created in the <strong class="source-inline">C:\Windows\Prefetch</strong> directory corresponding to the running program. The name of this file usually includes the name of the running program. Therefore, a record of the creation of the prefetch file in the timeline will not only tell you that something has started but also allow you to determine what exactly was started.</p></li>
+			</ul>
+			<p>As you have already noticed, there are various types of timelines. We will talk about those that can be built using memory dumps.</p>
+			<h2 id="_idParaDest-99"><a id="_idTextAnchor102"/>Filesystem-based timelines</h2>
+			<p>This timeline is based on filesystem metafiles. For NTFS, this<a id="_idIndexMarker348"/> file would be, for example, the <strong class="bold">Master File Table</strong> (<strong class="bold">$MFT</strong>). This file contains information about<a id="_idIndexMarker349"/> all files of the filesystem and their timestamps. </p>
+			<p>To build<a id="_idIndexMarker350"/> a timeline based on $MFT, first, we need to get its data. This can be done with the Volatility <strong class="source-inline">mftparser</strong> plugin, which collects all $MFT entries from memory. Running this plugin will look like this:</p>
+			<div>
+				<div id="_idContainer128" class="IMG---Figure">
+					<img src="Images/Figure_5.53_B17056.jpg" alt="Figure 5.53 – Volatility mftparser&#13;&#10;" width="1009" height="229"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 5.53 – Volatility mftparser</p>
+			<p>Pay attention to the options that are being used; they are needed to save the data in the format we want. The result<a id="_idIndexMarker351"/> is a text file that contains unsorted MFT records. To turn them into<a id="_idIndexMarker352"/> a timeline, you can use the <strong class="source-inline">mactime</strong> utility that is included in <strong class="source-inline">TheSleuthKit</strong>. To run this utility, you will need to install Perl. To do this, simply download the installer from the official website and follow the instructions (<a href="https://strawberryperl.com/">https://strawberryperl.com/</a>). </p>
+			<p>To get the <strong class="source-inline">mactime</strong> utility itself, navigate to the official website of <strong class="source-inline">TheSleuthKit</strong> (<a href="https://www.sleuthkit.org/sleuthkit/download.php">https://www.sleuthkit.org/sleuthkit/download.php</a>) and download Windows Binaries. Unzip the downloaded archive to a directory that is convenient for you. </p>
+			<p>Now we are ready<a id="_idIndexMarker353"/> to turn our MFT records into a timeline. Use the following command:</p>
+			<p class="source-code">PS D:\&gt; C:\Strawberry\perl\bin\perl.exe .\sleuthkit-4.10.2-win32\bin\mactime.pl -b .\output\body.txt &gt; .\output\timeline.txt</p>
+			<p>With the <strong class="source-inline">-b</strong> option, we are specifying that we are passing the file in body format. We redirect the output of the utility to the <strong class="source-inline">timeline.txt</strong> text file. </p>
+			<p>You can use a text editor or MS Excel to view this file:</p>
+			<div>
+				<div id="_idContainer129" class="IMG---Figure">
+					<img src="Images/Figure_5.54_B17056.jpg" alt=" Figure 5.54 – A filesystem-based timeline&#13;&#10;" width="1533" height="477"/>
+				</div>
+			</div>
+			<p class="figure-caption"> Figure 5.54 – A filesystem-based timeline</p>
+			<p>In the preceding timeline, we can see the creation of a prefetch file for <strong class="source-inline">Gnh3J8f.EXE</strong>, which indicates that it was executed. </p>
+			<p>Naturally, timestamps<a id="_idIndexMarker354"/> are stored in memory, not only for files<a id="_idIndexMarker355"/> but also created processes, network connections, and more. All of this information<a id="_idIndexMarker356"/> can be added to the timeline, too. Let's discover how.</p>
+			<h2 id="_idParaDest-100"><a id="_idTextAnchor103"/>Memory-based timelines</h2>
+			<p>You can use the Volatility <strong class="source-inline">timeliner</strong> plugin to build a timeline of all the information stored in memory. Since<a id="_idIndexMarker357"/> the output of this plugin is quite extensive, we recommend<a id="_idIndexMarker358"/> that you immediately redirect it to a text file on disk:</p>
+			<p class="source-code">PS D:\&gt; .\volatility_2.6_win64_standalone.exe -f .\nwe.mem </p>
+			<p class="source-code">--profile=Win7SP1x64 timeliner &gt; .\output\timeline.txt</p>
+			<p>This time, there will be far more information in our file:</p>
+			<div>
+				<div id="_idContainer130" class="IMG---Figure">
+					<img src="Images/Figure_5.55_B17056.jpg" alt=" Figure 5.55 – A memory-based timeline&#13;&#10;" width="1455" height="540"/>
+				</div>
+			</div>
+			<p class="figure-caption"> Figure 5.55 – A memory-based timeline</p>
+			<p>Sometimes, this amount of information is excessive, especially since it is not very convenient to work<a id="_idIndexMarker359"/> with such data in the form of a text file. As an alternative, you can<a id="_idIndexMarker360"/> use Redline, which also allows you to build a timeline based on data from memory dumps. However, here, you will have a graphical interface and the ability to easily add and remove certain data sources:</p>
+			<div>
+				<div id="_idContainer131" class="IMG---Figure">
+					<img src="Images/Figure_5.56_B17056.jpg" alt="Figure 5.56 – Redline's timeline&#13;&#10;" width="1099" height="651"/>
+				</div>
+			</div>
+			<p class="figure-caption">Figure 5.56 – Redline's timeline</p>
+			<p>It looks more convenient, doesn't it? </p>
+			<p>In this simple way, we can build different timelines and add them to our investigation.</p>
+			<h1 id="_idParaDest-101"><a id="_idTextAnchor104"/>Summary</h1>
+			<p>Searching for traces of malicious activity is a complicated but interesting process.</p>
+			<p>You can use various markers to detect rogue processes. Such markers can include process names, executable file locations, startup arguments, non-standard parent-child combinations, and atypical behavior. Moreover, processes related to malware or attacker tools often perform network activities. The analysis of such activities in memory helps you to not only detect malicious processes and get the IP addresses of C2 servers but also understand the tools used by attackers. </p>
+			<p>If you managed to detect a process communicating with a remote IP address but did not find any other malicious markers, it's time to search for malware injections inside the memory. The most commonly used types of injections include DLL injections, portable executable injections, process hollowing, and Process Doppelgänging. Traces of such injections can be found in memory dumps.</p>
+			<p>Once you have identified the malicious processes, it's worth looking for persistence traces, which are often used in attacks to maintain access to compromised hosts. To search for such traces, you can use both special Volatility plugins or registry and event log analyses.</p>
+			<p>A great addition to your investigation is to build a timeline, which will not only help you to look for timestamps related to this or that change that occurred on your system but also help you put everything into place.</p>
+			<p>This is how we carry out forensic investigations of memory dumps to look for traces of malicious activity. However, memory dumps are not the only source of volatile data. Windows also has alternative sources, such as <strong class="source-inline">pagefile</strong>, <strong class="source-inline">swapfile</strong>, <strong class="source-inline">hibernation files</strong>, and <strong class="source-inline">crash dumps</strong>. We will discuss these sources and analyze them in the next chapter.</p>
+		</div>
+	</div></body></html>

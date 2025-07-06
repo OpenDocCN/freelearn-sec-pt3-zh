@@ -1,0 +1,582 @@
+<html><head></head><body>
+        <section>
+
+                            <header>
+                    <h1 class="header-title">Introducing Network Forensics</h1>
+                </header>
+            
+            <article>
+                
+<p><strong>Network forensics</strong> is one of the sub-branches of digital forensics where the data being analyzed is the network traffic going to and from the system under observation. The purposes of this type of observation are collecting information, obtaining legal evidence, establishing a root-cause analysis of an event, analyzing malware behavior, and so on. Professionals familiar with <strong>digital forensics and incident response</strong> (<span><strong>DFIR</strong>)</span> know that even the most careful suspects leave traces and artifacts behind. But forensics generally also includes imaging the systems for memory and hard drives, which can be analyzed later. So, how do network forensics come into the picture? Why do we need to perform network forensics at all? Well, the answer to this question is relatively simple.</p>
+<p>Let's consider a scenario where you are hunting for some unknown attackers in a massive corporate infrastructure containing thousands of systems. In such a case, it would be practically impossible to image and analyze every system. The following two scenarios would also be problematic:</p>
+<ul>
+<li>Instances where the disk drives may not be available</li>
+<li>Cases where the attack is in progress, and you may not want to tip off the attackers</li>
+</ul>
+<p><span>Whenever an intrusion or a digital crime happens over the wire, whether it was successful or not, the artifacts left behind can help us understand and recreate not only the intent of the attack, but also the actions performed by the attackers.</span></p>
+<p>If the attack was successful, what activities were conducted by the attackers on the system? What happened next? Generally, most severe attacks, such as <span><strong>Advanced Package Tool</strong> (</span><strong>APT</strong>), <strong>ransomware</strong>, <strong>espionage</strong>, and others, start from a single instance of an unauthorized entry into a network and then evolve into a long-term project for the attackers until the day their goals are met; however, throughout this period the information flowing in and out of the network goes through many different devices, such as routers, firewalls, hubs, switches, web proxies, and others. Our goal is to identify and analyze all these different artifacts. Throughout this chapter, we will discuss the following:</p>
+<ul>
+<li>Network forensics methodology</li>
+<li>Sources of evidence</li>
+<li>A few necessary case studies demonstrating hands-on network forensics</li>
+</ul>
+
+
+            </article>
+
+            
+        </section>
+    
+
+        <section>
+
+                            <header>
+                    <h1 class="header-title">Technical requirements</h1>
+                </header>
+            
+            <article>
+                
+<p>To perform the exercises covered in this chapter, you will require the following:</p>
+<ul>
+<li>A laptop/desktop computer with an i5/i7 processor or any other equivalent AMD processor with at least 8 GB RAM and around 100 GB of free space.</li>
+<li>VMware Player/VirtualBox installation with Kali OS installed. You can download it from <a href="https://www.offensive-security.com/kali-linux-vm-vmware-virtualbox-image-download/">https://www.offensive-security.com/kali-linux-vm-vmware-virtualbox-image-download/</a>.</li>
+<li>Installing Wireshark on Windows: <a href="https://www.wireshark.org/docs/wsug_html_chunked/ChBuildInstallWinInstall.html">https://www.wireshark.org/docs/wsug_html_chunked/ChBuildInstallWinInstall.html</a>.</li>
+<li>Netcat From Kali Linux (already installed).</li>
+<li>Download NetworkMiner from <a href="https://www.netresec.com/?page=Networkminer">https://www.netresec.com/?page=Networkminer</a>.</li>
+<li>The PCAP files for this chapter, downloaded from <a href="https://github.com/nipunjaswal/networkforensics/tree/master/Ch1">https://github.com/nipunjaswal/networkforensics/tree/master/Ch1</a><span class="URLPACKT">.</span></li>
+</ul>
+<p>Every investigation requires a precise methodology. We will discuss the popular network forensics methodology used widely across the industry in the next section.</p>
+<div class="packt_tip">To install Wireshark on Windows, go to <a href="https://www.wireshark.org/docs/wsug_html_chunked/ChBuildInstallWinInstall.html"><span class="URLPACKT">https://www.wireshark.org/docs/wsug_html_chunked/ChBuildInstallWinInstall.html</span></a>.<a href="https://www.wireshark.org/docs/wsug_html_chunked/ChBuildInstallWinInstall.html"/></div>
+
+
+            </article>
+
+            
+        </section>
+    
+
+        <section>
+
+                            <header>
+                    <h1 class="header-title">Network forensics investigation methodology</h1>
+                </header>
+            
+            <article>
+                
+<p>To assure accurate and meaningful results at the end of a network forensic exercise, <span>you,</span><span> </span><span>as a forensic investigator, must follow a rigid path through a methodological framework. This path is shown in the following diagram:</span></p>
+<p class="CDPAlignCenter CDPAlign"><img src="assets/99e6aeb7-3d1a-46a7-b8d1-81d3bf4fb153.png"/></p>
+<p><strong>Obtain</strong>, <strong>Strategize</strong>, <strong>Collect</strong>, <strong>Analyze</strong>, and <strong>Report</strong> (<strong>OSCAR</strong>) is one such framework that ensures appropriate and constant results. Let's look at each phase from a network forensics point of view:</p>
+<ul>
+<li><strong>Obtain information</strong>: Obtaining information about the incident and the environment is one of the first things to do in a network forensics exercise. The goal of this phase is to familiarize a forensic investigator with the type of incident. The timestamps and timeline of the event, the people, systems, and endpoints involved in the incident—all of these facts are crucial in building up a detailed picture of the event. </li>
+<li><strong>Strategize</strong><span>: Planning the investigation is one of the critical phases in a network forensics scenario, since logs from various devices can differ in their nature; for example, the </span><span>volatility of </span><span>log entries from a firewall compared with that of details such as the ARP of a system would be very different. A good strategy would impact the overall outcome of the investigation. Therefore, you should keep the following points in mind while strategizing the entire forensics investigation process:</span>
+<ul>
+<li>Define clear goals and timelines</li>
+<li>Find the sources of evidence</li>
+<li>Analyze the cost and value of the sources</li>
+<li>Prioritize acquisition</li>
+<li>Plan timely updates for the client</li>
+</ul>
+</li>
+</ul>
+<ul>
+<li><strong>Collect</strong>: In the previous phase, we saw how we need to strategize and plan the acquisition of evidence. In the collect phase, we will go ahead and acquire the evidence as per the plan; however, collecting the evidence itself requires you to document all the systems that are accessed and used, capturing and saving the data streams to the hard drive and collecting logs from servers and firewalls. Best practices for evidence collection include the following:
+<ul>
+<li>Make copies of the evidence and generate cryptographic hashes for verifiability</li>
+<li>Never work on the original evidence; use copies of the data instead</li>
+<li>Use industry-standard tools</li>
+<li>Document all your actions</li>
+</ul>
+</li>
+<li><strong>Analyze</strong>: The analysis phase is the core phase where you start working on the data and try your hands at the riddle. In this phase, you will make use of multiple automated and manual techniques using a variety of tools to correlate data from various sources, establishing a timeline of events, eliminating false positives, and creating working theories to support evidence. We will spend most of the time in this book discussing the analysis of data.</li>
+<li><strong>Report</strong>: The report that you produce must be in layman's terms—that is, it should be understood by non-techie people, such as legal teams, lawyers, juries, insurance teams, and so on. The report should contain executive summaries backed by the technical evidence. This phase is considered one of the essential stages, since the last four steps need to be explained in this one.</li>
+</ul>
+<div class="packt_tip">For more on OSCAR methodology, you can visit <a href="https://www.researchgate.net/figure/OSCAR-methodology_fig2_325465892"><span class="URLPACKT">https://www.researchgate.net/figure/OSCAR-methodology_fig2_325465892</span></a>.</div>
+
+
+            </article>
+
+            
+        </section>
+    
+
+        <section>
+
+                            <header>
+                    <h1 class="header-title">Source of network evidence</h1>
+                </header>
+            
+            <article>
+                
+<p style="color: black">Network evidence can be<span> </span>collected<span> </span>from a variety of<span> </span>sources and we will discuss these sources in the next section. The sources that we will be discussing are:</p>
+<ul>
+<li>Tapping the wire and the air</li>
+<li>CAM table on a network switch</li>
+<li>Routing tables on routers</li>
+<li>Dynamic Host Configuration Protocol logs</li>
+<li>DNS server logs</li>
+<li>Domain controller/ authentication servers/ system logs</li>
+<li>IDS/IPS logs</li>
+<li>Firewall logs</li>
+<li>Proxy Server logs</li>
+</ul>
+
+
+            </article>
+
+            
+        </section>
+    
+
+        <section>
+
+                            <header>
+                    <h1 class="header-title">Tapping the wire and the air</h1>
+                </header>
+            
+            <article>
+                
+<p>One of the purest and most raw forms of<span> </span>information capture is to put taps on<span> </span>network<span> </span>and optical fiber cables to snoop on traffic.</p>
+<p class="mce-root"> Many commercial vendors provide network taps and SPAN ports on their devices for snooping where they will forward all traffic seen on the particular port to the analyzer system<span>. The technique is shown in the following diagram:</span></p>
+<p class="CDPAlignCenter CDPAlign"><img src="assets/435aa560-99db-4ce6-ba27-b09e20840af6.png"/></p>
+<p>In the case of WLAN or Wi-Fi, the captures can be performed by putting an external wireless receptor into promiscuous mode and recording all the traffic for a particular wireless access point on a particular channel. This technique is shown in the following diagram:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="assets/23f96400-142a-4d76-8660-d20da3e38877.png"/></p>
+<p class="mce-root"/>
+
+
+            </article>
+
+            
+        </section>
+    
+
+        <section>
+
+                            <header>
+                    <h1 class="header-title">CAM table on a network switch</h1>
+                </header>
+            
+            <article>
+                
+<p>Network switches contain content-addressable memory tables that store the mapping between a system's MAC address and the physical ports. In a large setup, this table becomes extremely handy, as it can pinpoint a MAC address on the network to a wall-jacked system, since mappings are available to the physical ports. Switches also provide network-mirroring capabilities, which will allow the investigators to see all the data from other VLANs and systems.</p>
+
+
+            </article>
+
+            
+        </section>
+    
+
+        <section>
+
+                            <header>
+                    <h1 class="header-title">Routing tables on routers</h1>
+                </header>
+            
+            <article>
+                
+<p>Routing tables in a router maps ports on the router to the networks that they connect. The following table is a routing table. These tables allow us to investigate the path that the network traffic takes while traveling through various devices:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="assets/3910d743-88d4-4415-a51f-b597f79a2e9e.png"/></p>
+<p>Most of the routers have inbuilt packet filters and firewall capabilities as well. This means that they can be configured to log denied or certain types of traffic traveling to and from the network.</p>
+
+
+            </article>
+
+            
+        </section>
+    
+
+        <section>
+
+                            <header>
+                    <h1 class="header-title">Dynamic Host Configuration Protocol logs</h1>
+                </header>
+            
+            <article>
+                
+<p><strong>Dynamic Host Configuration Protocol</strong> (<strong>DHCP</strong>) servers generally log entries when a specific IP address is assigned to a particular MAC address, when a lease was renewed on the network, the timestamp it renewed, and so on, thus having significant value in network forensics. The following screenshot of the router's DHCP table presents a list of dynamically allocated hosts:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="assets/13bf2b6c-6870-49d0-b798-7beb02858724.png"/></p>
+
+
+            </article>
+
+            
+        </section>
+    
+
+        <section>
+
+                            <header>
+                    <h1 class="header-title">DNS servers logs</h1>
+                </header>
+            
+            <article>
+                
+<p>Name server query logs can help understand IP-to-hostname resolution at specific times. Consider a scenario where, as soon as a system got infected <span>with malware </span><span>on the network, it tried to connect back to a certain domain for command and control.</span> Let's see an example as follows:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="assets/99c4eaf9-a092-4eb1-8116-65d4bdb0d5cc.png"/></p>
+<p>We can see in the preceding screenshot that a DNS request was resolved for <kbd>malwaresamples.com</kbd> website and the resolved IP address was returned.</p>
+<p>Having access to the DNS query packets can reveal <strong>Indicators of Compromise</strong> for a particular malware on the network while quickly revealing the IP address of the system making the query, and can be dealt with ease.</p>
+
+
+            </article>
+
+            
+        </section>
+    
+
+        <section>
+
+                            <header>
+                    <h1 class="header-title">Domain controller/authentication servers/ system logs</h1>
+                </header>
+            
+            <article>
+                
+<p>Authentication servers can allow an investigator to view login attempts, the time of the login, and various other login-related activities throughout the network. Consider a scenario where a group of attackers tries to use a compromised host to log into the database server by using the compromised machine as a launchpad (pivoting). In such cases, authentication logs will quickly reveal not only the infected system, but also the number of failed/passed attempts from the system to the database server.</p>
+
+
+            </article>
+
+            
+        </section>
+    
+
+        <section>
+
+                            <header>
+                    <h1 class="header-title">IDS/IPS logs</h1>
+                </header>
+            
+            <article>
+                
+<p>From a forensic standpoint, intrusion detection/prevention system logs are the most helpful. IDS/IDPS logs provide not only the IP address, but also the matched signatures, on-going attacks, malware presence, command-and-control servers, the IP and port for the source and destination systems, a timeline, and much more. We will cover IDS/IPS scenarios in the latter half of this book.</p>
+
+
+            </article>
+
+            
+        </section>
+    
+
+        <section>
+
+                            <header>
+                    <h1 class="header-title">Firewall logs</h1>
+                </header>
+            
+            <article>
+                
+<p>Firewall logs provide a detailed view of activities on the network. Not only do firewall solutions protect a server or a network from unwanted connections, they also help to identify the type of traffic, provide a trust score to the outbound endpoint, block unwanted ports and connection attempts, and much more. We will look at firewalls in more detail in the upcoming chapters.</p>
+
+
+            </article>
+
+            
+        </section>
+    
+
+        <section>
+
+                            <header>
+                    <h1 class="header-title">Proxy server logs</h1>
+                </header>
+            
+            <article>
+                
+<p>Web proxies are also one of the most useful features for a forensic investigator. Web proxy logs help uncover internal threats while providing explicit detail on events such as surfing habits, the source of web-based malware, the user's behavior on the network, and so on.</p>
+<p>Since we now have an idea about the various types of logs we can consider for analysis, let us quickly familiarize ourselves on the basics of Wireshark.</p>
+
+
+            </article>
+
+            
+        </section>
+    
+
+        <section>
+
+                            <header>
+                    <h1 class="header-title">Wireshark essentials</h1>
+                </header>
+            
+            <article>
+                
+<p>Readers who are familiar with the <span>basics</span><span> of</span><span> Wireshark can skip this section and proceed with the case studies; however, readers who are </span>unfamiliar with<span> the basics or who need to brush up on Wireshark essentials, can feel free to continue through this section. Let's look at some of the most basic features of Wireshark. Look at the following screenshot:</span></p>
+<p class="CDPAlignCenter CDPAlign"><img src="assets/7322eb83-cd02-4aa6-a6ce-ba06a979a875.png"/></p>
+<div class="FigureCaptionPACKT CDPAlignCenter CDPAlign packt_figref"><span>Wireshark</span></div>
+<p>Once we execute Wireshark, we are presented with a screen similar to the preceding picture. On the left-hand side, we have a list of the available interfaces to capture packets from. In the middle, we have recent packet capture files and on the right- hand side, we have online help and user guides. To start a new packet-capture, you can select an interface, such as Ethernet, if you are connected over the wire, or Wi-Fi, if you are connected on a wireless network. Similarly, if you need to open a packet-capture file, you can press the <span class="packt_screen">Open</span> button, browse to the capture file, and load it in the Wireshark tool. Let's capture packets from the wireless interface by selecting <span class="packt_screen">Wi-Fi</span> and pressing the <span class="packt_screen">Start</span> button, as shown in the following screenshot:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="assets/27c2613c-8b8d-423c-93a8-355427a7bef8.png"/></p>
+<p>We can see from the preceding screenshot that we have various types of packets flowing on the network. Let's understand TCP conversations, endpoints, and basic Wireshark filters in the upcoming sections.</p>
+
+
+            </article>
+
+            
+        </section>
+    
+
+        <section>
+
+                            <header>
+                    <h1 class="header-title">Identifying conversations and endpoints</h1>
+                </header>
+            
+            <article>
+                
+<p>You may want to view the list of IP endpoints that your system is communicating with. To achieve this, you can navigate to the <span class="packt_screen">Statistics</span> tab and select <span class="packt_screen">C</span><span class="packt_screen">onversations</span>, as shown in the following screenshot:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="assets/4f80ac68-fd1f-49af-8077-cec14553ea2d.png"/></p>
+<p><span>We can see that we have a variety of endpoints that are having conversations, the number of bytes transferred between the endpoints, and the duration of their data exchange. </span>These<span> options become extremely handy when you want to investigate malicious traffic and identify the key endpoints that are being contracted. Additionally, we can see that most of the conversations in the preceding screenshot involves <kbd>192.168.1.15</kbd> but we may not recognize the IP addresses its talking to.</span></p>
+<p> We can also make use of the <span class="packt_screen">Endpoints</span> option from the <span class="packt_screen">Statistics</span> tab, as shown in the following screenshot:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="assets/d02e77e3-f0e0-4ef2-9299-51f3065f7b16.png"/></p>
+<p>From the preceding screenshot, we can see all the endpoints, and sorting them using the number of packets will give us a clear understanding of the endpoints that are transmitting the highest number of packets, which is again quite handy when it comes to analyzing anomalous network behavior.</p>
+
+
+            </article>
+
+            
+        </section>
+    
+
+        <section>
+
+                            <header>
+                    <h1 class="header-title">Identifying the IP endpoints</h1>
+                </header>
+            
+            <article>
+                
+<p>Domain names were invented to make it more easy to remember sites with common phrases. Having a list of IP addresses in the previous section would make no sense to us, but having a list that shows the resolution of the IPs into domain names can help us a lot. On clicking the <span class="packt_screen">Show address resolution</span> <span>/ </span><span class="packt_screen">Resolved Addresses </span>option, we will be presented with the following:</p>
+<p class="CDPAlignCenter CDPAlign"><img class="aligncenter size-full wp-image-692 image-border" src="assets/ff7375f9-4c53-40b8-a369-51ff2d4fc05b.png" style="width:59.42em;height:45.58em;"/></p>
+<p>Well, this now makes proper sense, as we have a list of IP addresses with their domain resolutions that can help us eliminate the false positives. We saw in the previous endpoint section that the second-highest number of packets in the endpoints originated from <kbd>162.125.34.6</kbd>. Since we don't have an idea of what IP address this could be, we can easily refer to the address resolutions and figure out that this is <kbd>dropbox-dns.com</kbd>, which looks suspicious. Let's search for it on Google using the string <kbd>client.dropbox-dns.com</kbd>, and browsing the first result from the search, we have the following result:</p>
+<p class="CDPAlignCenter CDPAlign"><img class="aligncenter size-full wp-image-695 image-border" src="assets/3e001dfd-186e-4d29-85d6-229cfc7d39d4.png" style="width:62.17em;height:40.67em;"/></p>
+<p>We can see from the preceding search result (the official Dropbox website, <a href="https://www.dropbox.com/">https://www.dropbox.com/</a>) that the domain is a legitimate Dropbox domain and the traffic originating to and from it is safe (assuming that Dropbox is permitted on the network or if allowed for a select group of users that the traffic is associated with those users only). This resolution not only helps us identify domains, but also speaks a lot about the software running on the target as well. We already identified Dropbox as running on the system. We also identified the following domains from the <strong>Resolved Addresses</strong> pane in Wireshark:</p>
+<ul>
+<li>A Gmail account being accessed</li>
+<li>A Qihoo 360 antivirus</li>
+</ul>
+<ul>
+<li>An HDFC bank account</li>
+<li>The Grammarly plugin</li>
+<li>The Firefox browser </li>
+</ul>
+
+
+            </article>
+
+            
+        </section>
+    
+
+        <section>
+
+                            <header>
+                    <h1 class="header-title">Basic filters</h1>
+                </header>
+            
+            <article>
+                
+<p>Network forensics requires you to pinpoint a variety of packets to establish a clear vision for the investigation. Let's explore how we can do this by going through the following steps:</p>
+<p>Set up some basic display filters in Wireshark to only view packets of interest, as shown in the following screenshot:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="assets/1376165d-3f1e-4d81-8f0f-809f9cd0a6bf.png"/></p>
+<p>We can see that simply typing in <kbd>dns</kbd> as the filter will display DNS packets only; however, we can see that MDNS protocol packets are also displayed.</p>
+<p>Considering that we only require DNS packets and not MDNS protocol packets, we can set the filter as <kbd>dns &amp;&amp; !mdns</kbd>, where <kbd>!</kbd> denotes a NOT operation, as shown in the following screenshot:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="assets/ce79fd13-0dea-436f-82e2-f5373d608db3.png"/></p>
+<p>We can see from this that we don't have an exact filter for MDNS. So, how do we filter the MDNS packets out? We can see that the MDNS protocol communicates over port <kbd>5353</kbd>. Let's filter that out instead of using an <kbd>!mdns</kbd> filter, as shown in the following screenshot:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="assets/4b07d3af-04df-4b12-9340-cb41dc390097.png"/></p>
+<p>We can see that providing the filter <kbd>dns and !(udp.port eq 5353)</kbd> presents us with <span>only</span><span> </span><span>the DNS packets. Here, </span><kbd>eq</kbd><span> means equal, the</span> <kbd>!</kbd><span> means NOT, and</span> <kbd>udp.port</kbd> <span>means the UDP port. This means that, in layman's terms, we are asking Wireshark to filter DNS packets while removing all the packets that communicate over UDP port</span> <kbd>5353</kbd><span>.</span></p>
+<div class="packt_infobox">In the latest version of Wireshark <kbd>mdns</kbd> is a valid protocol and display filter such as <kbd>dns &amp;&amp; !mdns</kbd> works fine.</div>
+<p>Similarly, for HTTP, we can type in <kbd>http</kbd> as the filter, as shown in the following screenshot:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="assets/2e6b9ac5-bf76-4da1-b572-7c7ee42a6149.png"/></p>
+<p>However, we also have  OCSP and <strong>Simple Service Discovery Protocol</strong> (<strong>SSDP</strong>) protocol data alongside the data that is filtered from the stream. To filter out the OCSP and SSDP protocol data, we can type in <kbd>http &amp;&amp; !ocsp</kbd>, and since SSDP poses a similar problem to MDNS, we can type <kbd>!udp.port==1900</kbd>. This means that the entire filter becomes <kbd>http &amp;&amp; !ocsp &amp;&amp; !udp.port==1900</kbd>, as shown in the following screenshot:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="assets/5f1db45d-6e7e-4619-acc8-8339be979436.png"/></p>
+<p>We can see from this that we have successfully filtered HTTP packets. But can we search through them and filter only HTTP POST packets? Yes, we can, using the expression <kbd>http contains POST &amp;&amp; !ocsp</kbd> as shown in the following screenshot. </p>
+<p class="CDPAlignCenter CDPAlign"><img src="assets/ebf3d79a-d258-44b9-8e63-66b49d8bb3bd.png"/></p>
+<p><span>We can see that providing the </span><kbd>HTTP contains POST</kbd><span> filter filters out all the non-</span>HTTP POST<span> requests. </span>Let's analyze the request by right-clicking and selecting the option to follow the HTTP stream, as shown in the following screenshot:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="assets/9313a775-ba40-4d81-8275-b18535a3693b.png"/></p>
+<p>We can see that this looks like a file that has been sent out somewhere, but since it has headers such as <kbd>x-360-cloud-security-desc</kbd>, it looks as though it's the cloud antivirus that is scanning a suspicious file found on the network. </p>
+<p>Let's take note of the IP address and match it with the address resolutions, as shown in the following screenshot:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="assets/a6c12316-2a37-419b-a926-b857eabbea11.png" style="width:37.08em;height:9.83em;"/></p>
+<p>Well, the address resolutions have failed us this time. Let's search the IP on <a href="https://who.is/">https://who.is/</a>, as shown in the following screenshot:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="assets/f12751fd-313e-4da1-9478-79316d1dc8c8.png"/></p>
+<p>Yes, it belongs to the QiHU 360 antivirus.</p>
+<p>We can also select HTTP packets based on the response codes, as shown in the following screenshot:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="assets/af8eb405-39e7-4221-84f4-dd4646b9d9f1.png"/></p>
+<p>We can see that we have filtered the packets using <kbd>http.response.code==200</kbd>, where <kbd>200</kbd> denotes a status OK response. This is handy when investigating packet captures from compromised servers, as it gives us a clear picture of the files that have been accessed and shows us how the server responded to particular requests.</p>
+<p>It also allows us to figure out whether the implemented protections are working well, because upon receiving a malicious request, in most cases, the protection firewall issues a <span class="packt_screen">404 (NOT FOUND)</span> or a <span class="packt_screen">403 (Forbidden)</span> response code instead of 200 (OK).</p>
+<p>Let's now jump into some case studies and make use of the basics that we just learned.</p>
+
+
+            </article>
+
+            
+        </section>
+    
+
+        <section>
+
+                            <header>
+                    <h1 class="header-title">Exercise 1 – a noob's keylogger</h1>
+                </header>
+            
+            <article>
+                
+<p>Consider a scenario where an attacker has planted a keylogger on one of the systems in the network. Your job as an investigator is to find the following pieces of information:</p>
+<ul>
+<li>Find the infected system</li>
+<li>Trace the data to the server</li>
+<li>Find the frequency of the data that is being sent</li>
+<li>Find what other information is carried besides the keystrokes</li>
+<li>Try to uncover the attacker</li>
+<li>Extract and reconstruct the files that have been sent to the attacker</li>
+</ul>
+<p>Additionally, in this exercise, you need to assume that the <strong>packet capture</strong> (<span><strong>PCAP</strong>) file </span>is not available and that you have to do the sniffing-out part as well. Let's say that you are connected to a mirror port on the network where you can see all the data traveling to and from the network.</p>
+<div class="packt_infobox">The capture file for this network capture is available at <a href="https://github.com/nipunjaswal/networkforensics/blob/master/Ch1/Noobs%20KeyLogger/Noobs%20Keylogger.pcap">https://github.com/nipunjaswal/networkforensics/blob/master/Ch1/Noobs%20KeyLogger/Noobs%20Keylogger.pcap</a>.</div>
+<p>We can begin our process as follows. We already know that we are connected via a mirror port. Let's sniff around on the interface of choice. If connected to the mirror port, choose the default interface and proceed with collecting packets, as shown in the following screenshot:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="assets/6011e714-7b8a-407f-aecb-a1dd6dbaf8dd.png" style="width:42.00em;height:37.50em;"/></p>
+<p>Most keyloggers work on the web (HTTP), FTP, and email for delivering the keystrokes back to the attacker. We will try all of these to check whether there's anything unusual with packets from these protocols.</p>
+<p>Let's try HTTP first by setting the <kbd>http</kbd> filter, as shown in the following screenshot:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="assets/96187340-69c4-44d0-94fa-dcd41e09f8f3.png"/></p>
+<p>There is HTTP data, but everything seems fine.</p>
+<p>Let's try a couple of protocols, SMTP and POP, to check for anything unusual with the email protocol, as shown in the following screenshot:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="assets/ccf8c1e7-82ea-4151-9ebb-6073b45e362a.png" style="width:40.33em;height:21.75em;"/></p>
+<p>Everything seems fine here as well.</p>
+<p>Let's try FTP as well, as shown in the following screenshot:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="assets/202de185-800c-4d24-83e3-f1bb0907944e.png"/></p>
+<div class="CDPAlignCenter CDPAlign packt_figref">FTP</div>
+<p>Well, we have plenty of activity on the FTP! We can see that the FTP packets contain the <kbd>USER</kbd> and <kbd>PASS</kbd> commands in the capture, which denotes a login activity to the server. Of course, this can be <span>either </span>the keylogger or a legitimate login from any user on the network. Additionally, we can see a <kbd>STOR</kbd> command that is used to store files on the FTP server. However, let's note down the credentials and filenames of the uploaded files for our reference and investigate further. Since, we know that the <kbd>STOR</kbd> command is used to store data on the server.</p>
+<p>Let's view these data packets by changing filter to <kbd>ftp-data</kbd>, as shown in the following screenshot:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="assets/33fce03d-c2c8-4acb-86ce-436f848b51c3.png"/></p>
+<div class="CDPAlignCenter CDPAlign packt_figref">Changing filter to ftp-data</div>
+<div class="packt_infobox"><kbd>ftp-data</kbd> will only contain mostly the files and data transferred rather that all the other FTP commands</div>
+<p>Let's see what we get when we follow the TCP stream of the packet, we can see that we have the following data being posted to the server:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="assets/44641787-920e-4c65-ba89-fb270353c6fb.png"/></p>
+<p>We can see that the data being transmitted contains the word <kbd><span>Ardamax</span></kbd>, which is the name of a common piece of keylogger software that records keystrokes from the system it has infected and sends it back to the attacker. Let's save the packet capture in PCAP format by selecting <strong>File</strong> | <strong>Save As</strong> and choosing the <kbd>.pcap</kbd> format. We will be using the <kbd>.pcap</kbd> format only since the free version of NetworkMiner support only PCAP files and not the <kbd>pcapng</kbd> format.</p>
+<p class="mce-root"/>
+<p class="mce-root"/>
+<p>Let's open the saved file using NetworkMiner as shown in the following screenshot:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="assets/86952fe6-bdc7-425e-b544-786440be4cf0.png"/></p>
+<div class="CDPAlignCenter CDPAlign packt_figref">Opening the saved file using network miner</div>
+<p>We can see we have a number of hosts present in the network capture.</p>
+<p>Let's navigate to the <span class="packt_screen">Credentials</span> tab, as shown in the following screenshot:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="assets/64779c60-56ac-4096-8460-eaf2586c80ec.png"/></p>
+<p>We can see that we have the username and password captured in the PCAP file displayed under <strong>Credentials</strong> tab in NetworkMiner. We previously saw the <kbd>STOR</kbd> command, which is commonly used in uploading files to an FTP from the Wireshark dump.</p>
+<p>Let's browse to the <span class="packt_screen">Files</span> tab and see the files that we are interested in:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="assets/8b3fd08f-5411-4737-897b-3093467e9c4e.png"/></p>
+<div class="CDPAlignCenter CDPAlign packt_figref">Files tab</div>
+<p>We can see plenty of files. Let's open the files that we found using the <kbd>STOR</kbd> command in the browser, as shown in the following screenshot:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="assets/14b889cd-0802-4f02-a299-de4ec586a26a.png"/></p>
+<p>The attacker was not only keylogging, but was also fetching details such as the active window title along with the key logs. So, to sum this up, we have the following answers to the questions that we asked at the beginning of the exercise:</p>
+<ul>
+<li><strong>Find the infected system</strong>: <kbd>192.168.76.131</kbd></li>
+<li><strong>Trace the data to the server</strong>: <kbd>140.82.59.185</kbd></li>
+<li><strong>Find the frequency of the data that is being sent</strong>: The difference between two consecutive <kbd>STOR</kbd> commands for a similar file type is 15 seconds</li>
+<li><strong>Find what other information is carried alongside the keystrokes</strong>: Active window titles</li>
+<li><strong>Try to uncover the attacker</strong>: Not yet found</li>
+<li><strong>Extract and reconstruct the files sent to the attacker</strong>: <kbd>Keys_2018-11-28_16-04-42.html</kbd></li>
+</ul>
+<p>We have plenty of information regarding the hacker. At this point, we can provide the details we found in our analysis in the report, or we can go one step further and try to uncover the identity of the attacker. If you chose to do so, then let's get started in finding out how to uncover this information.</p>
+<div class="packt_infobox">Logging into a computer that you’re not authorized to access can result in criminal penalties (fines, imprisonment, or both).</div>
+<p>We already found their credentials in the server. Let's try logging into the FTP server and try to find something of interest, as shown in the following screenshot:</p>
+<p class="CDPAlignCenter CDPAlign"><img class="aligncenter size-full wp-image-697 image-border" src="assets/73c265be-ae19-49d2-8f3e-d61732994529.png" style="width:39.00em;height:8.42em;"/></p>
+<p>We can see that we are easily able to log into the server. Let's use an FTP client, such as Royal TSX in Mac (FileZilla for Windows), to view the files that reside on the server, as shown in the following screenshot:</p>
+<p class="CDPAlignCenter CDPAlign"><img class="aligncenter size-full wp-image-696 image-border" src="assets/1f18a793-0f4a-4476-8b6f-63dd17057e38.png" style="width:58.92em;height:20.08em;"/></p>
+<p>Wow! So much information has been logged; however, we can see two directories named <kbd>John</kbd> and <kbd>Jo</kbd>. The directory <kbd>Jo</kbd> is empty but we may have something in the directory named <kbd>John</kbd>.</p>
+<p>Let's view the contents of <kbd>John</kbd>, as shown in the following screenshot:</p>
+<p class="CDPAlignCenter CDPAlign"><img src="assets/ab7590b8-136f-4c17-b161-eb48d771c243.png" style="width:21.75em;height:16.50em;"/></p>
+<p>It looks as though the attacker is applying for jobs and keeps their updated resume on their server. The case-study analysis proves that the keylogger is a newbie. In answering the last question regarding the identity of the attacker, we have successfully conducted our first network forensic analysis exercise. The resume we found might have been stolen from someone else as well. However, this is just the tip of the iceberg. In the upcoming chapters, we will look at a variety of complex scenarios; this was an easy one.</p>
+<p>In the next example, we will look at TCP packets and try figuring out what were the event causing such network traffic.</p>
+
+
+            </article>
+
+            
+        </section>
+    
+
+        <section>
+
+                            <header>
+                    <h1 class="header-title">Exercise 2 – two too many</h1>
+                </header>
+            
+            <article>
+                
+<p>Let's analyze another capture file from <a href="https://github.com/nipunjaswal/networkforensics/blob/master/Ch1/Two%20to%20Many/twotomany.pcap">https://github.com/nipunjaswal/networkforensics/blob/master/Ch1/Two%20to%20Many/twotomany.pcap</a>, that we currently don't know any details about and try reconstructing the chain of events.</p>
+<p>We will open the PCAP in Wireshark, as follows:</p>
+<p class="CDPAlignCenter CDPAlign"><img class="aligncenter size-full wp-image-698 image-border" src="assets/b16a6ffe-cdb2-456e-89b9-1a3d5361bcc1.png" style="width:162.50em;height:33.33em;"/></p>
+<p class="CDPAlignLeft CDPAlign">From the preceding screenshot, we can see that numerous SYN packets are being sent out to the <kbd>64.13.134.52</kbd> IP address. However, looking closely, we can see that most of the packets are being sent every so often from a single port, which is <kbd>36050</kbd> and <kbd>36051</kbd>, <span>to almost every port on</span><span> </span><kbd>64.13.134.52</kbd><span>. Yes, you guessed right: this looks like a port scan. Initially the SYN packet is sent out, and on receiving a SYN/ACK, the port is considered open.</span></p>
+<p>We know that the originating IP address, <kbd><span>172.16.0.8</span></kbd>, <span>is an internal one</span> <span>and the server being contracted is</span> <kbd>64.13.134.52</kbd><span>. Can you figure out the following?:</span></p>
+<ul>
+<li>Scan type</li>
+<li>Open ports</li>
+</ul>
+<p>Answering the first question requires a more in-depth understanding of a TCP-oriented communication and its establishment, TCP works on a three-way handshake, which means that on receiving a <strong><span>synchronize</span> </strong>(<strong><span>SYN</span></strong>) packet from the source IP address, the destination IP address sends out a <strong>synchronize/ acknowledgment</strong> (<strong>SYN/ACK</strong>) packet that is followed by a final <strong>acknowledgment </strong>(<strong><span>ACK</span></strong>) packet from the source IP address to complete the three-way handshake. However, as we can see from the preceding screenshot, only a SYN/ACK is sent back from <span>port</span><span> </span><kbd>80</kbd>, an<span>d there hasn't been an ACK packet sent out by the source IP address.</span></p>
+<p>This phenomenon means that the ACK packet was never sent to the destination by the source, which means that only the first two steps of the three-way handshake were completed. This two step half open mechanism causes the destination to use up resources as the port will be help open for a period of time. Meanwhile, this is a popular technique leveraged by a scan type called <strong>SYN scan</strong> or <strong>half-open scan</strong>, or sometimes the <strong>stealth scan</strong>. Tools such as Nmap make use of such techniques to lower the number of network packets on the wire. Therefore, we can conclude that the type of scan we are dealing with is a SYN scan.</p>
+<div class="packt_tip">Nmap uses RST packet in half open scan periodically to prevent resource exhaustion at the destination.</div>
+<p class="CDPAlignCenter CDPAlign"><img src="assets/c6abcfb8-9f24-4876-97f4-1500071c1422.png"/></p>
+<p>Applying the filer <kbd>ip.src==64.13.134.5</kbd>, we can see the responses sent by  <kbd>64.13.134.52</kbd>. It is evident that we have received the SYN/ACK from ports <kbd>53</kbd>, <kbd>80</kbd>, and <kbd>22</kbd>, which are open ports. We can also see that there has been network loss, and the sender has sent the packets again. Additionally, we can see <strong>Reset Acknowledgment Packets</strong> (<strong>RST</strong>) that denote misconfigurations or the application running on the not willing to connect: the reasons for such behavior can differ.</p>
+
+
+            </article>
+
+            
+        </section>
+    
+
+        <section>
+
+                            <header>
+                    <h1 class="header-title">Summary</h1>
+                </header>
+            
+            <article>
+                
+<p>Over the course of this chapter, we learned about the basics of network forensics. We used Wireshark to analyze a keylogger and packets from a port scan. We discovered various types of network evidence sources and also learned the basics methodology that we should follow when performing network forensics.</p>
+<p>In the next chapter, we will look at the basics of protocols and other technical concepts and strategies that are used to acquire evidence, and we will perform hands-on exercises related to them.</p>
+<div class="packt_infobox"><span>All credits for this above capture file goes to Chris Sanders GitHub repository at </span><a href="https://github.com/chrissanders/packets">https://github.com/chrissanders/packets</a><span>.</span></div>
+
+
+            </article>
+
+            
+        </section>
+    
+
+        <section>
+
+                            <header>
+                    <h1 class="header-title">Questions and exercises</h1>
+                </header>
+            
+            <article>
+                
+<p>To improve your confidence in your network forensics skills, try answering the following questions:</p>
+<ol>
+<li>What is the difference between the <kbd>ftp</kbd> and <kbd>ftp-data</kbd> display filter in Wireshark?</li>
+<li>Can you build an <kbd>http</kbd> filter for webpages with specific keywords?</li>
+<li>We saved files from the PCAP using NetworkMiner. Can you do this using Wireshark? (Yes/No)</li>
+<li>Try repeating these exercises with Tshark.</li>
+</ol>
+
+
+            </article>
+
+            
+        </section>
+    
+
+        <section>
+
+                            <header>
+                    <h1 class="header-title">Further reading</h1>
+                </header>
+            
+            <article>
+                
+<p>For further information on Wireshark, refer to <span class="MsoHyperlink"><a href="https://www.packtpub.com/networking-and-servers/mastering-wireshark">https://www.packtpub.com/networking-and-servers/mastering-wireshark</a><a href="https://www.packtpub.com/networking-and-servers/mastering-wireshark"/></span></p>
+
+
+            </article>
+
+            
+        </section>
+    </body></html>

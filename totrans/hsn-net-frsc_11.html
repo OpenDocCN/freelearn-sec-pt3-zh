@@ -1,0 +1,398 @@
+<html><head></head><body>
+        <section>
+
+                            <header>
+                    <h1 class="header-title">Investigating and Analyzing Logs</h1>
+                </header>
+            
+            <article>
+                
+<p>So far, we have worked primarily on the network packets that are acquired through network sniffing and monitoring. However, there are situations where packet analysis itself may not be enough, and we are required to fetch inputs from logs. On a typical network, logs can be present anywhere and everywhere. Consider that, when you are browsing the internet, you are leaving behind logs on your system, network switch, router, primary DNS, ISP, proxy servers, server of the requested resource, and in many other places that you may not typically imagine. In this chapter, we will work with a variety of log types and will gather inputs to aid our network forensics exercise.</p>
+<p>Throughout this chapter, we will cover the following key topics:</p>
+<ul>
+<li>Network intrusions and footprints</li>
+<li>Case study—defaced servers</li>
+</ul>
+<p>However, before moving further, let's understand the need for log analysis and its use in a network forensics scenario by analyzing the <kbd>ssh_cap.pcap</kbd> file in the next section.</p>
+
+
+            </article>
+
+            
+        </section>
+    
+
+        <section>
+
+                            <header>
+                    <h1 class="header-title">Technical requirements</h1>
+                </header>
+            
+            <article>
+                
+<p>To follow the exercises covered in this chapter, we will require the following:</p>
+<ul>
+<li>Wireshark v3.0.0 (<a href="https://www.wireshark.org/download.html">https://www.wireshark.org/download.html</a>) installed on Windows 10 OS/ Ubuntu 14.04.</li>
+<li>You can download the codes and PCAP files used in this chapter from <a href="https://github.com/nipunjaswal/networkforensics/tree/master/Ch8">https://github.com/nipunjaswal/networkforensics/tree/master/Ch8</a>.</li>
+<li>VMWare Player/VirtualBox installation with Kali Operating system installed. You can download it from <a href="https://www.offensive-security.com/kali-linux-vm-vmware-virtualbox-image-download/">https://www.offensive-security.com/kali-linux-vm-vmware-virtualbox-image-download/</a>.</li>
+<li>Python (already installed on Kali Linux).</li>
+</ul>
+
+
+            </article>
+
+            
+        </section>
+    
+
+        <section>
+
+                            <header>
+                    <h1 class="header-title">Network intrusions and footprints</h1>
+                </header>
+            
+            <article>
+                
+<p>Consider a scenario where we have received a PCAP file for analysis and some logs from a Linux server. By analyzing the file in Wireshark, we get the following packet data:</p>
+<div class="CDPAlignCenter CDPAlign"><img src="assets/9462b319-f398-414b-b7bd-335789133d6d.png"/></div>
+<p>It looks like the data belongs to the <strong>Secure Shell</strong> (<span><strong>SSH</strong>),</span> and, by browsing through the <strong>Statistics</strong> | <strong>Conversations</strong> in Wireshark, we get the following:</p>
+<div class="CDPAlignCenter CDPAlign"><img src="assets/005cdf1b-7b85-4769-8314-60e316f21769.png"/></div>
+<p>There are mainly two hosts present on the PCAP file, which are <kbd>192.168.153.130</kbd> and <kbd>192.168.153.141</kbd>. We can see that the destination port is <kbd>22</kbd>, which is a commonly used port for SSH. However, this doesn't look like a standard SSH connection, as the source port is different and are in plenty. Moreover, the port numbers are not from the well-known (<kbd>1</kbd>-<kbd>1024</kbd>) and registered set of ports (<kbd>1024</kbd>-<kbd>41951</kbd>). This behavior is quite common for a example for brute force attacks.</p>
+<p>However, we are currently not sure. Let's scroll through the PCAP and investigate more, as follows:</p>
+<div class="CDPAlignCenter CDPAlign"><img src="assets/40f9d7b2-ec3f-4e09-8c48-2265d6a34b48.png"/></div>
+<p>Plenty of key exchanges are happening, as we can see from the preceding screenshot. However, there isn't a sure shot way to figure out whether the attacker succeeded in conducting a brute-force attack or not.</p>
+<div class="packt_tip">We can compare lengths, but different servers may send out different information, so it won't be that reliable.</div>
+
+
+            </article>
+
+            
+        </section>
+    
+
+        <section>
+
+                            <header>
+                    <h1 class="header-title">Investigating SSH logs</h1>
+                </header>
+            
+            <article>
+                
+<p>We just saw a problem statement where we can't figure out the difference between brute force attempts through PCAP analysis. One reason for this failure is that there is an encryption in place, and we can't make out the encrypted content differences. Let's investigate the SSH login logs from the server and see if we can understand what happened.</p>
+<div class="packt_tip">SSH authentication logs in Linux are generally stored in the <kbd>/var/log/access.log</kbd> file.</div>
+<p>Let's open the <kbd>raw access.log</kbd> file and check whether or not we can get something of interest:</p>
+<div class="CDPAlignCenter CDPAlign"><img src="assets/640bdb98-1a50-47ac-8b83-1f119aa70992.png"/></div>
+<p>Oops! There are just too many authentication failures. It was a brute force attack. Let's check whether the attacker was able to gain access to the server or not:</p>
+<div class="CDPAlignCenter CDPAlign"><img src="assets/c828fede-77f1-4515-bf8b-840243bd9f23.png"/></div>
+<p>A simple text search over the log file to find <kbd>"Accepted"</kbd> anywhere in the log file prints out that a password was accepted by the SSH service, suggesting that the authentication took place successfully. Looking at the successful authentication within the <kbd>auth.log</kbd> file, we have the following:</p>
+<div class="CDPAlignCenter CDPAlign"><img src="assets/86b8dc48-83f9-4022-a89b-a6c26043b1d6.png"/></div>
+<p>We can see that a successful session was opened for the root user, but was disconnected immediately, and the attack continued. The attacker used an automated brute force tool that didn't stop at finding the correct password.</p>
+<p>There is one additional thing to notice if you haven't already—there is a time difference between the packets in the PCAP file and the logs. This might have occurred because time on the SSH server and time on the monitoring system (system where the PCAP is being recorded) are different. Let's correct the time of packet arrival using <kbd>editcap</kbd>, as follows:</p>
+<div class="CDPAlignCenter CDPAlign"><img src="assets/f943a9d0-ce2e-4587-8452-fcbafcf9c6e5.png"/></div>
+<div class="packt_tip">You can edit time in Wireshark via <strong>Edit</strong> | <strong>Time Shift...</strong> menu entry as well</div>
+<p>Since the time in the very first screenshot of this chapter and the one present in the logs have a difference of exactly +2:30 hours, we will need to adjust this time. As we can see in the preceding screenshot, we are using <kbd>editcap</kbd> to edit the current time by adding <kbd>9000</kbd> seconds (2:30 hours in seconds). We created a new file with the adjusted time as <kbd>ssh_adjusted.pcap</kbd>. Let's open it up in Wireshark, as follows:</p>
+<div class="CDPAlignCenter CDPAlign"><img src="assets/b389104e-3415-410b-8047-5d429d70684a.png"/></div>
+<p>We can now see the adjusted time according to the logs and can see exactly what was going on at that particular time. We can see that on the <kbd>53100</kbd> port, there are plenty of packets communicating over the SSH. By filtering out the stream, we get the following:</p>
+<div class="CDPAlignCenter CDPAlign"><img src="assets/dfec8572-9b7e-40b1-a12c-77f0ff724169.png"/></div>
+<p>The TCP streams 35, 36, and 37 have 25 packets individually, while for the others they have 42. Let's open the conversations, as follows:</p>
+<div class="CDPAlignCenter CDPAlign"><img class="alignnone size-full wp-image-1095 image-border" src="assets/0fee95bd-40a9-46f8-8ad7-52393737836a.png" style="width:46.00em;height:50.92em;"/></div>
+<p>We can see that for most of the streams, the relative number of packets was 42, while during the time frame that we got from the SSH logs, the number of packets is different, denoting a change that is a successful attempt.</p>
+<p>We can see that by learning the insights of log analysis along with network packet analysis, we can make much more sense of the network evidence that we otherwise wouldn't have. Along with SSH, the use of HTTP proxies such as HaProxy and Squid is quite widespread in the industry, which makes them a great candidate for log analysis as well. Let's see some examples of this in the following sections.</p>
+
+
+            </article>
+
+            
+        </section>
+    
+
+        <section>
+
+                            <header>
+                    <h1 class="header-title">Investigating web proxy logs</h1>
+                </header>
+            
+            <article>
+                
+<p>We saw a few examples of web proxies in the first half of this book. Let's investigate some more. In the upcoming example, we will try to decipher what could have happened while we were learning about the log analysis. We will be investigating the <kbd>prox_access.log</kbd> file generated by Squid proxy server, as follows:</p>
+<pre>    <strong>1553457412.696      0 192.168.153.1 NONE/000 0 NONE error:transaction-end-before-headers - HIER_NONE/- -</strong>
+    <strong>1553457545.997     66 192.168.153.1 TCP_TUNNEL/200 39 CONNECT www.google.com:443 - HIER_DIRECT/172.217.167.4 -</strong>
+    <strong>1553457546.232    102 192.168.153.1 TCP_TUNNEL/200 39 CONNECT www.google.com:443 - HIER_DIRECT/172.217.167.4 -</strong>
+    <strong>1553457546.348     16 192.168.153.1 TCP_TUNNEL/200 39 CONNECT www.google.com:443 - HIER_DIRECT/172.217.167.4 -</strong>
+    <strong>1553457580.022      0 192.168.153.1 TCP_DENIED/403 3974 CONNECT www.google.com:4444 - HIER_NONE/- text/html</strong>
+    <strong>1553457656.824  94709 192.168.153.1 TCP_TUNNEL/200 3115 CONNECT bam.nr-data.net:443 - HIER_DIRECT/162.247.242.18 -</strong>
+    <strong>1553457719.865 172055 192.168.153.1 TCP_TUNNEL/200 4789 CONNECT adservice.google.com:443 - HIER_DIRECT/172.217.167.2 -</strong>
+    <strong>1553457719.867 171746 192.168.153.1 TCP_TUNNEL/200 4797 CONNECT adservice.google.co.in:443 - HIER_DIRECT/172.217.167.2 -</strong>
+    <strong>1553457719.868 171394 192.168.153.1 TCP_TUNNEL/200 3809 CONNECT googleads.g.doubleclick.net:443 - HIER_DIRECT/172.217.167.2 -</strong>
+    <strong>1553457729.872 173364 192.168.153.1 TCP_TUNNEL/200 4025 CONNECT c.go-mpulse.net:443 - HIER_DIRECT/104.108.158.205 -</strong>
+    <strong>1553457734.884 171351 192.168.153.1 TCP_TUNNEL/200 3604 CONNECT pubads.g.doubleclick.net:443 - HIER_DIRECT/172.217.31.2 -</strong>
+    <strong>1553457750.870 203722 192.168.153.1 TCP_TUNNEL/200 74545 CONNECT www.google.com:443 - HIER_DIRECT/172.217.167.4 -</strong>
+    <strong>1553457797.787  78332 192.168.153.1 TCP_TUNNEL/200 6307 CONNECT ml314.com:443 - HIER_DIRECT/52.207.7.144 -</strong>
+    <strong>1553457837.347  92073 192.168.153.1 TCP_TUNNEL/200 3115 CONNECT bam.nr-data.net:443 - HIER_DIRECT/162.247.242.18 -</strong>
+    <strong>1553457886.866 170431 192.168.153.1 TCP_TUNNEL/200 7595 CONNECT trc.taboola.com:443 - HIER_DIRECT/151.101.10.2 -</strong>
+    <strong>1553457913.119     71 192.168.153.1 TCP_TUNNEL/200 39 CONNECT www.google.com:443 - HIER_DIRECT/216.58.196.196 -</strong></pre>
+<p>We can see from the preceding logs that <kbd>192.168.153.1</kbd> is making many requests to the Squid proxy server. However, to analyze the Squid logs efficiently, we should be concerned about the following tags:</p>
+<table border="1" class="table" style="border-collapse: collapse">
+<tbody>
+<tr>
+<td>
+<p><strong>Type</strong></p>
+</td>
+<td>
+<p><strong>Details</strong></p>
+</td>
+</tr>
+<tr>
+<td>
+<p>HIT</p>
+</td>
+<td>
+<p>The response was generated from the cache.</p>
+</td>
+</tr>
+<tr>
+<td>
+<p>MEM</p>
+</td>
+<td>
+<p>An additional tag indicating that the response object came from the memory cache, avoiding disk accesses. Only seen on HIT responses.</p>
+</td>
+</tr>
+<tr>
+<td>
+<p>MISS</p>
+</td>
+<td>
+<p>The response came directly from the network.</p>
+</td>
+</tr>
+<tr>
+<td>
+<p>DENIED</p>
+</td>
+<td>
+<p>The request was denied.</p>
+</td>
+</tr>
+<tr>
+<td>
+<p>TUNNEL</p>
+</td>
+<td>
+<p>The request was fulfilled with a binary tunnel.</p>
+</td>
+</tr>
+</tbody>
+</table>
+<p> </p>
+<p>Additionally, we can have the following error conditions as well:</p>
+<table border="1" class="table" style="border-collapse: collapse">
+<tbody>
+<tr>
+<td style="width: 78px">
+<p><strong>Type</strong></p>
+</td>
+<td style="width: 638.949px">
+<p><strong>Details</strong></p>
+</td>
+</tr>
+<tr>
+<td style="width: 78px">
+<p>ABORTED</p>
+</td>
+<td style="width: 638.949px">
+<p>The response was not completed, since the connection was aborted.</p>
+</td>
+</tr>
+<tr>
+<td style="width: 78px">
+<p>TIMEOUT</p>
+</td>
+<td style="width: 638.949px">
+<p>The response was not completed due to a connection timeout.</p>
+</td>
+</tr>
+<tr>
+<td style="width: 78px">
+<p>IGNORED</p>
+</td>
+<td style="width: 638.949px">
+<p>The response was ignored because it was older than what is present in the cache.</p>
+</td>
+</tr>
+</tbody>
+</table>
+<div class="packt_tip">Squid proxy codes are explained beautifully at <a href="https://wiki.squid-cache.org/SquidFaq/SquidLogs">https://wiki.squid-cache.org/SquidFaq/SquidLogs</a>. Refer to these additional codes for explanations of example codes like <kbd>HIER_DIRECT</kbd> which means that the object was fetched directly from the origin server. Also, HIER means Hierarchy codes.</div>
+<p>Having gained knowledge of these responses, let's analyze the log file manually and find some interesting facts:</p>
+<div class="CDPAlignCenter CDPAlign"><img src="assets/72235745-39cc-442f-a027-bd723192f153.png" style="width:40.58em;height:12.42em;"/></div>
+<p>We can see that the first entry from the preceding screenshot is <kbd>TCP_MISS_ABORTED</kbd>, which states that the response was to be generated from the network, but was aborted since the request was canceled.</p>
+<p>The third entry to <kbd>detectportal.firefox.com</kbd> was <kbd>TCP_MISS</kbd>, which means that the response was generated directly from the network, and not from the proxy cache.</p>
+<p>We can also see <kbd>TCP_TUNNEL</kbd> for HTTPS-based requests. Let's investigate some more logs:</p>
+<div class="CDPAlignCenter CDPAlign"><img src="assets/a7e44470-bba6-4fa0-a3b1-a584ec6ce3ba.png"/></div>
+<p>Wow! We can see a <kbd>TCP_DENIED</kbd> request from <kbd>192.168.153.141</kbd> to <kbd>192.168.153.146</kbd> on the <kbd>4444</kbd> and <kbd>80</kbd> ports. The <kbd>4444</kbd> port is commonly used by exploitation tools, such as Metasploit, and what we understand from these entries is that <kbd>192.168.153.141</kbd> tried to connect back to <kbd>192.168.153.146</kbd> initially on the <kbd>4444</kbd> port and then on the <kbd>80</kbd> port. The condition is an indication of a reverse shell, where the exploited service is trying to connect back. Noting down the timestamps, we can start making matches in the PCAP evidence or the system evidence.</p>
+<div class="packt_tip">We can always use automated log analyzers, such as Sawmill, to parse various kinds of log formats and don't have to worry about manually converting the timestamps as well.</div>
+
+
+            </article>
+
+            
+        </section>
+    
+
+        <section>
+
+                            <header>
+                    <h1 class="header-title">Investigating firewall logs</h1>
+                </header>
+            
+            <article>
+                
+<p>Industrial grade firewalls provide a lot of insights into network activities, not only the raw logs, and they tend to provide exceptional results. Firewalls, such as Fortinet, Check Point, and many others, provide deep analysis of the traffic daily to the administrators. Let's look at an example report generated by Fortinet's Firewall, as follows:</p>
+<div class="CDPAlignCenter CDPAlign"><img src="assets/4aae56e1-6c7e-4787-998c-1ec8739fcaef.png"/></div>
+<p>We have a variety of threats in the preceding screenshot. There are many failed attempts that were blocked by the firewall, including HTTP XXE attacks, proxies, mimikatz, and various malicious websites visited. Let's see some more details:</p>
+<div class="CDPAlignCenter CDPAlign"><img src="assets/e9be6958-39e7-48dd-aef2-11abd5ad7021.png" style="width:60.67em;height:41.42em;"/></div>
+<p>We can see from the preceding screenshot that we have the top virus infections, top virus victims, and the top attacks on the network. Additionally, we can also see where the attacks are going, as follows:</p>
+<div class="CDPAlignCenter CDPAlign"><img src="assets/e4bd5896-1556-43f8-afb6-ed47c1685713.png"/></div>
+<p>The Fortinet firewall generated the preceding log report. Along with providing details related to the attacks and malware, the firewall also provides trends in the traffic stats, as shown in the following screenshot:</p>
+<div class="CDPAlignCenter CDPAlign"><img src="assets/7931d66b-0e94-40e8-92c0-426d9de554e4.png"/></div>
+<p>We can see plenty of stats in the report in the preceding screenshot. The logs can be drilled down further from the web panels. The idea of showing you the previous report is to demonstrate that sometimes you don't have to re-invent the wheel and carry out deep analysis in situations where you have reports for your perusal, thus revealing plenty of information. Additionally, the raw format for Fortinet's FortiGate logs is as follows:</p>
+<div class="CDPAlignCenter CDPAlign"><img src="assets/a5abf847-e066-4c18-920d-7f8844d395d8.png"/></div>
+<p>We can see that FortiGate logs provide enough information, such as source IP, destination IP, ports, attack type, and a variety of other information.</p>
+
+
+            </article>
+
+            
+        </section>
+    
+
+        <section>
+
+                            <header>
+                    <h1 class="header-title">A case study – defaced servers</h1>
+                </header>
+            
+            <article>
+                
+<p>Consider a scenario where we have been tasked to investigate a server that was compromised and defaced by the attackers. The administration team has all the practices, such as logging and full packet capturing, in place. However, it seems that someone also cleared out logs, as suggested by its <strong>Modified, Accessed, Created, Executed</strong> (<span><strong>MACE</strong>)</span> properties. There are very few entries in the Apache logs, as shown in the following log set:</p>
+<pre>    <strong>192.168.153.1 - - [25/Mar/2019:14:43:47 -0400] "GET /site/ HTTP/1.1" 200 701 "-" "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:66.0) Gecko/20100101 Firefox/66.0"</strong>
+    <strong>192.168.153.1 - - [25/Mar/2019:14:43:47 -0400] "GET /icons/blank.gif HTTP/1.1" 200 431 "http://192.168.153.130/site/" "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:66.0) Gecko/20100101 Firefox/66.0"</strong>
+    <strong>192.168.153.1 - - [25/Mar/2019:14:43:47 -0400] "GET /icons/folder.gif HTTP/1.1" 200 509 "http://192.168.153.130/site/" "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:66.0) Gecko/20100101 Firefox/66.0"</strong>
+    <strong>192.168.153.1 - - [25/Mar/2019:14:43:47 -0400] "GET /icons/back.gif HTTP/1.1" 200 499 "http://192.168.153.130/site/" "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:66.0) Gecko/20100101 Firefox/66.0"</strong>
+    <strong>192.168.153.1 - - [25/Mar/2019:14:43:49 -0400] "GET /site/includes/ HTTP/1.1" 200 1219 "http://192.168.153.130/site/" "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:66.0) Gecko/20100101 Firefox/66.0"</strong>
+    <strong>192.168.153.1 - - [25/Mar/2019:14:43:49 -0400] "GET /icons/unknown.gif HTTP/1.1" 200 528 "http://192.168.153.130/site/includes/" "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:66.0) Gecko/20100101 Firefox/66.0"</strong>
+    <strong>192.168.153.1 - - [25/Mar/2019:14:43:49 -0400] "GET /icons/text.gif HTTP/1.1" 200 512 "http://192.168.153.130/site/includes/" "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:66.0) Gecko/20100101 Firefox/66.0"</strong>
+    <strong>192.168.153.1 - - [25/Mar/2019:14:43:49 -0400] "GET /icons/compressed.gif HTTP/1.1" 200 1323 "http://192.168.153.130/site/includes/" "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:66.0) Gecko/20100101 Firefox/66.0"</strong>
+    <strong>192.168.153.1 - - [25/Mar/2019:14:44:09 -0400] "GET /site/includes/server.php HTTP/1.1" 200 148 "-" "-"</strong>
+    <strong>192.168.153.1 - - [25/Mar/2019:14:44:17 -0400] "GET /site/includes/server.php HTTP/1.1" 200 446 "-" "-"</strong>
+    <strong>192.168.153.1 - - [25/Mar/2019:14:44:26 -0400] "GET /site/includes/server.php HTTP/1.1" 200 156 "-" "-"</strong>
+    <strong>192.168.153.1 - - [25/Mar/2019:14:45:20 -0400] "GET /site/includes/server.php HTTP/1.1" 200 2493 "-" "-"</strong>
+    <strong>192.168.153.1 - - [25/Mar/2019:14:58:44 -0400] "GET /site/includes/server.php HTTP/1.1" 200 148 "-" "-"</strong>
+    <strong>192.168.153.1 - - [25/Mar/2019:14:58:49 -0400] "GET /site/includes/server.php HTTP/1.1" 200 446 "-" "-"</strong>
+    <strong>192.168.153.1 - - [25/Mar/2019:14:59:05 -0400] "GET /site/includes/server.php HTTP/1.1" 200 147 "-" "-"</strong>
+...</pre>
+<p>It looks like the attack came from the <kbd>192.168.153.1</kbd> IP address. However, looking at the details in the preceding logs, we can see that there is no <span>user-ag</span><span>ent in most of the requests. Additionally, no data is posted on the hacked server since the request is of the </span><kbd>GET</kbd><span> type, and there are no parameters involved as well. Strange, right? There had to be something in the parameters.</span></p>
+<p><span>As of now, most of the logs look like legitimate requests to access the file. Nothing out of the box. But why would an attacker send that many</span> <kbd>GET</kbd> <span>requests to a resource page with no parameters? Maybe because we aren't looking at it right. Let's open the PCAP file for the capture as well:</span></p>
+<div class="CDPAlignCenter CDPAlign"><img src="assets/a2cc42a9-9501-43a4-80f4-05d91037d457.png"/></div>
+<p>This seems like a normal HTTP GET request. However, scrolling down a little further, we can see that we have few entries:</p>
+<div class="CDPAlignCenter CDPAlign"><img src="assets/d47c99d0-cd9b-4679-863f-0cead75f9a86.png"/></div>
+<p>We can see a request that was generated from the compromised <kbd>192.168.153.130</kbd> server to <kbd>192.168.153.142</kbd>. The user-agent is <kbd>wget</kbd>, so we can assume that a file was downloaded to the server. Let's investigate this as follows:</p>
+<div class="CDPAlignCenter CDPAlign"><img src="assets/46ebd477-5720-4ecd-974d-28713e484f6d.png"/></div>
+<p>Looking the HTTP stream, it seems like an ELF file was downloaded to the compromised server. We will investigate this file in detail. But first, let's see what those simple looking <kbd>GET</kbd> requests reveal:</p>
+<div class="CDPAlignCenter CDPAlign"><img src="assets/f9dcee3f-e797-4578-acae-6320d664ed80.png"/></div>
+<p>Oh! It looks like the backdoor code was in the cookie, and that was the reason it didn't show up in the Apache logs. We can see that it looks like the output of a <kbd>dir</kbd> command. Could this be the reason there was a download of a file on the server? Let's check by decoding the cookie values, as follows:</p>
+<div class="CDPAlignCenter CDPAlign"><img src="assets/4b847218-3567-45ae-aad4-9fae232b54d6.png"/></div>
+<p>Decoding the value by Base64, we can get the clear text commands that were used. However, we would like to see all the commands executed by the attacker. We can accomplish this task using tshark, as follows:</p>
+<div class="CDPAlignCenter CDPAlign"><img src="assets/7af7de80-0dce-4210-ba3d-22e404c8580f.png"/></div>
+<p>The first command filters out all the cookies since we used <kbd>-R</kbd> with <kbd>http.cookie</kbd> as the filter. The output contained unwanted <kbd>'z='</kbd> characters, so we stripped it off using the Linux <kbd>cut</kbd> command. We stored the output of tshark in a file called <kbd>base</kbd>.</p>
+<p>In the next command, we used a <kbd>while</kbd> loop to read and print every line individually, and, while doing so, should be decoded with Base64. We can see that we got the results showing that the attacker did the following:</p>
+<ol>
+<li>Printed <kbd>1</kbd></li>
+<li>Listed the command to see the directory's contents</li>
+<li>Ran the <kbd>whoami</kbd> command to see the current user</li>
+<li>Issued a <kbd>ls -la</kbd> command to view all files, including the hidden ones</li>
+<li>Issued a <kbd>wget</kbd> command to download a file from another server that might be a backdoor as well</li>
+<li>Again tried the same after printed some 1's and again listed the directory</li>
+</ol>
+<ol start="7">
+<li>Tried to download the file again, but this time to a file called <kbd>shell.txt</kbd>, and repeated it for <kbd>shell.txt</kbd></li>
+<li>Tried to download the <kbd>shell.e</kbd> file</li>
+<li>Again tried to download the <kbd>shell.zip</kbd> file</li>
+<li>Tried to print out IP addresses, PHP version, disabled PHP functions, and much more</li>
+</ol>
+<p>A point to note here is that the attacker has not executed the shellcode file that might be a local exploit to gain high privileges. Additionally, it looks like their download attempts failed. However, we saw a file being transferred in the PCAP. Let's investigate this as well:</p>
+<div class="CDPAlignCenter CDPAlign"><img src="assets/4f218bd7-bc45-4eae-a7f2-1188349fae42.png"/></div>
+<p>We have selected only the response from this packet. Let's save it by selecting <span class="packt_screen">raw</span> from the <strong><span class="packt_screen">Show and save data as</span></strong> option, and then clicking the <strong><span class="packt_screen">Save</span></strong> button, as follows:</p>
+<div class="CDPAlignCenter CDPAlign"><img src="assets/50943289-2751-48b8-8f56-5caa4fbfafc6.png" style="width:35.08em;height:9.33em;"/></div>
+<p>Additionally, we have to remove everything before the ELF magic header for the file to be recreated successfully. After saving the file, open it up in Notepad and remove the server headers and save the file as follows:</p>
+<div class="CDPAlignCenter CDPAlign"><img src="assets/d16c7ed2-70bb-4ed3-9397-b0936f5af7d8.png"/></div>
+<p>Now that we've removed the additional header, we have the executable file for our malware analysis teams to analyze. However, when we tried analyzing it on Hybrid Analysis, we got nothing, as shown in the following screenshot:</p>
+<div class="CDPAlignCenter CDPAlign"><img src="assets/c6209985-8d97-484b-a847-9ad190a4890e.png" style="width:21.08em;height:22.67em;"/></div>
+<div class="packt_infobox">The link to the file analysis is <a href="https://www.hybrid-analysis.com/sample/d8fbd529d730901f7beff5c4a8057fd19057eb7c7a0447264babca573c4c75d5">https://www.hybrid-analysis.com/sample/d8fbd529d730901f7beff5c4a8057fd19057eb7c7a0447264babca573c4c75d5</a><span class="URLPACKT">.</span></div>
+<p>We can see that we got nothing from the file. However, we got a good number of inputs and strong evidence based on log analysis and PCAP analysis. We have seen throughout this chapter that log analysis and PCAP analysis are dependent on each other. We also saw that SSH logs are dependent on logs and that server logs are dependent on PCAPs to be able to reveal more about attacks.</p>
+
+
+            </article>
+
+            
+        </section>
+    
+
+        <section>
+
+                            <header>
+                    <h1 class="header-title">Summary</h1>
+                </header>
+            
+            <article>
+                
+<p>In this chapter, we worked with a variety of log types and gathered inputs to aid our network forensics exercise. In the next chapter, we will learn how we can identify rogue access points, which can allow an attacker to view all your communication logs, and we will also look at strategies to identify and physically find those rogue devices.</p>
+
+
+            </article>
+
+            
+        </section>
+    
+
+        <section>
+
+                            <header>
+                    <h1 class="header-title">Questions and exercises</h1>
+                </header>
+            
+            <article>
+                
+<ul>
+<li>Repeat the exercises covered in the chapter</li>
+<li>Try investigating your home router for logs</li>
+<li>Complete log analysis challenge 5 from the Git repository</li>
+</ul>
+
+
+            </article>
+
+            
+        </section>
+    
+
+        <section>
+
+                            <header>
+                    <h1 class="header-title">Further reading</h1>
+                </header>
+            
+            <article>
+                
+<p>To gain the most out of this chapter, read the following tutorials:</p>
+<ul>
+<li>For more on Apache log analysis, refer to <a href="https://www.keycdn.com/support/apache-access-log">https://www.keycdn.com/support/apache-access-log</a></li>
+<li>For more on log aggregation, refer to <a href="https://stackify.com/log-aggregation-101/">https://stackify.com/log-aggregation-101/</a></li>
+</ul>
+
+
+            </article>
+
+            
+        </section>
+    </body></html>

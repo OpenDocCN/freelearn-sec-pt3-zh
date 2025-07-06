@@ -1,0 +1,110 @@
+<html><head></head><body><div class="chapter" title="Chapter&#xA0;4.&#xA0;Using Python for Network Forensics"><div class="titlepage"><div><div><h1 class="title"><a id="ch04"/>Chapter 4. Using Python for Network Forensics</h1></div></div></div><p>In this chapter, we will focus on the parts of the forensic investigation that are specific to the network layer. We will choose one of the most widely used Python packages for the purpose of manipulating and <a id="id260" class="indexterm"/>analyzing network traffic (<span class="strong"><strong>Scapy</strong></span>) as well as a newly released open source framework by the U.S. Army Research Laboratory (<span class="strong"><strong>Dshell</strong></span>). For<a id="id261" class="indexterm"/> both the toolkits, we have selected the examples of interesting evidence. This chapter will teach you the following:</p><div class="itemizedlist"><ul class="itemizedlist"><li class="listitem" style="list-style-type: disc">How to search for IOC in network traffic</li><li class="listitem" style="list-style-type: disc">How to extract files for further analysis</li><li class="listitem" style="list-style-type: disc">How<a id="id262" class="indexterm"/> to monitor accessed files through <span class="strong"><strong>Server Message Block</strong></span> (<span class="strong"><strong>SMB</strong></span>)</li><li class="listitem" style="list-style-type: disc">How to build your own port scanner</li></ul></div><div class="section" title="Using Dshell during an investigation"><div class="titlepage"><div><div><h1 class="title"><a id="ch04lvl1sec19"/>Using Dshell during an investigation</h1></div></div></div><p>
+<span class="strong"><strong>Dshell</strong></span> is a Python-based network forensic analysis toolkit that is developed by the U.S. Army Research Laboratory and released as open source at the end of 2014. It can help in making the<a id="id263" class="indexterm"/> forensic investigations on the network layer a little easier. The toolkit comes with a large number of decoders that can be used out of the box and are very helpful. Some of these decoders are as follows:</p><div class="itemizedlist"><ul class="itemizedlist"><li class="listitem" style="list-style-type: disc"><span class="strong"><strong>dns</strong></span>: Extracts <a id="id264" class="indexterm"/>and summarizes DNS queries/responses</li><li class="listitem" style="list-style-type: disc"><span class="strong"><strong>reservedips</strong></span>: Identifies <a id="id265" class="indexterm"/>the DNS resolutions that fall in the reserved IP space</li><li class="listitem" style="list-style-type: disc"><span class="strong"><strong>large-flows</strong></span>: Displays<a id="id266" class="indexterm"/> the netflows that have at least transferred 1MB</li><li class="listitem" style="list-style-type: disc"><span class="strong"><strong>rip-http</strong></span>: Extracts<a id="id267" class="indexterm"/> the files from the HTTP traffic</li><li class="listitem" style="list-style-type: disc"><span class="strong"><strong>protocols</strong></span>: Identifies<a id="id268" class="indexterm"/> non-standard protocols</li><li class="listitem" style="list-style-type: disc"><span class="strong"><strong>synrst</strong></span>: Detects <a id="id269" class="indexterm"/>failed attempts to connect (SYN followed by a RST/ACK)</li></ul></div><p>Dshell can be<a id="id270" class="indexterm"/> installed in our lab environment by cloning the sources from GitHub at, <a class="ulink" href="https://github.com/USArmyResearchLab/Dshell">https://github.com/USArmyResearchLab/Dshell</a> and running <code class="literal">install-ubuntu.py</code>. This script will automatically download the missing packages and build the executables that we will need afterwards. Dshell can be used against the pcap files that have been recorded during the incidents or as a result of an IDS alert. A <span class="strong"><strong>packet capture</strong></span> (<span class="strong"><strong>pcap</strong></span>) file<a id="id271" class="indexterm"/> is either created by libpcap (on Linux) or WinPcap (on Windows).</p><p>In the following <a id="id272" class="indexterm"/>section, we will explain how an investigator can make use of Dshell by demonstrating the toolkit with real-world scenarios that are gathered from <a class="ulink" href="http://malware-traffic-analysis.net">http://malware-traffic-analysis.net</a>.</p><p>The first example is a malicious ZIP file that a user has encountered through an email link. The user logged in to Gmail and clicked the download link in the mail. This can easily be seen with the web decoder of Dshell, as follows:</p><div class="informalexample"><pre class="programlisting">
+<span class="strong"><strong>user@lab:~$ source labenv/bin/activate</strong></span>
+<span class="strong"><strong>(labenv)user@lab:~$ ./dshell</strong></span>
+
+<span class="strong"><strong>(labenv)user@lab:~$ Dshell&gt; decode -d web infected_email.pcap</strong></span>
+
+<span class="strong"><strong>web 2015-05-29 16:23:44     10.3.162.105:62588 -&gt;   74.125.226.181:80    ** GET mail.google.com/ HTTP/1.1 // 200 OK  2015-05-29 14:23:40 **</strong></span>
+
+<span class="strong"><strong>web 2015-05-29 16:24:15     10.3.162.105:62612 &lt;-    149.3.144.218:80    ** GET sciclubtermeeuganee.it/wp-content/plugins/feedweb_data/pdf_efax_message_3537462.zip HTTP/1.1 // 200 OK  2015-05-28 14:00:22 **</strong></span>
+</pre></div><p>When looking at the previous traffic extract, the ZIP file could be the first Indicator of Compromise. Therefore, we should take a deeper look at it. The easiest way to do this is to rip the ZIP file out of the pcap file and compare its md5 hash against the VirusTotal database:</p><div class="informalexample"><pre class="programlisting">
+<span class="strong"><strong>(labenv)user@lab:~$ Dshell&gt; decode -d rip-http --bpf "tcp and port 62612" infected_email.pcap</strong></span>
+
+<span class="strong"><strong>rip-http 2015-05-29 16:24:15     10.3.162.105:62612 &lt;-    149.3.144.218:80    ** New file: pdf_efax_message_3537462.zip (sciclubtermeeuganee.it/wp-content/plugins/feedweb_data/pdf_efax_message_3537462.zip) **</strong></span>
+<span class="strong"><strong> --&gt; Range: 0 - 132565</strong></span>
+<span class="strong"><strong>rip-http 2015-05-29 16:24:15     10.3.162.105:62612 &lt;-    149.3.144.218:80    ** File done: ./pdf_efax_message_3537462.zip (sciclubtermeeuganee.it/wp-content/plugins/feedweb_data/pdf_efax_message_3537462.zip) **</strong></span>
+
+<span class="strong"><strong>(labenv)user@lab:~$ Dshell&gt; md5sum pdf_efax_message_3537462.zip </strong></span>
+<span class="strong"><strong>9cda66cba36af799c564b8b33c390bf4  pdf_efax_message_3537462.zip</strong></span>
+</pre></div><p>In this simple case, our first guess was right as the downloaded ZIP file contains another executable that part of an infostealer malware kit, as seen in the following screenshot:</p><div class="mediaobject"><img src="graphics/2087_04_01.jpg" alt="Using Dshell during an investigation"/></div><p>Another really <a id="id273" class="indexterm"/>good example is searching for the accessed files on a network share via the SMB protocol. This can be very helpful when trying to find out whether an attacker was able to access or even exfiltrate the data and—if successful—which data has been potentially leaked:</p><div class="informalexample"><pre class="programlisting">
+<span class="strong"><strong>(labenv)user@lab:~$ Dshell&gt; decode -d smbfiles exfiltration.pcap</strong></span>
+
+<span class="strong"><strong>smbfiles 2005-11-19 04:31:58    192.168.114.1:52704 -&gt;  192.168.114.129:445   ** VNET3\administrator \\192.168.114.129\TEST\torture_qfileinfo.txt (W) **</strong></span>
+<span class="strong"><strong>smbfiles 2005-11-19 04:31:58    192.168.114.1:52704 -&gt;  192.168.114.129:445   ** VNET3\administrator \\192.168.114.129\TESTTORTUR~1.TXT (-) **</strong></span>
+<span class="strong"><strong>smbfiles 2005-11-19 04:31:58    192.168.114.1:52705 -&gt;  192.168.114.129:445   ** VNET3\administrator \\192.168.114.129\TEST\testsfileinfo\fname_test_18.txt (W) **</strong></span>
+</pre></div><p>With the help of the <span class="strong"><strong>rip-smb-uploads</strong></span> decoder, Dshell is also able to automatically extract all the <a id="id274" class="indexterm"/>uploaded files of the recorded pcap file. Another interesting example is searching for the IOC with the help of the snort rules, which can also be done by Dshell, as follows:</p><div class="informalexample"><pre class="programlisting">
+<span class="strong"><strong>(labenv)user@lab:~$ Dshell&gt; decode -d snort malicious-word-document.pcap --snort_rule 'alert tcp any 443 -&gt; any any (msg:"ET CURRENT_EVENTS Tor2Web .onion Proxy Service SSL Cert (1)"; content:"|55 04 03|"; content:"*.tor2web.";)' –snort_alert</strong></span>
+
+<span class="strong"><strong>snort 2015-02-03 01:58:26      38.229.70.4:443   --  192.168.120.154:50195 ** ET CURRENT_EVENTS Tor2Web .onion Proxy Service SSL Cert (1) **</strong></span>
+<span class="strong"><strong>snort 2015-02-03 01:58:29      38.229.70.4:443   --  192.168.120.154:50202 ** ET CURRENT_EVENTS Tor2Web .onion Proxy Service SSL Cert (1) **</strong></span>
+<span class="strong"><strong>snort 2015-02-03 01:58:32      38.229.70.4:443   --  192.168.120.154:50204 ** ET CURRENT_EVENTS Tor2Web .onion Proxy Service SSL Cert (1) **</strong></span>
+</pre></div><p>In this example <a id="id275" class="indexterm"/>we opened a potentially malicious Word document that we have received within a spam email. The Word document is trying to download the <a id="id276" class="indexterm"/>
+<span class="strong"><strong>Vawtrak</strong></span> malware and thereby communicating over the <a id="id277" class="indexterm"/>
+<span class="strong"><strong>Tor</strong></span> network. The snort rule we are using originates from Emerging<a id="id278" class="indexterm"/> Threats, (refer to <a class="ulink" href="http://www.emergingthreats.net/">http://www.emergingthreats.net/</a>), and is searching for known SSL certificates for the <a id="id279" class="indexterm"/>
+<span class="strong"><strong>Tor2Web</strong></span> service (a service to let users access <span class="strong"><strong>Tor Onion Services</strong></span> without using the Tor Browser). Similar checks can be done using all available <a id="id280" class="indexterm"/>snort rules and can be very helpful if you are searching for a specific attack within the network.</p><p>As an alternative to the shown pcap files, all the demonstrated examples can also be run against an active network connection with the help of the <code class="literal">–i interface_name</code> flag as shown in the following:</p><div class="informalexample"><pre class="programlisting">
+<span class="strong"><strong>(labenv)user@lab:~$ Dshell&gt; decode -d netflow -i eth0</strong></span>
+
+<span class="strong"><strong>2015-05-15 21:35:31.843922   192.168.161.131 -&gt;    85.239.127.88  (None -&gt; None)  TCP   52007      80     0      0        0        0  5.1671s</strong></span>
+<span class="strong"><strong>2015-05-15 21:35:31.815329   192.168.161.131 -&gt;    85.239.127.84  (None -&gt; None)  TCP   46664      80     0      0        0        0  5.1976s</strong></span>
+<span class="strong"><strong>2015-05-15 21:35:32.026244   192.168.161.131 -&gt;    208.91.198.88  (None -&gt; None)  TCP   40595      80     9     25     4797   169277  6.5642s</strong></span>
+<span class="strong"><strong>2015-05-15 21:35:33.562660   192.168.161.131 -&gt;    208.91.198.88  (None -&gt; None)  TCP   40599      80     9     19     4740    85732  5.2030s</strong></span>
+<span class="strong"><strong>2015-05-15 21:35:32.026409   192.168.161.131 -&gt;    208.91.198.88  (None -&gt; None)  TCP   40596      80     7      8     3843   121616  6.7580s</strong></span>
+<span class="strong"><strong>2015-05-15 21:35:33.559826   192.168.161.131 -&gt;    208.91.198.88  (None -&gt; None)  TCP   40597      80     5     56     2564   229836  5.2732s</strong></span>
+</pre></div><p>In this example, we are generating the netflow data of an active connection. Dshell is purely written in Python, which makes it highly adaptable to all the needs of the forensic investigators and <a id="id281" class="indexterm"/>can also be used in a chain with other tools or predefined processes.</p><p>If you want to test this, you can download the sample files from <a class="ulink" href="http://www.emergingthreats.net/">http://www.emergingthreats.net/</a>.</p></div></div>
+<div class="section" title="Using Scapy during an investigation"><div class="titlepage"><div><div><h1 class="title"><a id="ch04lvl1sec20"/>Using Scapy during an investigation</h1></div></div></div><p>Another great<a id="id282" class="indexterm"/> Python-based tool to analyze and manipulate the network traffic<a id="id283" class="indexterm"/> is <span class="strong"><strong>Scapy</strong></span>. According to the developer website, <a class="ulink" href="http://www.secdev.org/projects/scapy/">http://www.secdev.org/projects/scapy/</a>:</p><div class="blockquote"><blockquote class="blockquote"><p><span class="emphasis"><em>"Scapy is a powerful interactive packet manipulation program. It is able to forge or decode packets of a wide number of protocols, send them on the wire, capture them, match requests and replies, and much more."</em></span></p></blockquote></div><p>Scapy differs from the standard tools (and also from Dshell) by providing an investigator with the ability to write small Python scripts that can manipulate or analyze the network traffic—either in a recorded form or in real-time. Furthermore, Scapy has the ability to perform deep packet dissection, passive OS fingerprinting, or plotting via third-party tools, such<a id="id284" class="indexterm"/> as <span class="strong"><strong>GnuPlot</strong></span>, as built-in features are already available.</p><p>The following Python script, which is taken from <span class="emphasis"><em>Grow Your Own Forensic Tools: A Taxonomy of Python Libraries Helpful for Forensic Analysis</em></span>, <span class="emphasis"><em>SANS Institute InfoSec Reading Room</em></span>, is a very brief example of how powerful Scapy is:</p><div class="informalexample"><pre class="programlisting">import scapy, GeoIP
+from scapy import *
+
+geoIp = GeoIP.new(GeoIP.GEOIP_MEMORY_CACHE)
+def locatePackage(pkg):
+  src=pkg.getlayer(IP).src
+  dst=pkg.getlayer(IP).dst
+  srcCountry = geoIp.country_code_by_addr(src)
+  dstCountry = geoIp.country_code_by_addr(dst)
+  print src+"("+srcCountry+") &gt;&gt; "+dst+"("+dstCountry+")\n"
+try:
+  while True:
+    sniff(filter="ip", prn=locatePackage, store=0)
+except KeyboardInterrupt:
+  print "\n" + "Scan Aborted!"</pre></div><p>This script records the statistics about the geolocation of the IP address source and the destination of an ongoing network connection. After importing the Scapy package into our Python script, we <a id="id285" class="indexterm"/>call the sniff function and use a filter to detect only the IP packets. The last parameter in the sniff function is very important if you plan to run Scapy scripts for a long time. With the help of the store parameter, you can tell Scapy to not cache all the packages in RAM during the runtime and thus make the script faster and resource saving. The subsequent function looks up the geolocation of the source and destination IP address that is extracted from each packet.</p><p>In the next example, we will illustrate how to build a very simple port scanner with the help of Scapy, as follows:</p><div class="informalexample"><pre class="programlisting">#!/usr/bin/env python
+
+import sys
+from scapy.all import *
+
+targetRange = sys.argv[1]
+targetPort = sys.argv[2]
+conf.verb=0
+
+p=IP(dst=targetRange)/TCP(dport=int(targetPort), flags="S")
+ans,unans=sr(p, timeout=9)
+
+for answers in ans:
+        if answers[1].flags == 2:
+                print answers[1].src</pre></div><p>This small script is able to scan whole IP ranges for a given open port. If you are searching the web servers that are listening on port 80, you can use the script, as follows:</p><div class="informalexample"><pre class="programlisting">
+<span class="strong"><strong>(labenv)user@lab:~$ ./scanner.py 192.168.161.1/24 80</strong></span>
+<span class="strong"><strong>WARNING: No route found for IPv6 destination :: (no default route?)</strong></span>
+<span class="strong"><strong>Begin emission:..........</strong></span>
+<span class="strong"><strong>192.168.161.12</strong></span>
+<span class="strong"><strong>192.168.161.34</strong></span>
+<span class="strong"><strong>192.168.161.111</strong></span>
+<span class="strong"><strong>....</strong></span>
+</pre></div><p>We can also <a id="id286" class="indexterm"/>use the <span class="strong"><strong>Address Resolution Protocol</strong></span> (<span class="strong"><strong>ARP</strong></span>) for a reconnaissance of the whole network range that our system is connected to. With the help of the following script, we get a nicely printed table with all the IP addresses that are online and also their corresponding MAC addresses:</p><div class="informalexample"><pre class="programlisting">#! /usr/bin/env python
+
+import sys
+from scapy.all import srp,Ether,ARP,conf
+
+if len(sys.argv) != 2:
+        print "Usage: arp_ping &lt;net&gt; (e.g.,: arp_ping 192.168.1.0/24)"
+        sys.exit(1)
+
+conf.verb=0
+ans,unans=srp(Ether(dst="ff:ff:ff:ff:ff:ff")/ARP(pdst=sys.argv[1]),
+timeout=9)
+
+print r"+------------------+-----------------+"
+print r"|       MAC        |        IP       |"
+print r"+------------------+-----------------+"
+for snd,rcv in ans:
+        print rcv.sprintf(r" %Ether.src% | %ARP.psrc%")
+print r"+------------------+-----------------+"</pre></div><p>When <a id="id287" class="indexterm"/>executing the script, we will receive something similar to this:</p><div class="informalexample"><pre class="programlisting">
+<span class="strong"><strong>(labenv)user@lab:~$ ./arp_ping.py 192.168.161.131/24</strong></span>
+<span class="strong"><strong>WARNING: No route found for IPv6 destination :: (no default route?)</strong></span>
+<span class="strong"><strong>+------------------+-----------------+</strong></span>
+<span class="strong"><strong>|       MAC        |        IP       |</strong></span>
+<span class="strong"><strong>+------------------+-----------------+</strong></span>
+<span class="strong"><strong> 00:50:56:c0:00:08 | 192.168.161.1</strong></span>
+<span class="strong"><strong> 00:50:56:f5:d3:83 | 192.168.161.2</strong></span>
+<span class="strong"><strong> 00:50:56:f1:2d:28 | 192.168.161.254</strong></span>
+<span class="strong"><strong>+------------------+-----------------+</strong></span>
+</pre></div><p>Scripts such as these two can be very useful if no port scanner is available on the system or if you want to chain a port scanner with the other Python-based scripts for your investigation.</p></div>
+<div class="section" title="Summary"><div class="titlepage"><div><div><h1 class="title"><a id="ch04lvl1sec21"/>Summary</h1></div></div></div><p>This chapter provided an overview of the domains of network-based forensic investigations and the examples with Dshell and Scapy. We have demonstrated how to search for suspicious HTTP connections (such as file downloads) or how to search for leaked data through the SMB protocol with Dshell. In the second section, we created our own port scanner with the help of Scapy and used it to gather more information about the potentially compromised systems.</p><p>After we discussed the areas of forensic algorithms, Windows and Unix systems, as well as the network layer, the following chapter will deal with virtualized systems and hypervisors that are becoming an important part of every company.</p></div></body></html>
