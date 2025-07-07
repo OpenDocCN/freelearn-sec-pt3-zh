@@ -1,4 +1,4 @@
-# 第九章 获取 - 接近黑莓
+# 第九章：获取 - 接近黑莓
 
 尽管根据彭博社的数据黑莓的全球市场份额已降至不到 1%（[`www.bloomberg.com/news/2014-05-28/blackberry-market-share-to-fall-to-0-3-in-2018-idc-says.html`](http://www.bloomberg.com/news/2014-05-28/blackberry-market-share-to-fall-to-0-3-in-2018-idc-says.html)），许多黑莓设备仍在企业环境中使用。
 

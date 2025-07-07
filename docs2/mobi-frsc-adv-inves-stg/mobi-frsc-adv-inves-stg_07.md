@@ -1,4 +1,4 @@
-# 第七章 获取 – 接触 Windows Phone 和 Windows 10 Mobile
+# 第七章：获取 – 接触 Windows Phone 和 Windows 10 Mobile
 
 Windows Phone 是移动市场的新兴玩家。微软采取了激进的策略，通过多个无线运营商销售大量低成本设备。该操作系统经过优化，即使在低端硬件上也能完美运行，相比更臃肿、沉重的 Android，它在廉价手机上提供了更加流畅的用户体验。
 
