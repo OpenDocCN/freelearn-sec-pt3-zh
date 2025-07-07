@@ -1,6 +1,6 @@
-# Github DevOps 加速指南
+# 移动取证秘籍
 
-> 原文：[`annas-archive.org/md5/677f27c30764b3701bc2b6cf6de3a30e`](https://annas-archive.org/md5/677f27c30764b3701bc2b6cf6de3a30e)
+> 原文：[`annas-archive.org/md5/8e097f04ec23149c767d0161a3fa35e5`](https://annas-archive.org/md5/8e097f04ec23149c767d0161a3fa35e5)
 > 
 > 译者：[飞龙](https://github.com/wizardforcel)
 > 

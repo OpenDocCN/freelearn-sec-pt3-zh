@@ -1,6 +1,6 @@
-# Github DevOps 加速指南
+# 移动取证之高级调查策略
 
-> 原文：[`annas-archive.org/md5/677f27c30764b3701bc2b6cf6de3a30e`](https://annas-archive.org/md5/677f27c30764b3701bc2b6cf6de3a30e)
+> 原文：[`annas-archive.org/md5/2665c96ad646c78b03ec523895eb87e2`](https://annas-archive.org/md5/2665c96ad646c78b03ec523895eb87e2)
 > 
 > 译者：[飞龙](https://github.com/wizardforcel)
 > 
