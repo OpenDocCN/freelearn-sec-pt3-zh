@@ -1,4 +1,4 @@
-# 解析第三方应用程序文件
+# 第十四章：解析第三方应用程序文件
 
 第三方应用程序已经在智能手机社区掀起了风潮。大多数智能手机用户的设备上都安装了不止一个依赖于聊天、游戏、导航或分享图片的应用程序。根据[`www.statista.com/statistics/276623/number-of-apps-available-in-leading-app-stores/`](https://www.statista.com/statistics/276623/number-of-apps-available-in-leading-app-stores/)，全球几乎有 500 万个适用于各种智能手机的应用程序。苹果的 App Store 提供约 180 万个应用程序，Google Play 提供 247 万个应用程序，亚马逊提供 60 万个应用程序，Windows 提供 67 万个应用程序。预计到 2020 年，这一数字将呈指数增长。
 
